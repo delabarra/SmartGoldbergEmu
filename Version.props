@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <VersionPrefix>2.4.0</VersionPrefix>
+    <VersionSuffix></VersionSuffix>
+    <VersionBuild Condition="'$(VersionBuild)' == ''">0</VersionBuild>
+    <VersionBuildSuffix Condition="'$(VersionSuffix)' == '-preview' and '$(VersionBuild)' != '0'">+build.$(VersionBuild)</VersionBuildSuffix>
+    <VersionBuildSuffix Condition="'$(VersionSuffix)' != '-preview' or '$(VersionBuild)' == '0'"></VersionBuildSuffix>
+    <Version>$(VersionPrefix)$(VersionSuffix)</Version>
+    <AssemblyVersion>$(VersionPrefix)</AssemblyVersion>
+    <FileVersion>$(VersionPrefix)</FileVersion>
+    <InformationalVersion>v$(VersionPrefix)$(VersionSuffix)$(VersionBuildSuffix)</InformationalVersion>
+    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
+    <GenerateAssemblyConfigurationAttribute>false</GenerateAssemblyConfigurationAttribute>
+    <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
+    <GenerateAssemblyCopyrightAttribute>false</GenerateAssemblyCopyrightAttribute>
+    <GenerateAssemblyTrademarkAttribute>false</GenerateAssemblyTrademarkAttribute>
+    <GenerateAssemblyCultureAttribute>false</GenerateAssemblyCultureAttribute>
+  </PropertyGroup>
+</Project>

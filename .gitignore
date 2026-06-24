@@ -1,0 +1,65 @@
+# --- Build outputs (MSBuild; net48 + test project) ---
+[Bb]in/
+[Oo]bj/
+*.binlog
+*.svclog
+
+# --- Release packaging (package-release.ps1 → dist/) ---
+/dist/
+*.zip
+*.7z
+
+# --- Stray build outputs at repo root ---
+/*.exe
+/*.dll
+/*.pdb
+
+# --- Tests (dotnet test / VS) ---
+*.trx
+TestResults/
+*.coverage
+coverage*.json
+
+# --- Visual Studio user state ---
+.vs/
+*.user
+*.suo
+*.sln.docstates
+
+# --- Logs ---
+*.log
+
+# --- Windows noise ---
+Thumbs.db
+Desktop.ini
+
+# --- Generated at build (Version.props target) ---
+Properties/GeneratedVersionAssemblyInfo.cs
+
+# --- Launcher updater (dev project output + embed staging; MSBuild copies into Resources/Embedded/) ---
+SmartGoldbergEmu.LauncherUpdate/bin/
+SmartGoldbergEmu.LauncherUpdate/obj/
+Resources/Embedded/SmartGoldbergEmu.LauncherUpdate.exe
+
+# --- Local dev only (wrappers, certs, build helpers; canonical scripts in .github/scripts/) ---
+/batch/
+/scripts/
+.github/certs/*.pfx
+publish-release.bat
+
+# --- Portable runtime beside SmartGoldbergEmu.exe (PathConstants) ---
+games/
+goldberg/
+GSE Saves/
+steamapps/
+temp/
+userassets/
+SmartGoldbergEmu.cfg
+SmartGoldbergEmu.cfg.imported
+settings.ini
+uri_*.txt
+
+# --- Private maintainer / IDE (keep local; CI fails if tracked — .github/compliance/policy.json) ---
+/docs/
+/.docs/
+/.cursor/

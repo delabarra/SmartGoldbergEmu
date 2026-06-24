@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="Version.props" />
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
+    <ProjectGuid>{7FD75B62-9C8F-5418-CA44-20331F2D9743}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>SmartGoldbergEmu</RootNamespace>
+    <AssemblyName>SmartGoldbergEmu</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
+    <PlatformTarget>x64</PlatformTarget>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+    <!-- Empty resets to .xml;.pdb; use a non-matching extension so Release skips reference doc/symbol sidecars. -->
+    <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>Resources\Icons\SteamGoldx128.ico</ApplicationIcon>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject>SmartGoldbergEmu.Program</StartupObject>
+    <SingleInstance>true</SingleInstance>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Forms\AboutForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\AboutForm.Designer.cs">
+      <DependentUpon>AboutForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\ForkSelectForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\ForkSelectForm.Designer.cs">
+      <DependentUpon>ForkSelectForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\MainForm.DetailsColumns.partial.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\SettingsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\SettingsForm.Designer.cs">
+      <DependentUpon>SettingsForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\SettingsForm.EmulatorTab.partial.cs">
+      <DependentUpon>SettingsForm.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\ProgressForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\UpdateChangelogForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\UpdateChangelogForm.Designer.cs">
+      <DependentUpon>UpdateChangelogForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\RemovesGameForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\RemovesGameForm.Designer.cs">
+      <DependentUpon>RemovesGameForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\ProgressForm.Designer.cs">
+      <DependentUpon>ProgressForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\GameSettingsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\GameSettingsForm.Designer.cs">
+      <DependentUpon>GameSettingsForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\GameSearchForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\GameSearchForm.Designer.cs">
+      <DependentUpon>GameSearchForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\LaunchOptionsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\LaunchOptionsForm.Designer.cs">
+      <DependentUpon>LaunchOptionsForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\SteamlessOptionsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\SteamlessOptionsForm.Designer.cs">
+      <DependentUpon>SteamlessOptionsForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Models\AchievementExceptions.cs" />
+    <Compile Include="Models\AchievementModels.cs" />
+    <Compile Include="Models\AchievementSchema.cs" />
+    <Compile Include="Models\ApiKeyStatus.cs" />
+    <Compile Include="Models\AppSearchResult.cs" />
+    <Compile Include="Models\ApplicationSettings.cs" />
+    <Compile Include="Models\GoldbergForkSource.cs" />
+    <Compile Include="Models\GoldbergLaunchMode.cs" />
+    <Compile Include="Models\GoldbergLaunchModeAvailability.cs" />
+    <Compile Include="Models\CAchievement.cs" />
+    <Compile Include="Models\CSteamGameSchema.cs" />
+    <Compile Include="Models\GameConfig.cs" />
+    <Compile Include="Models\SteamlessApplyOutcome.cs" />
+    <Compile Include="Models\SteamlessApplyResult.cs" />
+    <Compile Include="Models\SteamlessCliOptions.cs" />
+    <Compile Include="Models\LegacyConfig.cs" />
+    <Compile Include="Models\GameSettingsSaveModels.cs" />
+    <Compile Include="Models\GameSettingsSnapshot.cs" />
+    <Compile Include="Models\GameSetupResult.cs" />
+    <Compile Include="Models\AchievementPreviewKind.cs" />
+    <Compile Include="Models\GameAddBundle.cs" />
+    <Compile Include="Models\GameAddCollectResult.cs" />
+    <Compile Include="Models\GameEditBundle.cs" />
+    <Compile Include="Models\GameEditSidecarContent.cs" />
+    <Compile Include="Models\GameSaveAddRequest.cs" />
+    <Compile Include="Models\GameSaveEditRequest.cs" />
+    <Compile Include="Models\PendingAddGameSave.cs" />
+    <Compile Include="Models\PendingListSyncResult.cs" />
+    <Compile Include="Models\GlobalSettings.cs" />
+    <Compile Include="Models\ItemMeta.cs" />
+    <Compile Include="Models\ItemGeneratorResult.cs" />
+    <Compile Include="Models\IniDocument.cs" />
+    <Compile Include="Models\LaunchOption.cs" />
+    <Compile Include="Models\LaunchFlowModels.cs" />
+    <Compile Include="Models\LoggingConfiguration.cs" />
+    <Compile Include="Models\OnlineAppData.cs" />
+    <Compile Include="Models\SaveResult.cs" />
+    <Compile Include="Models\SteamApiStatus.cs" />
+    <Compile Include="Models\UpdateCheckResult.cs" />
+    <Compile Include="Models\UpdateChangelogDialogContent.cs" />
+    <Compile Include="Models\UpdateException.cs" />
+    <Compile Include="Models\UriParseResult.cs" />
+    <Compile Include="Models\ValidationResult.cs" />
+    <Compile Include="Models\ThemeMode.cs" />
+    <Compile Include="Models\ThemeColors.cs" />
+    <Compile Include="Models\ThemeChangedEventArgs.cs" />
+    <Compile Include="Models\SteamProductInfoModels.cs" />
+    <Compile Include="Models\WindowState.cs" />
+    <Compile Include="Constants\SteamAppManifestAcfKeys.cs" />
+    <Compile Include="Constants\SteamClientRegistryKeyPaths.cs" />
+    <Compile Include="Constants\SteamClientRegistryValueNames.cs" />
+    <Compile Include="Constants\SteamApiHashes.cs" />
+    <Compile Include="Constants\AchievementConstants.cs" />
+    <Compile Include="Constants\AddGameStatusMessages.cs" />
+    <Compile Include="Constants\ApplicationConstants.cs" />
+    <Compile Include="Constants\GamesIniKeyNames.cs" />
+    <Compile Include="Constants\GoldbergForkConstants.cs" />
+    <Compile Include="Constants\AssetConstants.cs" />
+    <Compile Include="Constants\GoldbergInstallLayout.cs" />
+    <Compile Include="Constants\PathConstants.cs" />
+    <Compile Include="Constants\SteamPicsKeyNames.cs" />
+    <Compile Include="Abstractions\ITaskReportService.cs" />
+    <Compile Include="Abstractions\IHttpService.cs" />
+    <Compile Include="Abstractions\ILogService.cs" />
+    <Compile Include="Abstractions\IRegistryService.cs" />
+    <Compile Include="Extensions\TaskExtensions.cs" />
+    <Compile Include="Generators\ItemGenerator.cs" />
+    <Compile Include="Generators\TileGenerator.cs" />
+    <Compile Include="Generators\StatsGenerator.cs" />
+    <Compile Include="Validation\SteamApiValidator.cs" />
+    <Compile Include="Helpers\AchievementPreviewHelper.cs" />
+    <Compile Include="Helpers\ApiKeyStatusIndicatorHelper.cs" />
+    <Compile Include="Helpers\ErrorDisplayHelper.cs" />
+    <Compile Include="Helpers\ControlInvokeAsyncHelper.cs" />
+    <Compile Include="Helpers\FormMessageBoxHelper.cs" />
+    <Compile Include="Helpers\IniParseHelper.cs" />
+    <Compile Include="Helpers\DirectoryJunctionHelper.cs" />
+    <Compile Include="Helpers\DuplicateExecutableDialogHelper.cs" />
+    <Compile Include="Helpers\LoadDllsArchFilter.cs" />
+    <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
+    <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
+    <Compile Include="Helpers\SteamActiveProcessRegistryHelper.cs" />
+    <Compile Include="Helpers\SteamSourceModRegistryHelper.cs" />
+    <Compile Include="Helpers\GoldbergReleaseResolveHelper.cs" />
+    <Compile Include="Helpers\GoldbergVersionHelper.cs" />
+    <Compile Include="Helpers\GoldbergIniDocumentationHelper.cs" />
+    <Compile Include="Helpers\GoldbergSavePathHelper.cs" />
+    <Compile Include="Helpers\MainSettingsScopes.cs" />
+    <Compile Include="Helpers\UserIniSaveLocationHelper.cs" />
+    <Compile Include="Helpers\LauncherEmbeddedUpdaterHelper.cs" />
+    <Compile Include="Helpers\LauncherUpdatePayloadHelper.cs" />
+    <Compile Include="Helpers\OverlayColorHelper.cs" />
+    <Compile Include="Helpers\ProcessImagePathHelper.cs" />
+    <Compile Include="Helpers\SteamIdHelper.cs" />
+    <Compile Include="Helpers\SteamInstallationPathHelper.cs" />
+    <Compile Include="Helpers\SteamLanguageDisplayHelper.cs" />
+    <Compile Include="Helpers\SteamPicsKeyValueHelper.cs" />
+    <Compile Include="Helpers\ListViewColumnHelper.cs" />
+    <Compile Include="Helpers\LogRedactionHelper.cs" />
+    <Compile Include="Helpers\MarkdownToRichTextHelper.cs" />
+    <Compile Include="Helpers\MenuCheckMarkHelper.cs" />
+    <Compile Include="Helpers\MosaicViewHelper.cs" />
+    <Compile Include="Helpers\GameFolderPathHelper.cs" />
+    <Compile Include="Helpers\PathValidationHelper.cs" />
+    <Compile Include="Helpers\ShellFolderHelper.cs" />
+    <Compile Include="Helpers\HttpHelpers.cs" />
+    <Compile Include="Helpers\PlaceholderTextBoxHelper.cs" />
+    <Compile Include="Helpers\ThemedToolStripRenderer.cs" />
+    <Compile Include="Helpers\ThemedToolStripRendererFactory.cs" />
+    <Compile Include="Helpers\ToolTipHelper.cs" />
+    <Compile Include="Helpers\UriFileWatcherHelper.cs" />
+    <Compile Include="Helpers\WavPreviewPlaybackHelper.cs" />
+    <Compile Include="Helpers\ApplicationVersionHelper.cs" />
+    <Compile Include="Helpers\VersionComparisonHelper.cs" />
+    <Compile Include="Constants\LauncherReleaseConstants.cs" />
+    <Compile Include="Helpers\ReleaseNotesLayoutBridge.cs" />
+    <Compile Include="Helpers\WindowStateHelper.cs" />
+    <Compile Include="Helpers\DesignTimeHelper.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Properties\GeneratedVersionAssemblyInfo.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="Services\AchievementService.cs" />
+    <Compile Include="Services\GoldbergArtifactService.cs" />
+    <Compile Include="Services\AssetDownloadService.cs" />
+    <Compile Include="Services\GoldbergFilesService.cs" />
+    <Compile Include="Services\AppDataService.cs" />
+    <Compile Include="Services\DlcService.cs" />
+    <Compile Include="Services\EmulatorConfigService.cs" />
+    <Compile Include="Services\EmulatorUpdateService.cs" />
+    <Compile Include="Services\LauncherUpdateService.cs" />
+    <Compile Include="Services\GameDataService.cs" />
+    <Compile Include="Services\GameDisplayService.cs" />
+    <Compile Include="Services\FallbackMosaicArtCache.cs" />
+    <Compile Include="Services\GameImageService.cs" />
+    <Compile Include="Services\ImageNormalizationService.cs" />
+    <Compile Include="Services\GoldbergCfgService.cs" />
+    <Compile Include="Services\HttpService.cs" />
+    <Compile Include="Services\IconService.cs" />
+    <Compile Include="Services\IniFileService.cs" />
+    <Compile Include="Services\BootstrapService.cs" />
+    <Compile Include="Services\InitializationService.cs" />
+    <Compile Include="Services\LaunchOptionService.cs" />
+    <Compile Include="Services\LogService.cs" />
+    <Compile Include="Services\SteamGameSearchService.cs" />
+    <Compile Include="Services\ServiceLocator.cs" />
+    <Compile Include="Services\ShortcutService.cs" />
+    <Compile Include="Services\TaskReportService.cs" />
+    <Compile Include="Services\SteamApiKeyService.cs" />
+    <Compile Include="Services\SteamInterfacesService.cs" />
+    <Compile Include="Services\SteamWebApiService.cs" />
+    <Compile Include="Services\ThemeService.cs" />
+    <Compile Include="Services\RegistryService.cs" />
+    <Compile Include="Services\UriProtocolRegistryService.cs" />
+    <Compile Include="Services\UriProtocolService.cs" />
+    <Compile Include="Services\SteamProductInfoService.cs" />
+    <Compile Include="Services\SteamlessFeedback.cs" />
+    <Compile Include="Services\SteamlessService.cs" />
+    <Compile Include="JsonKit\JsonArray.cs" />
+    <Compile Include="JsonKit\JsonConvert.cs" />
+    <Compile Include="JsonKit\JsonFormatting.cs" />
+    <Compile Include="JsonKit\JsonKitException.cs" />
+    <Compile Include="JsonKit\JsonObject.cs" />
+    <Compile Include="JsonKit\JsonParser.cs" />
+    <Compile Include="JsonKit\JsonProperty.cs" />
+    <Compile Include="JsonKit\JsonValue.cs" />
+    <Compile Include="JsonKit\JsonValueExtensions.cs" />
+    <Compile Include="JsonKit\JsonValueKind.cs" />
+    <Compile Include="JsonKit\JsonWriter.cs" />
+    <Compile Include="SteamKit\ClientMsgProtobuf.cs" />
+    <Compile Include="SteamKit\Crc32Util.cs" />
+    <Compile Include="SteamKit\KeyDictionary.cs" />
+    <Compile Include="SteamKit\NetFilterEncryptionWithHMAC.cs" />
+    <Compile Include="SteamKit\SteamClient.cs" />
+    <Compile Include="SteamKit\SteamLogonWaitResult.cs" />
+    <Compile Include="SteamKit\Types.cs" />
+    <Compile Include="Models\PersistedLaunchSession.cs" />
+    <Compile Include="Services\LaunchSessionCleanupService.cs" />
+    <Compile Include="Services\GameLaunchService.cs" />
+    <Compile Include="Services\GameSettingsSaveService.cs" />
+    <Compile Include="Services\GameSetupService.cs" />
+    <Compile Include="Services\GameAddCollector.cs" />
+    <Compile Include="Services\PendingAddGameListService.cs" />
+    <Compile Include="Services\GameEditLoader.cs" />
+    <Compile Include="Services\GameSaveWriter.cs" />
+    <Compile Include="Services\GameCredentialPersistenceService.cs" />
+    <Compile Include="Services\LegacyImportService.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Forms\AboutForm.resx">
+      <DependentUpon>AboutForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\MainForm.resx">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\SettingsForm.resx">
+      <DependentUpon>SettingsForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\ProgressForm.resx">
+      <DependentUpon>ProgressForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\UpdateChangelogForm.resx">
+      <DependentUpon>UpdateChangelogForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\ForkSelectForm.resx">
+      <DependentUpon>ForkSelectForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\RemovesGameForm.resx">
+      <DependentUpon>RemovesGameForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\GameSettingsForm.resx">
+      <DependentUpon>GameSettingsForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\GameSearchForm.resx">
+      <DependentUpon>GameSearchForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\LaunchOptionsForm.resx">
+      <DependentUpon>LaunchOptionsForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\SteamlessOptionsForm.resx">
+      <DependentUpon>SteamlessOptionsForm.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\FallbackTileArt.csv" />
+  </ItemGroup>
+  <PropertyGroup>
+    <PrepareResourcesDependsOn>BuildEmbeddedLauncherUpdater;$(PrepareResourcesDependsOn)</PrepareResourcesDependsOn>
+  </PropertyGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="BuildEmbeddedLauncherUpdater" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\SmartGoldbergEmu.LauncherUpdate\SmartGoldbergEmu.LauncherUpdate.csproj" Properties="Configuration=$(Configuration);Platform=$(Platform)" Targets="Restore;Build" />
+    <PropertyGroup>
+      <_LauncherUpdaterBuildOutput>$(MSBuildProjectDirectory)\SmartGoldbergEmu.LauncherUpdate\bin\$(Configuration)\SmartGoldbergEmu.LauncherUpdate.exe</_LauncherUpdaterBuildOutput>
+      <_LauncherUpdaterEmbedStaging>$(MSBuildProjectDirectory)\Resources\Embedded\SmartGoldbergEmu.LauncherUpdate.exe</_LauncherUpdaterEmbedStaging>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_LauncherUpdaterBuildOutput)')" Text="Launcher updater was not built: $(_LauncherUpdaterBuildOutput)" />
+    <MakeDir Directories="$(MSBuildProjectDirectory)\Resources\Embedded" />
+    <Copy SourceFiles="$(_LauncherUpdaterBuildOutput)" DestinationFiles="$(_LauncherUpdaterEmbedStaging)" SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('$(_LauncherUpdaterEmbedStaging)')" Text="Failed to stage launcher updater for embed: $(_LauncherUpdaterEmbedStaging)" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(_LauncherUpdaterEmbedStaging)">
+        <LogicalName>SmartGoldbergEmu.LauncherUpdate.exe</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+  <Target Name="GenerateVersionAssemblyAttributes" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_GeneratedVersionAssemblyInfoFile>Properties\GeneratedVersionAssemblyInfo.cs</_GeneratedVersionAssemblyInfoFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyVersionAttribute">
+        <_Parameter1>$(AssemblyVersion)</_Parameter1>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyFileVersionAttribute">
+        <_Parameter1>$(FileVersion)</_Parameter1>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyInformationalVersionAttribute">
+        <_Parameter1>$(InformationalVersion)</_Parameter1>
+      </AssemblyAttribute>
+    </ItemGroup>
+    <WriteCodeFragment Language="C#" OutputFile="$(_GeneratedVersionAssemblyInfoFile)" AssemblyAttributes="@(AssemblyAttribute)" />
+  </Target>
+</Project>

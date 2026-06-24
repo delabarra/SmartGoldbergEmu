@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "description": "Public CI policy for SmartGoldbergEmu. Used by .github/scripts/check-rules.ps1. Private maintainer notes may live under docs/ or .cursor/ locally.",
+  "csproj": {
+    "path": "SmartGoldbergEmu.csproj",
+    "targetFrameworkVersion": "v4.8",
+    "langVersion": "7.3"
+  },
+  "jsonPackagesForbidden": [
+    "Newtonsoft.Json",
+    "System.Text.Json"
+  ],
+  "secretScan": {
+    "roots": [
+      ".",
+      "Tests"
+    ],
+    "extensions": [
+      ".cs",
+      ".json",
+      ".config",
+      ".xml",
+      ".ini",
+      ".cfg"
+    ],
+    "excludePathSegments": [
+      "\\bin\\",
+      "\\obj\\",
+      "\\.vs\\",
+      "\\packages\\"
+    ],
+    "patternDescription": "api_key / steam web api key assignment with long literal"
+  },
+  "forbiddenInCs": [
+    "CreateRemoteThread",
+    "WriteProcessMemory",
+    "ColdClientLoader",
+    "steamclient_loader",
+    "DllsToInjectFolder",
+    "ForceInject"
+  ],
+  "formsSyncOverAsync": {
+    "scanDirectory": "Forms",
+    "linePattern": "\\.GetAwaiter\\(\\)\\.GetResult\\(\\)|\\.Wait\\(\\)|\\.Wait\\(",
+    "lineExclusions": [
+      "failure\\.Result",
+      "f\\.Result",
+      "handshakeTask\\.Result"
+    ]
+  },
+  "formsPathLiteralPattern": "[\\\"\\']\\s*(games/|goldberg/|steam_settings/|GSE Saves)",
+  "git": {
+    "trackedArtifactSegments": [
+      "(^|[\\\\/])(bin|obj)([\\\\/]|$)",
+      "(^|[\\\\/])\\.vs([\\\\/]|$)"
+    ],
+    "mustNotTrackPrefixes": [
+      "tools/"
+    ],
+    "mustNotTrackFiles": [
+      "publish-release.bat",
+      "scripts/publish-release.bat"
+    ],
+    "mustTrackFiles": [
+      "Tests/Tests.csproj"
+    ]
+  },
+  "manualChecklistPath": ".github/compliance/CHECKLIST.md"
+}

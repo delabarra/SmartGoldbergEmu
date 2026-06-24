@@ -1,0 +1,8 @@
+[
+  {
+    "name": "kills",
+    "type": "int",
+    "default": "0",
+    "global": "100"
+  }
+]

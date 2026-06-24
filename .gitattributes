@@ -1,0 +1,16 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+.gitattributes text eol=lf
+
+# Keep Windows-friendly line endings for C#/WinForms sources.
+*.cs text eol=crlf
+*.csproj text eol=crlf
+*.sln text eol=crlf
+*.resx text eol=crlf
+*.config text eol=crlf
+
+# Keep LF for docs/config files that are frequently edited cross-platform.
+*.md text eol=lf
+*.mdc text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

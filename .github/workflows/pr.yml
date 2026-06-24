@@ -1,0 +1,42 @@
+name: pr
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: ./.github/scripts/check-rules.ps1
+        shell: pwsh
+
+  build:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            Tests/Tests.csproj
+            SmartGoldbergEmu.LauncherUpdate/SmartGoldbergEmu.LauncherUpdate.csproj
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild) { throw 'MSBuild not found.' }
+          & $msbuild SmartGoldbergEmu.csproj /t:Build /p:Configuration=Release /p:Platform=x64 /m /v:m /nologo
+
+      - name: Unit tests
+        shell: pwsh
+        run: dotnet test Tests\Tests.csproj -c Release -p:Platform=x64 -v minimal

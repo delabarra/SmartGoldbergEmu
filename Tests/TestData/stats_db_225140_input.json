@@ -1,0 +1,7 @@
+[
+  {
+    "name": "STAT_THE_MIGHTY_FOOT",
+    "type": "int",
+    "default": 0
+  }
+]

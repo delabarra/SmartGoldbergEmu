@@ -1,0 +1,35 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartGoldbergEmu", "SmartGoldbergEmu.csproj", "{7FD75B62-9C8F-5418-CA44-20331F2D9743}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartGoldbergEmu.LauncherUpdate", "SmartGoldbergEmu.LauncherUpdate\SmartGoldbergEmu.LauncherUpdate.csproj", "{C4A8E2F1-9B3D-4F6E-A1C2-8D7E5F0B3A94}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{84164E2E-C1A1-4F84-A3D1-38E7E1D76C66}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7FD75B62-9C8F-5418-CA44-20331F2D9743}.Debug|x64.ActiveCfg = Debug|x64
+		{7FD75B62-9C8F-5418-CA44-20331F2D9743}.Debug|x64.Build.0 = Debug|x64
+		{7FD75B62-9C8F-5418-CA44-20331F2D9743}.Release|x64.ActiveCfg = Release|x64
+		{7FD75B62-9C8F-5418-CA44-20331F2D9743}.Release|x64.Build.0 = Release|x64
+		{C4A8E2F1-9B3D-4F6E-A1C2-8D7E5F0B3A94}.Debug|x64.ActiveCfg = Debug|x64
+		{C4A8E2F1-9B3D-4F6E-A1C2-8D7E5F0B3A94}.Release|x64.ActiveCfg = Release|x64
+		{84164E2E-C1A1-4F84-A3D1-38E7E1D76C66}.Debug|x64.ActiveCfg = Debug|x64
+		{84164E2E-C1A1-4F84-A3D1-38E7E1D76C66}.Debug|x64.Build.0 = Debug|x64
+		{84164E2E-C1A1-4F84-A3D1-38E7E1D76C66}.Release|x64.ActiveCfg = Release|x64
+		{84164E2E-C1A1-4F84-A3D1-38E7E1D76C66}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {501D776A-4DE5-4CD8-A7FD-72F0D6C867C6}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Dev-only: built when SmartGoldbergEmu.csproj compiles; embedded in main exe, not shipped separately. -->
+    <IsPublishable>false</IsPublishable>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>SmartGoldbergEmu.LauncherUpdate</RootNamespace>
+    <AssemblyName>SmartGoldbergEmu.LauncherUpdate</AssemblyName>
+    <LangVersion>7.3</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\JsonKit\JsonArray.cs" Link="JsonKit\JsonArray.cs" />
+    <Compile Include="..\JsonKit\JsonFormatting.cs" Link="JsonKit\JsonFormatting.cs" />
+    <Compile Include="..\JsonKit\JsonKitException.cs" Link="JsonKit\JsonKitException.cs" />
+    <Compile Include="..\JsonKit\JsonObject.cs" Link="JsonKit\JsonObject.cs" />
+    <Compile Include="..\JsonKit\JsonParser.cs" Link="JsonKit\JsonParser.cs" />
+    <Compile Include="..\JsonKit\JsonProperty.cs" Link="JsonKit\JsonProperty.cs" />
+    <Compile Include="..\JsonKit\JsonValue.cs" Link="JsonKit\JsonValue.cs" />
+    <Compile Include="..\JsonKit\JsonValueExtensions.cs" Link="JsonKit\JsonValueExtensions.cs" />
+    <Compile Include="..\JsonKit\JsonValueKind.cs" Link="JsonKit\JsonValueKind.cs" />
+    <Compile Include="..\JsonKit\JsonWriter.cs" Link="JsonKit\JsonWriter.cs" />
+  </ItemGroup>
+</Project>
