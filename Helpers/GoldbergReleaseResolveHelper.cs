@@ -23,10 +23,10 @@ namespace SmartGoldbergEmu.Helpers
 
             JsonObject releaseData = JsonObject.Parse(json);
             string prefix = GoldbergForkConstants.GetRepackAssetNamePrefix(fork);
-            string suffix = GoldbergForkConstants.RepackWinAssetSuffix;
 
             string downloadUrl = null;
             string archiveFileName = null;
+            string matchedSuffix = null;
             foreach (JsonObject asset in (JsonArray)releaseData["assets"])
             {
                 string name = asset["name"]?.ToString();
@@ -34,18 +34,29 @@ namespace SmartGoldbergEmu.Helpers
                     continue;
                 if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                     continue;
-                if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+
+                string suffix = GoldbergForkConstants.TryGetRepackWinAssetSuffix(name);
+                if (suffix == null)
                     continue;
+
+                // Current repack publishes .7z; keep .zip for older releases.
+                if (matchedSuffix == GoldbergForkConstants.RepackWinAssetSuffix7z
+                    && suffix == GoldbergForkConstants.RepackWinAssetSuffixZip)
+                {
+                    continue;
+                }
 
                 downloadUrl = asset["browser_download_url"]?.ToString();
                 archiveFileName = name;
-                break;
+                matchedSuffix = suffix;
+                if (suffix == GoldbergForkConstants.RepackWinAssetSuffix7z)
+                    break;
             }
 
             if (string.IsNullOrEmpty(downloadUrl) || string.IsNullOrEmpty(archiveFileName))
                 return false;
 
-            if (!TryExtractRepackForkVersion(archiveFileName, prefix, suffix, out string forkVersion))
+            if (!TryExtractRepackForkVersion(archiveFileName, prefix, matchedSuffix, out string forkVersion))
                 return false;
 
             result.DownloadUrl = downloadUrl;

@@ -31,6 +31,7 @@ namespace SmartGoldbergEmu.Services
         private static string _latestVersion;
         private static bool _resolvedFromRepack;
         private static GoldbergForkSource _resolvedFork;
+        private static string _localDownloadArchiveFileName;
         private static bool _wasCancelledForMissingFiles = false;
         private static bool _forkSelectionCancelledForDownload = false;
         private static string _lastCancelledUpdateVersion = null;
@@ -52,6 +53,11 @@ namespace SmartGoldbergEmu.Services
         {
             return new[]
             {
+                new UpdateManualDownloadLink
+                {
+                    Label = "Repack",
+                    Url = GoldbergForkConstants.RepackRepositoryWebUrl
+                },
                 new UpdateManualDownloadLink
                 {
                     Label = GoldbergForkConstants.GetForkDisplayName(GoldbergForkSource.Detanup),
@@ -79,6 +85,9 @@ namespace SmartGoldbergEmu.Services
             _downloadUrl = resolved.DownloadUrl;
             _latestVersion = resolved.LatestVersion;
             _resolvedFromRepack = resolved.FromRepack;
+            _localDownloadArchiveFileName = GoldbergForkConstants.GetLocalDownloadArchiveFileName(
+                resolved.FromRepack,
+                resolved.ArchiveFileName);
 
             if (result != null)
             {
@@ -134,9 +143,7 @@ namespace SmartGoldbergEmu.Services
 
         private static string GetGoldbergDownloadArchiveFileName()
         {
-            return _resolvedFromRepack
-                ? GoldbergForkConstants.RepackDownloadArchiveFileName
-                : GoldbergForkConstants.UpstreamDownloadArchiveFileName;
+            return _localDownloadArchiveFileName ?? GoldbergForkConstants.UpstreamDownloadArchiveFileName;
         }
 
         private static string BuildGoldbergReleaseReadyMessage()
@@ -364,6 +371,7 @@ namespace SmartGoldbergEmu.Services
             {
                 _downloadUrl = null;
                 _resolvedFromRepack = false;
+                _localDownloadArchiveFileName = null;
                 GoldbergForkSource configuredFork = GetConfiguredGoldbergForkSource();
                 _resolvedFork = configuredFork;
 

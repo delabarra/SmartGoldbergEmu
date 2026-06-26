@@ -13,14 +13,20 @@ namespace SmartGoldbergEmu.Tests.Services
     public sealed class EmulatorUpdateServiceTests
     {
         private const string SampleRepackJson =
+            "{\"tag_name\":\"repack-2026_05_30-2026_02_16-420\",\"body\":\"repack notes\",\"assets\":[" +
+            "{\"name\":\"Detanup01-2026_05_30-win.7z\",\"browser_download_url\":\"https://example/detanup.7z\"}," +
+            "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://example/alex.7z\"}" +
+            "]}";
+
+        private const string SampleRepackJsonLegacyZip =
             "{\"tag_name\":\"repack-2026_05_19-2026_02_16-1\",\"body\":\"repack notes\",\"assets\":[" +
             "{\"name\":\"Detanup01-2026_05_19-win.zip\",\"browser_download_url\":\"https://example/detanup.zip\"}," +
             "{\"name\":\"alex47exe-2026_02_16-win.zip\",\"browser_download_url\":\"https://example/alex.zip\"}" +
             "]}";
 
         private const string SampleRepackJsonAlexOnly =
-            "{\"tag_name\":\"repack-2026_05_19-2026_02_16-1\",\"body\":\"repack notes\",\"assets\":[" +
-            "{\"name\":\"alex47exe-2026_02_16-win.zip\",\"browser_download_url\":\"https://example/alex.zip\"}" +
+            "{\"tag_name\":\"repack-2026_05_30-2026_02_16-420\",\"body\":\"repack notes\",\"assets\":[" +
+            "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://example/alex.7z\"}" +
             "]}";
 
         private const string SampleUpstreamJson =
@@ -42,8 +48,8 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.True(result.Success);
                 Assert.True(result.UpdateAvailable);
                 Assert.Equal("2026_02_16", result.CurrentVersion);
-                Assert.Equal("2026_05_19", result.LatestVersion);
-                Assert.Equal("https://example/detanup.zip", result.DownloadUrl);
+                Assert.Equal("2026_05_30", result.LatestVersion);
+                Assert.Equal("https://example/detanup.7z", result.DownloadUrl);
                 Assert.True(result.FromRepack);
                 Assert.Equal("repack notes", result.ReleaseNotes);
             }
@@ -55,15 +61,15 @@ namespace SmartGoldbergEmu.Tests.Services
             using (var appScope = new ServiceLocatorTestScope("sge-emu-update-current-"))
             using (var httpScope = new HttpServiceTestScope())
             {
-                appScope.WriteEmulatorConfig(GoldbergForkSource.Detanup, "2026_05_19");
+                appScope.WriteEmulatorConfig(GoldbergForkSource.Detanup, "2026_05_30");
                 httpScope.HttpService.SetJsonResponse(GoldbergForkConstants.RepackReleasesApiUrl, SampleRepackJson);
 
                 UpdateCheckResult result = await EmulatorUpdateService.CheckForUpdatesAsync();
 
                 Assert.True(result.Success);
                 Assert.False(result.UpdateAvailable);
-                Assert.Equal("2026_05_19", result.CurrentVersion);
-                Assert.Equal("2026_05_19", result.LatestVersion);
+                Assert.Equal("2026_05_30", result.CurrentVersion);
+                Assert.Equal("2026_05_30", result.LatestVersion);
             }
         }
 
@@ -87,6 +93,25 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.True(result.Success);
                 Assert.True(result.UpdateAvailable);
                 Assert.Equal(currentVersion, result.CurrentVersion);
+            }
+        }
+
+        [Fact]
+        public async Task CheckForUpdatesAsync_succeeds_from_legacy_repack_zip()
+        {
+            using (var appScope = new ServiceLocatorTestScope("sge-emu-update-legacy-zip-"))
+            using (var httpScope = new HttpServiceTestScope())
+            {
+                appScope.WriteEmulatorConfig(GoldbergForkSource.Detanup, "2026_02_16");
+                httpScope.HttpService.SetJsonResponse(GoldbergForkConstants.RepackReleasesApiUrl, SampleRepackJsonLegacyZip);
+
+                UpdateCheckResult result = await EmulatorUpdateService.CheckForUpdatesAsync();
+
+                Assert.True(result.Success);
+                Assert.True(result.UpdateAvailable);
+                Assert.Equal("2026_05_19", result.LatestVersion);
+                Assert.Equal("https://example/detanup.zip", result.DownloadUrl);
+                Assert.True(result.FromRepack);
             }
         }
 

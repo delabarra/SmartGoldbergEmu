@@ -1,10 +1,9 @@
+using System;
 using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Constants
 {
-    /// <summary>
-    /// URLs and INI keys for selecting which Goldberg fork to download from.
-    /// </summary>
+    // URLs and INI keys for selecting which Goldberg fork to download from.
     public static class GoldbergForkConstants
     {
         public const string IniSection = "emulator";
@@ -13,7 +12,8 @@ namespace SmartGoldbergEmu.Constants
 
         public const string RepackReleasesApiUrl = "https://api.github.com/repos/delabarra/GoldbergEmu-Forks-Repacked/releases/latest";
         public const string RepackRepositoryWebUrl = "https://github.com/delabarra/GoldbergEmu-Forks-Repacked";
-        public const string RepackWinAssetSuffix = "-win.zip";
+        public const string RepackWinAssetSuffix7z = "-win.7z";
+        public const string RepackWinAssetSuffixZip = "-win.zip";
         public const string RepackDownloadArchiveFileName = "goldberg-download.zip";
         public const string UpstreamDownloadArchiveFileName = "goldberg-download.7z";
 
@@ -23,15 +23,31 @@ namespace SmartGoldbergEmu.Constants
         public const string RepositoryWebUrlDetanup = "https://github.com/Detanup01/gbe_fork";
         public const string RepositoryWebUrlAlex = "https://github.com/alex47exe/gse_fork";
 
-        /// <summary>
-        /// Windows release asset name on upstream fork releases.
-        /// </summary>
         public const string UpstreamWinReleaseAssetName = "emu-win-release.7z";
-
-        /// <summary>
-        /// Alias kept for call sites that refer to the upstream asset name.
-        /// </summary>
         public const string WinReleaseAssetName = UpstreamWinReleaseAssetName;
+
+        public static string TryGetRepackWinAssetSuffix(string assetName)
+        {
+            if (string.IsNullOrEmpty(assetName))
+                return null;
+            if (assetName.EndsWith(RepackWinAssetSuffix7z, StringComparison.OrdinalIgnoreCase))
+                return RepackWinAssetSuffix7z;
+            if (assetName.EndsWith(RepackWinAssetSuffixZip, StringComparison.OrdinalIgnoreCase))
+                return RepackWinAssetSuffixZip;
+            return null;
+        }
+
+        public static string GetLocalDownloadArchiveFileName(bool fromRepack, string releaseAssetFileName)
+        {
+            if (fromRepack
+                && !string.IsNullOrEmpty(releaseAssetFileName)
+                && releaseAssetFileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                return RepackDownloadArchiveFileName;
+            }
+
+            return UpstreamDownloadArchiveFileName;
+        }
 
         public static string GetRepackAssetNamePrefix(GoldbergForkSource fork)
         {
@@ -48,7 +64,6 @@ namespace SmartGoldbergEmu.Constants
             return GetUpstreamReleasesApiUrl(fork);
         }
 
-        /// <summary>GitHub-style fork label for user-facing text (matches repo owners).</summary>
         public static string GetForkDisplayName(GoldbergForkSource fork)
         {
             return fork == GoldbergForkSource.Alex ? "alex47exe" : "Detanup01";
