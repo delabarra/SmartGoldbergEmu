@@ -103,6 +103,8 @@ namespace SmartGoldbergEmu
                 TryRestoreSteamClientRegistryForLifecycle();
                 TryReconcileOrphanedLaunchSessions();
 
+                LauncherUpdateService.CheckForUpdatesWithUISync(BootstrapService.LogService, isStartup: true);
+
                 if (!InitializationService.PerformStartupChecks())
                 {
                     BootstrapService.LogService?.LogMessage("Startup checks failed - exiting application");
@@ -111,8 +113,6 @@ namespace SmartGoldbergEmu
 
                 if (!EmulatorUpdateService.GoldbergFilesCheckSync())
                     EmulatorUpdateService.CheckForUpdatesWithUISync(BootstrapService.LogService, isStartup: true);
-
-                LauncherUpdateService.CheckForUpdatesWithUISync(BootstrapService.LogService, isStartup: true);
 
                 BootstrapService.LogService.LogMessage("Starting main application form...");
                 var mainForm = new Forms.MainForm();
