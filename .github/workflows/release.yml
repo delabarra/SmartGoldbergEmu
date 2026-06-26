@@ -38,8 +38,8 @@ jobs:
       - name: Configure Git
         shell: pwsh
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "delabarra"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
 
       - name: Bump or read Version.props
         id: ver
@@ -158,8 +158,8 @@ jobs:
       - name: Push tag
         shell: pwsh
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "delabarra"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           $tag = '${{ needs.prepare.outputs.tag }}'
           if ('${{ needs.prepare.outputs.skip_bump }}' -eq 'true') {
             git tag -fa $tag -m "Release $tag (re-run)"
