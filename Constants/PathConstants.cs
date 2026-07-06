@@ -166,11 +166,6 @@ namespace SmartGoldbergEmu.Constants
         }
 
         /// <summary>
-        /// 7-Zip reduced standalone executable name used during emulator updates.
-        /// </summary>
-        public const string LauncherSevenZipReducedExecutableName = "7zr.exe";
-
-        /// <summary>
         /// Bundled placeholder and shipped documentation file names next to the launcher.
         /// </summary>
         public const string LauncherResourcesFolderName = "Resources";

@@ -1,0 +1,20 @@
+ExtractKit — third-party license notice
+==================================
+
+This folder contains decompression code mechanically ported from the 7-Zip /
+LZMA SDK reference sources (Igor Pavlov), primarily 7-Zip 26.02.
+
+Upstream:
+  https://www.7-zip.org/
+  https://www.7-zip.org/sdk.html
+
+LZMA SDK license
+----------------
+
+LZMA SDK is placed in the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or distribute the
+original LZMA SDK code, either in source code form or as a compiled binary, for
+any purpose, commercial or non-commercial, and by any means.
+
+Copyright (C) 1999-2026 Igor Pavlov

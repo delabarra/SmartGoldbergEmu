@@ -308,11 +308,6 @@ namespace SmartGoldbergEmu.Constants
 
         #region Windows system registry (optional reads)
 
-        // 7-Zip official installer — path value lives under HKLM and sometimes HKCU.
-        public const string SevenZipRegistrySubKey = @"SOFTWARE\7-Zip";
-
-        public const string SevenZipRegistryInstallPathValueName = "Path";
-
         // AppsUseLightTheme and related values (system vs app light/dark).
         public const string WindowsCurrentUserThemesPersonalizeRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 
@@ -363,7 +358,6 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamDirectoryGetCmListForConnectUrl =
             "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=50";
         public const string SteamSearchGamesApiUrlFormat = "https://steam-search.vercel.app/api/games?search={0}";
-        public const string SevenZipStandaloneExeDownloadUrl = "https://www.7-zip.org/a/7zr.exe";
         public const string SteamStoreAppUrlFormat = "https://store.steampowered.com/app/{0}";
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";
         public const string SteamCommunityWorkshopUrlFormat = "https://steamcommunity.com/app/{0}/workshop/";

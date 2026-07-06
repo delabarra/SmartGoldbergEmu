@@ -7,25 +7,23 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.Win32;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Forms;
+using SmartGoldbergEmu.ExtractKit;
 
 namespace SmartGoldbergEmu.Services
 {
     public static class EmulatorUpdateService
     {
-        private const string SevenZipDownloadUrl = ApplicationConstants.SevenZipStandaloneExeDownloadUrl;
         private const string PreExistentVersion = "pre-existent";
 
         private const int HttpTimeoutSeconds = 10;
         private const int StartupUpdateCheckTimeoutSeconds = 15;
         private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(10);
-        private static readonly TimeSpan SevenZipDownloadTimeout = TimeSpan.FromMinutes(2);
 
         private static string _downloadUrl;
         private static string _latestVersion;
@@ -415,7 +413,6 @@ namespace SmartGoldbergEmu.Services
             var uiMarshalingContext = SynchronizationContext.Current;
             string tempFolder = Path.Combine(PathConstants.AppBaseDirectory, PathConstants.LauncherUpdateTempFolderName);
             string archivePath = null;
-            string sevenZipPath;
             string tempGoldbergFolder = Path.Combine(tempFolder, PathConstants.GoldbergDirectoryFolderName);
             string tempUserAssetsFolder = Path.Combine(tempFolder, PathConstants.LauncherUpdateUserAssetsUnpackFolderName);
             bool exclusionAdded = false;
@@ -486,29 +483,6 @@ namespace SmartGoldbergEmu.Services
 
                     if (cancellationCheck?.Invoke() == true)
                         throw new UpdateException("Download cancelled by user");
-
-                    if (TryResolveInstalledSevenZipExecutable(out sevenZipPath))
-                    {
-                        progressCallback?.Invoke("Using installed 7-Zip", 49);
-                    }
-                    else
-                    {
-                        sevenZipPath = Path.Combine(tempFolder, PathConstants.LauncherSevenZipReducedExecutableName);
-                        if (!File.Exists(sevenZipPath))
-                        {
-                            progressCallback?.Invoke("Downloading 7-Zip extractor...", 41);
-                            await DownloadFileAsync(SevenZipDownloadUrl, sevenZipPath, (progress) =>
-                            {
-                                int percentage = 41 + (int)(progress * 8);
-                                progressCallback?.Invoke("Downloading 7-Zip extractor...", percentage);
-                            }, cancellationCheck, SevenZipDownloadTimeout).ConfigureAwait(false);
-                            progressCallback?.Invoke("7-Zip extractor downloaded", 49);
-                        }
-                        else
-                        {
-                            progressCallback?.Invoke("7-Zip extractor already present", 49);
-                        }
-                    }
                 }
                 catch (UpdateException)
                 {
@@ -522,18 +496,21 @@ namespace SmartGoldbergEmu.Services
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
 
-                // Extract (55-87) â€” heavy 7-Zip work off the UI thread
+                // Extract (55-87) — archive work off the UI thread
                 try
                 {
                     await Task.Run(() =>
                     {
-                        progressCallback?.Invoke("Extracting Goldberg emulator files...", 55);
-                        ExtractGoldbergReleaseLayoutSync(sevenZipPath, archivePath, tempGoldbergFolder, cancellationCheck);
-                        progressCallback?.Invoke("Emulator files extracted", 77);
+                        using (var session = new ArchiveExtractSession(archivePath))
+                        {
+                            progressCallback?.Invoke("Extracting Goldberg emulator files...", 55);
+                            ExtractGoldbergReleaseLayoutSync(session, tempGoldbergFolder, cancellationCheck);
+                            progressCallback?.Invoke("Emulator files extracted", 77);
 
-                        progressCallback?.Invoke("Extracting user assets...", 80);
-                        ExtractUserAssetsToTempSync(sevenZipPath, archivePath, tempUserAssetsFolder, cancellationCheck);
-                        progressCallback?.Invoke("User assets extracted", 87);
+                            progressCallback?.Invoke("Extracting user assets...", 80);
+                            ExtractUserAssetsToTempSync(session, tempUserAssetsFolder, cancellationCheck);
+                            progressCallback?.Invoke("User assets extracted", 87);
+                        }
                     }).ConfigureAwait(false);
                 }
                 catch (UpdateException)
@@ -755,70 +732,6 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static bool TryResolveInstalledSevenZipExecutable(out string executablePath)
-        {
-            executablePath = null;
-            string installDir = GetSevenZipInstallDirectoryFromRegistry();
-            if (string.IsNullOrWhiteSpace(installDir))
-                return false;
-
-            installDir = installDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string[] candidates = { "7z.exe", "7za.exe", PathConstants.LauncherSevenZipReducedExecutableName };
-            foreach (string name in candidates)
-            {
-                string full = Path.Combine(installDir, name);
-                if (File.Exists(full))
-                {
-                    executablePath = full;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static string GetSevenZipInstallDirectoryFromRegistry()
-        {
-            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
-            {
-                try
-                {
-                    using (RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
-                    using (RegistryKey key = baseKey.OpenSubKey(ApplicationConstants.SevenZipRegistrySubKey))
-                    {
-                        string path = ReadSevenZipPathValue(key);
-                        if (!string.IsNullOrWhiteSpace(path))
-                            return path;
-                    }
-                }
-                catch
-                {
-                    // try next view
-                }
-            }
-
-            try
-            {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(ApplicationConstants.SevenZipRegistrySubKey))
-                {
-                    return ReadSevenZipPathValue(key);
-                }
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static string ReadSevenZipPathValue(RegistryKey key)
-        {
-            if (key == null)
-                return null;
-            object pathValue = key.GetValue(ApplicationConstants.SevenZipRegistryInstallPathValueName);
-            string s = pathValue as string;
-            return string.IsNullOrWhiteSpace(s) ? null : s;
-        }
-
         private const string ArchiveReleaseUserSettingsDir = "release/files/settings/";
         private static readonly string ArchiveSoundsDir =
             ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalSoundsFolderName + "/";
@@ -920,8 +833,7 @@ namespace SmartGoldbergEmu.Services
         }
 
         private static void ExtractGoldbergReleaseLayoutSync(
-            string sevenZipPath,
-            string archivePath,
+            ArchiveExtractSession session,
             string tempGoldbergRoot,
             Func<bool> cancellationCheck = null)
         {
@@ -935,20 +847,19 @@ namespace SmartGoldbergEmu.Services
                     ? tempGoldbergRoot
                     : Path.Combine(tempGoldbergRoot, relativeDir);
                 Directory.CreateDirectory(destinationFolder);
-                ExtractInstallFileSync(sevenZipPath, archivePath, file, destinationFolder);
+                ExtractInstallFileSync(session, file, destinationFolder);
             }
         }
 
         private static void ExtractInstallFileSync(
-            string sevenZipPath,
-            string archivePath,
+            ArchiveExtractSession session,
             GoldbergInstallLayout.GoldbergInstallFile file,
             string destinationFolder)
         {
             string destinationPath = Path.Combine(destinationFolder, file.FileName);
             foreach (string archivePathCandidate in GoldbergInstallLayout.GetArchivePathCandidates(file))
             {
-                ExtractSingleFileSync(sevenZipPath, archivePath, archivePathCandidate, destinationFolder);
+                session.TryExtractSingleFileFlat(archivePathCandidate, destinationFolder);
                 if (File.Exists(destinationPath))
                     return;
             }
@@ -957,7 +868,7 @@ namespace SmartGoldbergEmu.Services
                 "Required Goldberg file was not found in the archive: " + file.FileName);
         }
 
-        private static void ExtractUserAssetsToTempSync(string sevenZipPath, string archivePath, string tempUserAssetsFolder, Func<bool> cancellationCheck = null)
+        private static void ExtractUserAssetsToTempSync(ArchiveExtractSession session, string tempUserAssetsFolder, Func<bool> cancellationCheck = null)
         {
             // Check for cancellation
             if (cancellationCheck?.Invoke() == true)
@@ -973,7 +884,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 string avatarPath = ArchiveReleaseUserSettingsDir + PathConstants.GlobalAccountAvatarFileName;
-                ExtractSingleFileSync(sevenZipPath, archivePath, avatarPath, tempSettingsFolder);
+                session.TryExtractSingleFileFlat(avatarPath, tempSettingsFolder);
             }
             catch (Exception ex)
             {
@@ -992,9 +903,9 @@ namespace SmartGoldbergEmu.Services
             {
                 string tempFontsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalFontsFolderName);
                 Directory.CreateDirectory(tempFontsPath);
-                
+
                 string fontFile = ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalFontsFolderName + "/" + PathConstants.GoldbergGlobalDefaultOverlayFontFileName;
-                ExtractSingleFileSync(sevenZipPath, archivePath, fontFile, tempFontsPath);
+                session.TryExtractSingleFileFlat(fontFile, tempFontsPath);
             }
             catch (Exception ex)
             {
@@ -1014,8 +925,8 @@ namespace SmartGoldbergEmu.Services
                 string tempSoundsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalSoundsFolderName);
                 Directory.CreateDirectory(tempSoundsPath);
 
-                ExtractSingleFileSync(sevenZipPath, archivePath, ArchiveSoundsDir + PathConstants.SteamClientUiFriendNotificationWav, tempSoundsPath);
-                ExtractSingleFileSync(sevenZipPath, archivePath, ArchiveSoundsDir + PathConstants.SteamClientUiAchievementNotificationWav, tempSoundsPath);
+                session.TryExtractSingleFileFlat(ArchiveSoundsDir + PathConstants.SteamClientUiFriendNotificationWav, tempSoundsPath);
+                session.TryExtractSingleFileFlat(ArchiveSoundsDir + PathConstants.SteamClientUiAchievementNotificationWav, tempSoundsPath);
             }
             catch (Exception ex)
             {
@@ -1132,30 +1043,6 @@ namespace SmartGoldbergEmu.Services
                 string subDirName = Path.GetFileName(subDir);
                 string targetSubDir = Path.Combine(targetDir, subDirName);
                 CopyDirectoryContents(subDir, targetSubDir, overwrite);
-            }
-        }
-
-        private static void ExtractSingleFileSync(string sevenZipPath, string archivePath, string fileInArchive, string destinationFolder)
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = sevenZipPath,
-                Arguments = $"e \"{archivePath}\" -o\"{destinationFolder}\" -y \"-ir!{fileInArchive}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using (var process = Process.Start(startInfo))
-            {
-                process.WaitForExit();
-
-                if (process.ExitCode != 0)
-                {
-                    string error = process.StandardError.ReadToEnd();
-                    throw new UpdateException($"7-Zip extraction failed: {error}");
-                }
             }
         }
 

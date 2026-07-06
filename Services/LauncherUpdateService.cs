@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -15,6 +14,7 @@ using SmartGoldbergEmu.Forms;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Models;
+using SmartGoldbergEmu.ExtractKit;
 
 namespace SmartGoldbergEmu.Services
 {
@@ -182,7 +182,7 @@ namespace SmartGoldbergEmu.Services
                 progressCallback?.Invoke("Extracting update package...", 75);
                 await Task.Run(() =>
                 {
-                    ZipFile.ExtractToDirectory(archivePath, extractRoot);
+                    global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractAll(archivePath, extractRoot);
                 }).ConfigureAwait(false);
 
                 if (cancellationCheck?.Invoke() == true)
