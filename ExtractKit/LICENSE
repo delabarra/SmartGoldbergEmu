@@ -2,7 +2,8 @@ ExtractKit — third-party license notice
 ==================================
 
 This folder contains decompression code mechanically ported from the 7-Zip /
-LZMA SDK reference sources (Igor Pavlov), primarily 7-Zip 26.02.
+LZMA SDK reference sources (Igor Pavlov), primarily 7-Zip 26.02, for
+SmartGoldbergEmu.
 
 Upstream:
   https://www.7-zip.org/

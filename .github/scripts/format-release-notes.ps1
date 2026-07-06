@@ -48,7 +48,14 @@ else {
     $format = '- %s (%h)'
 }
 
-$entries = @(git log $logRange --pretty=format:$format --no-merges 2>$null)
+$entries = @(
+    git log $logRange `
+        --pretty=format:$format `
+        --no-merges `
+        --grep='chore(release): bump version' `
+        --invert-grep `
+        2>$null
+)
 if ($entries.Count -eq 0) {
     $heading = '## Changes'
     if ($previousTag) {
