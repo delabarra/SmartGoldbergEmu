@@ -15,6 +15,8 @@ Streamlines and automates the configuration process for the Goldberg Emulator an
 - **steam_settings generation**: Automatically create Goldberg configuration files. Achievements, items, and stats require a Steam Web API key.
 - **Steamless Integration (Optional)**: Support for [Steamless](https://github.com/atom0s/Steamless) by providing the installation path to `Steamless.CLI.exe`.
 
+
+
 ## Quick start
 
 1. Download the [latest release](https://github.com/delabarra/SmartGoldbergEmu/releases).
@@ -23,15 +25,21 @@ Streamlines and automates the configuration process for the Goldberg Emulator an
 4. Configure any desired launch options or emulator settings.
 5. Start your game directly from SmartGoldbergEmu.
 
+
+
 ## Requirements
 
 - 64-bit Windows
 - .NET Framework 4.8
 - [Steam Web API key](https://steamcommunity.com/dev/apikey) (optional, required for achievements/items/stats)
 
-## Dependencies
 
-- SteamKit: [https://github.com/SteamRE/SteamKit](https://github.com/SteamRE/SteamKit)
-- Goldberg repack (primary download): [delabarra/GoldbergEmu-Forks-Repacked](https://github.com/delabarra/GoldbergEmu-Forks-Repacked)
-- Goldberg forks (fallback): [Detanup01/gbe_fork](https://github.com/Detanup01/gbe_fork), [alex47exe/gse_fork](https://github.com/alex47exe/gse_fork)
+
+## Bundled libraries
+
+Vendored in-repo (see each folder’s `LICENSE` for upstream attribution):
+
+- **JsonKit** — JSON parsing/serialization ([Newtonsoft.Json](https://github.com/JamesNK/Newtonsoft.Json))
+- **SteamKit** — Steam PICS / product info ([SteamKit2](https://github.com/SteamRE/SteamKit))
+- **ExtractKit** — archive extraction ([7-Zip / LZMA SDK](https://www.7-zip.org/sdk.html))
 
