@@ -531,23 +531,10 @@ namespace SmartGoldbergEmu.Forms
             else if (viewMode == ApplicationConstants.ViewModeLogos)
             {
                 imagePath = gameImageService.GetLogoImagePathOrFallback(game.AppId);
-                if (!string.IsNullOrEmpty(imagePath))
-                    gameImageService.NormalizeResolvedLogoForLogosListIfNeeded(imagePath);
             }
             else
             {
                 imagePath = gameImageService.GetCapsuleImagePathOrFallback(game.AppId);
-                if (!string.IsNullOrEmpty(imagePath))
-                {
-                    var imageFileName = Path.GetFileName(imagePath);
-                    if (string.Equals(imageFileName, PathConstants.SteamGameResourcesCapsuleCoverImageFileName, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(imageFileName, PathConstants.SteamGameResourcesCapsuleImageFileName, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(imageFileName, PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(imageFileName, PathConstants.SteamGameResourcesSmallCapsuleImageFileName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        imageNormalizationService.EnsureCompactTileFileNormalizedForCompactTilesView(imagePath);
-                    }
-                }
             }
 
             if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
@@ -560,7 +547,7 @@ namespace SmartGoldbergEmu.Forms
                             return MosaicViewHelper.CreateTileViewDisplayBitmap(image);
                         if (viewMode == ApplicationConstants.ViewModeLogos)
                             return MosaicViewHelper.CreateLogoViewDisplayBitmap(image, logosDropShadow);
-                        return new Bitmap(image);
+                        return imageNormalizationService.CreateCompactTileDisplayBitmapFromImage(image);
                     }
                 }
                 catch

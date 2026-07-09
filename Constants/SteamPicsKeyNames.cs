@@ -54,6 +54,8 @@ namespace SmartGoldbergEmu.Constants
         public const string Icon = "icon";
         public const string ClientIcon = "clienticon";
         public const string ClientTga = "clienttga";
+        public const string Logo = "logo";
+        public const string StoreScreenshot = "store_screenshot";
 
         // Launch entry -> config child names (PICS)
         public const string BetaKey = "BetaKey";
