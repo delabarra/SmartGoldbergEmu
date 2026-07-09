@@ -39,6 +39,34 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void ListView_store_banner_accepts_pics_header_image_filename()
+        {
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, "header.jpg"), string.Empty);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(
+                resources,
+                new[] { "header.jpg", PathConstants.SteamGameResourcesHeaderImageFileName });
+
+            Assert.EndsWith("header.jpg", path, StringComparison.OrdinalIgnoreCase);
+            Cleanup(resources);
+        }
+
+        [Fact]
+        public void ListView_library_cover_accepts_pics_library_capsule_2x_filename()
+        {
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, "library_capsule_2x.jpg"), string.Empty);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(
+                resources,
+                new[] { "library_capsule_2x.jpg", "library_600x900_2x.jpg", "library_capsule.jpg" });
+
+            Assert.EndsWith("library_capsule_2x.jpg", path, StringComparison.OrdinalIgnoreCase);
+            Cleanup(resources);
+        }
+
+        [Fact]
         public void ListView_library_cover_ignores_small_capsule_substitutes()
         {
             string resources = CreateResourcesDirectory();
@@ -49,11 +77,26 @@ namespace SmartGoldbergEmu.Tests.Services
                 resources,
                 new[]
                 {
+                    "library_capsule_2x.jpg",
                     "library_600x900_2x.jpg",
                     PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName
                 });
 
             Assert.Null(path);
+            Cleanup(resources);
+        }
+
+        [Fact]
+        public void ListView_logos_accept_pics_library_logo_filename_on_disk()
+        {
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, "library_logo_2x.png"), string.Empty);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(
+                resources,
+                new[] { "library_logo_2x.png", "logo_2x.png", PathConstants.SteamGameResourcesLibraryLogoImageFileName });
+
+            Assert.EndsWith("library_logo_2x.png", path, StringComparison.OrdinalIgnoreCase);
             Cleanup(resources);
         }
 

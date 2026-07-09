@@ -22,6 +22,7 @@ namespace SmartGoldbergEmu.Services
 
         private static readonly string[] LibraryCoverPreferredFileNames =
         {
+            "library_capsule_2x.jpg",
             "library_600x900_2x.jpg",
             PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName,
             "library_capsule.jpg",
@@ -44,7 +45,9 @@ namespace SmartGoldbergEmu.Services
 
         private static readonly string[] ListViewLibraryCoverFileNames =
         {
+            "library_capsule_2x.jpg",
             "library_600x900_2x.jpg",
+            "library_capsule.jpg",
             PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName
         };
 
@@ -178,27 +181,27 @@ namespace SmartGoldbergEmu.Services
         }
 
         /// <summary>
-        /// Store Banner list image: <c>header.jpg</c> only. Missing file → caller shows mosaic placeholder.
+        /// Store Banner list image: PICS <c>header_image</c> and <c>header.jpg</c>. Missing file → caller shows mosaic placeholder.
         /// </summary>
         public string GetHeaderImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, ListViewStoreBannerFileNames);
+            return ResolvePreferredImagePath(appId, BuildListViewStoreBannerPreferredFileNames(appId));
         }
 
         /// <summary>
-        /// Library Cover list image: portrait library capsule files only. Missing file → caller shows mosaic placeholder.
+        /// Library Cover list image: PICS <c>library_capsule</c> and portrait capsule files. Missing file → caller shows mosaic placeholder.
         /// </summary>
         public string GetCapsuleImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, ListViewLibraryCoverFileNames);
+            return ResolvePreferredImagePath(appId, BuildListViewLibraryCoverPreferredFileNames(appId));
         }
 
         /// <summary>
-        /// Logos list image: logo files only. Missing file → caller shows mosaic placeholder.
+        /// Logos list image: canonical logo files plus PICS <c>library_logo</c> filenames. Missing file → caller shows mosaic placeholder.
         /// </summary>
         public string GetLogoImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, ListViewLogoFileNames);
+            return ResolvePreferredImagePath(appId, BuildListViewLogoPreferredFileNames(appId));
         }
 
         /// <summary>
@@ -792,6 +795,65 @@ namespace SmartGoldbergEmu.Services
             TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: true);
             TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false);
             sources.AddRange(LibraryCoverPreferredFileNames);
+            return DeduplicateFileNames(sources);
+        }
+
+        private string[] BuildListViewStoreBannerPreferredFileNames(ulong appId)
+        {
+            return BuildListViewStoreBannerPreferredFileNames(appId, TryLoadExportedAppPicsFromResources(appId, _gamesDirectory));
+        }
+
+        private static string[] BuildListViewStoreBannerPreferredFileNames(ulong appId, string resourcesDirectory)
+        {
+            var gamesDirectory = Path.GetDirectoryName(Path.GetDirectoryName(resourcesDirectory));
+            return BuildListViewStoreBannerPreferredFileNames(appId, TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId));
+        }
+
+        private static string[] BuildListViewStoreBannerPreferredFileNames(ulong appId, KeyValue picsData)
+        {
+            var sources = new List<string>();
+            TryAddEnglishHeaderImageFileName(sources, picsData);
+            sources.AddRange(ListViewStoreBannerFileNames);
+            return DeduplicateFileNames(sources);
+        }
+
+        private string[] BuildListViewLibraryCoverPreferredFileNames(ulong appId)
+        {
+            return BuildListViewLibraryCoverPreferredFileNames(appId, TryLoadExportedAppPicsFromResources(appId, _gamesDirectory));
+        }
+
+        private static string[] BuildListViewLibraryCoverPreferredFileNames(ulong appId, string resourcesDirectory)
+        {
+            var gamesDirectory = Path.GetDirectoryName(Path.GetDirectoryName(resourcesDirectory));
+            return BuildListViewLibraryCoverPreferredFileNames(appId, TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId));
+        }
+
+        private static string[] BuildListViewLibraryCoverPreferredFileNames(ulong appId, KeyValue picsData)
+        {
+            var sources = new List<string>();
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: true);
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false);
+            sources.AddRange(ListViewLibraryCoverFileNames);
+            return DeduplicateFileNames(sources);
+        }
+
+        private string[] BuildListViewLogoPreferredFileNames(ulong appId)
+        {
+            return BuildListViewLogoPreferredFileNames(appId, TryLoadExportedAppPicsFromResources(appId, _gamesDirectory));
+        }
+
+        private static string[] BuildListViewLogoPreferredFileNames(ulong appId, string resourcesDirectory)
+        {
+            var gamesDirectory = Path.GetDirectoryName(Path.GetDirectoryName(resourcesDirectory));
+            return BuildListViewLogoPreferredFileNames(appId, TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId));
+        }
+
+        private static string[] BuildListViewLogoPreferredFileNames(ulong appId, KeyValue picsData)
+        {
+            var sources = new List<string>();
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: true);
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: false);
+            sources.AddRange(ListViewLogoFileNames);
             return DeduplicateFileNames(sources);
         }
 
