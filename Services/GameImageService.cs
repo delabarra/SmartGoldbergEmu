@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using SmartGoldbergEmu;
 using SmartGoldbergEmu.Abstractions;
@@ -14,6 +15,33 @@ namespace SmartGoldbergEmu.Services
 {
     public class GameImageService : IDisposable
     {
+        private static readonly string[] HeaderPreferredFileNames =
+        {
+            "library_header_2x.jpg",
+            "library_header.jpg",
+            PathConstants.SteamGameResourcesHeaderImageFileName
+        };
+
+        private static readonly string[] CoverPreferredFileNames =
+        {
+            "library_600x900_2x.jpg",
+            PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName,
+            "library_capsule.jpg"
+        };
+
+        private static readonly string[] LogoPreferredFileNames =
+        {
+            "logo_2x.png",
+            PathConstants.SteamGameResourcesLibraryLogoImageFileName
+        };
+
+        private sealed class AssetDownloadRequest
+        {
+            public string FileName { get; set; }
+            public string[] CandidateUrls { get; set; }
+            public bool NormalizeAfterDownload { get; set; }
+        }
+
         private readonly IHttpService _httpService;
         private readonly string _gamesDirectory;
         private readonly ITaskReportService _taskReportService;
@@ -57,43 +85,20 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                const int totalDownloads = 4;
-
                 var gamePath = PathConstants.CombineGamesPerAppResourcesDirectory(_gamesDirectory, appId.ToString());
                 Directory.CreateDirectory(gamePath);
 
                 var picsData = ResolvePicsDataForImageDownload(appId, appPicsData, _gamesDirectory);
+                var downloadRequests = BuildAssetDownloadRequests(picsData, remoteAppId, appId);
+                var totalDownloads = downloadRequests.Count;
 
                 if (reportFeedback)
                 {
                     Feedback?.SetMessage(picsData != null
-                        ? "Downloading game images (game assets)..."
+                        ? $"Downloading game assets ({totalDownloads} files)..."
                         : "Downloading game images...");
-                    Feedback?.SetProgress(0, totalDownloads);
+                    Feedback?.SetProgress(0, Math.Max(totalDownloads, 1));
                 }
-
-                var headerPrimaryUrl = TryBuildHeaderImageUrl(picsData, remoteAppId);
-                var headerAlternateUrl = BuildFastlyStoreAssetFileUrl(
-                    remoteAppId,
-                    PathConstants.SteamGameResourcesHeaderImageFileName);
-                var clientIconHash = TryResolveClientIconHash(picsData);
-                var iconPrimaryUrl = TryBuildCommunityAssetsClientIconUrl(remoteAppId, clientIconHash);
-                string iconAlternateUrl = null;
-                string iconThirdUrl = null;
-                var appIconHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Icon);
-                if (!string.IsNullOrWhiteSpace(appIconHash)
-                    && !string.Equals(appIconHash, clientIconHash, StringComparison.OrdinalIgnoreCase))
-                {
-                    iconThirdUrl = TryBuildCommunityAssetsClientIconUrl(remoteAppId, appIconHash);
-                }
-                var coverPrimaryUrl = TryBuildLibraryCapsuleImageUrl(picsData, remoteAppId);
-                var coverAlternateUrl = BuildFastlyStoreAssetFileUrl(
-                    remoteAppId,
-                    PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName);
-                var logoPrimaryUrl = TryBuildLibraryLogoImageUrl(picsData, remoteAppId);
-                var logoAlternateUrl = BuildFastlyStoreAssetFileUrl(
-                    remoteAppId,
-                    PathConstants.SteamGameResourcesLibraryLogoImageFileName);
 
                 if (_disposed)
                     return ApplyDownloadOutcomeFeedback(gamePath, totalDownloads, displayName, appId, reportFeedback: false);
@@ -111,31 +116,24 @@ namespace SmartGoldbergEmu.Services
                         if (_disposed)
                             return;
                         completed++;
-                        Feedback?.SetProgress(completed, totalDownloads);
-                        Feedback?.SetMessage($"Downloading images... {completed}/{totalDownloads}");
+                        Feedback?.SetProgress(completed, Math.Max(totalDownloads, 1));
+                        Feedback?.SetMessage($"Downloading assets... {completed}/{totalDownloads}");
                     }
                 }
 
-                var tasks = new List<Task>(totalDownloads)
+                var tasks = new List<Task>(totalDownloads);
+                foreach (var request in downloadRequests)
                 {
-                    RunWithProgressAsync(() => DownloadImageAsync(remoteAppId, gamePath, PathConstants.SteamGameResourcesHeaderImageFileName, headerPrimaryUrl, headerAlternateUrl)),
-                    RunWithProgressAsync(() => DownloadImageAsync(
+                    tasks.Add(RunWithProgressAsync(() => DownloadImageAsync(
                         remoteAppId,
                         gamePath,
-                        PathConstants.SteamGameResourcesCapsuleCoverImageFileName,
-                        coverPrimaryUrl,
-                        coverAlternateUrl)),
-                    RunWithProgressAsync(() => DownloadImageAsync(remoteAppId, gamePath, PathConstants.SteamGameResourcesLibraryLogoImageFileName, logoPrimaryUrl, logoAlternateUrl)),
-                    RunWithProgressAsync(() => DownloadImageAsync(
-                        remoteAppId,
-                        gamePath,
-                        PathConstants.GetSteamGameResourcesClientIconFileName(appId),
-                        iconPrimaryUrl,
-                        iconAlternateUrl,
-                        iconThirdUrl))
-                };
+                        request.FileName,
+                        request.NormalizeAfterDownload,
+                        request.CandidateUrls)));
+                }
 
                 await Task.WhenAll(tasks).ConfigureAwait(false);
+                EnsureCanonicalUiFiles(gamePath, appId, picsData);
                 return ApplyDownloadOutcomeFeedback(gamePath, totalDownloads, displayName, appId, reportFeedback && !_disposed);
             }
             catch (Exception ex)
@@ -343,7 +341,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private async Task<bool> TryDownloadImageFromUrlAsync(string url, string imagePath, string normalizeForFileName)
+        private async Task<bool> TryDownloadImageFromUrlAsync(string url, string imagePath, bool normalizeAfterDownload)
         {
             if (_disposed)
                 return false;
@@ -355,7 +353,8 @@ namespace SmartGoldbergEmu.Services
                 await _httpService.DownloadFileAsync(url, imagePath);
                 if (_disposed)
                     return false;
-                NormalizeImageFileIfNeeded(normalizeForFileName, imagePath);
+                if (normalizeAfterDownload)
+                    NormalizeImageFileIfNeeded(Path.GetFileName(imagePath), imagePath);
                 return true;
             }
             catch (Exception)
@@ -368,9 +367,8 @@ namespace SmartGoldbergEmu.Services
             ulong appId,
             string gamePath,
             string fileName,
-            string primaryUrl,
-            string alternateUrl = null,
-            string thirdUrl = null)
+            bool normalizeAfterDownload,
+            params string[] candidateUrls)
         {
             if (_disposed)
                 return;
@@ -378,17 +376,393 @@ namespace SmartGoldbergEmu.Services
             var imagePath = Path.Combine(gamePath, fileName);
             if (File.Exists(imagePath))
             {
-                NormalizeImageFileIfNeeded(fileName, imagePath);
+                if (normalizeAfterDownload)
+                    NormalizeImageFileIfNeeded(fileName, imagePath);
                 return;
             }
 
-            foreach (var url in new[] { primaryUrl, alternateUrl, thirdUrl })
+            if (candidateUrls == null || candidateUrls.Length == 0)
+                return;
+
+            foreach (var url in candidateUrls)
             {
-                if (!await TryDownloadImageFromUrlAsync(url, imagePath, fileName))
+                if (!await TryDownloadImageFromUrlAsync(url, imagePath, normalizeAfterDownload))
                     continue;
                 Program.LogService?.LogMessage($"Downloaded {fileName} for App ID {appId}");
                 return;
             }
+        }
+
+        private static List<AssetDownloadRequest> BuildAssetDownloadRequests(
+            KeyValue picsData,
+            ulong remoteAppId,
+            ulong appId)
+        {
+            var requests = new List<AssetDownloadRequest>();
+            var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (picsData != null)
+            {
+                var appInfoTarget = SteamPicsKeyValueHelper.ResolveAppInfoTarget(picsData);
+                var common = SteamPicsKeyValueHelper.FindChild(appInfoTarget, PathConstants.SteamAppsCommonDirectoryName);
+                var relativePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                CollectStoreAssetRelativePaths(common, relativePaths);
+
+                foreach (var relativePath in relativePaths.OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+                {
+                    var fileName = Path.GetFileName(relativePath);
+                    if (string.IsNullOrWhiteSpace(fileName) || !seenFileNames.Add(fileName))
+                        continue;
+
+                    var url = BuildFastlyStoreAssetFileUrl(remoteAppId, relativePath);
+                    if (string.IsNullOrWhiteSpace(url) || !seenUrls.Add(url))
+                        continue;
+
+                    requests.Add(new AssetDownloadRequest
+                    {
+                        FileName = fileName,
+                        CandidateUrls = new[] { url },
+                        NormalizeAfterDownload = false
+                    });
+                }
+
+                foreach (var hash in CollectUniqueIconHashes(picsData))
+                {
+                    var url = TryBuildCommunityAssetsClientIconUrl(remoteAppId, hash);
+                    if (string.IsNullOrWhiteSpace(url) || !seenUrls.Add(url))
+                        continue;
+
+                    var iconFileName = hash + PathConstants.SteamGameResourcesClientIconFileExtension;
+                    if (!seenFileNames.Add(iconFileName))
+                        continue;
+
+                    requests.Add(new AssetDownloadRequest
+                    {
+                        FileName = iconFileName,
+                        CandidateUrls = new[] { url },
+                        NormalizeAfterDownload = false
+                    });
+                }
+            }
+
+            if (requests.Count == 0)
+                AppendFallbackAssetDownloadRequests(requests, picsData, remoteAppId, appId, seenUrls, seenFileNames);
+
+            return requests;
+        }
+
+        private static void AppendFallbackAssetDownloadRequests(
+            List<AssetDownloadRequest> requests,
+            KeyValue picsData,
+            ulong remoteAppId,
+            ulong appId,
+            HashSet<string> seenUrls,
+            HashSet<string> seenFileNames)
+        {
+            AddFallbackRequest(
+                requests,
+                seenUrls,
+                seenFileNames,
+                PathConstants.SteamGameResourcesHeaderImageFileName,
+                BuildPreferredStoreAssetUrls(
+                    remoteAppId,
+                    TryExtractHeaderImageRelativePath(picsData),
+                    HeaderPreferredFileNames),
+                normalizeAfterDownload: true);
+
+            AddFallbackRequest(
+                requests,
+                seenUrls,
+                seenFileNames,
+                PathConstants.SteamGameResourcesCapsuleCoverImageFileName,
+                BuildPreferredStoreAssetUrls(
+                    remoteAppId,
+                    TryExtractLibraryCapsuleImageRelativePath(picsData),
+                    CoverPreferredFileNames),
+                normalizeAfterDownload: true);
+
+            AddFallbackRequest(
+                requests,
+                seenUrls,
+                seenFileNames,
+                PathConstants.SteamGameResourcesLibraryLogoImageFileName,
+                BuildPreferredStoreAssetUrls(
+                    remoteAppId,
+                    TryExtractLibraryLogoImageRelativePath(picsData),
+                    LogoPreferredFileNames),
+                normalizeAfterDownload: true);
+
+            var clientIconHash = TryResolveClientIconHash(picsData);
+            var iconUrls = new List<string>();
+            AddCandidate(iconUrls, TryBuildCommunityAssetsClientIconUrl(remoteAppId, clientIconHash));
+            var appIconHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Icon);
+            if (!string.IsNullOrWhiteSpace(appIconHash)
+                && !string.Equals(appIconHash, clientIconHash, StringComparison.OrdinalIgnoreCase))
+            {
+                AddCandidate(iconUrls, TryBuildCommunityAssetsClientIconUrl(remoteAppId, appIconHash));
+            }
+
+            AddFallbackRequest(
+                requests,
+                seenUrls,
+                seenFileNames,
+                PathConstants.GetSteamGameResourcesClientIconFileName(appId),
+                iconUrls,
+                normalizeAfterDownload: false);
+        }
+
+        private static void AddFallbackRequest(
+            List<AssetDownloadRequest> requests,
+            HashSet<string> seenUrls,
+            HashSet<string> seenFileNames,
+            string fileName,
+            IEnumerable<string> candidateUrls,
+            bool normalizeAfterDownload)
+        {
+            if (string.IsNullOrWhiteSpace(fileName) || !seenFileNames.Add(fileName))
+                return;
+
+            var urls = candidateUrls?
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Where(url => seenUrls.Add(url))
+                .ToArray();
+            if (urls == null || urls.Length == 0)
+                return;
+
+            requests.Add(new AssetDownloadRequest
+            {
+                FileName = fileName,
+                CandidateUrls = urls,
+                NormalizeAfterDownload = normalizeAfterDownload
+            });
+        }
+
+        private static void CollectStoreAssetRelativePaths(KeyValue node, HashSet<string> relativePaths)
+        {
+            if (node == null || relativePaths == null)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(node.Value) && IsStoreAssetRelativePath(node.Value))
+                relativePaths.Add(node.Value.Trim());
+
+            if (node.Children == null)
+                return;
+
+            foreach (var child in node.Children)
+                CollectStoreAssetRelativePaths(child, relativePaths);
+        }
+
+        private static bool IsStoreAssetRelativePath(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            var normalized = value.Trim().TrimStart('/');
+            var slashIndex = normalized.IndexOf('/');
+            if (slashIndex != 40 || slashIndex >= normalized.Length - 1)
+                return false;
+
+            return IsSha1HexHash(normalized.Substring(0, 40));
+        }
+
+        private static List<string> CollectUniqueIconHashes(KeyValue picsData)
+        {
+            var hashes = new List<string>(2);
+            var clientIconHash = TryResolveClientIconHash(picsData);
+            if (!string.IsNullOrWhiteSpace(clientIconHash))
+                hashes.Add(clientIconHash);
+
+            var iconHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Icon);
+            if (!string.IsNullOrWhiteSpace(iconHash)
+                && !hashes.Any(hash => string.Equals(hash, iconHash, StringComparison.OrdinalIgnoreCase)))
+            {
+                hashes.Add(iconHash);
+            }
+
+            return hashes;
+        }
+
+        private void EnsureCanonicalUiFiles(string gamePath, ulong appId, KeyValue picsData)
+        {
+            EnsureCanonicalFileFromSources(
+                gamePath,
+                PathConstants.SteamGameResourcesHeaderImageFileName,
+                BuildCanonicalHeaderSourcePreference(picsData),
+                normalize: true);
+
+            EnsureCanonicalFileFromSources(
+                gamePath,
+                PathConstants.SteamGameResourcesCapsuleCoverImageFileName,
+                BuildCanonicalCoverSourcePreference(picsData),
+                normalize: true);
+
+            EnsureCanonicalFileFromSources(
+                gamePath,
+                PathConstants.SteamGameResourcesLibraryLogoImageFileName,
+                BuildCanonicalLogoSourcePreference(picsData),
+                normalize: true);
+
+            var clientIconHash = TryResolveClientIconHash(picsData);
+            if (!string.IsNullOrWhiteSpace(clientIconHash))
+            {
+                EnsureCanonicalFileFromSources(
+                    gamePath,
+                    PathConstants.GetSteamGameResourcesClientIconFileName(appId),
+                    new[] { clientIconHash + PathConstants.SteamGameResourcesClientIconFileExtension },
+                    normalize: false);
+            }
+        }
+
+        private static string[] BuildCanonicalHeaderSourcePreference(KeyValue picsData)
+        {
+            var sources = new List<string>();
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryHeader, prefer2x: true);
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryHeader, prefer2x: false);
+            TryAddEnglishHeaderImageFileName(sources, picsData);
+            sources.AddRange(HeaderPreferredFileNames);
+            return DeduplicateFileNames(sources);
+        }
+
+        private static string[] BuildCanonicalCoverSourcePreference(KeyValue picsData)
+        {
+            var sources = new List<string>();
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: true);
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false);
+            sources.AddRange(CoverPreferredFileNames);
+            return DeduplicateFileNames(sources);
+        }
+
+        private static string[] BuildCanonicalLogoSourcePreference(KeyValue picsData)
+        {
+            var sources = new List<string>();
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: true);
+            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: false);
+            sources.AddRange(LogoPreferredFileNames);
+            return DeduplicateFileNames(sources);
+        }
+
+        private static void TryAddEnglishLibraryAssetFileName(
+            List<string> fileNames,
+            KeyValue picsData,
+            string libraryAssetKey,
+            bool prefer2x)
+        {
+            var relativePath = TryExtractEnglishLibraryAssetRelativePath(picsData, libraryAssetKey, prefer2x);
+            TryAddFileNameFromRelativePath(fileNames, relativePath);
+        }
+
+        private static void TryAddEnglishHeaderImageFileName(List<string> fileNames, KeyValue picsData)
+        {
+            TryAddFileNameFromRelativePath(fileNames, TryExtractHeaderImageRelativePath(picsData));
+        }
+
+        private static void TryAddFileNameFromRelativePath(List<string> fileNames, string relativePath)
+        {
+            if (fileNames == null || string.IsNullOrWhiteSpace(relativePath))
+                return;
+
+            var fileName = Path.GetFileName(relativePath);
+            if (!string.IsNullOrWhiteSpace(fileName))
+                fileNames.Add(fileName);
+        }
+
+        private static string[] DeduplicateFileNames(IEnumerable<string> fileNames)
+        {
+            var unique = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var fileName in fileNames ?? Enumerable.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(fileName) || !seen.Add(fileName))
+                    continue;
+                unique.Add(fileName);
+            }
+
+            return unique.ToArray();
+        }
+
+        private static string TryExtractEnglishLibraryAssetRelativePath(
+            KeyValue picsData,
+            string libraryAssetKey,
+            bool prefer2x)
+        {
+            if (picsData == null || string.IsNullOrWhiteSpace(libraryAssetKey))
+                return null;
+
+            var appInfoTarget = SteamPicsKeyValueHelper.ResolveAppInfoTarget(picsData);
+            var common = SteamPicsKeyValueHelper.FindChild(appInfoTarget, PathConstants.SteamAppsCommonDirectoryName);
+            var libraryAssetsFull = SteamPicsKeyValueHelper.FindChild(common, SteamPicsKeyNames.LibraryAssetsFull);
+            var assetNode = SteamPicsKeyValueHelper.FindChild(libraryAssetsFull, libraryAssetKey);
+            var imageNode = SteamPicsKeyValueHelper.FindChild(
+                assetNode,
+                prefer2x ? SteamPicsKeyNames.Image2x : SteamPicsKeyNames.Image);
+            return TryExtractLocalizedRelativePath(imageNode, SteamPicsKeyNames.English);
+        }
+
+        private static string TryExtractLocalizedRelativePath(KeyValue localizedNode, string preferredLanguageKey)
+        {
+            if (localizedNode == null)
+                return null;
+
+            if (!string.IsNullOrWhiteSpace(preferredLanguageKey))
+            {
+                var preferred = SteamPicsKeyValueHelper.FindChild(localizedNode, preferredLanguageKey);
+                if (!string.IsNullOrWhiteSpace(preferred?.Value))
+                    return preferred.Value.Trim();
+            }
+
+            if (localizedNode.Children == null || localizedNode.Children.Count == 0)
+                return string.IsNullOrWhiteSpace(localizedNode.Value) ? null : localizedNode.Value.Trim();
+
+            foreach (var child in localizedNode.Children)
+            {
+                if (!string.IsNullOrWhiteSpace(child?.Value))
+                    return child.Value.Trim();
+            }
+
+            return null;
+        }
+
+        private void EnsureCanonicalFileFromSources(
+            string gamePath,
+            string canonicalFileName,
+            IEnumerable<string> sourceFileNamesInPreferenceOrder,
+            bool normalize)
+        {
+            if (string.IsNullOrWhiteSpace(gamePath) || string.IsNullOrWhiteSpace(canonicalFileName))
+                return;
+
+            string bestSourcePath = null;
+            long bestSourceLength = 0;
+            foreach (var sourceFileName in sourceFileNamesInPreferenceOrder ?? Enumerable.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(sourceFileName))
+                    continue;
+
+                var sourcePath = Path.Combine(gamePath, sourceFileName);
+                if (!File.Exists(sourcePath))
+                    continue;
+
+                var sourceLength = new FileInfo(sourcePath).Length;
+                if (bestSourcePath == null || sourceLength > bestSourceLength)
+                {
+                    bestSourcePath = sourcePath;
+                    bestSourceLength = sourceLength;
+                }
+            }
+
+            if (bestSourcePath == null)
+                return;
+
+            var canonicalPath = Path.Combine(gamePath, canonicalFileName);
+            var shouldCopy = !File.Exists(canonicalPath)
+                || new FileInfo(canonicalPath).Length < bestSourceLength;
+
+            if (shouldCopy)
+                File.Copy(bestSourcePath, canonicalPath, overwrite: true);
+
+            if (normalize)
+                NormalizeImageFileIfNeeded(canonicalFileName, canonicalPath);
         }
 
         private void NormalizeImageFileIfNeeded(string fileName, string imagePath)
@@ -461,16 +835,17 @@ namespace SmartGoldbergEmu.Services
             return string.Format(ApplicationConstants.SteamCommunityAssetsClientIconIcoUrlFormat, appId, hash);
         }
 
-        private static string TryBuildLibraryCapsuleImageUrl(KeyValue appPicsData, ulong appId)
+        private static string TryExtractLibraryLogoImageRelativePath(KeyValue appPicsData)
         {
-            var relativePath = TryExtractLibraryCapsuleImageRelativePath(appPicsData);
-            return BuildFastlyStoreAssetFileUrl(appId, relativePath);
-        }
+            if (appPicsData == null)
+                return null;
 
-        private static string TryBuildHeaderImageUrl(KeyValue appPicsData, ulong appId)
-        {
-            var relativePath = TryExtractHeaderImageRelativePath(appPicsData);
-            return BuildFastlyStoreAssetFileUrl(appId, relativePath);
+            var appInfoTarget = SteamPicsKeyValueHelper.ResolveAppInfoTarget(appPicsData);
+            var common = SteamPicsKeyValueHelper.FindChild(appInfoTarget, PathConstants.SteamAppsCommonDirectoryName);
+            var libraryAssetsFull = SteamPicsKeyValueHelper.FindChild(common, SteamPicsKeyNames.LibraryAssetsFull);
+            var libraryLogo = SteamPicsKeyValueHelper.FindChild(libraryAssetsFull, SteamPicsKeyNames.LibraryLogo);
+            var image = SteamPicsKeyValueHelper.FindChild(libraryLogo, SteamPicsKeyNames.Image);
+            return TryExtractLocalizedRelativePath(image, SteamPicsKeyNames.English);
         }
 
         private static string TryExtractLibraryCapsuleImageRelativePath(KeyValue appPicsData)
@@ -483,25 +858,7 @@ namespace SmartGoldbergEmu.Services
             var libraryAssetsFull = SteamPicsKeyValueHelper.FindChild(common, SteamPicsKeyNames.LibraryAssetsFull);
             var libraryCapsule = SteamPicsKeyValueHelper.FindChild(libraryAssetsFull, SteamPicsKeyNames.LibraryCapsule);
             var image = SteamPicsKeyValueHelper.FindChild(libraryCapsule, SteamPicsKeyNames.Image);
-
-            if (image == null)
-                return null;
-
-            // Prefer English when available, otherwise take the first non-empty localized entry.
-            var english = SteamPicsKeyValueHelper.FindChild(image, SteamPicsKeyNames.English);
-            if (!string.IsNullOrWhiteSpace(english?.Value))
-                return english.Value.Trim();
-
-            if (image.Children == null || image.Children.Count == 0)
-                return string.IsNullOrWhiteSpace(image.Value) ? null : image.Value.Trim();
-
-            foreach (var child in image.Children)
-            {
-                if (!string.IsNullOrWhiteSpace(child?.Value))
-                    return child.Value.Trim();
-            }
-
-            return null;
+            return TryExtractLocalizedRelativePath(image, SteamPicsKeyNames.English);
         }
 
         private static string TryExtractHeaderImageRelativePath(KeyValue appPicsData)
@@ -512,25 +869,7 @@ namespace SmartGoldbergEmu.Services
             var appInfoTarget = SteamPicsKeyValueHelper.ResolveAppInfoTarget(appPicsData);
             var common = SteamPicsKeyValueHelper.FindChild(appInfoTarget, PathConstants.SteamAppsCommonDirectoryName);
             var headerImage = SteamPicsKeyValueHelper.FindChild(common, SteamPicsKeyNames.HeaderImage);
-
-            if (headerImage == null)
-                return null;
-
-            // Prefer English when available, otherwise take the first non-empty localized entry.
-            var english = SteamPicsKeyValueHelper.FindChild(headerImage, SteamPicsKeyNames.English);
-            if (!string.IsNullOrWhiteSpace(english?.Value))
-                return english.Value.Trim();
-
-            if (headerImage.Children == null || headerImage.Children.Count == 0)
-                return string.IsNullOrWhiteSpace(headerImage.Value) ? null : headerImage.Value.Trim();
-
-            foreach (var child in headerImage.Children)
-            {
-                if (!string.IsNullOrWhiteSpace(child?.Value))
-                    return child.Value.Trim();
-            }
-
-            return null;
+            return TryExtractLocalizedRelativePath(headerImage, SteamPicsKeyNames.English);
         }
 
         private static KeyValue ResolvePicsDataForImageDownload(ulong appId, KeyValue appPicsData, string gamesDirectory)
@@ -545,40 +884,54 @@ namespace SmartGoldbergEmu.Services
             return SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId);
         }
 
-        private static string TryBuildLibraryLogoImageUrl(KeyValue appPicsData, ulong appId)
+        private static List<string> BuildPreferredStoreAssetUrls(
+            ulong appId,
+            string preferredRelativePath,
+            string[] preferredFileNames)
         {
-            var relativePath = TryExtractLibraryLogoImageRelativePath(appPicsData);
-            return BuildFastlyStoreAssetFileUrl(appId, relativePath);
-        }
+            var candidates = new List<string>();
+            if (appId == 0 || preferredFileNames == null || preferredFileNames.Length == 0)
+                return candidates;
 
-        private static string TryExtractLibraryLogoImageRelativePath(KeyValue appPicsData)
-        {
-            if (appPicsData == null)
-                return null;
-
-            var appInfoTarget = SteamPicsKeyValueHelper.ResolveAppInfoTarget(appPicsData);
-            var common = SteamPicsKeyValueHelper.FindChild(appInfoTarget, PathConstants.SteamAppsCommonDirectoryName);
-            var libraryAssetsFull = SteamPicsKeyValueHelper.FindChild(common, SteamPicsKeyNames.LibraryAssetsFull);
-            var libraryLogo = SteamPicsKeyValueHelper.FindChild(libraryAssetsFull, SteamPicsKeyNames.LibraryLogo);
-            var image = SteamPicsKeyValueHelper.FindChild(libraryLogo, SteamPicsKeyNames.Image);
-
-            if (image == null)
-                return null;
-
-            var english = SteamPicsKeyValueHelper.FindChild(image, SteamPicsKeyNames.English);
-            if (!string.IsNullOrWhiteSpace(english?.Value))
-                return english.Value.Trim();
-
-            if (image.Children == null || image.Children.Count == 0)
-                return string.IsNullOrWhiteSpace(image.Value) ? null : image.Value.Trim();
-
-            foreach (var child in image.Children)
+            var hashFolder = TryExtractRelativeDirectoryName(preferredRelativePath);
+            foreach (var fileName in preferredFileNames)
             {
-                if (!string.IsNullOrWhiteSpace(child?.Value))
-                    return child.Value.Trim();
+                if (string.IsNullOrWhiteSpace(fileName))
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(hashFolder))
+                    AddCandidate(candidates, BuildFastlyStoreAssetFileUrl(appId, hashFolder + "/" + fileName));
+                AddCandidate(candidates, BuildFastlyStoreAssetFileUrl(appId, fileName));
             }
 
-            return null;
+            AddCandidate(candidates, BuildFastlyStoreAssetFileUrl(appId, preferredRelativePath));
+            return candidates;
+        }
+
+        private static string TryExtractRelativeDirectoryName(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+                return null;
+
+            var normalized = relativePath.Trim().TrimStart('/');
+            if (normalized.Length == 0)
+                return null;
+
+            var lastSlash = normalized.LastIndexOf('/');
+            if (lastSlash <= 0)
+                return null;
+
+            var directory = normalized.Substring(0, lastSlash);
+            return directory.Length == 0 ? null : directory;
+        }
+
+        private static void AddCandidate(List<string> candidates, string url)
+        {
+            if (candidates == null || string.IsNullOrWhiteSpace(url))
+                return;
+            if (candidates.Any(x => string.Equals(x, url, StringComparison.OrdinalIgnoreCase)))
+                return;
+            candidates.Add(url);
         }
 
     }

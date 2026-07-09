@@ -42,12 +42,18 @@ namespace SmartGoldbergEmu.Constants
 
         public const string LibraryAssetsFull = "library_assets_full";
         public const string LibraryCapsule = "library_capsule";
+        public const string LibraryHeader = "library_header";
+        public const string LibraryHero = "library_hero";
+        public const string LibraryHeroBlur = "library_hero_blur";
         public const string LibraryLogo = "library_logo";
+        public const string SmallCapsule = "small_capsule";
         public const string Image = "image";
+        public const string Image2x = "image2x";
         public const string English = "english";
         public const string HeaderImage = "header_image";
         public const string Icon = "icon";
         public const string ClientIcon = "clienticon";
+        public const string ClientTga = "clienttga";
 
         // Launch entry -> config child names (PICS)
         public const string BetaKey = "BetaKey";
