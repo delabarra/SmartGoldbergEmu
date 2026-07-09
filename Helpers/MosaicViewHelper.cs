@@ -25,8 +25,7 @@ namespace SmartGoldbergEmu.Helpers
         public const int CompactTilesViewImageHeight = 256;
 
         /// <summary>
-        /// Logos view image dimensions: 200×170 pixels.
-        /// This is what ImageList.ImageSize should be set to and the on-disk logo.png target after normalization.
+        /// Logos view cell dimensions: 200×170 pixels. Logos are letterboxed inside to preserve aspect ratio.
         /// </summary>
         public const int LogoViewImageWidth = 200;
         public const int LogoViewImageHeight = 170;
@@ -108,7 +107,7 @@ namespace SmartGoldbergEmu.Helpers
                 graphics.SmoothingMode = SmoothingMode.HighQuality;
                 graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-                var destinationRect = GetContainDestinationRectForTileList(source.Size, targetSize);
+                var destinationRect = GetContainDestinationRect(source.Size, targetSize);
                 graphics.DrawImage(source, destinationRect);
             }
 
@@ -126,7 +125,7 @@ namespace SmartGoldbergEmu.Helpers
 
             var targetSize = LogoViewImageSize;
             var output = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
-            var imageRect = new Rectangle(0, 0, targetSize.Width, targetSize.Height);
+            var destinationRect = GetContainDestinationRect(source.Size, targetSize);
 
             using (var graphics = Graphics.FromImage(output))
             {
@@ -139,10 +138,10 @@ namespace SmartGoldbergEmu.Helpers
                 if (dropShadow)
                 {
                     var shadowRect = new Rectangle(
-                        LogoViewShadowOffsetX,
-                        LogoViewShadowOffsetY,
-                        targetSize.Width,
-                        targetSize.Height);
+                        destinationRect.X + LogoViewShadowOffsetX,
+                        destinationRect.Y + LogoViewShadowOffsetY,
+                        destinationRect.Width,
+                        destinationRect.Height);
 
                     using (var shadowAttributes = CreateLogoViewShadowImageAttributes())
                     {
@@ -158,7 +157,7 @@ namespace SmartGoldbergEmu.Helpers
                     }
                 }
 
-                graphics.DrawImage(source, imageRect);
+                graphics.DrawImage(source, destinationRect);
             }
 
             return output;
@@ -180,7 +179,7 @@ namespace SmartGoldbergEmu.Helpers
             return attributes;
         }
 
-        private static Rectangle GetContainDestinationRectForTileList(Size sourceSize, Size targetSize)
+        private static Rectangle GetContainDestinationRect(Size sourceSize, Size targetSize)
         {
             if (sourceSize.Width <= 0 || sourceSize.Height <= 0)
                 return new Rectangle(0, 0, targetSize.Width, targetSize.Height);

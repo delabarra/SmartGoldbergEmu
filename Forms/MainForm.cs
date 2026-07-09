@@ -526,7 +526,7 @@ namespace SmartGoldbergEmu.Forms
             string imagePath;
             if (viewMode == ApplicationConstants.ViewModeTile)
             {
-                imagePath = gameImageService.GetImagePath(game.AppId, PathConstants.SteamGameResourcesHeaderImageFileName);
+                imagePath = gameImageService.GetHeaderImagePathOrFallback(game.AppId);
             }
             else if (viewMode == ApplicationConstants.ViewModeLogos)
             {
@@ -563,12 +563,7 @@ namespace SmartGoldbergEmu.Forms
                 if (viewMode == ApplicationConstants.ViewModeTile)
                     return MosaicViewHelper.CreateTileViewDisplayBitmap(rawFallback);
                 if (viewMode == ApplicationConstants.ViewModeLogos)
-                {
-                    using (var normalized = imageNormalizationService.CreateFallbackLogoDisplayBitmapForLogosView(rawFallback))
-                    {
-                        return MosaicViewHelper.CreateLogoViewDisplayBitmap(normalized, logosDropShadow);
-                    }
-                }
+                    return MosaicViewHelper.CreateLogoViewDisplayBitmap(rawFallback, logosDropShadow);
 
                 return imageNormalizationService.CreateCompactTileDisplayBitmapFromImage(rawFallback);
             }

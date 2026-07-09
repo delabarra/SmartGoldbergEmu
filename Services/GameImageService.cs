@@ -15,22 +15,20 @@ namespace SmartGoldbergEmu.Services
 {
     public class GameImageService : IDisposable
     {
-        private static readonly string[] HeaderPreferredFileNames =
+        private static readonly string[] StoreBannerPreferredFileNames =
         {
-            "library_header_2x.jpg",
-            "library_header.jpg",
             PathConstants.SteamGameResourcesHeaderImageFileName
         };
 
-        private static readonly string[] CoverPreferredFileNames =
+        private static readonly string[] LibraryCoverPreferredFileNames =
         {
             "library_600x900_2x.jpg",
             PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName,
             "library_capsule.jpg",
-            "capsule_231x87.jpg"
+            PathConstants.SteamGameResourcesSmallCapsuleImageFileName
         };
 
-        private static readonly string[] LogoPreferredFileNames =
+        private static readonly string[] LibraryLogoPreferredFileNames =
         {
             "logo_2x.png",
             PathConstants.SteamGameResourcesLibraryLogoImageFileName
@@ -129,7 +127,6 @@ namespace SmartGoldbergEmu.Services
                 }
 
                 await Task.WhenAll(tasks).ConfigureAwait(false);
-                EnsureCanonicalUiFiles(gamePath, appId, picsData);
                 return ApplyDownloadOutcomeFeedback(gamePath, totalDownloads, displayName, appId, reportFeedback && !_disposed);
             }
             catch (Exception ex)
@@ -160,23 +157,40 @@ namespace SmartGoldbergEmu.Services
             return _fallbackMosaicArtCache.TryCloneForImageList();
         }
 
+        public string GetHeaderImagePathOrFallback(ulong appId)
+        {
+            return ResolvePreferredImagePath(appId, BuildStoreBannerPreferredFileNames(appId));
+        }
+
         public string GetCapsuleImagePathOrFallback(ulong appId)
         {
-            var path = GetImagePath(appId, PathConstants.SteamGameResourcesCapsuleCoverImageFileName);
-            if (!string.IsNullOrEmpty(path))
-                return path;
-
-            // Backward compatibility for already-downloaded assets with legacy names.
-            return GetImagePath(appId, PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName);
+            return ResolvePreferredImagePath(appId, BuildLibraryCoverPreferredFileNames(appId));
         }
 
         public string GetLogoImagePathOrFallback(ulong appId)
         {
-            var logoPath = GetImagePath(appId, PathConstants.SteamGameResourcesLibraryLogoImageFileName);
+            var logoPath = ResolvePreferredImagePath(appId, BuildLibraryLogoPreferredFileNames(appId));
             if (!string.IsNullOrEmpty(logoPath))
                 return logoPath;
 
             return GetCapsuleImagePathOrFallback(appId);
+        }
+
+        public string GetClientIconPathOrFallback(ulong appId)
+        {
+            var canonicalIconPath = GetImagePath(appId, PathConstants.GetSteamGameResourcesClientIconFileName(appId));
+            if (!string.IsNullOrEmpty(canonicalIconPath))
+                return canonicalIconPath;
+
+            var picsData = TryLoadExportedAppPicsFromResources(appId, _gamesDirectory);
+            foreach (var hash in CollectUniqueIconHashes(picsData))
+            {
+                var hashIconPath = GetImagePath(appId, hash + PathConstants.SteamGameResourcesClientIconFileExtension);
+                if (!string.IsNullOrEmpty(hashIconPath))
+                    return hashIconPath;
+            }
+
+            return null;
         }
 
         public string GetImagePath(ulong appId, string imageName)
@@ -210,10 +224,11 @@ namespace SmartGoldbergEmu.Services
         {
             UpdateMissingAssetsNote(resourcesDirectory, gameDisplayName, appId);
 
-            bool hasHeader = ResourceFileExists(resourcesDirectory, PathConstants.SteamGameResourcesHeaderImageFileName);
-            bool hasIcon = ResourceFileExists(resourcesDirectory, PathConstants.GetSteamGameResourcesClientIconFileName(appId));
-            bool hasCapsule = ResourceFileExists(resourcesDirectory, PathConstants.SteamGameResourcesCapsuleCoverImageFileName)
-                || ResourceFileExists(resourcesDirectory, PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName);
+            bool hasHeader = !string.IsNullOrEmpty(
+                ResolvePreferredImagePath(resourcesDirectory, BuildStoreBannerPreferredFileNames(appId, resourcesDirectory)));
+            bool hasIcon = HasClientIconResource(resourcesDirectory, appId);
+            bool hasCapsule = !string.IsNullOrEmpty(
+                ResolvePreferredImagePath(resourcesDirectory, BuildLibraryCoverPreferredFileNames(appId, resourcesDirectory)));
             bool essentialsOk = hasHeader && hasIcon && hasCapsule;
 
             if (!reportFeedback)
@@ -231,11 +246,11 @@ namespace SmartGoldbergEmu.Services
 
             var missing = new List<string>(4);
             if (!hasHeader)
-                missing.Add(PathConstants.SteamGameResourcesHeaderImageFileName);
+                missing.Add("store banner (header.jpg)");
             if (!hasCapsule)
-                missing.Add($"{PathConstants.SteamGameResourcesCapsuleCoverImageFileName} or {PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName}");
+                missing.Add("library cover (library_600x900_2x.jpg, library_600x900.jpg, or library_capsule.jpg)");
             if (!hasIcon)
-                missing.Add(PathConstants.GetSteamGameResourcesClientIconFileName(appId));
+                missing.Add("client icon (.ico)");
             Program.LogService?.LogWarning(
                 $"Game image download finished with missing files under resources: {string.Join(", ", missing)}");
             Feedback?.SetMessage("Some game images could not be downloaded.", TaskReportKind.Warning);
@@ -250,22 +265,43 @@ namespace SmartGoldbergEmu.Services
             return File.Exists(Path.Combine(resourcesDirectory, fileName));
         }
 
-        private static bool HasCapsuleResource(string resourcesDirectory)
+        private static bool HasCapsuleResource(string resourcesDirectory, ulong appId)
         {
-            return ResourceFileExists(resourcesDirectory, PathConstants.SteamGameResourcesCapsuleCoverImageFileName)
-                || ResourceFileExists(resourcesDirectory, PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName);
+            return !string.IsNullOrEmpty(
+                ResolvePreferredImagePath(resourcesDirectory, BuildLibraryCoverPreferredFileNames(appId, resourcesDirectory)));
         }
 
-        private static List<string> CollectMissingLibraryArtworkFileNames(string resourcesDirectory)
+        private static List<string> CollectMissingLibraryArtworkFileNames(string resourcesDirectory, ulong appId)
         {
             var missing = new List<string>(3);
-            if (!ResourceFileExists(resourcesDirectory, PathConstants.SteamGameResourcesHeaderImageFileName))
-                missing.Add(PathConstants.SteamGameResourcesHeaderImageFileName);
-            if (!HasCapsuleResource(resourcesDirectory))
-                missing.Add(PathConstants.SteamGameResourcesCapsuleCoverImageFileName);
-            if (!ResourceFileExists(resourcesDirectory, PathConstants.SteamGameResourcesLibraryLogoImageFileName))
-                missing.Add(PathConstants.SteamGameResourcesLibraryLogoImageFileName);
+            if (string.IsNullOrEmpty(
+                ResolvePreferredImagePath(resourcesDirectory, BuildStoreBannerPreferredFileNames(appId, resourcesDirectory))))
+            {
+                missing.Add("store banner");
+            }
+
+            if (!HasCapsuleResource(resourcesDirectory, appId))
+                missing.Add("library cover");
+
+            if (string.IsNullOrEmpty(
+                ResolvePreferredImagePath(resourcesDirectory, BuildLibraryLogoPreferredFileNames(appId, resourcesDirectory))))
+            {
+                missing.Add("logo image");
+            }
+
             return missing;
+        }
+
+        private static bool HasClientIconResource(string resourcesDirectory, ulong appId)
+        {
+            if (ResourceFileExists(resourcesDirectory, PathConstants.GetSteamGameResourcesClientIconFileName(appId)))
+                return true;
+
+            if (string.IsNullOrEmpty(resourcesDirectory) || !Directory.Exists(resourcesDirectory))
+                return false;
+
+            return Directory.GetFiles(resourcesDirectory, "*" + PathConstants.SteamGameResourcesClientIconFileExtension)
+                .Length > 0;
         }
 
         private static string ResolveGameDisplayName(string gameDisplayName, OnlineAppData metadata, ulong appId)
@@ -285,7 +321,7 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             var notePath = Path.Combine(resourcesDirectory, PathConstants.SteamGameResourcesMissingAssetsNoteFileName);
-            var missingArtwork = CollectMissingLibraryArtworkFileNames(resourcesDirectory);
+            var missingArtwork = CollectMissingLibraryArtworkFileNames(resourcesDirectory, appId);
             if (missingArtwork.Count == 0)
             {
                 TryDeleteFileIfExists(notePath);
@@ -419,94 +455,101 @@ namespace SmartGoldbergEmu.Services
                     if (!seenFileNames.Add(iconFileName))
                         continue;
 
-            requests.Add(new AssetDownloadRequest
-            {
-                FileName = iconFileName,
-                CandidateUrls = new[] { url }
-            });
+                    requests.Add(new AssetDownloadRequest
+                    {
+                        FileName = iconFileName,
+                        CandidateUrls = new[] { url }
+                    });
                 }
             }
 
-            AppendEssentialCanonicalDownloadRequests(requests, picsData, remoteAppId, appId, seenUrls, seenFileNames);
+            if (picsData == null)
+                AppendFallbackAssetDownloadRequests(requests, picsData, remoteAppId, seenUrls, seenFileNames);
 
             return requests;
         }
 
-        private static void AppendEssentialCanonicalDownloadRequests(
+        private static void AppendFallbackAssetDownloadRequests(
             List<AssetDownloadRequest> requests,
             KeyValue picsData,
             ulong remoteAppId,
-            ulong appId,
             HashSet<string> seenUrls,
             HashSet<string> seenFileNames)
         {
-            AddFallbackRequest(
+            AppendPreferredFilenameDownloads(
                 requests,
-                seenUrls,
-                seenFileNames,
-                PathConstants.SteamGameResourcesHeaderImageFileName,
-                BuildPreferredStoreAssetUrls(
-                    remoteAppId,
-                    TryExtractHeaderImageRelativePath(picsData),
-                    HeaderPreferredFileNames));
-
-            AddFallbackRequest(
-                requests,
-                seenUrls,
-                seenFileNames,
-                PathConstants.SteamGameResourcesCapsuleCoverImageFileName,
-                BuildPreferredStoreAssetUrls(
-                    remoteAppId,
-                    TryExtractLibraryCapsuleImageRelativePath(picsData)
-                        ?? TryExtractSmallCapsuleRelativePath(picsData),
-                    CoverPreferredFileNames));
-
-            AddFallbackRequest(
-                requests,
-                seenUrls,
-                seenFileNames,
-                PathConstants.SteamGameResourcesLibraryLogoImageFileName,
-                BuildLogoCanonicalCandidateUrls(picsData, remoteAppId));
-
-            var clientIconHash = TryResolveClientIconHash(picsData);
-            var iconUrls = new List<string>();
-            AddCandidate(iconUrls, TryBuildCommunityAssetsClientIconUrl(remoteAppId, clientIconHash));
-            var appIconHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Icon);
-            if (!string.IsNullOrWhiteSpace(appIconHash)
-                && !string.Equals(appIconHash, clientIconHash, StringComparison.OrdinalIgnoreCase))
-            {
-                AddCandidate(iconUrls, TryBuildCommunityAssetsClientIconUrl(remoteAppId, appIconHash));
-            }
-
-            AddFallbackRequest(
-                requests,
-                seenUrls,
-                seenFileNames,
-                PathConstants.GetSteamGameResourcesClientIconFileName(appId),
-                iconUrls);
-        }
-
-        private static List<string> BuildLogoCanonicalCandidateUrls(KeyValue picsData, ulong remoteAppId)
-        {
-            var candidates = BuildPreferredStoreAssetUrls(
                 remoteAppId,
-                TryExtractLibraryLogoImageRelativePath(picsData),
-                LogoPreferredFileNames);
+                picsData,
+                seenUrls,
+                seenFileNames,
+                StoreBannerPreferredFileNames,
+                TryExtractHeaderImageRelativePath);
 
-            var logoHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Logo);
-            AddCandidate(candidates, TryBuildCommunityAssetsAppImageUrl(remoteAppId, logoHash));
-            return candidates;
+            AppendPreferredFilenameDownloads(
+                requests,
+                remoteAppId,
+                picsData,
+                seenUrls,
+                seenFileNames,
+                LibraryCoverPreferredFileNames,
+                TryExtractLibraryCapsuleImageRelativePath);
+
+            AppendPreferredFilenameDownloads(
+                requests,
+                remoteAppId,
+                picsData,
+                seenUrls,
+                seenFileNames,
+                LibraryLogoPreferredFileNames,
+                TryExtractLibraryLogoImageRelativePath);
+
+            foreach (var hash in CollectUniqueIconHashes(picsData))
+            {
+                AddFallbackRequest(
+                    requests,
+                    seenUrls,
+                    seenFileNames,
+                    hash + PathConstants.SteamGameResourcesClientIconFileExtension,
+                    new[] { TryBuildCommunityAssetsClientIconUrl(remoteAppId, hash) });
+            }
         }
 
-        private static string TryExtractSmallCapsuleRelativePath(KeyValue picsData)
+        private static void AppendPreferredFilenameDownloads(
+            List<AssetDownloadRequest> requests,
+            ulong remoteAppId,
+            KeyValue picsData,
+            HashSet<string> seenUrls,
+            HashSet<string> seenFileNames,
+            string[] preferredFileNames,
+            Func<KeyValue, string> primaryRelativePathExtractor)
         {
-            if (picsData == null)
-                return null;
+            var primaryRelativePath = primaryRelativePathExtractor?.Invoke(picsData);
+            var hashFolder = TryExtractRelativeDirectoryName(primaryRelativePath);
 
-            var appInfoTarget = SteamPicsKeyValueHelper.ResolveAppInfoTarget(picsData);
-            var common = SteamPicsKeyValueHelper.FindChild(appInfoTarget, PathConstants.SteamAppsCommonDirectoryName);
-            var smallCapsule = SteamPicsKeyValueHelper.FindChild(common, SteamPicsKeyNames.SmallCapsule);
-            return TryExtractLocalizedRelativePath(smallCapsule, SteamPicsKeyNames.English);
+            foreach (var fileName in preferredFileNames ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(fileName))
+                    continue;
+
+                var urls = new List<string>();
+                if (!string.IsNullOrWhiteSpace(hashFolder))
+                {
+                    foreach (var url in BuildStoreAssetCandidateUrls(remoteAppId, hashFolder + "/" + fileName))
+                        AddCandidate(urls, url);
+                }
+
+                foreach (var url in BuildStoreAssetCandidateUrls(remoteAppId, fileName))
+                    AddCandidate(urls, url);
+
+                if (!string.IsNullOrWhiteSpace(primaryRelativePath)
+                    && string.Equals(fileName, Path.GetFileName(primaryRelativePath), StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var url in BuildStoreAssetCandidateUrls(remoteAppId, primaryRelativePath))
+                        AddCandidate(urls, url);
+                }
+
+                AddFallbackRequest(requests, seenUrls, seenFileNames, fileName, urls);
+            }
         }
 
         private static void AddFallbackRequest(
@@ -655,54 +698,86 @@ namespace SmartGoldbergEmu.Services
             return hashes;
         }
 
-        private void EnsureCanonicalUiFiles(string gamePath, ulong appId, KeyValue picsData)
+        private string ResolvePreferredImagePath(ulong appId, string[] preferredFileNames)
         {
-            EnsureCanonicalFileFromSources(
-                gamePath,
-                PathConstants.SteamGameResourcesHeaderImageFileName,
-                BuildCanonicalHeaderSourcePreference(picsData));
-
-            EnsureCanonicalFileFromSources(
-                gamePath,
-                PathConstants.SteamGameResourcesCapsuleCoverImageFileName,
-                BuildCanonicalCoverSourcePreference(picsData));
-
-            EnsureCanonicalFileFromSources(
-                gamePath,
-                PathConstants.SteamGameResourcesLibraryLogoImageFileName,
-                BuildCanonicalLogoSourcePreference(picsData));
-
-            var clientIconHash = TryResolveClientIconHash(picsData);
-            if (!string.IsNullOrWhiteSpace(clientIconHash))
-            {
-                EnsureCanonicalFileFromSources(
-                    gamePath,
-                    PathConstants.GetSteamGameResourcesClientIconFileName(appId),
-                    new[] { clientIconHash + PathConstants.SteamGameResourcesClientIconFileExtension });
-            }
+            var resourcesDirectory = PathConstants.CombineGamesPerAppResourcesDirectory(_gamesDirectory, appId.ToString());
+            return ResolvePreferredImagePath(resourcesDirectory, preferredFileNames);
         }
 
-        private static string[] BuildCanonicalHeaderSourcePreference(KeyValue picsData)
+        private static string ResolvePreferredImagePath(ulong appId, string[] preferredFileNames, string resourcesDirectory)
+        {
+            return ResolvePreferredImagePath(resourcesDirectory, preferredFileNames);
+        }
+
+        private static string ResolvePreferredImagePath(string resourcesDirectory, string[] preferredFileNames)
+        {
+            if (string.IsNullOrWhiteSpace(resourcesDirectory) || preferredFileNames == null)
+                return null;
+
+            foreach (var fileName in preferredFileNames)
+            {
+                if (string.IsNullOrWhiteSpace(fileName))
+                    continue;
+
+                var imagePath = Path.Combine(resourcesDirectory, fileName);
+                if (File.Exists(imagePath))
+                    return imagePath;
+            }
+
+            return null;
+        }
+
+        private string[] BuildStoreBannerPreferredFileNames(ulong appId)
+        {
+            return BuildStoreBannerPreferredFileNames(appId, TryLoadExportedAppPicsFromResources(appId, _gamesDirectory));
+        }
+
+        private static string[] BuildStoreBannerPreferredFileNames(ulong appId, string resourcesDirectory)
+        {
+            var gamesDirectory = Path.GetDirectoryName(Path.GetDirectoryName(resourcesDirectory));
+            return BuildStoreBannerPreferredFileNames(appId, TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId));
+        }
+
+        private static string[] BuildStoreBannerPreferredFileNames(ulong appId, KeyValue picsData)
         {
             var sources = new List<string>();
-            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryHeader, prefer2x: true);
-            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryHeader, prefer2x: false);
             TryAddEnglishHeaderImageFileName(sources, picsData);
-            sources.AddRange(HeaderPreferredFileNames);
+            sources.AddRange(StoreBannerPreferredFileNames);
             return DeduplicateFileNames(sources);
         }
 
-        private static string[] BuildCanonicalCoverSourcePreference(KeyValue picsData)
+        private string[] BuildLibraryCoverPreferredFileNames(ulong appId)
+        {
+            return BuildLibraryCoverPreferredFileNames(appId, TryLoadExportedAppPicsFromResources(appId, _gamesDirectory));
+        }
+
+        private static string[] BuildLibraryCoverPreferredFileNames(ulong appId, string resourcesDirectory)
+        {
+            var gamesDirectory = Path.GetDirectoryName(Path.GetDirectoryName(resourcesDirectory));
+            return BuildLibraryCoverPreferredFileNames(appId, TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId));
+        }
+
+        private static string[] BuildLibraryCoverPreferredFileNames(ulong appId, KeyValue picsData)
         {
             var sources = new List<string>();
             TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: true);
             TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false);
-            TryAddEnglishSmallCapsuleFileName(sources, picsData);
-            sources.AddRange(CoverPreferredFileNames);
+            sources.AddRange(LibraryCoverPreferredFileNames);
             return DeduplicateFileNames(sources);
         }
 
-        private static string[] BuildCanonicalLogoSourcePreference(KeyValue picsData)
+        private string[] BuildLibraryLogoPreferredFileNames(ulong appId)
+        {
+            return BuildLibraryLogoPreferredFileNames(appId, TryLoadExportedAppPicsFromResources(appId, _gamesDirectory));
+        }
+
+        private static string[] BuildLibraryLogoPreferredFileNames(ulong appId, string resourcesDirectory)
+        {
+            var gamesDirectory = Path.GetDirectoryName(Path.GetDirectoryName(resourcesDirectory));
+            return BuildLibraryLogoPreferredFileNames(appId, TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId));
+        }
+
+        private static string[] BuildLibraryLogoPreferredFileNames(ulong appId, KeyValue picsData)
         {
             var sources = new List<string>();
             TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: true);
@@ -710,8 +785,15 @@ namespace SmartGoldbergEmu.Services
             var logoHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Logo);
             if (!string.IsNullOrWhiteSpace(logoHash))
                 sources.Add(logoHash + ".jpg");
-            sources.AddRange(LogoPreferredFileNames);
+            sources.AddRange(LibraryLogoPreferredFileNames);
             return DeduplicateFileNames(sources);
+        }
+
+        private static KeyValue TryLoadExportedAppPicsFromValveFile(string gamesDirectory, ulong appId)
+        {
+            if (string.IsNullOrWhiteSpace(gamesDirectory) || appId == 0)
+                return null;
+            return SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId);
         }
 
         private static void TryAddEnglishLibraryAssetFileName(
@@ -724,14 +806,15 @@ namespace SmartGoldbergEmu.Services
             TryAddFileNameFromRelativePath(fileNames, relativePath);
         }
 
+        private static string TryResolveClientIconHash(KeyValue appPicsData)
+        {
+            return TryExtractPicsSha1Hash(appPicsData, SteamPicsKeyNames.ClientIcon)
+                ?? TryExtractPicsSha1Hash(appPicsData, SteamPicsKeyNames.Icon);
+        }
+
         private static void TryAddEnglishHeaderImageFileName(List<string> fileNames, KeyValue picsData)
         {
             TryAddFileNameFromRelativePath(fileNames, TryExtractHeaderImageRelativePath(picsData));
-        }
-
-        private static void TryAddEnglishSmallCapsuleFileName(List<string> fileNames, KeyValue picsData)
-        {
-            TryAddFileNameFromRelativePath(fileNames, TryExtractSmallCapsuleRelativePath(picsData));
         }
 
         private static void TryAddFileNameFromRelativePath(List<string> fileNames, string relativePath)
@@ -798,50 +881,6 @@ namespace SmartGoldbergEmu.Services
             }
 
             return null;
-        }
-
-        private static void EnsureCanonicalFileFromSources(
-            string gamePath,
-            string canonicalFileName,
-            IEnumerable<string> sourceFileNamesInPreferenceOrder)
-        {
-            if (string.IsNullOrWhiteSpace(gamePath) || string.IsNullOrWhiteSpace(canonicalFileName))
-                return;
-
-            string bestSourcePath = null;
-            long bestSourceLength = 0;
-            foreach (var sourceFileName in sourceFileNamesInPreferenceOrder ?? Enumerable.Empty<string>())
-            {
-                if (string.IsNullOrWhiteSpace(sourceFileName))
-                    continue;
-
-                var sourcePath = Path.Combine(gamePath, sourceFileName);
-                if (!File.Exists(sourcePath))
-                    continue;
-
-                var sourceLength = new FileInfo(sourcePath).Length;
-                if (bestSourcePath == null || sourceLength > bestSourceLength)
-                {
-                    bestSourcePath = sourcePath;
-                    bestSourceLength = sourceLength;
-                }
-            }
-
-            if (bestSourcePath == null)
-                return;
-
-            var canonicalPath = Path.Combine(gamePath, canonicalFileName);
-            var shouldCopy = !File.Exists(canonicalPath)
-                || new FileInfo(canonicalPath).Length < bestSourceLength;
-
-            if (shouldCopy)
-                File.Copy(bestSourcePath, canonicalPath, overwrite: true);
-        }
-
-        private static string TryResolveClientIconHash(KeyValue appPicsData)
-        {
-            return TryExtractPicsSha1Hash(appPicsData, SteamPicsKeyNames.ClientIcon)
-                ?? TryExtractPicsSha1Hash(appPicsData, SteamPicsKeyNames.Icon);
         }
 
         private static string TryExtractPicsSha1Hash(KeyValue appPicsData, string picsKeyName)
@@ -941,37 +980,6 @@ namespace SmartGoldbergEmu.Services
         private static KeyValue TryLoadExportedAppPicsFromResources(ulong appId, string gamesDirectory)
         {
             return SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(gamesDirectory, appId);
-        }
-
-        private static List<string> BuildPreferredStoreAssetUrls(
-            ulong appId,
-            string preferredRelativePath,
-            string[] preferredFileNames)
-        {
-            var candidates = new List<string>();
-            if (appId == 0 || preferredFileNames == null || preferredFileNames.Length == 0)
-                return candidates;
-
-            var hashFolder = TryExtractRelativeDirectoryName(preferredRelativePath);
-            foreach (var fileName in preferredFileNames)
-            {
-                if (string.IsNullOrWhiteSpace(fileName))
-                    continue;
-
-                if (!string.IsNullOrWhiteSpace(hashFolder))
-                {
-                    foreach (var url in BuildStoreAssetCandidateUrls(appId, hashFolder + "/" + fileName))
-                        AddCandidate(candidates, url);
-                }
-
-                foreach (var url in BuildStoreAssetCandidateUrls(appId, fileName))
-                    AddCandidate(candidates, url);
-            }
-
-            foreach (var url in BuildStoreAssetCandidateUrls(appId, preferredRelativePath))
-                AddCandidate(candidates, url);
-
-            return candidates;
         }
 
         private static string TryExtractRelativeDirectoryName(string relativePath)
