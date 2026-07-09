@@ -226,32 +226,58 @@ namespace SmartGoldbergEmu.Helpers
         /// </summary>
         public static bool TryResolveIconSourcePath(GameConfig game, out string fullPath)
         {
+            if (TryResolveCustomIconPath(game, out fullPath))
+                return true;
+
+            return TryResolveStoredExecutable(game, out fullPath);
+        }
+
+        /// <summary>
+        /// Icons list view: custom icon, then Steam resources icon, then game executable.
+        /// </summary>
+        public static bool TryResolveListViewIconSourcePath(
+            GameConfig game,
+            string steamResourceIconPath,
+            out string fullPath)
+        {
+            if (TryResolveCustomIconPath(game, out fullPath))
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(steamResourceIconPath) && File.Exists(steamResourceIconPath))
+            {
+                fullPath = Path.GetFullPath(steamResourceIconPath);
+                return true;
+            }
+
+            return TryResolveStoredExecutable(game, out fullPath);
+        }
+
+        public static bool TryResolveCustomIconPath(GameConfig game, out string fullPath)
+        {
             fullPath = null;
             if (game == null)
                 return false;
 
             string custom = (game.CustomIcon ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(custom))
-            {
-                if (TryGetResolutionBaseFolder(game, out string baseFolder))
-                {
-                    if (PathValidationHelper.TryResolveAndValidatePath(baseFolder, custom, out string resolved) && File.Exists(resolved))
-                    {
-                        fullPath = resolved;
-                        return true;
-                    }
-                }
+            if (string.IsNullOrEmpty(custom))
+                return false;
 
-                if (Path.IsPathRooted(custom) && File.Exists(custom))
+            if (TryGetResolutionBaseFolder(game, out string baseFolder))
+            {
+                if (PathValidationHelper.TryResolveAndValidatePath(baseFolder, custom, out string resolved) && File.Exists(resolved))
                 {
-                    fullPath = Path.GetFullPath(custom);
+                    fullPath = resolved;
                     return true;
                 }
-
-                return false;
             }
 
-            return TryResolveStoredExecutable(game, out fullPath);
+            if (Path.IsPathRooted(custom) && File.Exists(custom))
+            {
+                fullPath = Path.GetFullPath(custom);
+                return true;
+            }
+
+            return false;
         }
 
         public static string ResolveBaseFolderFromInputs(string startFolder, string executablePathOrName)

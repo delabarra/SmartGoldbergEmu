@@ -34,6 +34,26 @@ namespace SmartGoldbergEmu.Services
             PathConstants.SteamGameResourcesLibraryLogoImageFileName
         };
 
+        /// <summary>
+        /// Main list mosaic views: strict filenames per view. No PICS aliases or cross-asset fallbacks.
+        /// </summary>
+        private static readonly string[] ListViewStoreBannerFileNames =
+        {
+            PathConstants.SteamGameResourcesHeaderImageFileName
+        };
+
+        private static readonly string[] ListViewLibraryCoverFileNames =
+        {
+            "library_600x900_2x.jpg",
+            PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName
+        };
+
+        private static readonly string[] ListViewLogoFileNames =
+        {
+            "logo_2x.png",
+            PathConstants.SteamGameResourcesLibraryLogoImageFileName
+        };
+
         private sealed class AssetDownloadRequest
         {
             public string FileName { get; set; }
@@ -157,25 +177,33 @@ namespace SmartGoldbergEmu.Services
             return _fallbackMosaicArtCache.TryCloneForImageList();
         }
 
+        /// <summary>
+        /// Store Banner list image: <c>header.jpg</c> only. Missing file → caller shows mosaic placeholder.
+        /// </summary>
         public string GetHeaderImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, BuildStoreBannerPreferredFileNames(appId));
+            return ResolvePreferredImagePath(appId, ListViewStoreBannerFileNames);
         }
 
+        /// <summary>
+        /// Library Cover list image: portrait library capsule files only. Missing file → caller shows mosaic placeholder.
+        /// </summary>
         public string GetCapsuleImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, BuildLibraryCoverPreferredFileNames(appId));
+            return ResolvePreferredImagePath(appId, ListViewLibraryCoverFileNames);
         }
 
+        /// <summary>
+        /// Logos list image: logo files only. Missing file → caller shows mosaic placeholder.
+        /// </summary>
         public string GetLogoImagePathOrFallback(ulong appId)
         {
-            var logoPath = ResolvePreferredImagePath(appId, BuildLibraryLogoPreferredFileNames(appId));
-            if (!string.IsNullOrEmpty(logoPath))
-                return logoPath;
-
-            return GetCapsuleImagePathOrFallback(appId);
+            return ResolvePreferredImagePath(appId, ListViewLogoFileNames);
         }
 
+        /// <summary>
+        /// Steam client icon under <c>games/{appId}/resources/</c> ({appId}.ico or hash .ico). Null when missing.
+        /// </summary>
         public string GetClientIconPathOrFallback(ulong appId)
         {
             var canonicalIconPath = GetImagePath(appId, PathConstants.GetSteamGameResourcesClientIconFileName(appId));
@@ -721,6 +749,11 @@ namespace SmartGoldbergEmu.Services
             }
 
             return null;
+        }
+
+        internal static string ResolveStrictListViewImagePath(string resourcesDirectory, string[] preferredFileNames)
+        {
+            return ResolvePreferredImagePath(resourcesDirectory, preferredFileNames);
         }
 
         private string[] BuildStoreBannerPreferredFileNames(ulong appId)

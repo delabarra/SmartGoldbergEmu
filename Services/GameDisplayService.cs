@@ -55,7 +55,7 @@ namespace SmartGoldbergEmu.Services
                     var imageIndex = -1;
                     string iconPath = null;
                     if (loadIcons)
-                        GameFolderPathHelper.TryResolveIconSourcePath(game, out iconPath);
+                        TryResolveIconSourcePathForViewMode(game, viewMode, out iconPath);
 
                     if (loadIcons && !string.IsNullOrEmpty(iconPath))
                     {
@@ -156,6 +156,23 @@ namespace SmartGoldbergEmu.Services
                 + Environment.NewLine
                 + "App ID: " + appIdText
                 + status;
+        }
+
+        private static bool TryResolveIconSourcePathForViewMode(GameConfig game, string viewMode, out string iconPath)
+        {
+            if (IsIconView(viewMode))
+                return TryResolveIconViewSourcePath(game, out iconPath);
+
+            return GameFolderPathHelper.TryResolveIconSourcePath(game, out iconPath);
+        }
+
+        private static bool TryResolveIconViewSourcePath(GameConfig game, out string iconPath)
+        {
+            string steamResourceIconPath = null;
+            if (game != null && game.AppId > 0)
+                steamResourceIconPath = ServiceLocator.GameImageService.GetClientIconPathOrFallback(game.AppId);
+
+            return GameFolderPathHelper.TryResolveListViewIconSourcePath(game, steamResourceIconPath, out iconPath);
         }
 
         private static bool ShouldLoadIcons(string viewMode)
@@ -444,7 +461,7 @@ namespace SmartGoldbergEmu.Services
             else
             {
                 int imageIndex = -1;
-                if (ShouldLoadIcons(viewMode) && GameFolderPathHelper.TryResolveIconSourcePath(game, out string iconPath)
+                if (ShouldLoadIcons(viewMode) && TryResolveIconSourcePathForViewMode(game, viewMode, out string iconPath)
                     && !string.IsNullOrEmpty(iconPath))
                 {
                     if (IsIconView(viewMode))
@@ -483,7 +500,7 @@ namespace SmartGoldbergEmu.Services
                 }
 
                 int imageIndex = -1;
-                if (ShouldLoadIcons(viewMode) && GameFolderPathHelper.TryResolveIconSourcePath(draft, out string iconPath)
+                if (ShouldLoadIcons(viewMode) && TryResolveIconSourcePathForViewMode(draft, viewMode, out string iconPath)
                     && !string.IsNullOrEmpty(iconPath))
                 {
                     if (IsIconView(viewMode))
