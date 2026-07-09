@@ -18,18 +18,23 @@ namespace SmartGoldbergEmu.Constants
 
         /// <summary>
         /// Default account avatar image URL.
+        /// Uses the canonical Steam avatars host (most stable of current mirrors).
         /// </summary>
-        public const string DefaultAvatarUrl = GithubRawBaseUrl + "/account_avatar.EXAMPLE.jpg";
+        public const string DefaultAvatarUrl = "https://avatars.steamstatic.com/b5bd56c1aa4644a474a2e4972be27ef9e82e517e_full.jpg";
+
+        public const string SteamClientSoundsPackageUrl = "https://cdn.cloudflare.steamstatic.com/client/steamui_websrc_sounds_all.zip.vz.5ba6acd8f4dfe4b93437895b20344fab5bb3ff96_3714779";
 
         /// <summary>
-        /// Sound file: achievement notification.
+        /// Inner zip path for Steam's desktop toast sound.
+        /// Mapped to overlay_achievement_notification.wav.
         /// </summary>
-        public const string SoundAchievementUrl = GithubBaseUrl + "/sounds.EXAMPLE/overlay_achievement_notification.wav";
+        public const string SteamClientAchievementSoundInnerPath = "steamui/sounds/desktop_toast_default.wav";
 
         /// <summary>
-        /// Sound file: friend notification.
+        /// Inner zip path for Steam's recording highlight sound.
+        /// Mapped to overlay_friend_notification.wav.
         /// </summary>
-        public const string SoundFriendUrl = GithubBaseUrl + "/sounds.EXAMPLE/overlay_friend_notification.wav";
+        public const string SteamClientFriendSoundInnerPath = "steamui/sounds/recording_highlight.wav";
 
         /// <summary>
         /// Font file: Roboto-Medium.

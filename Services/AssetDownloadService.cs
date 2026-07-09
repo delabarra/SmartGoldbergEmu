@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.ExtractKit;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 
@@ -11,16 +12,44 @@ namespace SmartGoldbergEmu.Services
     {
         private const int HttpTimeoutSeconds = 30;
 
-        public Task<ValidationResult> DownloadSoundFilesAsync(string soundsPath)
+        public async Task<ValidationResult> DownloadSoundFilesAsync(string soundsPath)
         {
-            return DownloadMissingFilesAsync(
-                soundsPath,
-                new[]
+            try
+            {
+                var achievementPath = Path.Combine(soundsPath, PathConstants.SteamClientUiAchievementNotificationWav);
+                var friendPath = Path.Combine(soundsPath, PathConstants.SteamClientUiFriendNotificationWav);
+                bool needsAchievement = !File.Exists(achievementPath);
+                bool needsFriend = !File.Exists(friendPath);
+
+                if (!needsAchievement && !needsFriend)
+                    return ValidationResult.Success();
+
+                var packageBytes = await HttpHelpers.GetByteArrayAsync(
+                    AssetConstants.SteamClientSoundsPackageUrl,
+                    HttpTimeoutSeconds).ConfigureAwait(false);
+
+                if (needsAchievement)
                 {
-                    (AssetConstants.SoundAchievementUrl, PathConstants.SteamClientUiAchievementNotificationWav),
-                    (AssetConstants.SoundFriendUrl, PathConstants.SteamClientUiFriendNotificationWav)
-                },
-                "Failed to download sound files from GitHub");
+                    var data = global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntry(
+                        packageBytes,
+                        AssetConstants.SteamClientAchievementSoundInnerPath);
+                    await Task.Run(() => File.WriteAllBytes(achievementPath, data)).ConfigureAwait(false);
+                }
+
+                if (needsFriend)
+                {
+                    var data = global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntry(
+                        packageBytes,
+                        AssetConstants.SteamClientFriendSoundInnerPath);
+                    await Task.Run(() => File.WriteAllBytes(friendPath, data)).ConfigureAwait(false);
+                }
+
+                return ValidationResult.Success();
+            }
+            catch (Exception ex)
+            {
+                return ValidationResult.Failure($"Failed to download sound files from Steam client package: {ex.Message}");
+            }
         }
 
         public async Task<bool> DownloadAvatarAsync(string avatarPath)
@@ -32,7 +61,7 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
-                LogRedactionHelper.WriteDebug($"Failed to download avatar from GitHub: {ex.Message}");
+                LogRedactionHelper.WriteDebug($"Failed to download avatar from configured source: {ex.Message}");
                 return false;
             }
         }

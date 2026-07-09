@@ -327,6 +327,7 @@
     <Compile Include="ExtractKit\Internal\EntryPath.cs" />
     <Compile Include="ExtractKit\Internal\Lzma2Dec.cs" />
     <Compile Include="ExtractKit\Internal\LzmaDec.cs" />
+    <Compile Include="ExtractKit\Internal\VZipArchive.cs" />
     <Compile Include="ExtractKit\Internal\SevenZipArchiveCore.cs" />
     <Compile Include="ExtractKit\Internal\Sz7zArcIn.cs" />
     <Compile Include="ExtractKit\Internal\Sz7zDec.cs" />

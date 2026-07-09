@@ -21,5 +21,15 @@ namespace SmartGoldbergEmu.ExtractKit
             Directory.CreateDirectory(outputDirectory);
             ArchiveExtractor.ExtractAll(path, outputDirectory);
         }
+
+        public static byte[] DecompressVzip(byte[] vzipData)
+        {
+            return VZipArchive.Decompress(vzipData);
+        }
+
+        public static byte[] ExtractVzipEntry(byte[] vzipData, string entryPath)
+        {
+            return VZipArchive.ExtractEntry(vzipData, entryPath);
+        }
     }
 }

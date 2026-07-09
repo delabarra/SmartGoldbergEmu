@@ -906,7 +906,7 @@ ip_country=US
                 
                 if (!File.Exists(avatarPath))
                 {
-                    await DownloadAvatarFromGitHubAsync(avatarPath).ConfigureAwait(false);
+                    await DownloadAvatarFromSourceAsync(avatarPath).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -915,17 +915,17 @@ ip_country=US
             }
         }
 
-        private static async Task DownloadAvatarFromGitHubAsync(string avatarPath)
+        private static async Task DownloadAvatarFromSourceAsync(string avatarPath)
         {
             try
             {
                 bool success = await ServiceLocator.AssetDownloadService.DownloadAvatarAsync(avatarPath).ConfigureAwait(false);
                 if (!success)
-                    LogRedactionHelper.WriteDebug("Failed to download avatar from GitHub");
+                    LogRedactionHelper.WriteDebug("Failed to download avatar from configured source");
             }
             catch (Exception ex)
             {
-                LogRedactionHelper.WriteDebug($"Failed to download avatar from GitHub: {ex.Message}");
+                LogRedactionHelper.WriteDebug($"Failed to download avatar from configured source: {ex.Message}");
             }
         }
 
