@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Constants;
@@ -24,8 +25,8 @@ namespace SmartGoldbergEmu.Services
                 if (!needsAchievement && !needsFriend)
                     return ValidationResult.Success();
 
-                var packageBytes = await HttpHelpers.GetByteArrayAsync(
-                    AssetConstants.SteamClientSoundsPackageUrl,
+                var packageBytes = await DownloadFirstAvailableAsync(
+                    ServiceLocator.SteamStaticCdnPreferenceService.GetClientSoundsPackageCandidateUrls(),
                     HttpTimeoutSeconds).ConfigureAwait(false);
 
                 if (needsAchievement)
@@ -56,7 +57,9 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                await DownloadAndWriteAsync(AssetConstants.DefaultAvatarUrl, avatarPath);
+                await DownloadFirstAvailableToFileAsync(
+                    ServiceLocator.SteamStaticCdnPreferenceService.GetDefaultAvatarCandidateUrls(),
+                    avatarPath);
                 return true;
             }
             catch (Exception ex)
@@ -128,6 +131,40 @@ namespace SmartGoldbergEmu.Services
             {
                 return ValidationResult.Failure($"{batchFailureMessage}: {ex.Message}");
             }
+        }
+
+        private static async Task<byte[]> DownloadFirstAvailableAsync(
+            IReadOnlyList<string> candidateUrls,
+            int timeoutSeconds)
+        {
+            if (candidateUrls == null || candidateUrls.Count == 0)
+                throw new InvalidOperationException("No CDN candidate URLs are configured.");
+
+            Exception lastError = null;
+            foreach (var url in candidateUrls)
+            {
+                if (string.IsNullOrWhiteSpace(url))
+                    continue;
+
+                try
+                {
+                    return await HttpHelpers.GetByteArrayAsync(url, timeoutSeconds).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                }
+            }
+
+            throw lastError ?? new InvalidOperationException("All CDN candidate URLs failed.");
+        }
+
+        private static async Task DownloadFirstAvailableToFileAsync(
+            IReadOnlyList<string> candidateUrls,
+            string destPath)
+        {
+            var content = await DownloadFirstAvailableAsync(candidateUrls, HttpTimeoutSeconds).ConfigureAwait(false);
+            await Task.Run(() => File.WriteAllBytes(destPath, content)).ConfigureAwait(false);
         }
 
         private static async Task DownloadAndWriteAsync(string url, string destPath)

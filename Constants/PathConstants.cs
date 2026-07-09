@@ -617,11 +617,23 @@ namespace SmartGoldbergEmu.Constants
         public const string UiSettingsIniFileName = "ui_settings.ini";
 
         /// <summary>
+        /// Cached ranked Steam static CDN mirror preferences.
+        /// </summary>
+        public const string SteamStaticCdnPreferencesFileName = SteamStaticCdnConstants.PreferencesCacheFileName;
+
+        /// <summary>
         /// Per-user UI settings (theme, main window size/position/state).
         /// Location: %LocalAppData%\SmartGoldbergEmu\ui_settings.ini
         /// </summary>
         public static string UiSettingsFilePath =>
             Path.Combine(LocalAppDataPerUserDirectory, UiSettingsIniFileName);
+
+        /// <summary>
+        /// Ranked Steam static CDN mirror preferences cache.
+        /// Location: %LocalAppData%\SmartGoldbergEmu\steam_static_cdn_preferences.json
+        /// </summary>
+        public static string SteamStaticCdnPreferencesFilePath =>
+            Path.Combine(LocalAppDataPerUserDirectory, SteamStaticCdnPreferencesFileName);
 
         /// <summary>
         /// Former per-user config path (pre–exe-only layout). Used for one-time migration and legacy XML import lookup only.

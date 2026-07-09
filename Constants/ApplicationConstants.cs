@@ -362,10 +362,6 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";
         public const string SteamCommunityWorkshopUrlFormat = "https://steamcommunity.com/app/{0}/workshop/";
 
-        public const string SteamStoreAssetFileUrlFormat = "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{0}/{1}";
-        public const string SteamLegacyAkamaiStoreAssetFileUrlFormat = "https://steamcdn-a.akamaihd.net/steam/apps/{0}/{1}";
-        public const string SteamCommunityAssetsClientIconIcoUrlFormat = "https://shared.fastly.steamstatic.com/community_assets/images/apps/{0}/{1}.ico";
-        public const string SteamCommunityAssetsAppImageUrlFormat = "https://shared.fastly.steamstatic.com/community_assets/images/apps/{0}/{1}.jpg";
         public const string SteamDbAppUrlFormat = "https://steamdb.info/app/{0}";
         public const string SteamDbDepotsUrlFormat = "https://steamdb.info/app/{0}/depots/";
         public const string SteamDbConfigUrlFormat = "https://steamdb.info/app/{0}/config/";

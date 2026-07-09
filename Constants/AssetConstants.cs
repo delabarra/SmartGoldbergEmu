@@ -17,14 +17,6 @@ namespace SmartGoldbergEmu.Constants
         public const string GithubRawBaseUrl = "https://raw.githubusercontent.com/Detanup01/gbe_fork/refs/heads/dev/post_build/steam_settings.EXAMPLE";
 
         /// <summary>
-        /// Default account avatar image URL.
-        /// Uses the canonical Steam avatars host (most stable of current mirrors).
-        /// </summary>
-        public const string DefaultAvatarUrl = "https://avatars.steamstatic.com/b5bd56c1aa4644a474a2e4972be27ef9e82e517e_full.jpg";
-
-        public const string SteamClientSoundsPackageUrl = "https://cdn.cloudflare.steamstatic.com/client/steamui_websrc_sounds_all.zip.vz.5ba6acd8f4dfe4b93437895b20344fab5bb3ff96_3714779";
-
-        /// <summary>
         /// Inner zip path for Steam's desktop toast sound.
         /// Mapped to overlay_achievement_notification.wav.
         /// </summary>

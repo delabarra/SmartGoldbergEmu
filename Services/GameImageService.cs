@@ -447,8 +447,12 @@ namespace SmartGoldbergEmu.Services
 
                 foreach (var hash in CollectUniqueIconHashes(picsData))
                 {
-                    var url = TryBuildCommunityAssetsClientIconUrl(remoteAppId, hash);
-                    if (string.IsNullOrWhiteSpace(url) || !seenUrls.Add(url))
+                    var candidateUrls = ServiceLocator.SteamStaticCdnPreferenceService
+                        .GetCommunityClientIconCandidateUrls(remoteAppId, hash);
+                    if (candidateUrls == null || candidateUrls.Count == 0)
+                        continue;
+
+                    if (candidateUrls.All(url => !seenUrls.Add(url)))
                         continue;
 
                     var iconFileName = hash + PathConstants.SteamGameResourcesClientIconFileExtension;
@@ -458,7 +462,7 @@ namespace SmartGoldbergEmu.Services
                     requests.Add(new AssetDownloadRequest
                     {
                         FileName = iconFileName,
-                        CandidateUrls = new[] { url }
+                        CandidateUrls = candidateUrls.ToArray()
                     });
                 }
             }
@@ -510,7 +514,7 @@ namespace SmartGoldbergEmu.Services
                     seenUrls,
                     seenFileNames,
                     hash + PathConstants.SteamGameResourcesClientIconFileExtension,
-                    new[] { TryBuildCommunityAssetsClientIconUrl(remoteAppId, hash) });
+                    ServiceLocator.SteamStaticCdnPreferenceService.GetCommunityClientIconCandidateUrls(remoteAppId, hash));
             }
         }
 
@@ -634,8 +638,12 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrWhiteSpace(logoHash))
                 return;
 
-            var url = TryBuildCommunityAssetsAppImageUrl(remoteAppId, logoHash);
-            if (string.IsNullOrWhiteSpace(url) || !seenUrls.Add(url))
+            var candidateUrls = ServiceLocator.SteamStaticCdnPreferenceService
+                .GetCommunityAppImageCandidateUrls(remoteAppId, logoHash);
+            if (candidateUrls == null || candidateUrls.Count == 0)
+                return;
+
+            if (candidateUrls.All(url => !seenUrls.Add(url)))
                 return;
 
             var fileName = logoHash + ".jpg";
@@ -645,27 +653,15 @@ namespace SmartGoldbergEmu.Services
             requests.Add(new AssetDownloadRequest
             {
                 FileName = fileName,
-                CandidateUrls = new[] { url }
+                CandidateUrls = candidateUrls.ToArray()
             });
         }
 
         private static List<string> BuildStoreAssetCandidateUrls(ulong appId, string pathOrFileName)
         {
-            var candidates = new List<string>();
-            if (appId == 0 || string.IsNullOrWhiteSpace(pathOrFileName))
-                return candidates;
-
-            var normalizedPath = pathOrFileName.Trim().TrimStart('/');
-            AddCandidate(candidates, BuildFastlyStoreAssetFileUrl(appId, normalizedPath));
-
-            if (!normalizedPath.Contains("/"))
-            {
-                AddCandidate(
-                    candidates,
-                    string.Format(ApplicationConstants.SteamLegacyAkamaiStoreAssetFileUrlFormat, appId, normalizedPath));
-            }
-
-            return candidates;
+            return ServiceLocator.SteamStaticCdnPreferenceService
+                .GetStoreAssetCandidateUrls(appId, pathOrFileName)
+                .ToList();
         }
 
         private static bool IsStoreAssetRelativePath(string value)
@@ -910,27 +906,6 @@ namespace SmartGoldbergEmu.Services
                 return false;
             }
             return true;
-        }
-
-        private static string BuildFastlyStoreAssetFileUrl(ulong appId, string pathOrFileName)
-        {
-            if (appId == 0 || string.IsNullOrWhiteSpace(pathOrFileName))
-                return null;
-            return string.Format(ApplicationConstants.SteamStoreAssetFileUrlFormat, appId, pathOrFileName.TrimStart('/'));
-        }
-
-        private static string TryBuildCommunityAssetsClientIconUrl(ulong appId, string hash)
-        {
-            if (appId == 0 || string.IsNullOrWhiteSpace(hash))
-                return null;
-            return string.Format(ApplicationConstants.SteamCommunityAssetsClientIconIcoUrlFormat, appId, hash);
-        }
-
-        private static string TryBuildCommunityAssetsAppImageUrl(ulong appId, string hash)
-        {
-            if (appId == 0 || string.IsNullOrWhiteSpace(hash))
-                return null;
-            return string.Format(ApplicationConstants.SteamCommunityAssetsAppImageUrlFormat, appId, hash);
         }
 
         private static string TryExtractLibraryLogoImageRelativePath(KeyValue appPicsData)

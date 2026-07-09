@@ -1030,19 +1030,25 @@ namespace SmartGoldbergEmu.Services
         {
             if (File.Exists(localPath))
                 return true;
-            if (!string.IsNullOrEmpty(url) && PathValidationHelper.IsSafeUrl(url))
+
+            var candidateUrls = ServiceLocator.SteamStaticCdnPreferenceService.GetAchievementIconCandidateUrls(url);
+            foreach (var candidateUrl in candidateUrls)
             {
+                if (string.IsNullOrEmpty(candidateUrl) || !PathValidationHelper.IsSafeUrl(candidateUrl))
+                    continue;
+
                 try
                 {
-                    byte[] data = await HttpHelpers.GetByteArrayAsync(url, AchievementConstants.HttpRequestLongTimeout);
+                    byte[] data = await HttpHelpers.GetByteArrayAsync(candidateUrl, AchievementConstants.HttpRequestLongTimeout);
                     await Task.Run(() => File.WriteAllBytes(localPath, data));
                     return true;
                 }
                 catch (Exception)
                 {
-                    // Download failed, fall through to placeholder
+                    // Try the next CDN mirror.
                 }
             }
+
             return TrySavePlaceholderAsJpeg(localPath);
         }
 

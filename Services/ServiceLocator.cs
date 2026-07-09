@@ -72,6 +72,8 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<StatsGenerator> _statsGenerator = new Lazy<StatsGenerator>();
         private static readonly Lazy<RegistryService> _registryService = new Lazy<RegistryService>();
         private static readonly Lazy<AssetDownloadService> _assetDownloadService = new Lazy<AssetDownloadService>();
+        private static readonly Lazy<SteamStaticCdnPreferenceService> _steamStaticCdnPreferenceService =
+            new Lazy<SteamStaticCdnPreferenceService>();
         private static readonly Lazy<GameSettingsSaveService> _gameSettingsSaveService = new Lazy<GameSettingsSaveService>();
         private static readonly Lazy<PendingAddGameListService> _pendingAddGameListService = new Lazy<PendingAddGameListService>();
         private static readonly Lazy<GameAddCollector> _gameAddCollector = new Lazy<GameAddCollector>();
@@ -144,6 +146,9 @@ namespace SmartGoldbergEmu.Services
         public static IRegistryService RegistryService => _registryService.Value;
 
         public static AssetDownloadService AssetDownloadService => _assetDownloadService.Value;
+
+        public static SteamStaticCdnPreferenceService SteamStaticCdnPreferenceService =>
+            _steamStaticCdnPreferenceService.Value;
 
         public static GameSettingsSaveService GameSettingsSaveService => _gameSettingsSaveService.Value;
 

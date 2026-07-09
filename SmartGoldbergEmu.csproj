@@ -183,6 +183,7 @@
     <Compile Include="Models\ThemeColors.cs" />
     <Compile Include="Models\ThemeChangedEventArgs.cs" />
     <Compile Include="Models\SteamProductInfoModels.cs" />
+    <Compile Include="Models\SteamStaticCdnPreferences.cs" />
     <Compile Include="Models\WindowState.cs" />
     <Compile Include="Constants\SteamAppManifestAcfKeys.cs" />
     <Compile Include="Constants\SteamClientRegistryKeyPaths.cs" />
@@ -196,6 +197,7 @@
     <Compile Include="Constants\AssetConstants.cs" />
     <Compile Include="Constants\GoldbergInstallLayout.cs" />
     <Compile Include="Constants\PathConstants.cs" />
+    <Compile Include="Constants\SteamStaticCdnConstants.cs" />
     <Compile Include="Constants\SteamPicsKeyNames.cs" />
     <Compile Include="Abstractions\ITaskReportService.cs" />
     <Compile Include="Abstractions\IHttpService.cs" />
@@ -296,6 +298,7 @@
     <Compile Include="Services\UriProtocolRegistryService.cs" />
     <Compile Include="Services\UriProtocolService.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
+    <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
     <Compile Include="Services\SteamlessFeedback.cs" />
     <Compile Include="Services\SteamlessService.cs" />
     <Compile Include="JsonKit\JsonArray.cs" />
