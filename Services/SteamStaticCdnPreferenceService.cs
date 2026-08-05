@@ -56,29 +56,73 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrWhiteSpace(apiUrl))
                 return Array.Empty<string>();
 
-            if (!Uri.TryCreate(apiUrl, UriKind.Absolute, out var sourceUri)
-                || !IsRewriteableSteamCdnHost(sourceUri.Host))
-            {
+            if (!Uri.TryCreate(apiUrl, UriKind.Absolute, out var sourceUri))
                 return new[] { apiUrl };
-            }
 
             var preferences = GetActivePreferences();
             var urls = new List<string>();
             AddCandidate(urls, apiUrl);
 
-            var pathAndQuery = string.IsNullOrEmpty(sourceUri.PathAndQuery)
-                ? string.Empty
-                : sourceUri.PathAndQuery.TrimStart('/');
-
-            foreach (var host in preferences.GeneralCdnHosts ?? new List<string>())
+            // Schema URLs use steamcommunity/public/images; newer icons are often only on community_assets.
+            bool rewriteHosts = IsRewriteableSteamCdnHost(sourceUri.Host);
+            if (rewriteHosts)
             {
-                if (string.Equals(host, sourceUri.Host, StringComparison.OrdinalIgnoreCase))
-                    continue;
+                var pathAndQuery = string.IsNullOrEmpty(sourceUri.PathAndQuery)
+                    ? string.Empty
+                    : sourceUri.PathAndQuery.TrimStart('/');
 
-                AddCandidate(urls, BuildHttpsUrl(host, pathAndQuery));
+                foreach (var host in preferences.GeneralCdnHosts ?? new List<string>())
+                {
+                    if (string.Equals(host, sourceUri.Host, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    AddCandidate(urls, BuildHttpsUrl(host, pathAndQuery));
+                }
             }
 
+            if (TryParseSteamCommunityAppImagePath(sourceUri.AbsolutePath, out ulong appId, out string fileName))
+            {
+                foreach (var host in preferences.SharedFastlyHosts ?? new List<string>())
+                {
+                    AddCandidate(
+                        urls,
+                        BuildHttpsUrl(host, $"community_assets/images/apps/{appId}/{fileName}"));
+                }
+            }
+
+            if (urls.Count == 0)
+                urls.Add(apiUrl);
+
             return urls;
+        }
+
+        /// <summary>
+        /// Parses <c>/steamcommunity/public/images/apps/{appId}/{file}</c> from a Steam Web API icon URL.
+        /// </summary>
+        internal static bool TryParseSteamCommunityAppImagePath(string absolutePath, out ulong appId, out string fileName)
+        {
+            appId = 0;
+            fileName = null;
+            if (string.IsNullOrWhiteSpace(absolutePath))
+                return false;
+
+            string[] parts = absolutePath.Trim('/').Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 6)
+                return false;
+
+            if (!parts[0].Equals("steamcommunity", StringComparison.OrdinalIgnoreCase)
+                || !parts[1].Equals("public", StringComparison.OrdinalIgnoreCase)
+                || !parts[2].Equals("images", StringComparison.OrdinalIgnoreCase)
+                || !parts[3].Equals("apps", StringComparison.OrdinalIgnoreCase)
+                || !ulong.TryParse(parts[4], out appId)
+                || appId == 0
+                || string.IsNullOrWhiteSpace(parts[5]))
+            {
+                return false;
+            }
+
+            fileName = parts[5].Trim();
+            return fileName.Length > 0;
         }
 
         public IReadOnlyList<string> GetDefaultAvatarCandidateUrls()
@@ -132,7 +176,13 @@ namespace SmartGoldbergEmu.Services
 
         internal void SetPreferencesForTests(SteamStaticCdnPreferences preferences)
         {
-            ReplacePreferences(preferences ?? CreateDefaultPreferences());
+            lock (_sync)
+            {
+                // Keep background CDN warm-up from replacing explicit test preferences.
+                _warmUpScheduled = true;
+                _warmUpRunning = false;
+                _preferences = NormalizePreferences(preferences ?? CreateDefaultPreferences());
+            }
         }
 
         internal static IReadOnlyList<string> BuildStoreAssetCandidateUrls(

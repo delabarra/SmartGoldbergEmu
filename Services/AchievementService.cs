@@ -90,6 +90,8 @@ namespace SmartGoldbergEmu.Services
 
         private static string _cachedPlaceholderImagePath;
         private static readonly object _placeholderPathLock = new object();
+        private static byte[] _placeholderJpegBytes;
+        private static readonly object _placeholderJpegBytesLock = new object();
 
         private static string GetAchievementPlaceholderImagePath()
         {
@@ -172,10 +174,71 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        private static byte[] GetPlaceholderJpegBytes()
+        {
+            lock (_placeholderJpegBytesLock)
+            {
+                if (_placeholderJpegBytes != null)
+                    return _placeholderJpegBytes;
+
+                string source = GetAchievementPlaceholderImagePath();
+                if (string.IsNullOrEmpty(source))
+                    return null;
+
+                try
+                {
+                    using (var ms = new MemoryStream())
+                    using (var bmp = new Bitmap(source))
+                    {
+                        bmp.Save(ms, ImageFormat.Jpeg);
+                        _placeholderJpegBytes = ms.ToArray();
+                    }
+                }
+                catch
+                {
+                    return null;
+                }
+
+                return _placeholderJpegBytes;
+            }
+        }
+
+        private static bool IsPlaceholderAchievementImage(string localPath)
+        {
+            try
+            {
+                byte[] placeholder = GetPlaceholderJpegBytes();
+                if (placeholder == null || placeholder.Length == 0 || !File.Exists(localPath))
+                    return false;
+
+                var info = new FileInfo(localPath);
+                if (info.Length != placeholder.Length)
+                    return false;
+
+                byte[] existing = File.ReadAllBytes(localPath);
+                return existing.SequenceEqual(placeholder);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool TrySavePlaceholderAsJpeg(string destPath)
         {
-            var source = GetAchievementPlaceholderImagePath();
-            return !string.IsNullOrEmpty(source) && TrySaveJpegFromBitmapSource(source, destPath);
+            byte[] placeholder = GetPlaceholderJpegBytes();
+            if (placeholder == null || placeholder.Length == 0)
+                return false;
+
+            try
+            {
+                File.WriteAllBytes(destPath, placeholder);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public AchievementService(
@@ -1028,7 +1091,8 @@ namespace SmartGoldbergEmu.Services
 
         private async Task<bool> EnsureAchievementImageAsync(string url, string localPath)
         {
-            if (File.Exists(localPath))
+            // Skip only real icons; placeholder JPGs from prior failed downloads must be retried.
+            if (File.Exists(localPath) && !IsPlaceholderAchievementImage(localPath))
                 return true;
 
             var candidateUrls = ServiceLocator.SteamStaticCdnPreferenceService.GetAchievementIconCandidateUrls(url);

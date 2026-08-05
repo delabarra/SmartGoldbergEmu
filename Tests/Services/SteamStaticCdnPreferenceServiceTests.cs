@@ -47,13 +47,17 @@ namespace SmartGoldbergEmu.Tests.Services
                 {
                     "cdn.akamai.steamstatic.com",
                     "cdn.cloudflare.steamstatic.com"
+                },
+                SharedFastlyHosts = new List<string>
+                {
+                    "shared.fastly.steamstatic.com"
                 }
             });
 
             var urls = service.GetAchievementIconCandidateUrls(
                 "https://cdn.steamstatic.com/steamcommunity/public/images/apps/730/abc.jpg");
 
-            Assert.Equal(3, urls.Count);
+            Assert.Equal(4, urls.Count);
             Assert.Equal(
                 "https://cdn.steamstatic.com/steamcommunity/public/images/apps/730/abc.jpg",
                 urls[0]);
@@ -63,6 +67,54 @@ namespace SmartGoldbergEmu.Tests.Services
             Assert.Contains(
                 "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/730/abc.jpg",
                 urls);
+            Assert.Contains(
+                "https://shared.fastly.steamstatic.com/community_assets/images/apps/730/abc.jpg",
+                urls);
+        }
+
+        [Fact]
+        public void GetAchievementIconCandidateUrls_adds_community_assets_fallback_for_schema_path()
+        {
+            var service = new SteamStaticCdnPreferenceService();
+            service.SetPreferencesForTests(new SteamStaticCdnPreferences
+            {
+                GeneralCdnHosts = new List<string> { "steamcdn-a.akamaihd.net" },
+                SharedFastlyHosts = new List<string>
+                {
+                    "shared.fastly.steamstatic.com",
+                    "shared.akamai.steamstatic.com"
+                }
+            });
+
+            var urls = service.GetAchievementIconCandidateUrls(
+                "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/219990/b9c54f06adb6d6fefe983665896a90cbac9d6265.jpg");
+
+            Assert.Equal(
+                "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/219990/b9c54f06adb6d6fefe983665896a90cbac9d6265.jpg",
+                urls[0]);
+            Assert.Contains(
+                "https://shared.fastly.steamstatic.com/community_assets/images/apps/219990/b9c54f06adb6d6fefe983665896a90cbac9d6265.jpg",
+                urls);
+            Assert.Contains(
+                "https://shared.akamai.steamstatic.com/community_assets/images/apps/219990/b9c54f06adb6d6fefe983665896a90cbac9d6265.jpg",
+                urls);
+        }
+
+        [Fact]
+        public void TryParseSteamCommunityAppImagePath_parses_appid_and_filename()
+        {
+            Assert.True(
+                SteamStaticCdnPreferenceService.TryParseSteamCommunityAppImagePath(
+                    "/steamcommunity/public/images/apps/219990/abc123.jpg",
+                    out ulong appId,
+                    out string fileName));
+            Assert.Equal(219990UL, appId);
+            Assert.Equal("abc123.jpg", fileName);
+            Assert.False(
+                SteamStaticCdnPreferenceService.TryParseSteamCommunityAppImagePath(
+                    "/community_assets/images/apps/219990/abc123.jpg",
+                    out _,
+                    out _));
         }
 
         [Fact]
