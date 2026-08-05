@@ -90,6 +90,25 @@ namespace SmartGoldbergEmu.Services
 
         private static string _cachedPlaceholderImagePath;
         private static readonly object _placeholderPathLock = new object();
+        private static byte[] _placeholderJpegBytes;
+        private static readonly object _placeholderJpegBytesLock = new object();
+
+        // Schema icon URLs often 404 on steamcommunity/public/images while the same hash is live under community_assets.
+        private static readonly string[] AchievementIconSchemaCdnHosts =
+        {
+            "cdn.fastly.steamstatic.com",
+            "cdn.akamai.steamstatic.com",
+            "cdn.cloudflare.steamstatic.com",
+            "cdn.steamstatic.com",
+            "steamcdn-a.akamaihd.net"
+        };
+
+        private static readonly string[] AchievementIconCommunityAssetHosts =
+        {
+            "shared.fastly.steamstatic.com",
+            "shared.akamai.steamstatic.com",
+            "shared.cloudflare.steamstatic.com"
+        };
 
         private static string GetAchievementPlaceholderImagePath()
         {
@@ -172,10 +191,149 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        private static byte[] GetPlaceholderJpegBytes()
+        {
+            lock (_placeholderJpegBytesLock)
+            {
+                if (_placeholderJpegBytes != null)
+                    return _placeholderJpegBytes;
+
+                string source = GetAchievementPlaceholderImagePath();
+                if (string.IsNullOrEmpty(source))
+                    return null;
+
+                try
+                {
+                    using (var ms = new MemoryStream())
+                    using (var bmp = new Bitmap(source))
+                    {
+                        bmp.Save(ms, ImageFormat.Jpeg);
+                        _placeholderJpegBytes = ms.ToArray();
+                    }
+                }
+                catch
+                {
+                    return null;
+                }
+
+                return _placeholderJpegBytes;
+            }
+        }
+
+        private static bool IsPlaceholderAchievementImage(string localPath)
+        {
+            try
+            {
+                byte[] placeholder = GetPlaceholderJpegBytes();
+                if (placeholder == null || placeholder.Length == 0 || !File.Exists(localPath))
+                    return false;
+
+                var info = new FileInfo(localPath);
+                if (info.Length != placeholder.Length)
+                    return false;
+
+                byte[] existing = File.ReadAllBytes(localPath);
+                return existing.SequenceEqual(placeholder);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool TrySavePlaceholderAsJpeg(string destPath)
         {
-            var source = GetAchievementPlaceholderImagePath();
-            return !string.IsNullOrEmpty(source) && TrySaveJpegFromBitmapSource(source, destPath);
+            byte[] placeholder = GetPlaceholderJpegBytes();
+            if (placeholder == null || placeholder.Length == 0)
+                return false;
+
+            try
+            {
+                File.WriteAllBytes(destPath, placeholder);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void AddAchievementIconCandidate(List<string> candidates, string url)
+        {
+            if (candidates == null || string.IsNullOrWhiteSpace(url))
+                return;
+            if (candidates.Any(x => string.Equals(x, url, StringComparison.OrdinalIgnoreCase)))
+                return;
+            candidates.Add(url);
+        }
+
+        private static bool TryParseSteamCommunityAppImagePath(string absolutePath, out ulong appId, out string fileName)
+        {
+            appId = 0;
+            fileName = null;
+            if (string.IsNullOrWhiteSpace(absolutePath))
+                return false;
+
+            string[] parts = absolutePath.Trim('/').Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 6)
+                return false;
+
+            if (!parts[0].Equals("steamcommunity", StringComparison.OrdinalIgnoreCase)
+                || !parts[1].Equals("public", StringComparison.OrdinalIgnoreCase)
+                || !parts[2].Equals("images", StringComparison.OrdinalIgnoreCase)
+                || !parts[3].Equals("apps", StringComparison.OrdinalIgnoreCase)
+                || !ulong.TryParse(parts[4], out appId)
+                || appId == 0
+                || string.IsNullOrWhiteSpace(parts[5]))
+            {
+                return false;
+            }
+
+            fileName = parts[5].Trim();
+            return fileName.Length > 0;
+        }
+
+        /// <summary>
+        /// Builds download candidates for a Steam Web API achievement icon URL.
+        /// Tries the schema URL / CDN host mirrors, then community_assets on shared hosts
+        /// (newer icons often 404 on steamcommunity/public/images while the hash is live there).
+        /// </summary>
+        internal static IReadOnlyList<string> GetAchievementIconCandidateUrls(string apiUrl)
+        {
+            var urls = new List<string>();
+            if (string.IsNullOrWhiteSpace(apiUrl))
+                return urls;
+
+            AddAchievementIconCandidate(urls, apiUrl);
+
+            if (!Uri.TryCreate(apiUrl, UriKind.Absolute, out var sourceUri))
+                return urls;
+
+            string pathAndQuery = string.IsNullOrEmpty(sourceUri.PathAndQuery)
+                ? string.Empty
+                : sourceUri.PathAndQuery.TrimStart('/');
+
+            foreach (string host in AchievementIconSchemaCdnHosts)
+            {
+                if (string.Equals(host, sourceUri.Host, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                AddAchievementIconCandidate(
+                    urls,
+                    ApplicationConstants.HttpsUriSchemePrefix + host + "/" + pathAndQuery);
+            }
+
+            if (TryParseSteamCommunityAppImagePath(sourceUri.AbsolutePath, out ulong appId, out string fileName))
+            {
+                string relative = "community_assets/images/apps/" + appId + "/" + fileName;
+                foreach (string host in AchievementIconCommunityAssetHosts)
+                {
+                    AddAchievementIconCandidate(
+                        urls,
+                        ApplicationConstants.HttpsUriSchemePrefix + host + "/" + relative);
+                }
+            }
+
+            return urls;
         }
 
         public AchievementService(
@@ -1028,21 +1186,29 @@ namespace SmartGoldbergEmu.Services
 
         private async Task<bool> EnsureAchievementImageAsync(string url, string localPath)
         {
-            if (File.Exists(localPath))
+            // Skip only real icons; placeholder JPGs from prior failed downloads must be retried.
+            if (File.Exists(localPath) && !IsPlaceholderAchievementImage(localPath))
                 return true;
-            if (!string.IsNullOrEmpty(url) && PathValidationHelper.IsSafeUrl(url))
+
+            foreach (string candidateUrl in GetAchievementIconCandidateUrls(url))
             {
+                if (string.IsNullOrEmpty(candidateUrl) || !PathValidationHelper.IsSafeUrl(candidateUrl))
+                    continue;
+
                 try
                 {
-                    byte[] data = await HttpHelpers.GetByteArrayAsync(url, AchievementConstants.HttpRequestLongTimeout);
+                    byte[] data = await HttpHelpers.GetByteArrayAsync(
+                        candidateUrl,
+                        AchievementConstants.HttpRequestLongTimeout);
                     await Task.Run(() => File.WriteAllBytes(localPath, data));
                     return true;
                 }
                 catch (Exception)
                 {
-                    // Download failed, fall through to placeholder
+                    // Try the next CDN / community_assets candidate.
                 }
             }
+
             return TrySavePlaceholderAsJpeg(localPath);
         }
 
