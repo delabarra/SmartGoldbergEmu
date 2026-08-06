@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -185,6 +186,176 @@ namespace SmartGoldbergEmu.Services
                 return ValidationResult.Failure(SteamlessFeedback.InvalidSteamlessInstallBody());
 
             return ServiceLocator.AppDataService.SetSteamlessCliPath(validatedCliPath);
+        }
+
+        // Distinct existing exes in launcher order; settings Path appended only if not already listed.
+        public async Task<IReadOnlyList<SteamlessTarget>> ResolveTargetsAsync(
+            GameConfig game,
+            CancellationToken cancellationToken = default)
+        {
+            var ordered = new List<SteamlessTarget>();
+            var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string settingsFullPath = null;
+
+            if (game != null &&
+                GameFolderPathHelper.TryResolveExecutableForSteamless(game, out string settingsPath) &&
+                !string.IsNullOrWhiteSpace(settingsPath) &&
+                File.Exists(settingsPath))
+            {
+                settingsFullPath = NormalizeFullPath(settingsPath);
+            }
+
+            if (game == null)
+            {
+                TryAppendSettingsTarget(game, settingsFullPath, ordered, seenPaths);
+                return ordered;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            List<LaunchOption> allOptions = await ServiceLocator.LaunchOptionService
+                .ExtractLaunchOptionsIncludingUserIniAsync(game, cancellationToken)
+                .ConfigureAwait(false);
+
+            List<LaunchOption> filtered = ServiceLocator.LaunchOptionService
+                .FilterLaunchOptionsForCurrentSettings(allOptions);
+
+            if (filtered != null)
+            {
+                foreach (LaunchOption option in filtered)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (option == null || string.IsNullOrWhiteSpace(option.Executable))
+                        continue;
+
+                    ResolvedLaunchCommand command;
+                    try
+                    {
+                        command = ServiceLocator.GameLaunchService.GetResolvedLaunchCommand(game, option);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (command == null || string.IsNullOrWhiteSpace(command.ExecutablePath))
+                        continue;
+
+                    string resolvedFull = NormalizeFullPath(command.ExecutablePath);
+                    if (string.IsNullOrEmpty(resolvedFull) || !File.Exists(resolvedFull))
+                        continue;
+
+                    // GetResolvedLaunchCommand falls back to game.Path when the option exe is missing;
+                    // skip those so we do not attach the wrong launch-option label to the settings exe.
+                    string optionFileName = Path.GetFileName(option.Executable.Trim());
+                    string resolvedFileName = Path.GetFileName(resolvedFull);
+                    if (!string.IsNullOrEmpty(optionFileName) &&
+                        !string.Equals(optionFileName, resolvedFileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!seenPaths.Add(resolvedFull))
+                        continue;
+
+                    string displayName = !string.IsNullOrWhiteSpace(option.Description)
+                        ? option.Description.Trim()
+                        : (!string.IsNullOrEmpty(resolvedFileName) ? resolvedFileName : resolvedFull);
+
+                    ordered.Add(new SteamlessTarget
+                    {
+                        FullPath = resolvedFull,
+                        DisplayName = displayName,
+                        RelativeOrExeHint = BuildRelativeOrExeHint(game, resolvedFull),
+                        IsSettingsExecutable = !string.IsNullOrEmpty(settingsFullPath) &&
+                            string.Equals(resolvedFull, settingsFullPath, StringComparison.OrdinalIgnoreCase),
+                        AlreadyPatched = IsAlreadyPatched(resolvedFull)
+                    });
+                }
+            }
+
+            TryAppendSettingsTarget(game, settingsFullPath, ordered, seenPaths);
+            return ordered;
+        }
+
+        // True when Steamless left a game_o.exe backup beside this executable.
+        public static bool IsAlreadyPatched(string executablePath)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath))
+                return false;
+
+            string backupPath = PathConstants.BuildSteamlessOriginalBackupPath(executablePath);
+            return !string.IsNullOrEmpty(backupPath) && File.Exists(backupPath);
+        }
+
+        private static void TryAppendSettingsTarget(
+            GameConfig game,
+            string settingsFullPath,
+            List<SteamlessTarget> ordered,
+            HashSet<string> seenPaths)
+        {
+            if (string.IsNullOrEmpty(settingsFullPath) || !seenPaths.Add(settingsFullPath))
+                return;
+
+            ordered.Add(new SteamlessTarget
+            {
+                FullPath = settingsFullPath,
+                DisplayName = "Settings executable",
+                RelativeOrExeHint = BuildRelativeOrExeHint(game, settingsFullPath),
+                IsSettingsExecutable = true,
+                AlreadyPatched = IsAlreadyPatched(settingsFullPath)
+            });
+        }
+
+        private static string NormalizeFullPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return null;
+
+            try
+            {
+                return Path.GetFullPath(path.Trim());
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string BuildRelativeOrExeHint(GameConfig game, string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath))
+                return null;
+
+            string fileName = Path.GetFileName(fullPath);
+            if (game == null || string.IsNullOrWhiteSpace(game.StartFolder))
+                return fileName;
+
+            try
+            {
+                string baseFolder = Path.GetFullPath(game.StartFolder.Trim());
+                if (!baseFolder.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) &&
+                    !baseFolder.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+                {
+                    baseFolder += Path.DirectorySeparatorChar;
+                }
+
+                string full = Path.GetFullPath(fullPath);
+                if (full.StartsWith(baseFolder, StringComparison.OrdinalIgnoreCase))
+                    return full.Substring(baseFolder.Length);
+
+                Uri baseUri = new Uri(baseFolder);
+                Uri fileUri = new Uri(full);
+                string relative = Uri.UnescapeDataString(baseUri.MakeRelativeUri(fileUri).ToString())
+                    .Replace('/', Path.DirectorySeparatorChar);
+                if (!string.IsNullOrEmpty(relative) && !relative.StartsWith("..", StringComparison.Ordinal))
+                    return relative;
+            }
+            catch
+            {
+            }
+
+            return fileName;
         }
 
         public async Task<SteamlessApplyResult> ApplySteamlessAsync(

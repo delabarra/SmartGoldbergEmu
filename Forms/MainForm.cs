@@ -620,7 +620,9 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowCopyGuid.Click += OnCopyGuid_Click;
             miCtxRowCreateShortcut.Click += OnCreateShortcut_Click;
             miCtxRowCreateSteamAppIdFile.Click += OnCreateSteamAppIdFile_Click;
-            miCtxRowApplySteamless.Click += OnApplySteamless_Click;
+            miCtxRowApplySteamless.DropDownOpening += OnApplySteamless_DropDownOpening;
+            // Seed a child so WinForms treats Steamless as a submenu (DropDownOpening fires).
+            miCtxRowApplySteamless.DropDownItems.Add(new ToolStripMenuItem("Loading…") { Enabled = false });
 
             lstGames.ItemActivate += lstGames_ItemActivate;
 
@@ -1452,7 +1454,101 @@ namespace SmartGoldbergEmu.Forms
                 EditGame(game.GameGuid);
         }
 
-        private async void OnApplySteamless_Click(object sender, EventArgs e)
+        private async void OnApplySteamless_DropDownOpening(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            miCtxRowApplySteamless.DropDownItems.Clear();
+
+            var game = GetSelectedGame();
+            if (game == null)
+            {
+                AddSteamlessPlaceholderMenuItem("No game selected");
+                return;
+            }
+
+            var loadingItem = new ToolStripMenuItem("Loading…") { Enabled = false };
+            miCtxRowApplySteamless.DropDownItems.Add(loadingItem);
+
+            IReadOnlyList<SteamlessTarget> targets;
+            try
+            {
+                targets = await ServiceLocator.SteamlessService.ResolveTargetsAsync(game).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                if (IsDisposed || Disposing)
+                    return;
+
+                Program.LogService?.LogError("Steamless: failed to resolve launch executables.", ex);
+                miCtxRowApplySteamless.DropDownItems.Clear();
+                AddSteamlessPlaceholderMenuItem("Could not load executables");
+                return;
+            }
+
+            if (IsDisposed || Disposing)
+                return;
+
+            miCtxRowApplySteamless.DropDownItems.Clear();
+
+            if (targets == null || targets.Count == 0)
+            {
+                AddSteamlessPlaceholderMenuItem("No executable found");
+                return;
+            }
+
+            foreach (SteamlessTarget target in targets)
+            {
+                if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
+                    continue;
+
+                string text = string.IsNullOrWhiteSpace(target.DisplayName)
+                    ? Path.GetFileName(target.FullPath)
+                    : target.DisplayName.Trim();
+                if (target.AlreadyPatched)
+                    text += " [Patched]";
+
+                string pathHint = string.IsNullOrWhiteSpace(target.RelativeOrExeHint)
+                    ? target.FullPath
+                    : target.RelativeOrExeHint + Environment.NewLine + target.FullPath;
+
+                var item = new ToolStripMenuItem(text)
+                {
+                    Tag = target.FullPath,
+                    Enabled = !target.AlreadyPatched,
+                    ToolTipText = target.AlreadyPatched
+                        ? "Already patched with Steamless." + Environment.NewLine + pathHint
+                        : pathHint
+                };
+                if (!target.AlreadyPatched)
+                    item.Click += OnApplySteamlessTarget_Click;
+                miCtxRowApplySteamless.DropDownItems.Add(item);
+            }
+
+            if (miCtxRowApplySteamless.DropDownItems.Count == 0)
+                AddSteamlessPlaceholderMenuItem("No executable found");
+        }
+
+        private void AddSteamlessPlaceholderMenuItem(string text)
+        {
+            miCtxRowApplySteamless.DropDownItems.Add(new ToolStripMenuItem(text) { Enabled = false });
+        }
+
+        private async void OnApplySteamlessTarget_Click(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            var menuItem = sender as ToolStripMenuItem;
+            string executablePath = menuItem?.Tag as string;
+            if (string.IsNullOrWhiteSpace(executablePath))
+                return;
+
+            await ApplySteamlessToExecutableAsync(executablePath).ConfigureAwait(true);
+        }
+
+        private async Task ApplySteamlessToExecutableAsync(string executablePath)
         {
             if (IsDisposed || Disposing)
                 return;
@@ -1461,7 +1557,7 @@ namespace SmartGoldbergEmu.Forms
             if (game == null)
                 return;
 
-            if (!TryResolveExecutableForSteamless(game, out string executablePath))
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
             {
                 ShowSteamlessApplyFeedback(game.AppName, new SteamlessApplyResult { Outcome = SteamlessApplyOutcome.ExecutablePathInvalid });
                 return;
@@ -1817,7 +1913,11 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowOpenValveDataFile.Enabled = game != null && game.AppId > 0;
 
             miCtxRowApplySteamless.Visible = true;
-            bool canApplySteamless = game != null && TryResolveExecutableForSteamless(game, out _);
+            // Keep enabled when StartFolder/AppId may yield launch options even if Path is unresolved.
+            bool canApplySteamless = game != null && (
+                TryResolveExecutableForSteamless(game, out _) ||
+                !string.IsNullOrWhiteSpace(game.StartFolder) ||
+                game.AppId > 0);
             miCtxRowApplySteamless.Enabled = canApplySteamless;
             if (game != null && !canApplySteamless)
                 Program.LogService?.LogDebug($"Steamless disabled: could not resolve executable (StartFolder={game.StartFolder}, Path={game.Path}).");

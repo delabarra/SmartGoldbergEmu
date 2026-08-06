@@ -151,6 +151,7 @@
     <Compile Include="Models\SteamlessApplyOutcome.cs" />
     <Compile Include="Models\SteamlessApplyResult.cs" />
     <Compile Include="Models\SteamlessCliOptions.cs" />
+    <Compile Include="Models\SteamlessTarget.cs" />
     <Compile Include="Models\LegacyConfig.cs" />
     <Compile Include="Models\GameSettingsSaveModels.cs" />
     <Compile Include="Models\GameSettingsSnapshot.cs" />
