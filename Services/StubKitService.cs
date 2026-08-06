@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Abstractions;
@@ -13,6 +14,17 @@ namespace SmartGoldbergEmu.Services
 {
     public sealed class StubKitService
     {
+        private static readonly object DetectCacheLock = new object();
+        private static readonly Dictionary<string, DetectCacheEntry> DetectCache =
+            new Dictionary<string, DetectCacheEntry>(StringComparer.OrdinalIgnoreCase);
+        private const int DetectCacheMaxEntries = 64;
+
+        private sealed class DetectCacheEntry
+        {
+            public long LastWriteUtcTicks;
+            public DetectResult Result;
+        }
+
         // Distinct existing exes in launcher order; settings Path appended only if not already listed.
         // Detection is deferred (IsDetectionPending) so the UI can list Loading… items first.
         public async Task<IReadOnlyList<StubExecutableTarget>> ResolveTargetsAsync(
@@ -115,7 +127,13 @@ namespace SmartGoldbergEmu.Services
             ApplyDetection(target, detect);
         }
 
-        // Reads the PE and runs StubKit detection.
+        // Drop LOH pages left by prefix detect when a menu finishes scanning.
+        public static void ReleaseTemporaryBuffers()
+        {
+            ReleaseLargeObjectHeapAfterStubKit();
+        }
+
+        // Reads only the PE prefix StubClassifier needs (not the whole executable). Cached per path+mtime.
         public static DetectResult DetectExecutable(string executablePath)
         {
             if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
@@ -128,19 +146,62 @@ namespace SmartGoldbergEmu.Services
                 };
             }
 
+            string fullPath;
+            long writeTicks;
             try
             {
-                byte[] peBytes = File.ReadAllBytes(executablePath);
-                return SteamStub.Detect(peBytes);
+                fullPath = Path.GetFullPath(executablePath.Trim());
+                writeTicks = File.GetLastWriteTimeUtc(fullPath).Ticks;
             }
-            catch (Exception)
+            catch
             {
-                return new DetectResult
+                return SteamStub.DetectFile(executablePath);
+            }
+
+            lock (DetectCacheLock)
+            {
+                DetectCacheEntry cached;
+                if (DetectCache.TryGetValue(fullPath, out cached) &&
+                    cached != null &&
+                    cached.Result != null &&
+                    cached.LastWriteUtcTicks == writeTicks)
                 {
-                    Variant = StubVariant.None,
-                    Name = "unreadable",
-                    CanRemove = false
+                    return cached.Result;
+                }
+            }
+
+            DetectResult detect = SteamStub.DetectFile(fullPath);
+
+            lock (DetectCacheLock)
+            {
+                if (DetectCache.Count >= DetectCacheMaxEntries)
+                    DetectCache.Clear();
+
+                DetectCache[fullPath] = new DetectCacheEntry
+                {
+                    LastWriteUtcTicks = writeTicks,
+                    Result = detect
                 };
+            }
+
+            return detect;
+        }
+
+        public static void InvalidateDetectCache(string executablePath)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath))
+                return;
+
+            try
+            {
+                string fullPath = Path.GetFullPath(executablePath.Trim());
+                lock (DetectCacheLock)
+                {
+                    DetectCache.Remove(fullPath);
+                }
+            }
+            catch
+            {
             }
         }
 
@@ -210,6 +271,8 @@ namespace SmartGoldbergEmu.Services
                     .ConfigureAwait(false);
 
                 log?.LogMessage("StubKit: restored " + executablePath + " from " + backupPath);
+                InvalidateDetectCache(executablePath);
+                ReleaseLargeObjectHeapAfterStubKit();
                 return new StubKitApplyResult
                 {
                     Outcome = StubKitApplyOutcome.Restored,
@@ -223,6 +286,7 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 log?.LogError("StubKit: restore failed.", ex);
+                ReleaseLargeObjectHeapAfterStubKit();
                 return new StubKitApplyResult
                 {
                     Outcome = StubKitApplyOutcome.RestoreFailed,
@@ -274,62 +338,76 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                byte[] peBytes = await Task.Run(() => File.ReadAllBytes(executablePath), cancellationToken)
-                    .ConfigureAwait(false);
-
-                DetectResult detect = SteamStub.Detect(peBytes);
-                if (detect.Variant == StubVariant.None)
-                {
-                    return new StubKitApplyResult
-                    {
-                        Outcome = StubKitApplyOutcome.NoStubFound,
-                        LogDetail = detect.Name
-                    };
-                }
-
-                if (!detect.CanRemove)
-                {
-                    return new StubKitApplyResult
-                    {
-                        Outcome = StubKitApplyOutcome.CannotRemove,
-                        LogDetail = detect.Name
-                    };
-                }
-
-                UnpackOptions unpackOptions = UnpackOptions.Default;
-                UnpackWorkResult work = await Task.Run(
-                        () =>
-                        {
-                            byte[] unpackedBytes;
-                            StubUnpackInfo info;
-                            bool success = SteamStub.TryUnpack(peBytes, unpackOptions, out unpackedBytes, out info);
-                            return new UnpackWorkResult
-                            {
-                                Success = success,
-                                UnpackedBytes = unpackedBytes,
-                                Info = info
-                            };
-                        },
+                // Keep the full PE buffer inside this worker only — do not return it to the async
+                // state machine (that pinned multi‑MB LOH arrays after patch/restore).
+                StubKitApplyResult result = await Task.Run(
+                        () => ApplyOnBackground(executablePath, backupPath, log),
                         cancellationToken)
                     .ConfigureAwait(false);
 
-                if (!work.Success || work.UnpackedBytes == null || work.UnpackedBytes.Length == 0)
+                InvalidateDetectCache(executablePath);
+                ReleaseLargeObjectHeapAfterStubKit();
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                log?.LogError("StubKit: run failed.", ex);
+                ReleaseLargeObjectHeapAfterStubKit();
+                return new StubKitApplyResult
                 {
+                    Outcome = StubKitApplyOutcome.Unexpected,
+                    LogDetail = ex.Message
+                };
+            }
+        }
+
+        private static StubKitApplyResult ApplyOnBackground(string executablePath, string backupPath, ILogService log)
+        {
+            byte[] peBytes = null;
+            byte[] unpacked = null;
+            try
+            {
+                peBytes = File.ReadAllBytes(executablePath);
+
+                StubUnpackInfo info;
+                bool success = SteamStub.TryUnpack(
+                    peBytes,
+                    UnpackOptions.Default,
+                    mutateInPlace: true,
+                    out unpacked,
+                    out info);
+
+                // In-place unpack aliases peBytes; drop the extra root before writing/failures return.
+                peBytes = null;
+
+                if (!success)
+                {
+                    unpacked = null;
+                    StubKitApplyOutcome outcome = StubKitApplyOutcome.UnpackFailed;
+                    if (info != null && info.Variant == StubVariant.None)
+                        outcome = StubKitApplyOutcome.NoStubFound;
+                    else if (info != null &&
+                             !string.IsNullOrEmpty(info.ErrorMessage) &&
+                             info.ErrorMessage.IndexOf("cannot be removed", StringComparison.OrdinalIgnoreCase) >= 0)
+                        outcome = StubKitApplyOutcome.CannotRemove;
+
                     return new StubKitApplyResult
                     {
-                        Outcome = StubKitApplyOutcome.UnpackFailed,
-                        LogDetail = work.Info != null ? work.Info.ErrorMessage : null
+                        Outcome = outcome,
+                        LogDetail = outcome == StubKitApplyOutcome.UnpackFailed
+                            ? (info != null ? info.ErrorMessage : null)
+                            : (info != null ? info.VariantName : null)
                     };
                 }
 
                 string unpackedPath = executablePath + PathConstants.StubUnpackedExecutableSuffix;
                 try
                 {
-                    await Task.Run(
-                            () => ReplaceExecutableWithUnpacked(
-                                executablePath, work.UnpackedBytes, unpackedPath, backupPath, log),
-                            cancellationToken)
-                        .ConfigureAwait(false);
+                    ReplaceExecutableWithUnpacked(executablePath, unpacked, unpackedPath, backupPath, log);
                 }
                 catch (Exception ex)
                 {
@@ -342,7 +420,7 @@ namespace SmartGoldbergEmu.Services
                 }
 
                 log?.LogMessage("StubKit: replaced " + executablePath + " (original: " + backupPath + ")");
-                string summary = work.Info != null ? work.Info.Summary : null;
+                string summary = info != null ? info.Summary : null;
                 if (!string.IsNullOrWhiteSpace(summary))
                     log?.LogMessage("StubKit: " + summary);
 
@@ -353,18 +431,23 @@ namespace SmartGoldbergEmu.Services
                     LogDetail = summary
                 };
             }
-            catch (OperationCanceledException)
+            finally
             {
-                throw;
+                unpacked = null;
+                peBytes = null;
             }
-            catch (Exception ex)
+        }
+
+        // Full PE images land on the LOH; without a compact, Working Set often stays elevated after refs die.
+        private static void ReleaseLargeObjectHeapAfterStubKit()
+        {
+            try
             {
-                log?.LogError("StubKit: run failed.", ex);
-                return new StubKitApplyResult
-                {
-                    Outcome = StubKitApplyOutcome.Unexpected,
-                    LogDetail = ex.Message
-                };
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true, true);
+            }
+            catch
+            {
             }
         }
 
@@ -468,13 +551,6 @@ namespace SmartGoldbergEmu.Services
             }
 
             return fileName;
-        }
-
-        private sealed class UnpackWorkResult
-        {
-            public bool Success { get; set; }
-            public byte[] UnpackedBytes { get; set; }
-            public StubUnpackInfo Info { get; set; }
         }
 
         private static void RestoreExecutableFromBackup(string executablePath, string backupPath, ILogService log)

@@ -1335,7 +1335,8 @@ namespace SmartGoldbergEmu.Forms
             {
                 txtAppID, txtGameName, txtGameFolder, txtGameExecutable, txtLaunchParameters, txtWorkingDirectory, txtCustomIcon,
                 txtForceAccountName, txtForceSteamId, txtUserTicket, txtAltSteamId, txtForceIpCountry,
-                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw
+                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw,
+                txtSteamGameStatsReportsDir
             })
                 WireTextChanged(tb);
 
@@ -1345,11 +1346,13 @@ namespace SmartGoldbergEmu.Forms
                 chkImmediateGameserverStats, chkMatchmakingServerListActualType, chkMatchmakingServerDetailsViaSourceQuery,
                 chkDisableLanOnly, chkDisableNetworking, chkOffline,
                 chkDisableSharingStatsWithGameserver, chkDisableSourceQuery, chkShareLeaderboardsOverNetwork,
-                chkDisableLobbyCreation, chkDownloadSteamhttpRequests
+                chkDisableLobbyCreation, chkDownloadSteamhttpRequests,
+                chkDisableLeaderboardsCreateUnknown, chkAllowUnknownStats, chkStatAchievementProgressFunctionality,
+                chkSaveOnlyHigherStatAchievementProgress, chkRecordPlaytime, chkAchievementsBypass
             })
                 WireChecked(chk);
 
-            foreach (var nud in new[] { numForcePort, numOldP2PPacketSharingMode, numAltSteamIdCount })
+            foreach (var nud in new[] { numForcePort, numOldP2PPacketSharingMode, numAltSteamIdCount, numIconsPerIteration })
                 WireValueChanged(nud);
 
             WireCheckedWithSecondary(chkUnlockAllDLC, ChkUnlockAllDLC_CheckedChanged);

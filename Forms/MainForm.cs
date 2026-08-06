@@ -1054,13 +1054,30 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing)
                     return;
 
-                await OfferSteamStubRemovalIfNeededAsync(executablePath, gameConfig.AppName).ConfigureAwait(true);
+                _taskReportService.SetProgress(0, 0);
+                if (!await OpenGameSettingsFormAsync(gameConfig, metadata, collectResult.Bundle).ConfigureAwait(true))
+                {
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                    return;
+                }
+
                 if (IsDisposed || Disposing)
                     return;
 
-                _taskReportService.SetProgress(0, 0);
-                if (!await OpenGameSettingsFormAsync(gameConfig, metadata, collectResult.Bundle).ConfigureAwait(true))
-                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                // Stub check after the game is in the library (skip Retry→edit-existing).
+                if (_gameDataService.GetGame(gameConfig.GameGuid) != null)
+                {
+                    string stubExe = executablePath;
+                    string stubName = gameConfig.AppName;
+                    // Schedule after add returns so list/mosaic can paint; do not block save completion.
+                    BeginInvoke(new MethodInvoker(() =>
+                    {
+                        if (IsDisposed || Disposing)
+                            return;
+                        _ = OfferSteamStubRemovalIfNeededAsync(stubExe, stubName)
+                            .ForgetFaults(Program.LogService, nameof(OfferSteamStubRemovalIfNeededAsync));
+                    }));
+                }
             }
             catch (Exception ex)
             {
@@ -1570,6 +1587,9 @@ namespace SmartGoldbergEmu.Forms
 
                 ApplyStubKitMenuItemPresentation(item, target);
             }
+
+            if (IsStubKitDropDownLoadCurrent(loadId))
+                StubKitService.ReleaseTemporaryBuffers();
         }
 
         private void ApplyStubKitMenuItemPresentation(ToolStripMenuItem item, StubExecutableTarget target)
@@ -1732,21 +1752,33 @@ namespace SmartGoldbergEmu.Forms
             if (!string.Equals(extension, ".exe", StringComparison.OrdinalIgnoreCase))
                 return;
 
+            string name = !string.IsNullOrWhiteSpace(gameName) ? gameName.Trim() : "game";
             DetectResult detect;
+            _taskReportService.StartProgress(StubKitFeedback.CheckingProgress(name));
+            prgFeedback.Style = ProgressBarStyle.Marquee;
             try
             {
-                detect = await Task.Run(() => StubKitService.DetectExecutable(executablePath)).ConfigureAwait(true);
+                detect = await Task.Run(() => StubKitService.DetectExecutable(executablePath))
+                    .ConfigureAwait(true);
             }
             catch (Exception ex)
             {
                 Program.LogService?.LogError("StubKit: failed to check executable for SteamStub.", ex);
                 return;
             }
+            finally
+            {
+                if (!IsDisposed && !Disposing)
+                    prgFeedback.Style = ProgressBarStyle.Blocks;
+            }
 
             if (IsDisposed || Disposing)
                 return;
             if (detect == null || !detect.CanRemove)
+            {
+                _taskReportService.SetProgress(0, 0);
                 return;
+            }
 
             DialogResult answer = FormMessageBoxHelper.ShowDialogIfAlive(
                 this,
@@ -1755,7 +1787,10 @@ namespace SmartGoldbergEmu.Forms
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
             if (answer != DialogResult.Yes)
+            {
+                _taskReportService.SetProgress(0, 0);
                 return;
+            }
 
             await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
         }
@@ -1809,7 +1844,9 @@ namespace SmartGoldbergEmu.Forms
 
             try
             {
-                var result = await ServiceLocator.StubKitService.ApplyAsync(executablePath, Program.LogService).ConfigureAwait(true);
+                var result = await ServiceLocator.StubKitService
+                    .ApplyAsync(executablePath, Program.LogService)
+                    .ConfigureAwait(true);
                 if (IsDisposed || Disposing)
                     return;
 
@@ -1884,6 +1921,17 @@ namespace SmartGoldbergEmu.Forms
 
             string message = StubKitFeedback.ResultMessage(result.Outcome, gameName);
 
+            // Success/restore: status bar only (avoids a modal while large PE buffers are collected).
+            if (result.Outcome == StubKitApplyOutcome.Success ||
+                result.Outcome == StubKitApplyOutcome.Restored)
+            {
+                _taskReportService.SetMessageWithAutoClear(
+                    message,
+                    StubKitFeedback.StatusKindForOutcome(result.Outcome),
+                    6000);
+                return;
+            }
+
             FormMessageBoxHelper.ShowIfAlive(
                 this,
                 message,
@@ -1894,7 +1942,7 @@ namespace SmartGoldbergEmu.Forms
             _taskReportService.SetMessageWithAutoClear(
                 message,
                 StubKitFeedback.StatusKindForOutcome(result.Outcome),
-                result.Success ? 6000 : 8000);
+                8000);
         }
 
         private static Image TryExtractStubMenuIcon(string executablePath)

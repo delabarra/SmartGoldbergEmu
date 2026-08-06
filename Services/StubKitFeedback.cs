@@ -15,6 +15,11 @@ namespace SmartGoldbergEmu.Services
             return "SteamStub: " + FormatGameName(gameName) + "...";
         }
 
+        public static string CheckingProgress(string gameName)
+        {
+            return "Checking SteamStub: " + FormatGameName(gameName) + "...";
+        }
+
         public static string RestoreProgress(string gameName)
         {
             return "SteamStub restore: " + FormatGameName(gameName) + "...";

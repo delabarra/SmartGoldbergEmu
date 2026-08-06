@@ -1655,7 +1655,9 @@ namespace SmartGoldbergEmu.Forms
             chkDisableFriendNotification.CheckedChanged += Control_Changed;
             numNotificationDurationAchievement.ValueChanged += Control_Changed;
             numNotificationDurationProgress.ValueChanged += Control_Changed;
+            // DropDown (editable): selection alone misses typed custom formats.
             cmbAchievementDateTimeFormat.SelectedIndexChanged += Control_Changed;
+            cmbAchievementDateTimeFormat.TextChanged += Control_Changed;
             cmbPosAchievement.SelectedIndexChanged += Control_Changed;
             numIconSize.ValueChanged += Control_Changed;
             chkUploadAchievementsToGPU.CheckedChanged += Control_Changed;

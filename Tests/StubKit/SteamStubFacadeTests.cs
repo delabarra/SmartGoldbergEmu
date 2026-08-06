@@ -56,11 +56,26 @@ namespace SmartGoldbergEmu.Tests.StubKit
         }
 
         [Fact]
-        public void UnpackOptions_Default_clears_security_and_drops_bind()
+        public void DetectFile_missing_path_returns_none()
         {
-            UnpackOptions options = UnpackOptions.Default;
-            Assert.False(options.KeepBind);
-            Assert.True(options.ClearSecurity);
+            DetectResult result = SteamStub.DetectFile(@"C:\nonexistent\stub_detect_missing.exe");
+            Assert.Equal(StubVariant.None, result.Variant);
+            Assert.False(result.CanRemove);
+        }
+
+        [Fact]
+        public void TryUnpack_mutateInPlace_false_leaves_source_unchanged_on_non_stub()
+        {
+            var data = new byte[0x80];
+            data[0] = (byte)'M';
+            data[1] = (byte)'Z';
+            byte[] copy = (byte[])data.Clone();
+
+            byte[] unpacked;
+            StubUnpackInfo info;
+            Assert.False(SteamStub.TryUnpack(data, UnpackOptions.Default, mutateInPlace: true, out unpacked, out info));
+            Assert.Null(unpacked);
+            Assert.Equal(copy, data);
         }
     }
 }

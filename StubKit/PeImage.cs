@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 
 namespace SmartGoldbergEmu.StubKit
@@ -40,6 +41,109 @@ namespace SmartGoldbergEmu.StubKit
             public uint PointerToRawData;
             public uint Characteristics;
             public int HeaderOffset;
+        }
+
+        // How many leading file bytes StubClassifier.Detect needs (headers + .bind/EP/TLS windows).
+        // Returns 0 if the stream is not a usable PE. Does not allocate the full image.
+        public static int GetDetectPrefixLength(Stream stream)
+        {
+            if (stream == null || !stream.CanRead || !stream.CanSeek || stream.Length < 0x40)
+                return 0;
+
+            long fileLen = stream.Length;
+            int headerProbe = (int)Math.Min(fileLen, 256 * 1024);
+            byte[] headerBytes = new byte[headerProbe];
+            stream.Position = 0;
+            ReadExact(stream, headerBytes, headerProbe);
+
+            PeImage pe;
+            try
+            {
+                pe = Load(headerBytes);
+            }
+            catch
+            {
+                return 0;
+            }
+
+            long max = pe.PeOffset + 24 + pe.SizeOfOptionalHeader + pe.NumberOfSections * 40;
+
+            PeImage.Section bind = pe.FindSection(".bind");
+            if (bind != null)
+            {
+                uint bindBytes = Math.Min(bind.SizeOfRawData, 0x4000u);
+                max = Math.Max(max, (long)bind.PointerToRawData + bindBytes);
+            }
+
+            try
+            {
+                uint epOff = pe.RvaToOffset(pe.AddressOfEntryPoint);
+                max = Math.Max(max, (long)epOff + 4096);
+                if (epOff >= 0xF0)
+                    max = Math.Max(max, (long)epOff);
+                else
+                    max = Math.Max(max, (long)epOff + 0xF0);
+            }
+            catch
+            {
+            }
+
+            if (pe.TlsCallbacks != null)
+            {
+                for (int i = 0; i < pe.TlsCallbacks.Count; i++)
+                {
+                    try
+                    {
+                        uint site = pe.VaToRva(pe.TlsCallbacks[i]);
+                        uint off = pe.RvaToOffset(site);
+                        max = Math.Max(max, (long)off + 64);
+                        if (off >= 0xF0)
+                            max = Math.Max(max, off);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            // Include TLS directory + callback table when present in the header probe.
+            try
+            {
+                int opt = pe.PeOffset + 24;
+                int dd = pe.IsPe32Plus ? opt + 112 + 9 * 8 : opt + 96 + 9 * 8;
+                if (dd + 8 <= headerBytes.Length)
+                {
+                    uint tlsRva = BitConverter.ToUInt32(headerBytes, dd);
+                    if (tlsRva != 0)
+                    {
+                        uint tlsOff = pe.RvaToOffset(tlsRva);
+                        max = Math.Max(max, tlsOff + (pe.IsPe32Plus ? 40u : 24u));
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (max < 0x40)
+                return 0;
+            if (max > fileLen)
+                max = fileLen;
+            if (max > int.MaxValue)
+                return 0;
+            return (int)max;
+        }
+
+        public static void ReadExact(Stream stream, byte[] buffer, int count)
+        {
+            int offset = 0;
+            while (offset < count)
+            {
+                int read = stream.Read(buffer, offset, count - offset);
+                if (read <= 0)
+                    throw new EndOfStreamException("Unexpected end of PE stream.");
+                offset += read;
+            }
         }
 
         public static PeImage Load(byte[] data)
