@@ -259,6 +259,8 @@ namespace SmartGoldbergEmu.Forms
             _apiKeyStatusIndicatorHelper?.Dispose();
             _uriFileWatcherHelper?.Dispose();
 
+            ClearSteamlessDropDownItems();
+
             base.OnFormClosed(e);
         }
 
@@ -622,6 +624,7 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowCreateSteamAppIdFile.Click += OnCreateSteamAppIdFile_Click;
             miCtxRowApplySteamless.DropDownOpening += OnApplySteamless_DropDownOpening;
             // Seed a child so WinForms treats Steamless as a submenu (DropDownOpening fires).
+            ClearSteamlessDropDownItems();
             miCtxRowApplySteamless.DropDownItems.Add(new ToolStripMenuItem("Loading…") { Enabled = false });
 
             lstGames.ItemActivate += lstGames_ItemActivate;
@@ -1459,7 +1462,7 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            miCtxRowApplySteamless.DropDownItems.Clear();
+            ClearSteamlessDropDownItems();
 
             var game = GetSelectedGame();
             if (game == null)
@@ -1482,7 +1485,7 @@ namespace SmartGoldbergEmu.Forms
                     return;
 
                 Program.LogService?.LogError("Steamless: failed to resolve launch executables.", ex);
-                miCtxRowApplySteamless.DropDownItems.Clear();
+                ClearSteamlessDropDownItems();
                 AddSteamlessPlaceholderMenuItem("Could not load executables");
                 return;
             }
@@ -1490,7 +1493,7 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            miCtxRowApplySteamless.DropDownItems.Clear();
+            ClearSteamlessDropDownItems();
 
             if (targets == null || targets.Count == 0)
             {
@@ -1517,6 +1520,7 @@ namespace SmartGoldbergEmu.Forms
                 {
                     Tag = target.FullPath,
                     Enabled = !target.AlreadyPatched,
+                    Image = TryExtractSteamlessMenuIcon(target.FullPath),
                     ToolTipText = target.AlreadyPatched
                         ? "Already patched with Steamless." + Environment.NewLine + pathHint
                         : pathHint
@@ -1528,6 +1532,48 @@ namespace SmartGoldbergEmu.Forms
 
             if (miCtxRowApplySteamless.DropDownItems.Count == 0)
                 AddSteamlessPlaceholderMenuItem("No executable found");
+        }
+
+        private static Image TryExtractSteamlessMenuIcon(string executablePath)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath))
+                return null;
+
+            try
+            {
+                using (Icon icon = ServiceLocator.IconService.ExtractSmallIcon(executablePath))
+                {
+                    if (icon == null)
+                        return null;
+                    return icon.ToBitmap();
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // DropDownItems.Clear does not dispose item Images; rebuilds must free them.
+        private void ClearSteamlessDropDownItems()
+        {
+            if (miCtxRowApplySteamless == null)
+                return;
+
+            ToolStripItemCollection items = miCtxRowApplySteamless.DropDownItems;
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                ToolStripItem item = items[i];
+                items.RemoveAt(i);
+                if (item.Image != null)
+                {
+                    Image image = item.Image;
+                    item.Image = null;
+                    image.Dispose();
+                }
+
+                item.Dispose();
+            }
         }
 
         private void AddSteamlessPlaceholderMenuItem(string text)
