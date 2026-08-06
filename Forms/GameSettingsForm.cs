@@ -2014,8 +2014,6 @@ namespace SmartGoldbergEmu.Forms
         private const string SteamApiHealthValidBackupFoundNoVersionFormat = "Valid Steamworks DLL ({0}) found.";
         private const string SteamApiStatusValidUnknownVersion =
             "Valid Steamworks DLL, unknown version ({0})";
-        private const string SteamApiStatusValidKnownHash =
-            "Valid Steamworks DLL ({0})";
         private const string SteamApiStatusModified =
             "Modified Steamworks DLL ({0})";
         private const string SteamApiRestoreOpApplied =
@@ -2279,7 +2277,7 @@ namespace SmartGoldbergEmu.Forms
                     return $"{SteamApiDisplayCheckMark} {steamworksVersion} ({fileArch})";
                 }
 
-                return $"{SteamApiDisplayCheckMark} {string.Format(SteamApiStatusValidKnownHash, fileArch)}";
+                return $"{SteamApiDisplayQuestionMark} {string.Format(SteamApiStatusValidUnknownVersion, fileArch)}";
             }
 
             string productName = SteamApiValidator.GetFileProductName(filePath);

@@ -77,6 +77,8 @@ namespace SmartGoldbergEmu.Constants
                 "970abcf7343219511de595b84af3215a0254c42c2881cb29b136c61564509b4f",//162
                 "b4309411288c9527a66d213e2a9145f8219818468c79b1ddc7ae0bdf08ae6226",//163
                 "fdafb7c65ec7d4182b42bf92cc8671c68e4dc547cc6e613899d2618a47eb65da",//164
+                "f1a6461f29152198c280fa1d85714d2c31b82e1a8148d92bd8c62c9f781a4fa7",// Grim Dawn
+                "1cb8b7cb77923762d4e49b27e44295369a79e93b5d4282c5e840b268d28fe771",//165
             },
             ["steam_api64.dll"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) {
                 "439a0c94c03bc465a62f188a797950d6c144ee95380b888ef4e1695ae4dff7bd",//111
@@ -132,6 +134,8 @@ namespace SmartGoldbergEmu.Constants
                 "e082bf5c9f881c822b1540a76b74f9d15e18019a73ebd206a559595badcb7f65",//162
                 "e3fe06e2d802c2f753aeb46869e2af898f34715ce85f08001456fd8a80ecd21e",//163
                 "eb17909a76668cf9ae0b92a618a34a50f6c73d3a6787cb4dd8ce36a8b10bfb75",//164
+                "e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d",//165
+                "8de54d32508e216c9135b8bf025749243d44e404c1c22a8e5fe35acecabe7a9c",// Grim Dawn
             },
             ["libsteam_api.so"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) {
                 // linux 32 bits
@@ -192,6 +196,7 @@ namespace SmartGoldbergEmu.Constants
 				"c76a55cd2a502db3e1ed943ad97dbb6359a77b5512ce493603e1a562bea55a07",//162
 				"a60e4b49137719d45271f051bbb7dababa2992c009554debcae4def753203acb",//163
 				"c5508fc7433d35eefc9beb711a294134db938183ba8cd2c6325023102748eb8a",//164
+				"25193f895e74caf84de11babff25b6fcdc4190efa9e98dfd7a6a53e39f7d429a",//165
 				// linux 64 bits
 				"cf204804785cab40950be9704066df48a82c00fd485a4a03210c39badef7dc90",//126a
 				"601bb40efe85ba1abef433103660488eaa43cf913351add117c172068a184472",//127
@@ -232,6 +237,7 @@ namespace SmartGoldbergEmu.Constants
 				"0f2c41c20644503c17e13498203986493332fc8296dbd78493bc1fed352ec0cc",//162
 				"3b3f6b452a0151a14cd3926c7f285e6def243a4ac73165fbb3d28fa4a6b0a634",//163
 				"ec4797f76a206eb0af627af0f0788eb5a2eabf5dee38ee0a6affbaa44a645f4e",//164
+				"eb2dd015b84177cf4f4326fe578aab375fd8931bbbd719c7492420d9777007fe",//165
             },
             ["libsteam_api.dylib"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) {
                 "bd706d6742718da29092fd76fe9598334a96ad1aa61436099e6526d45f957f22",//109
@@ -289,6 +295,7 @@ namespace SmartGoldbergEmu.Constants
 				"d828cbd6365daa2b16d3bd7dc2969c60e97f497c0996a6def0b7b174a7e19953",//162
 				"7824c030a7626ac1de9f1c6e03d45276721aa88ac419954b235cccf4546b15b3",//163
 				"1e2282e1032851e423b501c2c483586793f1d5e11585edaae4c78d6a3abad1eb",//164
+				"a37faf19675b943a3c9717d25d9a881f5addb7f0ee728e03de7aac143ba759d2",//165
             }
         };
         public static HashSet<string> IgnoredSteamApiDetectionHashes { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -447,43 +454,59 @@ namespace SmartGoldbergEmu.Constants
                 return null;
 
             string[] tokens = rawVersion.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            var normalizedTokens = new List<string>();
+            string latestNormalized = null;
+            int latestNumber = -1;
+            char latestSuffix = '\0';
 
             foreach (string token in tokens)
             {
-                string normalized = NormalizeVersionToken(token.Trim());
-                if (!string.IsNullOrEmpty(normalized) && !normalizedTokens.Contains(normalized))
-                    normalizedTokens.Add(normalized);
+                if (!TryParseVersionToken(token.Trim(), out int number, out char suffix, out string normalized))
+                    continue;
+
+                if (latestNormalized == null ||
+                    number > latestNumber ||
+                    (number == latestNumber && suffix > latestSuffix))
+                {
+                    latestNormalized = normalized;
+                    latestNumber = number;
+                    latestSuffix = suffix;
+                }
             }
 
-            if (normalizedTokens.Count == 0)
+            if (string.IsNullOrEmpty(latestNormalized))
                 return null;
 
-            return "Steamworks v" + string.Join("/", normalizedTokens);
+            return "Steamworks v" + latestNormalized;
         }
 
-        private static string NormalizeVersionToken(string token)
+        // Notes like "Grim Dawn" are catalog-only; only numeric SDK tokens become UI labels.
+        private static bool TryParseVersionToken(string token, out int number, out char suffix, out string normalized)
         {
+            number = 0;
+            suffix = '\0';
+            normalized = null;
+
             if (string.IsNullOrWhiteSpace(token))
-                return null;
+                return false;
 
             Match match = Regex.Match(token, "^(\\d+)([a-z]?)$", RegexOptions.IgnoreCase);
             if (!match.Success)
-                return token;
+                return false;
 
             string digits = match.Groups[1].Value;
-            string suffix = match.Groups[2].Value;
+            string suffixText = match.Groups[2].Value;
+            if (!int.TryParse(digits, out number))
+                return false;
 
-            if (digits.Length == 3)
-            {
-                return digits.Substring(0, 1) + "." + digits.Substring(1) + suffix;
-            }
-            if (digits.Length == 2)
-            {
-                return digits.Substring(0, 1) + "." + digits.Substring(1) + suffix;
-            }
+            if (suffixText.Length > 0)
+                suffix = char.ToLowerInvariant(suffixText[0]);
 
-            return digits + suffix;
+            if (digits.Length == 3 || digits.Length == 2)
+                normalized = digits.Substring(0, 1) + "." + digits.Substring(1) + suffixText;
+            else
+                normalized = digits + suffixText;
+
+            return !string.IsNullOrEmpty(normalized);
         }
     }
 }
