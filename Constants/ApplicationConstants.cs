@@ -193,11 +193,6 @@ namespace SmartGoldbergEmu.Constants
         public const string SettingKeyLogosViewDropShadow = "logos_view_drop_shadow";
 
         /// <summary>
-        /// INI file key for the saved Steamless.CLI.exe path.
-        /// </summary>
-        public const string SettingKeySteamlessCliPath = "steamless_cli_path";
-
-        /// <summary>
         /// INI file key for theme mode (Light, Dark, System).
         /// </summary>
         public const string SettingKeyThemeMode = "theme_mode";
@@ -221,11 +216,6 @@ namespace SmartGoldbergEmu.Constants
         /// INI file key for main window state (Normal, Maximized, Minimized).
         /// </summary>
         public const string SettingKeyWindowState = "state";
-
-        /// <summary>
-        /// Open file dialog filter for selecting Steamless.CLI.exe.
-        /// </summary>
-        public const string SteamlessCliFileDialogFilter = "Steamless CLI (Steamless.CLI.exe)|Steamless.CLI.exe|Executable (*.exe)|*.exe";
 
         /// <summary>
         /// INI file section name for application settings.

@@ -66,11 +66,6 @@ namespace SmartGoldbergEmu.Models
         public bool LogosViewDropShadow { get; set; }
 
         /// <summary>
-        /// Full path to the user-selected Steamless.CLI.exe (optional).
-        /// </summary>
-        public string SteamlessCliPath { get; set; }
-
-        /// <summary>
         /// Initializes a new instance of the ApplicationSettings class with default values.
         /// </summary>
         public ApplicationSettings()

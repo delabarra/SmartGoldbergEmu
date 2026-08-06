@@ -37,11 +37,6 @@ namespace SmartGoldbergEmu.Constants
         public const string LauncherUpdateExtractFolderName = "extracted";
 
         /// <summary>
-        /// Steamless install subfolder containing API plugins (see <see cref="SteamlessApiPluginRelativePath"/>).
-        /// </summary>
-        public const string SteamlessPluginsFolderName = "Plugins";
-
-        /// <summary>
         /// Legacy dev-tool folder beside the launcher (generate_interfaces cleanup after Goldberg update).
         /// Not the repository <c>tools/</c> dev-scripts folder.
         /// </summary>
@@ -93,33 +88,14 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergDirectoryFolderName = "goldberg";
 
         /// <summary>
-        /// Steamless command-line executable name (release layout).
+        /// Suffix appended to the input executable for the temporary unpacked output (e.g. game.exe.unpacked.exe).
         /// </summary>
-        public const string SteamlessCliExecutableName = "Steamless.CLI.exe";
-
-        public const string SteamlessCliQuietFlag = "--quiet";
-        public const string SteamlessCliKeepBindFlag = "--keepbind";
-        public const string SteamlessCliKeepStubFlag = "--keepstub";
-        public const string SteamlessCliDumpPayloadFlag = "--dumppayload";
-        public const string SteamlessCliDumpDrmpFlag = "--dumpdrmp";
-        public const string SteamlessCliRealignFlag = "--realign";
-        public const string SteamlessCliRecalcChecksumFlag = "--recalcchecksum";
-        public const string SteamlessCliExperimentalFlag = "--exp";
+        public const string StubUnpackedExecutableSuffix = ".unpacked.exe";
 
         /// <summary>
-        /// Relative path to the Steamless API plugin required by the CLI.
+        /// Infix before the extension for the original executable backed up before stub replace (e.g. game.exe → game_o.exe).
         /// </summary>
-        public const string SteamlessApiPluginRelativePath = "Plugins\\Steamless.API.dll";
-
-        /// <summary>
-        /// Suffix Steamless appends to the input executable file name for the unpacked output.
-        /// </summary>
-        public const string SteamlessUnpackedExecutableSuffix = ".unpacked.exe";
-
-        /// <summary>
-        /// Infix before the extension for the original executable backed up before Steamless replace (e.g. game.exe → game_o.exe).
-        /// </summary>
-        public const string SteamlessOriginalExecutableBackupInfix = "_o";
+        public const string StubOriginalExecutableBackupInfix = "_o";
 
         /// <summary>
         /// Folder name for Goldberg global INI and overlay assets under %AppData%\GSE Saves\ (Goldberg contract).
@@ -515,24 +491,7 @@ namespace SmartGoldbergEmu.Constants
         /// </summary>
         public static string GamesDirectory => Path.Combine(AppBaseDirectory, GamesDirectoryFolderName);
 
-        /// <summary>
-        /// Full path to the Steamless API plugin under a user-provided install root.
-        /// </summary>
-        public static string CombineSteamlessApiPluginPath(string steamlessInstallRoot)
-        {
-            if (string.IsNullOrWhiteSpace(steamlessInstallRoot))
-                return null;
-            return Path.Combine(steamlessInstallRoot.Trim(), SteamlessPluginsFolderName, "Steamless.API.dll");
-        }
-
-        public static string CombineSteamlessPluginsDirectory(string steamlessInstallRoot)
-        {
-            if (string.IsNullOrWhiteSpace(steamlessInstallRoot))
-                return null;
-            return Path.Combine(steamlessInstallRoot.Trim(), SteamlessPluginsFolderName);
-        }
-
-        public static string BuildSteamlessOriginalBackupPath(string executablePath)
+        public static string BuildStubOriginalBackupPath(string executablePath)
         {
             if (string.IsNullOrWhiteSpace(executablePath))
                 return null;
@@ -544,7 +503,7 @@ namespace SmartGoldbergEmu.Constants
 
             string extension = Path.GetExtension(fileName);
             string baseName = Path.GetFileNameWithoutExtension(fileName);
-            string backupFileName = baseName + SteamlessOriginalExecutableBackupInfix + extension;
+            string backupFileName = baseName + StubOriginalExecutableBackupInfix + extension;
 
             return string.IsNullOrEmpty(directory)
                 ? backupFileName

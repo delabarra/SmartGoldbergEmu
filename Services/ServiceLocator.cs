@@ -79,7 +79,7 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<GameAddCollector> _gameAddCollector = new Lazy<GameAddCollector>();
         private static readonly Lazy<GameEditLoader> _gameEditLoader = new Lazy<GameEditLoader>();
         private static readonly Lazy<GameSaveWriter> _gameSaveWriter = new Lazy<GameSaveWriter>();
-        private static readonly Lazy<SteamlessService> _steamlessService = new Lazy<SteamlessService>();
+        private static readonly Lazy<StubKitService> _stubKitService = new Lazy<StubKitService>();
         private static readonly Lazy<SteamInterfacesService> _steamInterfacesService = new Lazy<SteamInterfacesService>();
 
         public static ILogService LogService => _logService.Value;
@@ -160,7 +160,7 @@ namespace SmartGoldbergEmu.Services
 
         public static GameSaveWriter GameSaveWriter => _gameSaveWriter.Value;
 
-        public static SteamlessService SteamlessService => _steamlessService.Value;
+        public static StubKitService StubKitService => _stubKitService.Value;
 
         public static SteamInterfacesService SteamInterfacesService => _steamInterfacesService.Value;
 

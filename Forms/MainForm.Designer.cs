@@ -113,7 +113,7 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenSettingsFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenInventoryFile = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowTools = new System.Windows.Forms.ToolStripMenuItem();
-            this.miCtxRowApplySteamless = new System.Windows.Forms.ToolStripMenuItem();
+            this.miCtxRowRemoveSteamStub = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowCreateShortcut = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowCopyGuid = new System.Windows.Forms.ToolStripMenuItem();
             this.sepCtxRowBeforeProps = new System.Windows.Forms.ToolStripSeparator();
@@ -704,29 +704,29 @@ namespace SmartGoldbergEmu.Forms
             // miCtxRowTools
             // 
             this.miCtxRowTools.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.miCtxRowApplySteamless,
+            this.miCtxRowRemoveSteamStub,
             this.miCtxRowCreateShortcut,
             this.miCtxRowCopyGuid});
             this.miCtxRowTools.Name = "miCtxRowTools";
             this.miCtxRowTools.Size = new System.Drawing.Size(205, 22);
             this.miCtxRowTools.Text = "Tools";
             // 
-            // miCtxRowApplySteamless
+            // miCtxRowRemoveSteamStub
             // 
-            this.miCtxRowApplySteamless.Name = "miCtxRowApplySteamless";
-            this.miCtxRowApplySteamless.Size = new System.Drawing.Size(156, 22);
-            this.miCtxRowApplySteamless.Text = "Steamless";
+            this.miCtxRowRemoveSteamStub.Name = "miCtxRowRemoveSteamStub";
+            this.miCtxRowRemoveSteamStub.Size = new System.Drawing.Size(180, 22);
+            this.miCtxRowRemoveSteamStub.Text = "Remove SteamStub";
             // 
             // miCtxRowCreateShortcut
             // 
             this.miCtxRowCreateShortcut.Name = "miCtxRowCreateShortcut";
-            this.miCtxRowCreateShortcut.Size = new System.Drawing.Size(156, 22);
+            this.miCtxRowCreateShortcut.Size = new System.Drawing.Size(180, 22);
             this.miCtxRowCreateShortcut.Text = "Create shortcut";
             // 
             // miCtxRowCopyGuid
             // 
             this.miCtxRowCopyGuid.Name = "miCtxRowCopyGuid";
-            this.miCtxRowCopyGuid.Size = new System.Drawing.Size(156, 22);
+            this.miCtxRowCopyGuid.Size = new System.Drawing.Size(180, 22);
             this.miCtxRowCopyGuid.Text = "Copy entry GUID";
             this.miCtxRowCopyGuid.ToolTipText = "Library entry identifier (not App ID).";
             // 
@@ -943,7 +943,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripMenuItem miCtxRowEmulation;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowFilesFolders;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowTools;
-        private System.Windows.Forms.ToolStripMenuItem miCtxRowApplySteamless;
+        private System.Windows.Forms.ToolStripMenuItem miCtxRowRemoveSteamStub;
         private System.Windows.Forms.ToolStripSeparator sepCtxRowBeforeProps;
         private ToolStripSeparator sepCtxViewSortBeforeNone;
         private ToolStripSeparator sepMnuBarAfterViewModes;

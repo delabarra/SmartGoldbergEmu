@@ -112,10 +112,8 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Resolves executable for Steamless: launch base, then settings fields, then library stored path.
-        /// </summary>
-        public static bool TryResolveExecutableForSteamless(GameConfig game, out string fullExecutablePath)
+        // Resolves executable for SteamStub removal: launch base, then settings fields, then library stored path.
+        public static bool TryResolveExecutableForStubRemoval(GameConfig game, out string fullExecutablePath)
         {
             fullExecutablePath = null;
             if (game == null)

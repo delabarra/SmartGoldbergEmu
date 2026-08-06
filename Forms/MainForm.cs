@@ -11,6 +11,7 @@ using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Properties;
 using SmartGoldbergEmu.Services;
+using SmartGoldbergEmu.StubKit;
 using SmartGoldbergEmu.Validation;
 using SteamKit;
 using System.Threading.Tasks;
@@ -46,6 +47,8 @@ namespace SmartGoldbergEmu.Forms
         private bool _gameListRefreshFullTiles;
         private int _tileImageLoadGeneration;
         private string _pendingAddMosaicImageKey;
+        private int _stubKitDropDownLoadId;
+        private bool _stubKitDropDownReopening;
 
         public ulong? PendingAppIdLaunch { get; set; }
 
@@ -259,7 +262,7 @@ namespace SmartGoldbergEmu.Forms
             _apiKeyStatusIndicatorHelper?.Dispose();
             _uriFileWatcherHelper?.Dispose();
 
-            ClearSteamlessDropDownItems();
+            ClearStubKitDropDownItems();
 
             base.OnFormClosed(e);
         }
@@ -622,10 +625,9 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowCopyGuid.Click += OnCopyGuid_Click;
             miCtxRowCreateShortcut.Click += OnCreateShortcut_Click;
             miCtxRowCreateSteamAppIdFile.Click += OnCreateSteamAppIdFile_Click;
-            miCtxRowApplySteamless.DropDownOpening += OnApplySteamless_DropDownOpening;
-            // Seed a child so WinForms treats Steamless as a submenu (DropDownOpening fires).
-            ClearSteamlessDropDownItems();
-            miCtxRowApplySteamless.DropDownItems.Add(new ToolStripMenuItem("Loading…") { Enabled = false });
+            miCtxRowRemoveSteamStub.DropDownOpening += OnRemoveSteamStub_DropDownOpening;
+            ClearStubKitDropDownItems();
+            miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripMenuItem("Loading…") { Enabled = false });
 
             lstGames.ItemActivate += lstGames_ItemActivate;
 
@@ -1052,6 +1054,10 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing)
                     return;
 
+                await OfferSteamStubRemovalIfNeededAsync(executablePath, gameConfig.AppName).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+
                 _taskReportService.SetProgress(0, 0);
                 if (!await OpenGameSettingsFormAsync(gameConfig, metadata, collectResult.Bundle).ConfigureAwait(true))
                     _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
@@ -1457,84 +1463,441 @@ namespace SmartGoldbergEmu.Forms
                 EditGame(game.GameGuid);
         }
 
-        private async void OnApplySteamless_DropDownOpening(object sender, EventArgs e)
+        private async void OnRemoveSteamStub_DropDownOpening(object sender, EventArgs e)
         {
-            if (IsDisposed || Disposing)
+            // Show() after async rebuild re-enters Opening; skip so we do not loop.
+            if (_stubKitDropDownReopening || IsDisposed || Disposing)
                 return;
 
-            ClearSteamlessDropDownItems();
+            int loadId = ++_stubKitDropDownLoadId;
+            // Capture before await — clearing/rebuilding DropDownItems after await parks the menu at (0,0).
+            Point dropLocation = GetStubKitDropDownScreenLocation(miCtxRowRemoveSteamStub);
+
+            ClearStubKitDropDownItems();
 
             var game = GetSelectedGame();
             if (game == null)
             {
-                AddSteamlessPlaceholderMenuItem("No game selected");
+                AddStubKitPlaceholderMenuItem("No game selected");
                 return;
             }
 
             var loadingItem = new ToolStripMenuItem("Loading…") { Enabled = false };
-            miCtxRowApplySteamless.DropDownItems.Add(loadingItem);
+            miCtxRowRemoveSteamStub.DropDownItems.Add(loadingItem);
 
-            IReadOnlyList<SteamlessTarget> targets;
+            IReadOnlyList<StubExecutableTarget> targets;
             try
             {
-                targets = await ServiceLocator.SteamlessService.ResolveTargetsAsync(game).ConfigureAwait(true);
+                targets = await ServiceLocator.StubKitService.ResolveTargetsAsync(game).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                if (IsDisposed || Disposing)
+                if (!IsStubKitDropDownLoadCurrent(loadId))
                     return;
 
-                Program.LogService?.LogError("Steamless: failed to resolve launch executables.", ex);
-                ClearSteamlessDropDownItems();
-                AddSteamlessPlaceholderMenuItem("Could not load executables");
+                Program.LogService?.LogError("StubKit: failed to resolve launch executables.", ex);
+                ClearStubKitDropDownItems();
+                AddStubKitPlaceholderMenuItem("Could not load executables");
+                ReopenStubKitDropDownAt(dropLocation);
+                return;
+            }
+
+            if (!IsStubKitDropDownLoadCurrent(loadId))
+                return;
+
+            ClearStubKitDropDownItems();
+
+            if (targets == null || targets.Count == 0)
+            {
+                AddStubKitPlaceholderMenuItem("No executable found");
+                ReopenStubKitDropDownAt(dropLocation);
+                return;
+            }
+
+            // Show each exe immediately as Loading…, then fill Patch/Restore/No stub as PE checks finish.
+            var menuItems = new List<ToolStripMenuItem>();
+            foreach (StubExecutableTarget target in targets)
+            {
+                if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
+                    continue;
+
+                var item = new ToolStripMenuItem
+                {
+                    Tag = target,
+                    Image = TryExtractStubMenuIcon(target.FullPath)
+                };
+                ApplyStubKitMenuItemPresentation(item, target);
+                miCtxRowRemoveSteamStub.DropDownItems.Add(item);
+                menuItems.Add(item);
+            }
+
+            if (miCtxRowRemoveSteamStub.DropDownItems.Count == 0)
+            {
+                AddStubKitPlaceholderMenuItem("No executable found");
+                ReopenStubKitDropDownAt(dropLocation);
+                return;
+            }
+
+            ReopenStubKitDropDownAt(dropLocation);
+
+            foreach (ToolStripMenuItem item in menuItems)
+            {
+                if (!IsStubKitDropDownLoadCurrent(loadId))
+                    return;
+
+                var target = item.Tag as StubExecutableTarget;
+                if (target == null || !target.IsDetectionPending)
+                    continue;
+
+                try
+                {
+                    await ServiceLocator.StubKitService.DetectTargetAsync(target).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    if (!IsStubKitDropDownLoadCurrent(loadId))
+                        return;
+
+                    Program.LogService?.LogError("StubKit: failed to detect SteamStub on " + target.FullPath, ex);
+                    target.IsDetectionPending = false;
+                    target.CanRemove = false;
+                    target.HasSteamStub = false;
+                    target.StubName = "none";
+                }
+
+                if (!IsStubKitDropDownLoadCurrent(loadId))
+                    return;
+
+                ApplyStubKitMenuItemPresentation(item, target);
+            }
+        }
+
+        private void ApplyStubKitMenuItemPresentation(ToolStripMenuItem item, StubExecutableTarget target)
+        {
+            if (item == null || target == null)
+                return;
+
+            string text = string.IsNullOrWhiteSpace(target.DisplayName)
+                ? Path.GetFileName(target.FullPath)
+                : target.DisplayName.Trim();
+
+            StubExecutableMenuAction action = target.MenuAction;
+            switch (action)
+            {
+                case StubExecutableMenuAction.Loading:
+                    text += " - [Loading…]";
+                    break;
+                case StubExecutableMenuAction.Patch:
+                    text += " - [Patch]";
+                    break;
+                case StubExecutableMenuAction.Restore:
+                    text += " - [Restore]";
+                    break;
+                default:
+                    text += " - [No stub]";
+                    break;
+            }
+
+            string pathHint = string.IsNullOrWhiteSpace(target.RelativeOrExeHint)
+                ? target.FullPath
+                : target.RelativeOrExeHint + Environment.NewLine + target.FullPath;
+
+            string statusHint;
+            switch (action)
+            {
+                case StubExecutableMenuAction.Loading:
+                    statusHint = "Checking this executable for SteamStub…"
+                        + Environment.NewLine + pathHint;
+                    break;
+                case StubExecutableMenuAction.Patch:
+                    statusHint = string.IsNullOrWhiteSpace(target.StubName)
+                        ? "Remove SteamStub from this executable." + Environment.NewLine + pathHint
+                        : "Remove " + target.StubName.Trim() + "." + Environment.NewLine + pathHint;
+                    break;
+                case StubExecutableMenuAction.Restore:
+                    statusHint = "Restore the original executable from the backup."
+                        + Environment.NewLine + pathHint;
+                    break;
+                default:
+                    statusHint = "No SteamStub found on this executable."
+                        + Environment.NewLine + pathHint;
+                    break;
+            }
+
+            bool actionable = action == StubExecutableMenuAction.Patch
+                || action == StubExecutableMenuAction.Restore;
+
+            item.Click -= OnRemoveSteamStubTarget_Click;
+            item.Text = text;
+            item.Enabled = actionable;
+            item.ToolTipText = statusHint;
+            if (actionable)
+                item.Click += OnRemoveSteamStubTarget_Click;
+        }
+
+        private bool IsStubKitDropDownLoadCurrent(int loadId)
+        {
+            return loadId == _stubKitDropDownLoadId
+                && !IsDisposed
+                && !Disposing
+                && ctxGamesItem != null
+                && ctxGamesItem.Visible;
+        }
+
+        // DropDownLocation is protected on net48; submenu opens at the item's right edge.
+        private static Point GetStubKitDropDownScreenLocation(ToolStripMenuItem item)
+        {
+            if (item == null)
+                return Point.Empty;
+
+            ToolStrip parent = item.GetCurrentParent();
+            if (parent == null)
+                return Point.Empty;
+
+            Rectangle bounds = item.Bounds;
+            return parent.PointToScreen(new Point(bounds.Right, bounds.Top));
+        }
+
+        private void ReopenStubKitDropDownAt(Point dropLocation)
+        {
+            if (miCtxRowRemoveSteamStub?.DropDown == null)
+                return;
+            if (ctxGamesItem == null || !ctxGamesItem.Visible)
+                return;
+
+            _stubKitDropDownReopening = true;
+            try
+            {
+                if (dropLocation.IsEmpty)
+                    miCtxRowRemoveSteamStub.ShowDropDown();
+                else
+                    miCtxRowRemoveSteamStub.DropDown.Show(dropLocation);
+            }
+            finally
+            {
+                _stubKitDropDownReopening = false;
+            }
+        }
+
+        private void ClearStubKitDropDownItems()
+        {
+            if (miCtxRowRemoveSteamStub == null)
+                return;
+
+            ToolStripItemCollection items = miCtxRowRemoveSteamStub.DropDownItems;
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                ToolStripItem item = items[i];
+                items.RemoveAt(i);
+                if (item.Image != null)
+                {
+                    Image image = item.Image;
+                    item.Image = null;
+                    image.Dispose();
+                }
+
+                item.Dispose();
+            }
+        }
+
+        private void AddStubKitPlaceholderMenuItem(string text)
+        {
+            miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripMenuItem(text) { Enabled = false });
+        }
+
+        private async void OnRemoveSteamStubTarget_Click(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            var menuItem = sender as ToolStripMenuItem;
+            var target = menuItem?.Tag as StubExecutableTarget;
+            if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
+                return;
+
+            if (target.MenuAction == StubExecutableMenuAction.Restore)
+                await RestoreStubKitExecutableAsync(target.FullPath).ConfigureAwait(true);
+            else if (target.MenuAction == StubExecutableMenuAction.Patch)
+                await ApplyStubKitToExecutableAsync(target.FullPath).ConfigureAwait(true);
+        }
+
+        private async Task OfferSteamStubRemovalIfNeededAsync(string executablePath, string gameName)
+        {
+            if (IsDisposed || Disposing)
+                return;
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+                return;
+
+            string extension = Path.GetExtension(executablePath);
+            if (!string.Equals(extension, ".exe", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            DetectResult detect;
+            try
+            {
+                detect = await Task.Run(() => StubKitService.DetectExecutable(executablePath)).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError("StubKit: failed to check executable for SteamStub.", ex);
                 return;
             }
 
             if (IsDisposed || Disposing)
                 return;
+            if (detect == null || !detect.CanRemove)
+                return;
 
-            ClearSteamlessDropDownItems();
+            DialogResult answer = FormMessageBoxHelper.ShowDialogIfAlive(
+                this,
+                StubKitFeedback.OfferRemoveQuestion(gameName, Path.GetFileName(executablePath)),
+                StubKitFeedback.DialogTitle,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (answer != DialogResult.Yes)
+                return;
 
-            if (targets == null || targets.Count == 0)
+            await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
+        }
+
+        private string TryResolveLaunchExecutableForStubCheck(GameConfig game, LaunchOption launchOption)
+        {
+            if (game == null)
+                return null;
+
+            try
             {
-                AddSteamlessPlaceholderMenuItem("No executable found");
+                ResolvedLaunchCommand command = _gameLaunchService.GetResolvedLaunchCommand(game, launchOption);
+                if (command != null && !string.IsNullOrWhiteSpace(command.ExecutablePath) && File.Exists(command.ExecutablePath))
+                    return command.ExecutablePath;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogDebug("StubKit: could not resolve launch executable for SteamStub check: " + ex.Message);
+            }
+
+            if (GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out string settingsPath)
+                && !string.IsNullOrWhiteSpace(settingsPath)
+                && File.Exists(settingsPath))
+            {
+                return settingsPath;
+            }
+
+            return null;
+        }
+
+        private async Task ApplyStubKitToExecutableAsync(string executablePath, string gameName = null)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            string name = !string.IsNullOrWhiteSpace(gameName)
+                ? gameName.Trim()
+                : GetSelectedGame()?.AppName;
+            if (string.IsNullOrWhiteSpace(name))
+                name = "game";
+
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+            {
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult { Outcome = StubKitApplyOutcome.ExecutablePathInvalid });
                 return;
             }
 
-            foreach (SteamlessTarget target in targets)
+            Program.LogService?.LogMessage($"Removing SteamStub on {name}: {executablePath}");
+            _taskReportService.StartProgress(StubKitFeedback.Progress(name));
+            prgFeedback.Style = ProgressBarStyle.Marquee;
+
+            try
             {
-                if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
-                    continue;
+                var result = await ServiceLocator.StubKitService.ApplyAsync(executablePath, Program.LogService).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
 
-                string text = string.IsNullOrWhiteSpace(target.DisplayName)
-                    ? Path.GetFileName(target.FullPath)
-                    : target.DisplayName.Trim();
-                if (target.AlreadyPatched)
-                    text += " [Patched]";
-
-                string pathHint = string.IsNullOrWhiteSpace(target.RelativeOrExeHint)
-                    ? target.FullPath
-                    : target.RelativeOrExeHint + Environment.NewLine + target.FullPath;
-
-                var item = new ToolStripMenuItem(text)
-                {
-                    Tag = target.FullPath,
-                    Enabled = !target.AlreadyPatched,
-                    Image = TryExtractSteamlessMenuIcon(target.FullPath),
-                    ToolTipText = target.AlreadyPatched
-                        ? "Already patched with Steamless." + Environment.NewLine + pathHint
-                        : pathHint
-                };
-                if (!target.AlreadyPatched)
-                    item.Click += OnApplySteamlessTarget_Click;
-                miCtxRowApplySteamless.DropDownItems.Add(item);
+                ShowStubKitApplyFeedback(name, result);
             }
-
-            if (miCtxRowApplySteamless.DropDownItems.Count == 0)
-                AddSteamlessPlaceholderMenuItem("No executable found");
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Removing SteamStub on {name} failed.", ex);
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult
+                {
+                    Outcome = StubKitApplyOutcome.Unexpected,
+                    LogDetail = ex.Message
+                });
+            }
+            finally
+            {
+                if (!IsDisposed && !Disposing)
+                    prgFeedback.Style = ProgressBarStyle.Blocks;
+            }
         }
 
-        private static Image TryExtractSteamlessMenuIcon(string executablePath)
+        private async Task RestoreStubKitExecutableAsync(string executablePath)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            string name = GetSelectedGame()?.AppName;
+            if (string.IsNullOrWhiteSpace(name))
+                name = "game";
+
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+            {
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult { Outcome = StubKitApplyOutcome.ExecutablePathInvalid });
+                return;
+            }
+
+            Program.LogService?.LogMessage($"Restoring SteamStub backup for {name}: {executablePath}");
+            _taskReportService.StartProgress(StubKitFeedback.RestoreProgress(name));
+            prgFeedback.Style = ProgressBarStyle.Marquee;
+
+            try
+            {
+                var result = await ServiceLocator.StubKitService.RestoreAsync(executablePath, Program.LogService).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+
+                ShowStubKitApplyFeedback(name, result);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Restoring SteamStub backup for {name} failed.", ex);
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult
+                {
+                    Outcome = StubKitApplyOutcome.Unexpected,
+                    LogDetail = ex.Message
+                });
+            }
+            finally
+            {
+                if (!IsDisposed && !Disposing)
+                    prgFeedback.Style = ProgressBarStyle.Blocks;
+            }
+        }
+
+        private void ShowStubKitApplyFeedback(string gameName, StubKitApplyResult result)
+        {
+            if (result == null)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(result.LogDetail))
+                Program.LogService?.LogMessage("StubKit detail: " + result.LogDetail);
+
+            string message = StubKitFeedback.ResultMessage(result.Outcome, gameName);
+
+            FormMessageBoxHelper.ShowIfAlive(
+                this,
+                message,
+                StubKitFeedback.DialogTitle,
+                MessageBoxButtons.OK,
+                StubKitFeedback.IconForOutcome(result.Outcome));
+
+            _taskReportService.SetMessageWithAutoClear(
+                message,
+                StubKitFeedback.StatusKindForOutcome(result.Outcome),
+                result.Success ? 6000 : 8000);
+        }
+
+        private static Image TryExtractStubMenuIcon(string executablePath)
         {
             if (string.IsNullOrWhiteSpace(executablePath))
                 return null;
@@ -1552,122 +1915,6 @@ namespace SmartGoldbergEmu.Forms
             {
                 return null;
             }
-        }
-
-        // DropDownItems.Clear does not dispose item Images; rebuilds must free them.
-        private void ClearSteamlessDropDownItems()
-        {
-            if (miCtxRowApplySteamless == null)
-                return;
-
-            ToolStripItemCollection items = miCtxRowApplySteamless.DropDownItems;
-            for (int i = items.Count - 1; i >= 0; i--)
-            {
-                ToolStripItem item = items[i];
-                items.RemoveAt(i);
-                if (item.Image != null)
-                {
-                    Image image = item.Image;
-                    item.Image = null;
-                    image.Dispose();
-                }
-
-                item.Dispose();
-            }
-        }
-
-        private void AddSteamlessPlaceholderMenuItem(string text)
-        {
-            miCtxRowApplySteamless.DropDownItems.Add(new ToolStripMenuItem(text) { Enabled = false });
-        }
-
-        private async void OnApplySteamlessTarget_Click(object sender, EventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-
-            var menuItem = sender as ToolStripMenuItem;
-            string executablePath = menuItem?.Tag as string;
-            if (string.IsNullOrWhiteSpace(executablePath))
-                return;
-
-            await ApplySteamlessToExecutableAsync(executablePath).ConfigureAwait(true);
-        }
-
-        private async Task ApplySteamlessToExecutableAsync(string executablePath)
-        {
-            if (IsDisposed || Disposing)
-                return;
-
-            var game = GetSelectedGame();
-            if (game == null)
-                return;
-
-            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
-            {
-                ShowSteamlessApplyFeedback(game.AppName, new SteamlessApplyResult { Outcome = SteamlessApplyOutcome.ExecutablePathInvalid });
-                return;
-            }
-
-            if (!TryEnsureSteamlessCliPath())
-                return;
-
-            if (!SteamlessOptionsForm.TryShow(game.AppName, executablePath, this, out SteamlessCliOptions cliOptions))
-                return;
-
-            Program.LogService?.LogMessage($"Running Steamless on {game.AppName}: {executablePath}");
-            _taskReportService.StartProgress(SteamlessFeedback.Progress(game.AppName));
-            prgFeedback.Style = ProgressBarStyle.Marquee;
-
-            try
-            {
-                var result = await ServiceLocator.SteamlessService.ApplySteamlessAsync(executablePath, cliOptions, Program.LogService).ConfigureAwait(true);
-                if (IsDisposed || Disposing)
-                    return;
-
-                ShowSteamlessApplyFeedback(game.AppName, result);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Running Steamless on {game.AppName} failed.", ex);
-                ShowSteamlessApplyFeedback(game.AppName, new SteamlessApplyResult
-                {
-                    Outcome = SteamlessApplyOutcome.Unexpected,
-                    LogDetail = ex.Message
-                });
-            }
-            finally
-            {
-                if (!IsDisposed && !Disposing)
-                    prgFeedback.Style = ProgressBarStyle.Blocks;
-            }
-        }
-
-        private void ShowSteamlessApplyFeedback(string gameName, SteamlessApplyResult result)
-        {
-            if (result == null)
-                return;
-
-            if (!string.IsNullOrWhiteSpace(result.LogDetail))
-                Program.LogService?.LogMessage("Steamless detail: " + result.LogDetail);
-
-            if (SteamlessFeedback.UsePopupForOutcome(result.Outcome))
-            {
-                FormMessageBoxHelper.ShowIfAlive(
-                    this,
-                    SteamlessFeedback.PopupMessage(result.Outcome, gameName, result.LogDetail),
-                    SteamlessFeedback.DialogTitle,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
-            }
-
-            string status = SteamlessFeedback.StatusMessage(result.Outcome, gameName);
-            if (string.IsNullOrEmpty(status))
-                return;
-
-            int delayMs = result.Outcome == SteamlessApplyOutcome.Success ? 6000 : 8000;
-            _taskReportService.SetMessageWithAutoClear(status, SteamlessFeedback.StatusKindForOutcome(result.Outcome), delayMs);
         }
 
         private async void OnGenerateItems_Click(object sender, EventArgs e)
@@ -1958,79 +2205,20 @@ namespace SmartGoldbergEmu.Forms
             var game = GetSelectedGame();
             miCtxRowOpenValveDataFile.Enabled = game != null && game.AppId > 0;
 
-            miCtxRowApplySteamless.Visible = true;
+            miCtxRowRemoveSteamStub.Visible = true;
             // Keep enabled when StartFolder/AppId may yield launch options even if Path is unresolved.
-            bool canApplySteamless = game != null && (
-                TryResolveExecutableForSteamless(game, out _) ||
+            bool canRemoveSteamStub = game != null && (
+                TryResolveExecutableForStubRemoval(game, out _) ||
                 !string.IsNullOrWhiteSpace(game.StartFolder) ||
                 game.AppId > 0);
-            miCtxRowApplySteamless.Enabled = canApplySteamless;
-            if (game != null && !canApplySteamless)
-                Program.LogService?.LogDebug($"Steamless disabled: could not resolve executable (StartFolder={game.StartFolder}, Path={game.Path}).");
+            miCtxRowRemoveSteamStub.Enabled = canRemoveSteamStub;
+            if (game != null && !canRemoveSteamStub)
+                Program.LogService?.LogDebug($"Remove SteamStub disabled: could not resolve executable (StartFolder={game.StartFolder}, Path={game.Path}).");
         }
 
-        private bool TryResolveExecutableForSteamless(GameConfig game, out string fullExecutablePath)
+        private bool TryResolveExecutableForStubRemoval(GameConfig game, out string fullExecutablePath)
         {
-            return GameFolderPathHelper.TryResolveExecutableForSteamless(game, out fullExecutablePath);
-        }
-
-        private bool TryEnsureSteamlessCliPath()
-        {
-            if (ServiceLocator.SteamlessService.TryGetConfiguredCli(out _, out _))
-                return true;
-
-            string setupPrompt = ServiceLocator.SteamlessService.HasInvalidSavedCliPath()
-                ? SteamlessFeedback.NotInstalledPopupBody()
-                : SteamlessFeedback.NotConfiguredDisclaimerBody();
-
-            var disclaimer = FormMessageBoxHelper.ShowDialogIfAlive(
-                this,
-                setupPrompt,
-                SteamlessFeedback.DialogTitle,
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Information);
-            if (disclaimer != DialogResult.OK)
-                return false;
-
-            string selectedCliPath = PromptSelectSteamlessCli();
-            if (string.IsNullOrEmpty(selectedCliPath))
-                return false;
-
-            var saveResult = ServiceLocator.SteamlessService.TryPersistCliPath(selectedCliPath, out _);
-            if (!saveResult.IsValid)
-            {
-                FormMessageBoxHelper.ShowIfAlive(
-                    this,
-                    saveResult.ErrorMessage,
-                    SteamlessFeedback.DialogTitle,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return false;
-            }
-
-            Program.LogService?.LogMessage("Steamless CLI path saved.");
-            return true;
-        }
-
-        private string PromptSelectSteamlessCli()
-        {
-            using (var openFileDialog = new OpenFileDialog())
-            {
-                openFileDialog.Filter = ApplicationConstants.SteamlessCliFileDialogFilter;
-                openFileDialog.FilterIndex = 1;
-                openFileDialog.FileName = PathConstants.SteamlessCliExecutableName;
-                openFileDialog.RestoreDirectory = false;
-                string browseRoot = ServiceLocator.SteamlessService.GetCliBrowseInitialDirectory();
-                if (!string.IsNullOrEmpty(browseRoot))
-                    openFileDialog.InitialDirectory = browseRoot;
-                openFileDialog.Title = "Select Steamless.CLI.exe";
-                openFileDialog.CheckFileExists = true;
-
-                if (openFileDialog.ShowDialog(this) == DialogResult.OK)
-                    return openFileDialog.FileName;
-            }
-
-            return null;
+            return GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out fullExecutablePath);
         }
 
         private void ctxGamesView_Opening(object sender, System.ComponentModel.CancelEventArgs e)
@@ -2259,6 +2447,11 @@ namespace SmartGoldbergEmu.Forms
 
                 LaunchOption launchOption = launchResult.SkipLauncher ? null : launchResult.LaunchOption;
                 Program.LogService?.LogDebug($"Launch option selected: {(launchOption != null ? launchOption.Description ?? launchOption.Executable : "None (default)")}, SkipLauncher: {launchResult.SkipLauncher}");
+
+                string launchExecutablePath = TryResolveLaunchExecutableForStubCheck(game, launchOption);
+                await OfferSteamStubRemovalIfNeededAsync(launchExecutablePath, game.AppName).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
 
                 Program.LogService?.LogDebug("Calling GameLaunchService.LaunchGame...");
                 var launchGameResult = _gameLaunchService.LaunchGame(game, useEmulator: useEmulator, launchOption: launchOption);

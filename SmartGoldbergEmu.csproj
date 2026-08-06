@@ -130,12 +130,6 @@
     <Compile Include="Forms\LaunchOptionsForm.Designer.cs">
       <DependentUpon>LaunchOptionsForm.cs</DependentUpon>
     </Compile>
-    <Compile Include="Forms\SteamlessOptionsForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\SteamlessOptionsForm.Designer.cs">
-      <DependentUpon>SteamlessOptionsForm.cs</DependentUpon>
-    </Compile>
     <Compile Include="Models\AchievementExceptions.cs" />
     <Compile Include="Models\AchievementModels.cs" />
     <Compile Include="Models\AchievementSchema.cs" />
@@ -148,10 +142,9 @@
     <Compile Include="Models\CAchievement.cs" />
     <Compile Include="Models\CSteamGameSchema.cs" />
     <Compile Include="Models\GameConfig.cs" />
-    <Compile Include="Models\SteamlessApplyOutcome.cs" />
-    <Compile Include="Models\SteamlessApplyResult.cs" />
-    <Compile Include="Models\SteamlessCliOptions.cs" />
-    <Compile Include="Models\SteamlessTarget.cs" />
+    <Compile Include="Models\StubExecutableTarget.cs" />
+    <Compile Include="Models\StubKitApplyOutcome.cs" />
+    <Compile Include="Models\StubKitApplyResult.cs" />
     <Compile Include="Models\LegacyConfig.cs" />
     <Compile Include="Models\GameSettingsSaveModels.cs" />
     <Compile Include="Models\GameSettingsSnapshot.cs" />
@@ -300,8 +293,8 @@
     <Compile Include="Services\UriProtocolService.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
     <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
-    <Compile Include="Services\SteamlessFeedback.cs" />
-    <Compile Include="Services\SteamlessService.cs" />
+    <Compile Include="Services\StubKitFeedback.cs" />
+    <Compile Include="Services\StubKitService.cs" />
     <Compile Include="JsonKit\JsonArray.cs" />
     <Compile Include="JsonKit\JsonConvert.cs" />
     <Compile Include="JsonKit\JsonFormatting.cs" />
@@ -313,6 +306,21 @@
     <Compile Include="JsonKit\JsonValueExtensions.cs" />
     <Compile Include="JsonKit\JsonValueKind.cs" />
     <Compile Include="JsonKit\JsonWriter.cs" />
+    <Compile Include="StubKit\BindFinish.cs" />
+    <Compile Include="StubKit\ByteMask.cs" />
+    <Compile Include="StubKit\DrmpFieldReader.cs" />
+    <Compile Include="StubKit\EpImmediateScanner.cs" />
+    <Compile Include="StubKit\HeaderSchemas.cs" />
+    <Compile Include="StubKit\PeImage.cs" />
+    <Compile Include="StubKit\SteamStub.cs" />
+    <Compile Include="StubKit\StubCiphers.cs" />
+    <Compile Include="StubKit\StubClassifier.cs" />
+    <Compile Include="StubKit\StubUnpackInfo.cs" />
+    <Compile Include="StubKit\TlsOep.cs" />
+    <Compile Include="StubKit\UnpackSession.cs" />
+    <Compile Include="StubKit\VariantV10.cs" />
+    <Compile Include="StubKit\VariantV20.cs" />
+    <Compile Include="StubKit\VariantV21.cs" />
     <Compile Include="ExtractKit\ArchiveEntry.cs" />
     <Compile Include="ExtractKit\ArchiveExtractSession.cs" />
     <Compile Include="ExtractKit\ArchiveExtractor.cs" />
@@ -394,9 +402,6 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\LaunchOptionsForm.resx">
       <DependentUpon>LaunchOptionsForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\SteamlessOptionsForm.resx">
-      <DependentUpon>SteamlessOptionsForm.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

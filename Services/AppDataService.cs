@@ -214,11 +214,6 @@ namespace SmartGoldbergEmu.Services
             else
                 settings.LogosViewDropShadow = true;
 
-            settings.SteamlessCliPath = _iniService.GetValue(
-                iniFile,
-                ApplicationConstants.SettingSectionApplication,
-                ApplicationConstants.SettingKeySteamlessCliPath);
-
             var autoUpdateStr = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_update");
             if (bool.TryParse(autoUpdateStr, out bool autoUpdate))
                 settings.AutoUpdate = autoUpdate;
@@ -386,11 +381,6 @@ namespace SmartGoldbergEmu.Services
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyLogosViewDropShadow,
                     settings.LogosViewDropShadow.ToString().ToLower());
-                _iniService.SetValue(
-                    iniFile,
-                    ApplicationConstants.SettingSectionApplication,
-                    ApplicationConstants.SettingKeySteamlessCliPath,
-                    settings.SteamlessCliPath ?? string.Empty);
 
                 StripUiSettingsFromConfig(iniFile);
                 _iniService.WriteFile(iniFile, _configFilePath);
@@ -687,17 +677,6 @@ namespace SmartGoldbergEmu.Services
 
             var normalized = ApplicationConstants.NormalizeDetailsColumnWidths(widths);
             return SetAppStringSetting(normalized, "Column widths cannot be null or empty", (s, v) => s.DetailsColumnWidths = v, "Failed to set column widths");
-        }
-
-        public string GetSteamlessCliPath()
-        {
-            var path = GetAppSetting(s => s.SteamlessCliPath);
-            return string.IsNullOrWhiteSpace(path) ? null : path.Trim();
-        }
-
-        public ValidationResult SetSteamlessCliPath(string cliPath)
-        {
-            return SetAppSetting(s => s.SteamlessCliPath = cliPath?.Trim(), "Failed to save Steamless CLI path");
         }
 
         public bool GetAutoUpdate()
