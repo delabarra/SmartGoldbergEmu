@@ -177,14 +177,17 @@ namespace SmartGoldbergEmu.Services
                     launchMarkedInProgress = true;
                 }
 
-                string exeForArch = GameFolderPathHelper.TryResolveStoredExecutable(game, out string resolvedForArch)
-                    ? resolvedForArch
-                    : game.Path;
+                string resolvedLaunch = ResolveLaunchExecutablePath(game, launchOption);
                 bool useX64 = true;
-                if (TryResolveLaunchUseX64(game, out bool resolvedUseX64))
-                    useX64 = resolvedUseX64;
-                else if (!string.IsNullOrEmpty(exeForArch) && !File.Exists(exeForArch))
-                    _logger?.LogWarning($"Architecture detection failed for {exeForArch}, defaulting to 64-bit");
+                if (!TryResolveLaunchUseX64(game, resolvedLaunch, out useX64))
+                {
+                    string fallbackExe = GameFolderPathHelper.TryResolveStoredExecutable(game, out string resolvedForArch)
+                        ? resolvedForArch
+                        : game.Path;
+                    if (!string.IsNullOrEmpty(fallbackExe) && !File.Exists(fallbackExe))
+                        _logger?.LogWarning($"Architecture detection failed for {fallbackExe}, defaulting to 64-bit");
+                    useX64 = true;
+                }
 
                 var emuPrerequisite = ValidateEmulatorBinariesForSteamAppId(game, useX64, effectiveUseEmulator);
                 if (!emuPrerequisite.IsValid)
@@ -215,7 +218,6 @@ namespace SmartGoldbergEmu.Services
                             _watcherActiveAppIds.Remove(game.AppId);
                     }
 
-                    string resolvedLaunch = ResolveLaunchExecutablePath(game, launchOption);
                     string exeDirectory = !string.IsNullOrEmpty(resolvedLaunch) ? Path.GetDirectoryName(resolvedLaunch) : null;
                     string gameRootFolder = GetBaseFolderForLaunchOptions(game, launchOption);
                     GoldbergLaunchMode launchMode = game.LaunchMode;
@@ -227,8 +229,10 @@ namespace SmartGoldbergEmu.Services
                     {
                         win32DeployState = new Win32DllDeploymentState { AppId = game.AppId };
 
+                        RefreshSteamInterfacesForStandardLaunch(game, resolvedLaunch, gameRootFolder, useX64);
+
                         var standardResult = DeployStandardGoldbergReleaseToAllTargets(
-                            game, useX64, gameRootFolder, exeDirectory, win32DeployState);
+                            game, useX64, gameRootFolder, exeDirectory, resolvedLaunch, win32DeployState);
                         if (!standardResult.IsValid)
                         {
                             _logger?.LogError($"Standard Goldberg setup failed: {standardResult.ErrorMessage}");
@@ -515,57 +519,73 @@ namespace SmartGoldbergEmu.Services
 
         private bool TryResolveLaunchUseX64(GameConfig game, out bool useX64)
         {
+            return TryResolveLaunchUseX64(game, launchExecutablePath: null, out useX64);
+        }
+
+        private bool TryResolveLaunchUseX64(GameConfig game, string launchExecutablePath, out bool useX64)
+        {
             useX64 = true;
+            if (!string.IsNullOrWhiteSpace(launchExecutablePath) && File.Exists(launchExecutablePath))
+            {
+                if (SteamApiValidator.TryDetectExecutableIsX64(launchExecutablePath, out bool launchIsX64))
+                {
+                    useX64 = launchIsX64;
+                    return true;
+                }
+            }
+
             if (game == null)
                 return false;
 
             string exeForArch = GameFolderPathHelper.TryResolveStoredExecutable(game, out string resolved)
                 ? resolved
                 : game.Path;
-            if (string.IsNullOrWhiteSpace(exeForArch))
+            if (string.IsNullOrWhiteSpace(exeForArch) || !File.Exists(exeForArch))
                 return false;
 
-            if (!File.Exists(exeForArch))
+            if (!SteamApiValidator.TryDetectExecutableIsX64(exeForArch, out bool storedIsX64))
                 return false;
 
-            useX64 = DetectGameArchitecture(exeForArch);
+            useX64 = storedIsX64;
             return true;
         }
 
         private bool DetectGameArchitecture(string executablePath)
         {
-            try
+            if (SteamApiValidator.TryDetectExecutableIsX64(executablePath, out bool isX64))
+                return isX64;
+            return true;
+        }
+
+        private void RefreshSteamInterfacesForStandardLaunch(
+            GameConfig game,
+            string launchExePath,
+            string gameRootFolder,
+            bool useX64)
+        {
+            if (game == null || game.AppId == 0)
+                return;
+
+            string steamSettingsPath = PathConstants.GetGameSteamSettingsPath(game.AppId);
+            string startFolder = !string.IsNullOrWhiteSpace(game.StartFolder)
+                ? game.StartFolder
+                : gameRootFolder;
+
+            string sourceDll = null;
+            if (SteamApiValidator.TryResolveSteamApiSourceForInterfaces(startFolder, launchExePath, useX64, out sourceDll) ||
+                SteamApiValidator.TryResolveSteamApiSourceForInterfaces(startFolder, launchExePath, !useX64, out sourceDll))
             {
-                if (!File.Exists(executablePath))
-                    return true;
-
-                using (var fs = new FileStream(executablePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                using (var reader = new BinaryReader(fs))
+                if (ServiceLocator.SteamInterfacesService.TryWriteSteamInterfacesFromSteamApi(
+                        steamSettingsPath, sourceDll, overwrite: true))
                 {
-                    if (fs.Length < 64)
-                        return true;
-
-                    if (reader.ReadUInt16() != 0x5A4D)
-                        return true;
-
-                    fs.Position = 0x3C;
-                    uint peHeaderOffset = reader.ReadUInt32();
-                    if (peHeaderOffset >= fs.Length || peHeaderOffset == 0)
-                        return true;
-
-                    fs.Position = peHeaderOffset;
-                    if (reader.ReadUInt32() != 0x00004550)
-                        return true;
-
-                    ushort machine = reader.ReadUInt16();
-                    return machine == 0x8664 || machine == 0xAA64;
+                    _logger?.LogDebug(
+                        $"Refreshed {PathConstants.GoldbergSteamInterfacesFileName} from {sourceDll} for app {game.AppId}");
+                    return;
                 }
             }
-            catch (Exception ex)
-            {
-                _logger?.LogError($"Error detecting architecture for {executablePath}: {ex.Message}", ex);
-                return true;
-            }
+
+            _logger?.LogWarning(
+                $"Could not refresh {PathConstants.GoldbergSteamInterfacesFileName} for app {game.AppId} from a Valve steam_api beside the launch executable.");
         }
 
         private static GameConfig ReloadGameConfigFromLibrary(GameConfig game)
@@ -618,58 +638,30 @@ namespace SmartGoldbergEmu.Services
                 "Steam.dll is not in goldberg\\steam_old. Run Goldberg Update or install Steam, then try again.");
         }
 
-        private static List<string> CollectStandardGoldbergDeployTargetPaths(string gameRootFolder, bool useX64)
+        private static List<string> CollectStandardGoldbergDeployTargetPaths(
+            string gameRootFolder,
+            bool useX64,
+            string preferredApiPath)
         {
             var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(preferredApiPath))
+            {
+                foreach (string path in SteamApiValidator.GetSameHashDeployTargetPaths(
+                             gameRootFolder, useX64, preferredApiPath))
+                {
+                    paths.Add(path);
+                }
+
+                return paths.ToList();
+            }
+
             if (string.IsNullOrEmpty(gameRootFolder) || !Directory.Exists(gameRootFolder))
                 return new List<string>();
 
             foreach (string existing in SteamApiValidator.GetDeployTargetPathsForBitness(gameRootFolder, useX64))
                 paths.Add(existing);
 
-            string dllName = useX64 ? PathConstants.GoldbergStandardSteamApiDll64 : PathConstants.GoldbergStandardSteamApiDll32;
-            foreach (string exeDir in EnumerateDirectoriesContainingExecutables(gameRootFolder, maxDepth: 8))
-            {
-                string candidate = Path.Combine(exeDir, dllName);
-                if (File.Exists(candidate))
-                    paths.Add(candidate);
-            }
-
             return paths.ToList();
-        }
-
-        private static List<string> EnumerateDirectoriesContainingExecutables(string rootFolder, int maxDepth)
-        {
-            var dirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrEmpty(rootFolder) || !Directory.Exists(rootFolder))
-                return new List<string>();
-
-            void Walk(string dir, int depth)
-            {
-                if (depth > maxDepth)
-                    return;
-                try
-                {
-                    if (Directory.GetFiles(dir, "*.exe").Length > 0)
-                        dirs.Add(dir);
-                }
-                catch
-                {
-                }
-                if (depth >= maxDepth)
-                    return;
-                try
-                {
-                    foreach (string sub in Directory.GetDirectories(dir))
-                        Walk(sub, depth + 1);
-                }
-                catch
-                {
-                }
-            }
-
-            Walk(rootFolder, 0);
-            return dirs.ToList();
         }
 
         // ActiveProcess must reference the experimental steamclient copied beside the launch executable (game folder).
@@ -746,10 +738,28 @@ namespace SmartGoldbergEmu.Services
             bool useX64,
             string gameRootFolder,
             string launchExeDirectory,
+            string launchExePath,
             Win32DllDeploymentState deployState)
         {
+            string startFolder = !string.IsNullOrWhiteSpace(game?.StartFolder)
+                ? game.StartFolder
+                : gameRootFolder;
+
+            string preferredApiPath = null;
+            if (!SteamApiValidator.TryResolveSteamApiForExecutable(
+                    startFolder, launchExePath, useX64, out preferredApiPath) &&
+                !string.IsNullOrEmpty(launchExeDirectory))
+            {
+                string dllName = useX64
+                    ? PathConstants.GoldbergStandardSteamApiDll64
+                    : PathConstants.GoldbergStandardSteamApiDll32;
+                string besideLaunch = Path.Combine(launchExeDirectory, dllName);
+                if (File.Exists(besideLaunch))
+                    preferredApiPath = besideLaunch;
+            }
+
             var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string path in CollectStandardGoldbergDeployTargetPaths(gameRootFolder, useX64))
+            foreach (string path in CollectStandardGoldbergDeployTargetPaths(gameRootFolder, useX64, preferredApiPath))
                 targets.Add(path);
 
             if (!string.IsNullOrEmpty(launchExeDirectory) && Directory.Exists(launchExeDirectory))
@@ -764,7 +774,10 @@ namespace SmartGoldbergEmu.Services
                 return ValidationResult.Failure(
                     "Experimental mode needs a game executable folder or an existing steam_api DLL under the game folder.");
 
-            _logger?.LogDebug($"Standard Goldberg deploy targets ({targets.Count}): {string.Join("; ", targets)}");
+            _logger?.LogDebug(
+                $"Standard Goldberg deploy targets ({targets.Count})" +
+                (string.IsNullOrEmpty(preferredApiPath) ? string.Empty : $"; preferred={preferredApiPath}") +
+                $": {string.Join("; ", targets)}");
 
             foreach (string steamApiDeployPath in targets)
             {

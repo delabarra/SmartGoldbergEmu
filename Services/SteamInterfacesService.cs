@@ -6,12 +6,14 @@ using System.Text;
 using System.Text.RegularExpressions;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Validation;
 
 namespace SmartGoldbergEmu.Services
 {
     // Builds Goldberg steam_interfaces.txt (see gbe_fork tools/generate_interfaces and steam_interfaces.EXAMPLE.txt).
+    // One original steam_api beside the game exe — never a union of every DLL under StartFolder.
     public class SteamInterfacesService
     {
         // Pattern set matches gbe_fork tools/generate_interfaces/generate_interfaces.cpp (regex over full DLL bytes).
@@ -97,72 +99,17 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
+        /// <summary>
+        /// Returns the single preferred Valve steam_api path for interface generation (Path-adjacent), or empty.
+        /// </summary>
         public IReadOnlyList<string> CollectSteamApiDllPathsForGame(GameConfig gameConfig)
         {
             var scanPaths = new List<string>();
-            if (gameConfig == null)
+            if (!TryResolvePreferredSteamApiSource(gameConfig, preferredExePath: null, out string sourcePath))
                 return scanPaths;
 
-            string startFolder = gameConfig.StartFolder ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(startFolder) || !Directory.Exists(startFolder))
-                return scanPaths;
-
-            var candidates = new List<string>
-            {
-                Path.Combine(startFolder, SteamApiValidator.SteamApiDll32),
-                Path.Combine(startFolder, SteamApiValidator.SteamApiDll64)
-            };
-
-            try
-            {
-                foreach (string p in Directory.EnumerateFiles(
-                    startFolder,
-                    PathConstants.SteamApiRedistributableDllSearchPattern,
-                    SearchOption.AllDirectories))
-                {
-                    if (!IsUnderGoldbergSubfolder(p))
-                        candidates.Add(p);
-                }
-            }
-            catch
-            {
-            }
-
-            foreach (string candidate in candidates
-                .Where(p => !string.IsNullOrWhiteSpace(p) && !IsUnderGoldbergSubfolder(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                TryAddValidSteamApiScanPath(scanPaths, candidate);
-                TryAddValidSteamApiScanPath(scanPaths, candidate + PathConstants.SteamApiBackupSidecarExtension);
-            }
-
+            scanPaths.Add(sourcePath);
             return scanPaths;
-        }
-
-        private static void TryAddValidSteamApiScanPath(List<string> scanPaths, string path)
-        {
-            if (string.IsNullOrWhiteSpace(path) ||
-                scanPaths.Any(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase)))
-            {
-                return;
-            }
-
-            if (SteamApiValidator.IsAcceptableSteamApiForInterfaceGeneration(path))
-                scanPaths.Add(path);
-        }
-
-        private static bool IsUnderGoldbergSubfolder(string filePath)
-        {
-            if (string.IsNullOrWhiteSpace(filePath))
-                return false;
-
-            foreach (string segment in filePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-            {
-                if (string.Equals(segment, PathConstants.GoldbergDirectoryFolderName, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-
-            return false;
         }
 
         public IReadOnlyList<string> ExtractInterfaceNamesFromGame(GameConfig gameConfig)
@@ -254,6 +201,38 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        public bool TryWriteSteamInterfacesFromSteamApi(string steamSettingsPath, string steamApiPath, bool overwrite)
+        {
+            if (string.IsNullOrWhiteSpace(steamSettingsPath) || string.IsNullOrWhiteSpace(steamApiPath) || !File.Exists(steamApiPath))
+                return false;
+
+            string targetPath = GetSteamSettingsFilePath(steamSettingsPath);
+            if (!overwrite && File.Exists(targetPath))
+                return false;
+
+            try
+            {
+                IReadOnlyList<string> interfaces = ExtractInterfaceNamesFromBinary(steamApiPath);
+                if (interfaces.Count == 0)
+                {
+                    _logger?.LogWarning(
+                        $"No Steam interface strings found in {steamApiPath}.");
+                    return false;
+                }
+
+                Directory.CreateDirectory(steamSettingsPath);
+                File.WriteAllLines(targetPath, interfaces);
+                _logger?.LogMessage(
+                    $"Wrote {PathConstants.GoldbergSteamInterfacesFileName} ({interfaces.Count} entries) from {steamApiPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"Failed writing {PathConstants.GoldbergSteamInterfacesFileName} from {steamApiPath}", ex);
+                return false;
+            }
+        }
+
         public bool TryCopySourceFileToSteamSettings(string steamSettingsPath, string sourceFilePath)
         {
             if (string.IsNullOrWhiteSpace(steamSettingsPath) || string.IsNullOrWhiteSpace(sourceFilePath) || !File.Exists(sourceFilePath))
@@ -276,7 +255,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        // Creates steam_interfaces.txt when missing: copy from game folder source, else scan valid Valve steam_api DLLs only.
+        // Creates steam_interfaces.txt when missing: copy from game folder source, else scan one Path-adjacent Valve steam_api.
         public bool TryEnsureSteamInterfacesFile(string steamSettingsPath, GameConfig gameConfig, ref bool anyFileGenerated)
         {
             if (gameConfig == null || gameConfig.AppId == 0 || string.IsNullOrWhiteSpace(steamSettingsPath))
@@ -297,7 +276,7 @@ namespace SmartGoldbergEmu.Services
             if (File.Exists(targetPath))
                 return true;
 
-            return TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, ref anyFileGenerated);
+            return TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, preferredExePath: null, overwrite: false, ref anyFileGenerated);
         }
 
         public bool TryRegenerateSteamInterfacesFile(GameConfig gameConfig)
@@ -326,38 +305,54 @@ namespace SmartGoldbergEmu.Services
             }
 
             bool anyFileGenerated = false;
-            TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, ref anyFileGenerated);
+            TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, preferredExePath: null, overwrite: true, ref anyFileGenerated);
             return anyFileGenerated && File.Exists(targetPath);
         }
 
-        private bool TryWriteFromSteamApiScan(string steamSettingsPath, GameConfig gameConfig, ref bool anyFileGenerated)
+        /// <summary>
+        /// Overwrites steam_interfaces.txt from the Valve steam_api resolved for <paramref name="launchExePath"/> (or stored Path).
+        /// </summary>
+        public bool TryRefreshSteamInterfacesForLaunch(
+            string steamSettingsPath,
+            GameConfig gameConfig,
+            string launchExePath)
+        {
+            if (gameConfig == null || gameConfig.AppId == 0 || string.IsNullOrWhiteSpace(steamSettingsPath))
+                return false;
+
+            bool anyFileGenerated = false;
+            return TryWriteFromSteamApiScan(
+                steamSettingsPath,
+                gameConfig,
+                preferredExePath: launchExePath,
+                overwrite: true,
+                ref anyFileGenerated);
+        }
+
+        private bool TryWriteFromSteamApiScan(
+            string steamSettingsPath,
+            GameConfig gameConfig,
+            string preferredExePath,
+            bool overwrite,
+            ref bool anyFileGenerated)
         {
             string targetPath = GetSteamSettingsFilePath(steamSettingsPath);
-            if (File.Exists(targetPath))
+            if (!overwrite && File.Exists(targetPath))
                 return true;
 
             try
             {
-                IReadOnlyList<string> validDllPaths = CollectSteamApiDllPathsForGame(gameConfig);
-                if (validDllPaths.Count == 0)
+                if (!TryResolvePreferredSteamApiSource(gameConfig, preferredExePath, out string sourceDllPath))
                 {
                     _logger?.LogMessage(
-                        $"Skipped {PathConstants.GoldbergSteamInterfacesFileName} for app {gameConfig.AppId}: no valid steam_api DLL in the game folder.");
+                        $"Skipped {PathConstants.GoldbergSteamInterfacesFileName} for app {gameConfig.AppId}: no valid steam_api DLL beside the game executable.");
                     return false;
                 }
 
-                IReadOnlyList<string> interfaces = ExtractInterfaceNamesFromSteamApiDlls(validDllPaths);
-                if (interfaces.Count == 0)
-                {
-                    _logger?.LogWarning(
-                        $"No Steam interface strings found in valid steam_api binaries for app {gameConfig.AppId}.");
+                if (!TryWriteSteamInterfacesFromSteamApi(steamSettingsPath, sourceDllPath, overwrite: true))
                     return false;
-                }
 
-                File.WriteAllLines(targetPath, interfaces);
                 anyFileGenerated = true;
-                _logger?.LogMessage(
-                    $"Generated {PathConstants.GoldbergSteamInterfacesFileName} ({interfaces.Count} entries) from steam_api binaries for app {gameConfig.AppId}");
                 return true;
             }
             catch (Exception ex)
@@ -367,6 +362,45 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        private bool TryResolvePreferredSteamApiSource(
+            GameConfig gameConfig,
+            string preferredExePath,
+            out string sourcePath)
+        {
+            sourcePath = null;
+            if (gameConfig == null)
+                return false;
+
+            string startFolder = gameConfig.StartFolder ?? string.Empty;
+            string exePath = preferredExePath;
+            if (string.IsNullOrWhiteSpace(exePath))
+            {
+                if (GameFolderPathHelper.TryResolveStoredExecutable(gameConfig, out string storedExe))
+                    exePath = storedExe;
+                else
+                    exePath = gameConfig.Path;
+            }
+
+            bool useX64 = true;
+            if (!string.IsNullOrWhiteSpace(exePath) &&
+                SteamApiValidator.TryDetectExecutableIsX64(exePath, out bool detectedX64))
+            {
+                useX64 = detectedX64;
+            }
+            else if (!string.IsNullOrWhiteSpace(exePath))
+            {
+                // Default x64 when PE cannot be read; still attempt resolve for both if needed below.
+                useX64 = true;
+            }
+
+            if (SteamApiValidator.TryResolveSteamApiSourceForInterfaces(startFolder, exePath, useX64, out sourcePath))
+                return true;
+
+            // If arch guess was wrong (rare), try the opposite bitness once.
+            if (SteamApiValidator.TryResolveSteamApiSourceForInterfaces(startFolder, exePath, !useX64, out sourcePath))
+                return true;
+
+            return false;
+        }
     }
 }
-

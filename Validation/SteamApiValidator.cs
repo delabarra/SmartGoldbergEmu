@@ -349,6 +349,332 @@ namespace SmartGoldbergEmu.Validation
         }
 
         /// <summary>
+        /// Resolves the Valve-style steam_api path the given executable is expected to load (same bitness).
+        /// Order: exe directory, then nearest ancestor under <paramref name="startFolder"/>, then best primary under startFolder.
+        /// </summary>
+        public static bool TryResolveSteamApiForExecutable(
+            string startFolder,
+            string exePath,
+            bool useX64,
+            out string steamApiPath)
+        {
+            steamApiPath = null;
+            string dllName = useX64 ? SteamApiDll64 : SteamApiDll32;
+
+            string exeDirectory = TryGetExecutableDirectory(exePath);
+            if (!string.IsNullOrEmpty(exeDirectory))
+            {
+                string besideExe = Path.Combine(exeDirectory, dllName);
+                if (File.Exists(besideExe) && IsPrimarySteamApiCandidate(besideExe, useX64))
+                {
+                    steamApiPath = besideExe;
+                    return true;
+                }
+
+                if (TryFindCanonicalSteamApiInAncestors(startFolder, exeDirectory, dllName, useX64, out steamApiPath))
+                    return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(startFolder) || !Directory.Exists(startFolder))
+                return false;
+
+            List<string> allFiles = EnumerateSteamApiNamedFilesSafe(startFolder);
+            if (!TrySelectBestPrimaryCandidate(allFiles, startFolder, useX64, out string bestPath))
+                return false;
+
+            steamApiPath = bestPath;
+            return true;
+        }
+
+        /// <summary>
+        /// Resolves a Valve/original steam_api binary to scan for interface strings (live file or <c>.sge</c> sidecar).
+        /// </summary>
+        public static bool TryResolveSteamApiSourceForInterfaces(
+            string startFolder,
+            string exePath,
+            bool useX64,
+            out string sourcePath)
+        {
+            sourcePath = null;
+
+            if (TryResolveSteamApiForExecutable(startFolder, exePath, useX64, out string preferredPath))
+            {
+                if (TryPickAcceptableInterfaceSource(preferredPath, out sourcePath))
+                    return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(startFolder) || !Directory.Exists(startFolder))
+                return false;
+
+            List<string> allFiles = EnumerateSteamApiNamedFilesSafe(startFolder);
+            if (!TrySelectBestPrimaryCandidate(allFiles, startFolder, useX64, out string bestPath))
+                return false;
+
+            return TryPickAcceptableInterfaceSource(bestPath, out sourcePath);
+        }
+
+        /// <summary>
+        /// Deploy targets: <paramref name="preferredApiPath"/> plus same-bitness primaries whose original hash matches
+        /// (live Valve bytes, or <c>.sge</c> backup when the live file was already swapped).
+        /// </summary>
+        public static List<string> GetSameHashDeployTargetPaths(
+            string gameRoot,
+            bool useX64,
+            string preferredApiPath)
+        {
+            var paths = new List<string>();
+            if (string.IsNullOrWhiteSpace(preferredApiPath))
+                return paths;
+
+            string preferredFull;
+            try
+            {
+                preferredFull = Path.GetFullPath(preferredApiPath);
+            }
+            catch
+            {
+                preferredFull = preferredApiPath;
+            }
+
+            paths.Add(preferredFull);
+
+            string preferredHash = TryGetComparableOriginalSteamApiHash(preferredFull);
+            if (string.IsNullOrEmpty(preferredHash) || string.IsNullOrWhiteSpace(gameRoot) || !Directory.Exists(gameRoot))
+                return paths;
+
+            foreach (string peer in GetDeployTargetPathsForBitness(gameRoot, useX64))
+            {
+                string peerFull;
+                try
+                {
+                    peerFull = Path.GetFullPath(peer);
+                }
+                catch
+                {
+                    peerFull = peer;
+                }
+
+                if (paths.Any(p => string.Equals(p, peerFull, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                string peerHash = TryGetComparableOriginalSteamApiHash(peerFull);
+                if (peerHash != null &&
+                    string.Equals(peerHash, preferredHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    paths.Add(peerFull);
+                }
+            }
+
+            return paths;
+        }
+
+        /// <summary>
+        /// Reads PE Machine from an executable. Returns false when the file is missing or not a valid PE.
+        /// </summary>
+        public static bool TryDetectExecutableIsX64(string executablePath, out bool isX64)
+        {
+            isX64 = true;
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+                return false;
+
+            try
+            {
+                using (var fs = new FileStream(executablePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var reader = new BinaryReader(fs))
+                {
+                    if (fs.Length < 64)
+                        return false;
+
+                    if (reader.ReadUInt16() != 0x5A4D)
+                        return false;
+
+                    fs.Position = 0x3C;
+                    uint peHeaderOffset = reader.ReadUInt32();
+                    if (peHeaderOffset >= fs.Length || peHeaderOffset == 0)
+                        return false;
+
+                    fs.Position = peHeaderOffset;
+                    if (reader.ReadUInt32() != 0x00004550)
+                        return false;
+
+                    ushort machine = reader.ReadUInt16();
+                    isX64 = machine == 0x8664 || machine == 0xAA64;
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogError($"TryDetectExecutableIsX64: {executablePath}", ex);
+                return false;
+            }
+        }
+
+        private static bool TryPickAcceptableInterfaceSource(string preferredLivePath, out string sourcePath)
+        {
+            sourcePath = null;
+            if (string.IsNullOrWhiteSpace(preferredLivePath))
+                return false;
+
+            if (IsAcceptableSteamApiForInterfaceGeneration(preferredLivePath))
+            {
+                sourcePath = preferredLivePath;
+                return true;
+            }
+
+            string sidecar = preferredLivePath + PathConstants.SteamApiBackupSidecarExtension;
+            if (IsAcceptableSteamApiForInterfaceGeneration(sidecar))
+            {
+                sourcePath = sidecar;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string TryGetComparableOriginalSteamApiHash(string livePath)
+        {
+            if (string.IsNullOrWhiteSpace(livePath))
+                return null;
+
+            if (File.Exists(livePath) &&
+                (IsKnownGoodValveSteamApi(livePath) || IsAcceptableSteamApiForInterfaceGeneration(livePath)))
+            {
+                return TryComputeSha256Hex(livePath);
+            }
+
+            string sidecar = livePath + PathConstants.SteamApiBackupSidecarExtension;
+            if (File.Exists(sidecar) &&
+                (IsKnownGoodValveSteamApi(sidecar) || IsAcceptableSteamApiForInterfaceGeneration(sidecar)))
+            {
+                return TryComputeSha256Hex(sidecar);
+            }
+
+            return null;
+        }
+
+        private static string TryGetExecutableDirectory(string exePath)
+        {
+            if (string.IsNullOrWhiteSpace(exePath))
+                return null;
+
+            try
+            {
+                string full = Path.IsPathRooted(exePath)
+                    ? Path.GetFullPath(exePath)
+                    : Path.GetFullPath(exePath);
+                string dir = Path.GetDirectoryName(full);
+                return string.IsNullOrEmpty(dir) ? null : dir;
+            }
+            catch
+            {
+                try
+                {
+                    return Path.GetDirectoryName(exePath);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        private static bool TryFindCanonicalSteamApiInAncestors(
+            string startFolder,
+            string exeDirectory,
+            string dllName,
+            bool useX64,
+            out string steamApiPath)
+        {
+            steamApiPath = null;
+            if (string.IsNullOrWhiteSpace(startFolder) || string.IsNullOrWhiteSpace(exeDirectory))
+                return false;
+
+            string rootFull;
+            try
+            {
+                rootFull = Path.GetFullPath(startFolder.Trim());
+            }
+            catch
+            {
+                return false;
+            }
+
+            string walk;
+            try
+            {
+                walk = Directory.GetParent(exeDirectory)?.FullName;
+            }
+            catch
+            {
+                return false;
+            }
+
+            while (!string.IsNullOrEmpty(walk))
+            {
+                string walkFull;
+                try
+                {
+                    walkFull = Path.GetFullPath(walk);
+                }
+                catch
+                {
+                    break;
+                }
+
+                if (!IsPathUnderOrEqualDirectory(walkFull, rootFull))
+                    break;
+
+                string candidate = Path.Combine(walkFull, dllName);
+                if (File.Exists(candidate) && IsPrimarySteamApiCandidate(candidate, useX64))
+                {
+                    steamApiPath = candidate;
+                    return true;
+                }
+
+                if (string.Equals(walkFull, rootFull, StringComparison.OrdinalIgnoreCase))
+                    break;
+
+                try
+                {
+                    walk = Directory.GetParent(walkFull)?.FullName;
+                }
+                catch
+                {
+                    break;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsPathUnderOrEqualDirectory(string path, string rootDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(rootDirectory))
+                return false;
+
+            try
+            {
+                string pathFull = Path.GetFullPath(path);
+                string rootFull = Path.GetFullPath(rootDirectory);
+                if (string.Equals(pathFull, rootFull, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                string rootPrefix = rootFull;
+                if (!rootPrefix.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) &&
+                    !rootPrefix.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+                {
+                    rootPrefix += Path.DirectorySeparatorChar;
+                }
+
+                return pathFull.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Returns true if <paramref name="filePath"/> is a candidate primary Steam API DLL for the requested bitness.
         /// Accepts exact canonical names and steam_api*.dll variants when bitness can be inferred.
         /// </summary>
