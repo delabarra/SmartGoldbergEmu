@@ -558,11 +558,16 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
-                    if (file.HadOriginal && !string.IsNullOrEmpty(file.BackupPath) && File.Exists(file.BackupPath))
+                    if (file.HadOriginal)
                     {
-                        File.Copy(file.BackupPath, file.TargetPath, overwrite: true);
-                        File.Delete(file.BackupPath);
-                        _logger.LogDebug($"Restored original file: {file.TargetPath}");
+                        // Restore from backup when present. If the backup is already gone, a prior cleanup
+                        // likely restored the original — do not delete the target.
+                        if (!string.IsNullOrEmpty(file.BackupPath) && File.Exists(file.BackupPath))
+                        {
+                            File.Copy(file.BackupPath, file.TargetPath, overwrite: true);
+                            File.Delete(file.BackupPath);
+                            _logger.LogDebug($"Restored original file: {file.TargetPath}");
+                        }
                     }
                     else
                     {

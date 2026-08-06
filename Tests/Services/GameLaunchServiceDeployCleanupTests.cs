@@ -165,5 +165,56 @@ namespace SmartGoldbergEmu.Tests.Services
                 }
             }
         }
+
+        [Fact]
+        public void LaunchGame_standard_mode_restores_deploy_when_process_fails_to_start()
+        {
+            using (var harness = new LaunchDeployTestHarness())
+            {
+                string gameFolder = TestFileHelper.CreateTempDirectory("sge-game-start-fail-");
+                try
+                {
+                    string executablePath = Path.Combine(gameFolder, "testgame.exe");
+                    Directory.CreateDirectory(gameFolder);
+                    // Valid path for pre-launch checks, but not a runnable PE image.
+                    File.WriteAllBytes(executablePath, new byte[] { 0x00, 0x01, 0x02, 0x03 });
+
+                    string steamApiPath = Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64);
+                    string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
+                    harness.WriteMarkerFile(steamApiPath, LaunchDeployTestHarness.OriginalFileMarker);
+                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergExtraDll(useX64: true);
+
+                    string loadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(
+                        LaunchDeployTestHarness.DefaultTestAppId);
+
+                    var game = harness.CreateGameConfig(
+                        LaunchDeployTestHarness.DefaultTestAppId,
+                        gameFolder,
+                        executablePath,
+                        GoldbergLaunchMode.StandardSteamApi,
+                        parameters: string.Empty);
+
+                    var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
+                    Assert.False(result.IsValid, "Expected launch to fail for a non-runnable executable.");
+
+                    Assert.True(
+                        File.Exists(steamApiPath)
+                        && !File.Exists(backupPath)
+                        && harness.ReadMarkerFile(steamApiPath) == LaunchDeployTestHarness.OriginalFileMarker,
+                        "Expected experimental deploy files to be restored after Process.Start failure.");
+                    Assert.False(
+                        File.Exists(Path.Combine(gameFolder, PathConstants.GoldbergSteamClientDll64)),
+                        "Expected deployed steamclient to be removed after Process.Start failure.");
+                    Assert.False(
+                        Directory.Exists(loadDllsFolder),
+                        "Expected load_dlls staging to be removed after Process.Start failure.");
+                }
+                finally
+                {
+                    try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                }
+            }
+        }
     }
 }

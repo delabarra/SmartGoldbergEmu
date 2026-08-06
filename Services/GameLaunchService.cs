@@ -146,6 +146,12 @@ namespace SmartGoldbergEmu.Services
         {
             ulong appId = 0;
             bool launchMarkedInProgress = false;
+            Win32DllDeploymentState win32DeployState = null;
+            bool activeProcessRegistryConfigured = false;
+            BranchRestoreInfo branchRestoreOnExit = null;
+            // After emulator deploy/registry mutations, always restore unless LaunchProcess handed off to a live session.
+            bool needsFailureCleanup = false;
+            bool launchHandedOffToSession = false;
             try
             {
                 game = ReloadGameConfigFromLibrary(game);
@@ -198,9 +204,7 @@ namespace SmartGoldbergEmu.Services
                 _logger?.LogMessage(
                     $"Launch: {game?.AppName} (AppId {game?.AppId}), emulator={effectiveUseEmulator}, launchMode={game?.LaunchMode}, arch={(useX64 ? "x64" : "x86")}, option={launchOptionLabel}");
 
-                Win32DllDeploymentState win32DeployState = null;
                 string sourceModInstallFolder = null;
-                bool activeProcessRegistryConfigured = false;
                 if (effectiveUseEmulator)
                 {
                     if (game.AppId != 0)
@@ -217,6 +221,9 @@ namespace SmartGoldbergEmu.Services
                         lock (_watcherActiveLock)
                             _watcherActiveAppIds.Remove(game.AppId);
                     }
+
+                    // Any return/exception after this must restore ActiveProcess, SourceMod, and deploy files.
+                    needsFailureCleanup = true;
 
                     string exeDirectory = !string.IsNullOrEmpty(resolvedLaunch) ? Path.GetDirectoryName(resolvedLaunch) : null;
                     string gameRootFolder = GetBaseFolderForLaunchOptions(game, launchOption);
@@ -317,7 +324,6 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                BranchRestoreInfo branchRestoreOnExit = null;
                 if (effectiveUseEmulator && launchOption != null && game.AppId != 0)
                 {
                     var snap = _emulatorConfigService.LoadGameSettingsSnapshot(game.AppId);
@@ -364,41 +370,22 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                ValidationResult result;
-                try
-                {
-                    result = LaunchProcess(
-                        game,
-                        launchOption,
-                        branchRestoreOnExit,
-                        win32DeployState,
-                        activeProcessRegistryConfigured,
-                        trackCleanupSession: effectiveUseEmulator);
-                }
-                catch (Exception exLaunch)
-                {
-                    RunImmediateLaunchSessionCleanup(
-                        game.AppId,
-                        0,
-                        win32DeployState,
-                        activeProcessRegistryConfigured,
-                        branchRestoreOnExit);
-                    _logger?.LogError($"Failed to start game process: {exLaunch.Message}", exLaunch);
-                    return ValidationResult.Failure($"Failed to start game process: {exLaunch.Message}");
-                }
+                ValidationResult result = LaunchProcess(
+                    game,
+                    launchOption,
+                    branchRestoreOnExit,
+                    win32DeployState,
+                    activeProcessRegistryConfigured,
+                    trackCleanupSession: effectiveUseEmulator);
 
-                if (!result.IsValid)
+                if (result.IsValid)
                 {
-                    RunImmediateLaunchSessionCleanup(
-                        game.AppId,
-                        0,
-                        win32DeployState,
-                        activeProcessRegistryConfigured,
-                        branchRestoreOnExit);
+                    // Process started (or already cleaned after an immediate exit); do not roll back in finally.
+                    launchHandedOffToSession = true;
                 }
-
-                if (!result.IsValid)
+                else
                     _logger?.LogError($"Game launch failed: {result.ErrorMessage}");
+
                 return result;
             }
             catch (Exception ex)
@@ -408,6 +395,23 @@ namespace SmartGoldbergEmu.Services
             }
             finally
             {
+                if (needsFailureCleanup && !launchHandedOffToSession)
+                {
+                    try
+                    {
+                        RunImmediateLaunchSessionCleanup(
+                            appId,
+                            0,
+                            win32DeployState,
+                            activeProcessRegistryConfigured,
+                            branchRestoreOnExit);
+                    }
+                    catch (Exception exCleanup)
+                    {
+                        _logger?.LogWarning($"Launch failure cleanup failed: {exCleanup.Message}");
+                    }
+                }
+
                 if (launchMarkedInProgress && appId != 0)
                 {
                     lock (_launchInProgressLock)
@@ -1612,12 +1616,7 @@ namespace SmartGoldbergEmu.Services
                 if (!started || process == null)
                 {
                     _logger?.LogError("Process.Start returned null");
-                    RunImmediateLaunchSessionCleanup(
-                        game.AppId,
-                        0,
-                        win32DeployState,
-                        configureActiveProcessRegistry,
-                        branchRestoreOnExit);
+                    // LaunchGame finally restores deploy/registry when launchHandedOffToSession stays false.
                     return ValidationResult.Failure("Failed to start game process");
                 }
 
@@ -1639,6 +1638,7 @@ namespace SmartGoldbergEmu.Services
                         win32DeployState,
                         configureActiveProcessRegistry,
                         branchRestoreOnExit);
+                    // Success + cleaned: LaunchGame treats this as handed off and skips failure finally.
                     return ValidationResult.Success();
                 }
 
@@ -1722,12 +1722,7 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
-                RunImmediateLaunchSessionCleanup(
-                    game.AppId,
-                    0,
-                    win32DeployState,
-                    configureActiveProcessRegistry,
-                    branchRestoreOnExit);
+                // LaunchGame finally restores deploy/registry when launchHandedOffToSession stays false.
                 _logger?.LogError($"Failed to launch process: {ex.Message}", ex);
                 return ValidationResult.Failure($"Failed to launch process: {ex.Message}");
             }
@@ -1942,11 +1937,20 @@ namespace SmartGoldbergEmu.Services
 
                 if (IsWatcherResponsibleForCleanup(appId))
                 {
+                    // Watcher owns beside-exe / load_dlls file restore. Still restore Steam registry here so a
+                    // dead or delayed watcher cannot leave ActiveProcess pointing at Goldberg after a failed launch.
+                    bool restoreActiveProcessRegistry;
+                    lock (_activeProcessRegistryLock)
+                        restoreActiveProcessRegistry = _processIdsWithActiveProcessRegistry.Remove(process.Id);
+                    if (restoreActiveProcessRegistry)
+                        RestoreActiveProcessRegistryToSteamInstall();
+                    RestoreSourceModInstallPathForProcess(process.Id);
+
                     ReleaseLaunchSessionTracking(process.Id);
                     lock (_watcherActiveLock)
                         _watcherActiveAppIds.Remove(appId);
                     _logger?.LogDebug(
-                        $"Game exited (AppId {appId}); detached watcher will restore deploy and games folder files.");
+                        $"Game exited (AppId {appId}); restored Steam registry in-process; detached watcher will restore deploy files.");
                 }
                 else
                 {
