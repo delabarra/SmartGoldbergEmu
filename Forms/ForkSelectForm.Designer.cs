@@ -35,7 +35,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpFork.Size = new System.Drawing.Size(294, 80);
             this.grpFork.TabIndex = 0;
             this.grpFork.TabStop = false;
-            this.grpFork.Text = "Emulator Fork";
+            this.grpFork.Text = "Select Fork";
             // 
             // rbAlex
             // 
@@ -108,7 +108,7 @@ namespace SmartGoldbergEmu.Forms
             this.MinimizeBox = false;
             this.Name = "ForkSelectForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-            this.Text = "Emulator Fork";
+            this.Text = "Emulator Fork Select";
             this.grpFork.ResumeLayout(false);
             this.grpFork.PerformLayout();
             this.ResumeLayout(false);

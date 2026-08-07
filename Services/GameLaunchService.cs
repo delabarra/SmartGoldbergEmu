@@ -355,7 +355,7 @@ namespace SmartGoldbergEmu.Services
                         && copiedCount > 0)
                     {
                         _logger?.LogDebug(
-                            $"Staged {copiedCount} file(s) from steamclient_extra_dlls into load_dlls for AppId {game.AppId}.");
+                            $"Staged {copiedCount} file(s) from steamclient_experimental/extra_dlls into load_dlls for AppId {game.AppId}.");
                     }
 
                     string gameSoundsFolder = PathConstants.CombineGameSteamSettingsSoundsDirectory(game.AppId);

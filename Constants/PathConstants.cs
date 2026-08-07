@@ -243,7 +243,9 @@ namespace SmartGoldbergEmu.Constants
             Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamOldFolderName);
 
         public static string GoldbergSteamClientExtraDllsDirectory =>
-            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamClientExtraDllsFolderName);
+            Path.Combine(
+                GoldbergSteamClientExperimentalDirectory,
+                GoldbergInstallLayout.SteamClientExperimentalExtraDllsFolderName);
 
         public static string CombineGoldbergExperimentalSteamApiPath(bool useX64) =>
             Path.Combine(
@@ -602,7 +604,8 @@ namespace SmartGoldbergEmu.Constants
             Path.Combine(LocalAppDataPerUserDirectory, LegacyConfigFileName);
 
         /// <summary>
-        /// Goldberg emulator binaries root (subfolders: experimental, steamclient_experimental, steamclient_extra_dlls, steam_old).
+        /// Goldberg emulator binaries root (subfolders: experimental, steamclient_experimental, steam_old).
+        /// Extra DLLs live under steamclient_experimental/extra_dlls.
         /// Location: {AppBaseDirectory}\goldberg\
         /// </summary>
         public static string GoldbergDirectory => Path.Combine(AppBaseDirectory, GoldbergDirectoryFolderName);

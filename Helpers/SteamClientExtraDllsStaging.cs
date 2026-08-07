@@ -4,7 +4,7 @@ using SmartGoldbergEmu.Constants;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // Copies goldberg/steamclient_extra_dlls into per-game steam_settings/load_dlls before launch.
+    // Copies goldberg/steamclient_experimental/extra_dlls into per-game steam_settings/load_dlls before launch.
     public static class SteamClientExtraDllsStaging
     {
         public static bool TryStageIntoLoadDllsFolder(
