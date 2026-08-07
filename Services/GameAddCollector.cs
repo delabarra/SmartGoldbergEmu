@@ -85,8 +85,13 @@ namespace SmartGoldbergEmu.Services
 
             if (game.AppId > 0)
             {
+                // IDs from parent PICS only during collect; per-DLC name PICS is slow (session-serialized).
                 game.PreFetchedDlcData = await _dlcService
-                    .GetDlcDataAsync(game.AppId.ToString(), picsAppRoot: game.AppPicsKeyValue, statusReport: null)
+                    .GetDlcDataAsync(
+                        game.AppId.ToString(),
+                        picsAppRoot: game.AppPicsKeyValue,
+                        statusReport: null,
+                        resolveNames: false)
                     .ConfigureAwait(false);
                 game.DlcCheckPerformed = true;
 

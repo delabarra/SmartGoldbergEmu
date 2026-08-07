@@ -41,7 +41,7 @@ public class SteamClient
     private NetFilterEncryptionWithHMAC _encryption;
     private TaskCompletionSource<bool> _handshakeCompletion;
 
-    // Known Steam CM servers (Content Machine)
+    // Known Steam CM servers (Content Machine) — used immediately so connect never waits on directory HTTP.
     private static readonly string[] SteamServers = new[]
     {
         "162.125.18.133:27015",  // US
@@ -51,6 +51,15 @@ public class SteamClient
     };
 
     private const int CmDirectoryHttpTimeoutSeconds = 8;
+    private static readonly TimeSpan CmDirectoryCacheTtl = TimeSpan.FromMinutes(45);
+    private static readonly object CmEndpointCacheLock = new object();
+    private static string _lastSuccessfulCmEndpoint;
+    private static List<string> _cachedDirectoryCmEndpoints;
+    private static DateTime _directoryCmCacheUtc = DateTime.MinValue;
+
+    // Per-CM TCP connect; keep short so a dead endpoint fails over quickly.
+    private static readonly TimeSpan CmTcpConnectTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan CmHandshakeTimeout = TimeSpan.FromSeconds(4);
 
     public bool IsConnected => _isConnected;
 
@@ -169,62 +178,39 @@ public class SteamClient
 
         try
         {
-            var serverCandidates = await GetServerCandidatesAsync(ct);
+            // Prefer last-good + built-ins (and fresh cache) immediately; refresh directory in parallel when stale.
+            List<string> immediateCandidates = BuildImmediateServerCandidates();
+            Task<List<string>> directoryTask = null;
+            if (!HasFreshDirectoryCmCache())
+                directoryTask = RefreshDirectoryCmCacheAsync(ct);
 
-            // Try to connect to a Steam CM server
-            foreach (var serverAddr in serverCandidates)
+            var tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (await TryConnectToCandidatesAsync(immediateCandidates, tried, ct, ex => lastError = ex).ConfigureAwait(false))
             {
+                // Keep directory refresh going for the next connect even if we already succeeded.
+                if (directoryTask != null)
+                    _ = directoryTask.ForgetFaults(Program.LogService, "SteamClient.RefreshDirectoryCmCacheAsync");
+                return;
+            }
+
+            if (directoryTask != null)
+            {
+                List<string> discovered = null;
                 try
                 {
-                    var parts = serverAddr.Split(':');
-                    if (parts.Length != 2 || !int.TryParse(parts[1], out var port))
-                        continue;
-
-                    var host = parts[0];
-
-                    _tcpClient = new TcpClient();
-
-                    // Bound each connect attempt to avoid hanging indefinitely.
-                    var connectTask = _tcpClient.ConnectAsync(host, port);
-                    var completed = await Task.WhenAny(connectTask, Task.Delay(TimeSpan.FromSeconds(5), ct));
-
-                    if (completed != connectTask)
-                    {
-                        _tcpClient.Dispose();
-                        continue;
-                    }
-
-                    // Propagate socket exceptions from connectTask.
-                    await connectTask;
-
-                    _networkStream = _tcpClient.GetStream();
-                    _isConnected = true;
-                    _channelEncrypted = false;
-                    _handshakeCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-                    // Start receiving messages
-                    _ = ReceiveLoopAsync(ct).ForgetFaults(Program.LogService, "SteamClient.ReceiveLoopAsync");
-
-                    var handshakeTask = _handshakeCompletion.Task;
-                    var handshakeCompleted = await Task.WhenAny(handshakeTask, Task.Delay(TimeSpan.FromSeconds(4), ct));
-                    if (handshakeCompleted == handshakeTask && handshakeTask.Result)
-                    {
-                        return;
-                    }
-
-                    _isConnected = false;
-                    _channelEncrypted = false;
-                    _encryption = null;
-                    CloseSocket();
+                    discovered = await directoryTask.ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    lastError = ex;
-                    _isConnected = false;
-                    _channelEncrypted = false;
-                    _encryption = null;
-                    CloseSocket();
-                    // Try next server
+                    discovered = null;
+                }
+
+                if (discovered != null && discovered.Count > 0)
+                {
+                    List<string> remaining = OrderCmEndpoints(discovered);
+                    if (await TryConnectToCandidatesAsync(remaining, tried, ct, ex => lastError = ex).ConfigureAwait(false))
+                        return;
                 }
             }
 
@@ -243,42 +229,157 @@ public class SteamClient
         }
     }
 
-    private async Task<List<string>> GetServerCandidatesAsync(CancellationToken ct)
+    private async Task<bool> TryConnectToCandidatesAsync(
+        IEnumerable<string> serverCandidates,
+        HashSet<string> tried,
+        CancellationToken ct,
+        Action<Exception> setLastError)
     {
-        var serverCandidates = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (serverCandidates == null)
+            return false;
 
-        try
+        foreach (var serverAddr in serverCandidates)
         {
-            var discoveredServers = await FetchCmDirectoryServersAsync(ct);
-            if (discoveredServers.Count > 0)
+            if (string.IsNullOrWhiteSpace(serverAddr) || !tried.Add(serverAddr))
+                continue;
+
+            try
             {
-                foreach (var server in discoveredServers)
+                var parts = serverAddr.Split(':');
+                if (parts.Length != 2 || !int.TryParse(parts[1], out var port))
+                    continue;
+
+                var host = parts[0];
+
+                _tcpClient = new TcpClient();
+
+                var connectTask = _tcpClient.ConnectAsync(host, port);
+                var completed = await Task.WhenAny(connectTask, Task.Delay(CmTcpConnectTimeout, ct)).ConfigureAwait(false);
+
+                if (completed != connectTask)
                 {
-                    if (seen.Add(server))
-                    {
-                        serverCandidates.Add(server);
-                    }
+                    _tcpClient.Dispose();
+                    _tcpClient = null;
+                    continue;
                 }
+
+                await connectTask.ConfigureAwait(false);
+
+                _networkStream = _tcpClient.GetStream();
+                _isConnected = true;
+                _channelEncrypted = false;
+                _handshakeCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                _ = ReceiveLoopAsync(ct).ForgetFaults(Program.LogService, "SteamClient.ReceiveLoopAsync");
+
+                var handshakeTask = _handshakeCompletion.Task;
+                var handshakeCompleted = await Task.WhenAny(handshakeTask, Task.Delay(CmHandshakeTimeout, ct))
+                    .ConfigureAwait(false);
+                if (handshakeCompleted == handshakeTask && handshakeTask.Result)
+                {
+                    RememberSuccessfulCmEndpoint(serverAddr);
+                    return true;
+                }
+
+                _isConnected = false;
+                _channelEncrypted = false;
+                _encryption = null;
+                CloseSocket();
+            }
+            catch (Exception ex)
+            {
+                setLastError?.Invoke(ex);
+                _isConnected = false;
+                _channelEncrypted = false;
+                _encryption = null;
+                CloseSocket();
             }
         }
-        catch (Exception)
+
+        return false;
+    }
+
+    private static List<string> BuildImmediateServerCandidates()
+    {
+        var candidates = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string endpoint)
         {
-            // Fall back to built-in CM list silently.
+            if (!string.IsNullOrWhiteSpace(endpoint) && seen.Add(endpoint))
+                candidates.Add(endpoint);
+        }
+
+        lock (CmEndpointCacheLock)
+        {
+            Add(_lastSuccessfulCmEndpoint);
+            if (HasFreshDirectoryCmCache_NoLock() && _cachedDirectoryCmEndpoints != null)
+            {
+                foreach (string endpoint in OrderCmEndpoints(_cachedDirectoryCmEndpoints))
+                    Add(endpoint);
+            }
+        }
+
+        foreach (string fallback in SteamServers)
+            Add(fallback);
+
+        return candidates;
+    }
+
+    private static List<string> OrderCmEndpoints(IEnumerable<string> endpoints)
+    {
+        var list = new List<string>();
+        if (endpoints == null)
+            return list;
+
+        foreach (string endpoint in endpoints)
+        {
+            if (!string.IsNullOrWhiteSpace(endpoint))
+                list.Add(endpoint.Trim());
         }
 
         // IP endpoints tend to be more reliable for direct TCP in this minimal client.
-        serverCandidates.Sort((a, b) => IsLikelyIpEndpoint(b).CompareTo(IsLikelyIpEndpoint(a)));
+        list.Sort((a, b) => IsLikelyIpEndpoint(b).CompareTo(IsLikelyIpEndpoint(a)));
+        return list;
+    }
 
-        foreach (var fallback in SteamServers)
+    private static void RememberSuccessfulCmEndpoint(string endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return;
+
+        lock (CmEndpointCacheLock)
         {
-            if (seen.Add(fallback))
-            {
-                serverCandidates.Add(fallback);
-            }
+            _lastSuccessfulCmEndpoint = endpoint.Trim();
+        }
+    }
+
+    private static bool HasFreshDirectoryCmCache()
+    {
+        lock (CmEndpointCacheLock)
+            return HasFreshDirectoryCmCache_NoLock();
+    }
+
+    private static bool HasFreshDirectoryCmCache_NoLock()
+    {
+        return _cachedDirectoryCmEndpoints != null
+            && _cachedDirectoryCmEndpoints.Count > 0
+            && (DateTime.UtcNow - _directoryCmCacheUtc) < CmDirectoryCacheTtl;
+    }
+
+    private static async Task<List<string>> RefreshDirectoryCmCacheAsync(CancellationToken ct)
+    {
+        List<string> discovered = await FetchCmDirectoryServersAsync(ct).ConfigureAwait(false);
+        if (discovered == null || discovered.Count == 0)
+            return discovered ?? new List<string>();
+
+        lock (CmEndpointCacheLock)
+        {
+            _cachedDirectoryCmEndpoints = new List<string>(discovered);
+            _directoryCmCacheUtc = DateTime.UtcNow;
         }
 
-        return serverCandidates;
+        return discovered;
     }
 
     private static bool IsLikelyIpEndpoint(string endpoint)

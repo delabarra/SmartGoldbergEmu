@@ -102,10 +102,11 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        // Upper bound for Steam PICS on add-game collect (session lock, connect, product info).
-        private static readonly TimeSpan PicsMetadataTimeout = TimeSpan.FromSeconds(5);
+        // Session establish can take up to ~25s + one ~22s retry; keep that off the product-info clock.
+        private static readonly TimeSpan PicsSessionEnsureTimeout = TimeSpan.FromSeconds(50);
 
-        private static readonly TimeSpan PicsSettingsLookupTimeout = TimeSpan.FromSeconds(30);
+        // Bound for PICS product-info after a session is ready (or disk cache miss path).
+        private static readonly TimeSpan PicsProductInfoTimeout = TimeSpan.FromSeconds(20);
 
         public async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchPicsMetadataWithRootAsync(
             string appId,
@@ -115,7 +116,9 @@ namespace SmartGoldbergEmu.Services
             if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
                 return (null, existingPicsRoot);
 
-            return await FetchPicsMetadataCoreAsync(appIdNum, existingPicsRoot, PicsSettingsLookupTimeout, feedback).ConfigureAwait(false);
+            var (metadata, picsRoot, _) = await FetchPicsMetadataCoreAsync(appIdNum, existingPicsRoot, feedback)
+                .ConfigureAwait(false);
+            return (metadata, picsRoot);
         }
 
         public async Task<OnlineAppData> FetchMetadataAsync(ulong appId, IWin32Window owner = null, ITaskReportService feedback = null)
@@ -133,53 +136,86 @@ namespace SmartGoldbergEmu.Services
                 return (null, null);
 
             ITaskReportService fb = feedback ?? _taskReportService;
-            return await FetchPicsMetadataCoreAsync(appId, null, PicsMetadataTimeout, fb).ConfigureAwait(false);
+            var (metadata, picsRoot, _) = await FetchPicsMetadataCoreAsync(appId, null, fb).ConfigureAwait(false);
+            return (metadata, picsRoot);
         }
 
-        private async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchPicsMetadataCoreAsync(
+        private enum PicsMetadataFailure
+        {
+            None,
+            TimedOut,
+            Unavailable
+        }
+
+        private async Task<(OnlineAppData Metadata, KeyValue PicsRoot, PicsMetadataFailure Failure)> FetchPicsMetadataCoreAsync(
             ulong appId,
             KeyValue existingPicsRoot,
-            TimeSpan timeout,
             ITaskReportService fb)
         {
             try
             {
-                using (var cts = new CancellationTokenSource())
+                KeyValue picsRoot = existingPicsRoot;
+                if (picsRoot == null)
                 {
-                    cts.CancelAfter(timeout);
-                    fb?.SetMessage("Fetching game assets...");
+                    // Disk cache does not need a live Steam session.
+                    picsRoot = SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(
+                        PathConstants.GamesDirectory,
+                        appId);
 
-                    KeyValue picsRoot = existingPicsRoot;
                     if (picsRoot == null)
                     {
-                        var picsHolder = new GameConfig { AppId = appId };
-                        picsRoot = await _steamProductInfo.WarmGameConfigAppPicsRootAsync(picsHolder, cts.Token).ConfigureAwait(false);
+                        fb?.SetMessage(AddGameStatusMessages.ConnectingToSteam);
+                        using (var sessionCts = new CancellationTokenSource())
+                        {
+                            sessionCts.CancelAfter(PicsSessionEnsureTimeout);
+                            bool sessionReady = await _steamProductInfo.TryEnsureSessionAsync(sessionCts.Token)
+                                .ConfigureAwait(false);
+                            if (!sessionReady)
+                            {
+                                Program.LogService?.LogWarning(
+                                    $"Steam session not ready for app {appId} after {(int)PicsSessionEnsureTimeout.TotalSeconds}s.");
+                                fb?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
+                                return (null, null, PicsMetadataFailure.TimedOut);
+                            }
+                        }
+
+                        fb?.SetMessage("Fetching game assets...");
+                        using (var picsCts = new CancellationTokenSource())
+                        {
+                            picsCts.CancelAfter(PicsProductInfoTimeout);
+                            var picsHolder = new GameConfig { AppId = appId };
+                            picsRoot = await _steamProductInfo.WarmGameConfigAppPicsRootAsync(picsHolder, picsCts.Token)
+                                .ConfigureAwait(false);
+                        }
                     }
-
-                    if (picsRoot == null)
-                        return (null, null);
-
-                    var metadata = new OnlineAppData
-                    {
-                        AppId = appId.ToString(),
-                        DataSources = "Steam (game assets)"
-                    };
-                    SteamPicsKeyValueHelper.PopulateMetadataFromAppRoot(picsRoot, metadata);
-                    return (metadata, picsRoot);
                 }
+
+                if (picsRoot == null)
+                {
+                    fb?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
+                    return (null, null, PicsMetadataFailure.Unavailable);
+                }
+
+                var metadata = new OnlineAppData
+                {
+                    AppId = appId.ToString(),
+                    DataSources = "Steam (game assets)"
+                };
+                SteamPicsKeyValueHelper.PopulateMetadataFromAppRoot(picsRoot, metadata);
+                return (metadata, picsRoot, PicsMetadataFailure.None);
             }
             catch (OperationCanceledException)
             {
                 Program.LogService?.LogWarning(
-                    $"Steam game assets timed out after {(int)timeout.TotalSeconds}s (busy or unreachable) for app {appId}.");
-                fb?.SetMessage("Steam game assets request timed out.", TaskReportKind.Error);
-                return (null, null);
+                    $"Steam game assets timed out while fetching app {appId}.");
+                fb?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
+                return (null, null, PicsMetadataFailure.TimedOut);
             }
             catch (Exception ex)
             {
                 Program.LogService?.LogError($"Error fetching game assets metadata: {ex.Message}", ex);
-                fb?.SetMessage("Could not fetch app metadata from Steam.", TaskReportKind.Error);
-                return (null, null);
+                fb?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
+                return (null, null, PicsMetadataFailure.Unavailable);
             }
         }
 
@@ -245,10 +281,26 @@ namespace SmartGoldbergEmu.Services
             {
                 feedbackService?.SetMessage(AddGameStatusMessages.LookingUpData(appId));
                 feedbackService?.SetProgress(0, 2);
+                // Suppress intermediate fetch chatter on the add-collect strip; keep LookingUpData until done.
                 ITaskReportService metadataFeedback = restrictStatusToAddGameCollect ? null : feedbackService;
-                (metadata, picsRoot) = await FetchMetadataAndPicsAsync(appId, owner, metadataFeedback).ConfigureAwait(false);
+                PicsMetadataFailure failure;
+                (metadata, picsRoot, failure) = await FetchPicsMetadataCoreAsync(appId, null, metadataFeedback)
+                    .ConfigureAwait(false);
                 if (metadata == null)
+                {
+                    Program.LogService?.LogWarning(
+                        $"Could not fetch Steam metadata for App ID {appId} ({failure}).");
+                    if (restrictStatusToAddGameCollect)
+                    {
+                        feedbackService?.SetMessage(
+                            failure == PicsMetadataFailure.TimedOut
+                                ? AddGameStatusMessages.MetadataFetchTimedOut
+                                : AddGameStatusMessages.MetadataFetchFailed,
+                            TaskReportKind.Error);
+                    }
+
                     return new GameSetupResult { Cancelled = true, MetadataFetchFailed = true };
+                }
 
                 if (!string.IsNullOrEmpty(metadata.Name))
                 {

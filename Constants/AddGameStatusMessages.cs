@@ -11,6 +11,9 @@ namespace SmartGoldbergEmu.Constants
         public static string LookingUpData(ulong appId) =>
             $"Looking up data for {appId} in Steam Network";
 
+        public static string ConnectingToSteam =>
+            "Connecting to Steam Network...";
+
         public static string RetrievingData(string gameName) =>
             $"Retrieving data for {gameName} from Steam Network";
 
@@ -25,5 +28,11 @@ namespace SmartGoldbergEmu.Constants
 
         public static string AddedToLibrary(string gameName) =>
             $"{gameName} added to the library.";
+
+        public static string MetadataFetchFailed =>
+            "Could not fetch app data from Steam.";
+
+        public static string MetadataFetchTimedOut =>
+            "Steam timed out while fetching app data. Try again.";
     }
 }

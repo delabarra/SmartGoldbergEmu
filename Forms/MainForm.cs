@@ -970,8 +970,7 @@ namespace SmartGoldbergEmu.Forms
         private async void OnAddGame_Click(object sender, EventArgs e)
         {
             var warmupCts = new System.Threading.CancellationTokenSource();
-            // Warm the anonymous Steam session while the user picks a file, so the later 5s
-            // metadata fetch reuses a live connection instead of timing out on a cold connect.
+            // Warm the anonymous Steam session while the user picks a file so collect can reuse it.
             Task warmupTask = ServiceLocator.SteamProductInfoService.PreWarmSessionAsync(warmupCts.Token);
             bool proceeded = false;
             try
@@ -981,7 +980,7 @@ namespace SmartGoldbergEmu.Forms
                     return;
 
                 proceeded = true;
-                await AddGameFromExecutable(executablePath);
+                await AddGameFromExecutable(executablePath, warmupTask);
             }
             catch (Exception ex)
             {
@@ -1010,8 +1009,17 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private async Task AddGameFromExecutable(string executablePath)
+        private async Task AddGameFromExecutable(string executablePath, Task sessionWarmupTask = null)
         {
+            System.Threading.CancellationTokenSource localWarmupCts = null;
+            Task warmupTask = sessionWarmupTask;
+            if (warmupTask == null)
+            {
+                // Drag-drop: start warm in parallel with App ID resolve / search UI (do not await here).
+                localWarmupCts = new System.Threading.CancellationTokenSource();
+                warmupTask = ServiceLocator.SteamProductInfoService.PreWarmSessionAsync(localWarmupCts.Token);
+            }
+
             try
             {
                 if (IsDisposed || Disposing || string.IsNullOrWhiteSpace(executablePath))
@@ -1022,6 +1030,8 @@ namespace SmartGoldbergEmu.Forms
 
                 _taskReportService.SetProgress(0, 0);
 
+                // Collect resolves App ID first (steam_appid.txt or search). PICS fetch ensures the session
+                // itself; awaiting warm here only delayed that UI behind a long "Connecting..." wait.
                 GameAddCollectResult collectResult = await ServiceLocator.GameAddCollector
                     .CollectFromExecutableAsync(executablePath, this, _taskReportService)
                     .ConfigureAwait(false);
@@ -1031,9 +1041,8 @@ namespace SmartGoldbergEmu.Forms
                 if (collectResult.Cancelled)
                 {
                     ClearPendingAddListEntry();
-                    if (collectResult.MetadataFetchFailed)
-                        _taskReportService.SetMessage("Could not fetch app data from Steam.", TaskReportKind.Error);
-                    else
+                    // Metadata fetch errors are already on the strip from GameSetupService.
+                    if (!collectResult.MetadataFetchFailed)
                         _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
                     return;
                 }
@@ -1084,6 +1093,21 @@ namespace SmartGoldbergEmu.Forms
                 ClearPendingAddListEntry();
                 Program.LogService?.LogError($"Error adding game: {ex.Message}", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
+            }
+            finally
+            {
+                if (localWarmupCts != null)
+                {
+                    try
+                    {
+                        await warmupTask.ConfigureAwait(true);
+                    }
+                    catch
+                    {
+                    }
+
+                    localWarmupCts.Dispose();
+                }
             }
         }
 
@@ -1754,8 +1778,8 @@ namespace SmartGoldbergEmu.Forms
 
             string name = !string.IsNullOrWhiteSpace(gameName) ? gameName.Trim() : "game";
             DetectResult detect;
-            _taskReportService.StartProgress(StubKitFeedback.CheckingProgress(name));
-            prgFeedback.Style = ProgressBarStyle.Marquee;
+            // Detect is a quick PE check — status text only (no progress bar).
+            _taskReportService.SetMessage(StubKitFeedback.CheckingProgress(name));
             try
             {
                 detect = await Task.Run(() => StubKitService.DetectExecutable(executablePath))
@@ -1764,19 +1788,16 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("StubKit: failed to check executable for SteamStub.", ex);
-                return;
-            }
-            finally
-            {
                 if (!IsDisposed && !Disposing)
-                    prgFeedback.Style = ProgressBarStyle.Blocks;
+                    _taskReportService.SetMessage(string.Empty);
+                return;
             }
 
             if (IsDisposed || Disposing)
                 return;
             if (detect == null || !detect.CanRemove)
             {
-                _taskReportService.SetProgress(0, 0);
+                _taskReportService.SetMessage(string.Empty);
                 return;
             }
 
@@ -1788,7 +1809,7 @@ namespace SmartGoldbergEmu.Forms
                 MessageBoxIcon.Question);
             if (answer != DialogResult.Yes)
             {
-                _taskReportService.SetProgress(0, 0);
+                _taskReportService.SetMessage(string.Empty);
                 return;
             }
 
@@ -2940,6 +2961,10 @@ namespace SmartGoldbergEmu.Forms
                         Program.LogService?.LogError($"Deferred config setup failed: {ex.Message}", ex);
                     }
                 }).ForgetFaults(Program.LogService, "DeferredEnsureGlobalConfigFiles");
+
+                // Warm anonymous Steam session in the background so add-game PICS is often already connected.
+                _ = ServiceLocator.SteamProductInfoService.PreWarmSessionAsync()
+                    .ForgetFaults(Program.LogService, "IdleSteamSessionPreWarm");
 
                 if (_appDataService.IsFirstRun())
                 {

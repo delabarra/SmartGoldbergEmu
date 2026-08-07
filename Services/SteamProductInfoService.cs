@@ -94,7 +94,15 @@ namespace SmartGoldbergEmu.Services
                     return null;
 
                 PICSProductInfoResult pics = await _client.RequestProductInfo(id, 0, ct).ConfigureAwait(false);
-                return PicsAppResultToKeyValue(id, pics);
+                KeyValue kv = PicsAppResultToKeyValue(id, pics);
+                // One retry for transient empty/timeout PICS responses on a live session.
+                if (kv == null && _loggedOn && _client != null && _client.IsConnected && !ct.IsCancellationRequested)
+                {
+                    pics = await _client.RequestProductInfo(id, 0, ct).ConfigureAwait(false);
+                    kv = PicsAppResultToKeyValue(id, pics);
+                }
+
+                return kv;
             }
             finally
             {
@@ -129,6 +137,35 @@ namespace SmartGoldbergEmu.Services
             if (kv != null)
                 game.AppPicsKeyValue = kv;
             return game.AppPicsKeyValue;
+        }
+
+        // Returns true when an anonymous Steam CM session is ready for PICS.
+        public async Task<bool> TryEnsureSessionAsync(CancellationToken ct = default)
+        {
+            if (_disposed)
+                return false;
+
+            try
+            {
+                await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    return await EnsureLoggedOnAsync(ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _sessionLock.Release();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning($"Steam session ensure failed: {ex.Message}");
+                return false;
+            }
         }
 
         public async Task PreWarmSessionAsync(CancellationToken ct = default)

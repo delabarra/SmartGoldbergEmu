@@ -104,7 +104,8 @@ namespace SmartGoldbergEmu.Services
             Dictionary<long, string> existingDlcData = null,
             KeyValue picsAppRoot = null,
             CancellationToken cancellationToken = default,
-            ITaskReportService statusReport = null)
+            ITaskReportService statusReport = null,
+            bool resolveNames = true)
         {
             ITaskReportService report = statusReport ?? _taskReportService;
             var allDlc = existingDlcData != null ? new Dictionary<long, string>(existingDlcData) : new Dictionary<long, string>();
@@ -119,6 +120,9 @@ namespace SmartGoldbergEmu.Services
                         report?.SetMessage("No DLC found for this game.");
                         return allDlc;
                     }
+
+                    if (!resolveNames)
+                        return allDlc;
 
                     List<long> missingExisting = CollectIdsWithPlaceholderNames(allDlc.Keys, allDlc);
                     if (missingExisting.Count > 0)
@@ -136,6 +140,9 @@ namespace SmartGoldbergEmu.Services
                     if (!allDlc.ContainsKey(dlcId))
                         allDlc[dlcId] = FormatDlcPlaceholder(dlcId);
                 }
+
+                if (!resolveNames)
+                    return allDlc;
 
                 List<long> missingNames = CollectIdsWithPlaceholderNames(picsIds, allDlc);
                 if (missingNames.Count == 0)
