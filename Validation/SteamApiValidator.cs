@@ -329,6 +329,17 @@ namespace SmartGoldbergEmu.Validation
             return status;
         }
 
+        // Presence-only scan used when choosing a default launch mode for a newly added game.
+        public static bool HasPrimarySteamApiDll(string gameFolder)
+        {
+            if (string.IsNullOrEmpty(gameFolder) || !Directory.Exists(gameFolder))
+                return false;
+
+            List<string> allFiles = EnumerateSteamApiNamedFilesSafe(gameFolder);
+            return TrySelectBestPrimaryCandidate(allFiles, gameFolder, targetIs64Bit: false, out _)
+                || TrySelectBestPrimaryCandidate(allFiles, gameFolder, targetIs64Bit: true, out _);
+        }
+
         /// <summary>
         /// Full paths to existing Steam API DLLs under <paramref name="gameFolder"/> matching <paramref name="useX64"/>.
         /// Used to deploy standard Goldberg builds beside every copy (launcher + nested game binaries).

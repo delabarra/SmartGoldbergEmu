@@ -9,6 +9,7 @@ using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Forms;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
+using SmartGoldbergEmu.Validation;
 using SteamKit;
 
 namespace SmartGoldbergEmu.Services
@@ -279,6 +280,10 @@ namespace SmartGoldbergEmu.Services
                 GameGuid = _gameDataService.GenerateGameGuid(),
                 AppPicsKeyValue = setupResult.AppPicsKeyValue
             };
+
+            // No steam_api in the install tree → Steam.dll beside exe (common for older titles).
+            if (!SteamApiValidator.HasPrimarySteamApiDll(startFolder))
+                gameConfig.LaunchMode = GoldbergLaunchMode.SteamDllBesideExe;
 
             if (fetchDlc && setupResult.AppId != 0)
             {

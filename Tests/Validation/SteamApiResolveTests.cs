@@ -181,6 +181,24 @@ namespace SmartGoldbergEmu.Tests.Validation
             Assert.True(isX64);
         }
 
+        [Fact]
+        public void HasPrimarySteamApiDll_false_when_folder_has_no_steam_api()
+        {
+            File.WriteAllText(Path.Combine(_root, "readme.txt"), "no api");
+            Assert.False(SteamApiValidator.HasPrimarySteamApiDll(_root));
+            Assert.False(SteamApiValidator.HasPrimarySteamApiDll(Path.Combine(_root, "missing")));
+            Assert.False(SteamApiValidator.HasPrimarySteamApiDll(null));
+        }
+
+        [Fact]
+        public void HasPrimarySteamApiDll_true_when_steam_api_present()
+        {
+            string nested = Path.Combine(_root, "bin");
+            Directory.CreateDirectory(nested);
+            File.WriteAllBytes(Path.Combine(nested, SteamApiValidator.SteamApiDll64), Encoding.ASCII.GetBytes("api64"));
+            Assert.True(SteamApiValidator.HasPrimarySteamApiDll(_root));
+        }
+
         private void RegisterHash(string fileKey, byte[] content)
         {
             string hash = Sha256Hex(content);
