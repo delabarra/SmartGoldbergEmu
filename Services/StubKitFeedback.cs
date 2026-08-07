@@ -34,12 +34,17 @@ namespace SmartGoldbergEmu.Services
 
             string message = "SteamStub was detected on " + name + ".";
             if (!string.IsNullOrEmpty(fileName))
-                message += Environment.NewLine + "[" + fileName + "]";
+                message += Environment.NewLine + "File: " + fileName;
 
             return message
                 + Environment.NewLine
                 + Environment.NewLine
-                + "Would you like to remove it?";
+                + "Would you like to remove it?"
+                + Environment.NewLine
+                + Environment.NewLine
+                + "Note:"
+                + Environment.NewLine
+                + "Useful if you get \"Application load error #:0000065432\".";
         }
 
         public static string ResultMessage(StubKitApplyOutcome outcome, string gameName)
