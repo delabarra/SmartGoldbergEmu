@@ -133,7 +133,6 @@
     </Compile>
     <Compile Include="Models\AchievementExceptions.cs" />
     <Compile Include="Models\AchievementModels.cs" />
-    <Compile Include="Models\AchievementSchema.cs" />
     <Compile Include="Models\ApiKeyStatus.cs" />
     <Compile Include="Models\AppSearchResult.cs" />
     <Compile Include="Models\ApplicationSettings.cs" />
@@ -141,7 +140,6 @@
     <Compile Include="Models\GoldbergLaunchMode.cs" />
     <Compile Include="Models\GoldbergLaunchModeAvailability.cs" />
     <Compile Include="Models\CAchievement.cs" />
-    <Compile Include="Models\CSteamGameSchema.cs" />
     <Compile Include="Models\GameConfig.cs" />
     <Compile Include="Models\StubExecutableTarget.cs" />
     <Compile Include="Models\StubKitApplyOutcome.cs" />
@@ -160,7 +158,6 @@
     <Compile Include="Models\PendingAddGameSave.cs" />
     <Compile Include="Models\PendingListSyncResult.cs" />
     <Compile Include="Models\GlobalSettings.cs" />
-    <Compile Include="Models\ItemMeta.cs" />
     <Compile Include="Models\ItemGeneratorResult.cs" />
     <Compile Include="Models\IniDocument.cs" />
     <Compile Include="Models\LaunchOption.cs" />

@@ -203,7 +203,7 @@ namespace SmartGoldbergEmu.Forms
 
             UpdateStatus($"Looking up App ID {appId} in Steam Network...");
             var (appData, _) = await ServiceLocator.GameSetupService
-                .FetchPicsMetadataWithRootAsync(appId.ToString())
+                .FetchMetadataWithRootAsync(appId.ToString())
                 .ConfigureAwait(false);
 
             if (IsDisposed || Disposing)

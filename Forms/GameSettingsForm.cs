@@ -62,7 +62,6 @@ namespace SmartGoldbergEmu.Forms
             GameDataService gameDataService = null,
             EmulatorConfigService emulatorConfigService = null,
             ThemeService themeService = null,
-            DlcService dlcService = null,
             ITaskReportService feedbackService = null,
             AchievementService achievementService = null,
             GameSettingsSaveService gameSettingsSaveService = null,
@@ -674,16 +673,16 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 var fetchResult = await ServiceLocator.GameSetupService
-                    .FetchPicsMetadataWithRootAsync(appId, _gameConfig?.AppPicsKeyValue)
+                    .FetchMetadataWithRootAsync(appId, _gameConfig?.AppPicsKeyValue)
                     .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
                     return;
 
                 if (InvokeRequired)
-                    Invoke(new Action(() => ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.PicsRoot)));
+                    Invoke(new Action(() => ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.AppRoot)));
                 else
-                    ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.PicsRoot);
+                    ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.AppRoot);
             }
             catch (Exception ex)
             {
@@ -691,15 +690,15 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void ApplyFetchedAppMetadata(OnlineAppData metadata, KeyValue picsRoot = null)
+        private void ApplyFetchedAppMetadata(OnlineAppData metadata, KeyValue appRoot = null)
         {
             if (IsDisposed || Disposing)
                 return;
             if (metadata == null)
                 return;
 
-            if (picsRoot != null && _gameConfig != null)
-                _gameConfig.AppPicsKeyValue = picsRoot;
+            if (appRoot != null && _gameConfig != null)
+                _gameConfig.AppPicsKeyValue = appRoot;
 
             if (_metadata == null)
                 _metadata = metadata;

@@ -115,8 +115,10 @@ namespace AppDataKit
             AppSnapshotOptions options,
             CancellationToken cancellationToken)
         {
+            string language = string.IsNullOrWhiteSpace(options?.Language) ? "english" : options.Language.Trim();
             string url = SchemaForGameUrl
-                + "?key=" + Uri.EscapeDataString(apiKey)
+                + "?l=" + Uri.EscapeDataString(language)
+                + "&key=" + Uri.EscapeDataString(apiKey)
                 + "&appid=" + appId;
 
             try
@@ -194,6 +196,7 @@ namespace AppDataKit
 
                         byte[] archiveBytes = await archiveResponse.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
                         string archiveJson = SanitizeItemDefArchiveJson(archiveBytes);
+                        section.ArchiveJson = archiveJson;
                         section.Items = ParseItemDefs(archiveJson, appId);
                         if (section.Items.Count > 0)
                         {

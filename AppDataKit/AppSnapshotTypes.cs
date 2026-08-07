@@ -94,6 +94,8 @@ namespace AppDataKit
     {
         public bool Supported { get; set; }
         public string Digest { get; set; }
+        // Full GetItemDefArchive body (Goldberg items.json mapping needs all fields).
+        public string ArchiveJson { get; set; }
         public IReadOnlyList<ItemSchemaEntry> Items { get; set; } = Array.Empty<ItemSchemaEntry>();
     }
 
@@ -112,6 +114,9 @@ namespace AppDataKit
 
         /// <summary>Steam Web API key for achievements, stats, and items. Optional.</summary>
         public string SteamWebApiKey { get; set; }
+
+        /// <summary>Schema language for GetSchemaForGame (<c>l=</c>). Default english.</summary>
+        public string Language { get; set; } = "english";
 
         /// <summary>When true, HEAD-probes asset candidate URLs and picks the first reachable one.</summary>
         public bool ProbeAssetUrls { get; set; } = true;

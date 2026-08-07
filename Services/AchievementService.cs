@@ -4,10 +4,10 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
@@ -275,39 +275,43 @@ namespace SmartGoldbergEmu.Services
             ulong appId,
             bool showRetrieveStatusMessage)
         {
-            if (!_steamApiKeyService.TryGetValidFormatKey(out string apiKey))
+            if (!_steamApiKeyService.TryGetValidFormatKey(out _))
             {
                 return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.InvalidApiKey };
             }
 
-            string url = string.Format(AchievementConstants.SteamUserStatsApiUrl, _language, apiKey, appId);
-            Program.LogService?.LogDebug($"Fetching achievements from Steam API with language: {_language}");
+            Program.LogService?.LogDebug($"Fetching achievements from AppDataKit with language: {_language}");
             if (showRetrieveStatusMessage)
                 _taskReportService?.SetMessage("Retrieving achievement data... Please wait.");
 
             try
             {
-                string result = await HttpHelpers.GetStringWithRetryAsync(
-                    url,
-                    AchievementConstants.HttpRetryCount,
-                    AchievementConstants.HttpRetryDelayMs,
-                    AchievementConstants.HttpRequestShortTimeout).ConfigureAwait(false);
+                AchievementsSection section = await ServiceLocator.AppDataKitBridgeService
+                    .FetchAchievementsAsync(appId, _language)
+                    .ConfigureAwait(false);
 
-                if (result.StartsWith("ERROR:", StringComparison.Ordinal))
+                if (section == null)
+                    return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList };
+
+                if (section.Status == SnapshotSectionStatus.Unavailable
+                    && !string.IsNullOrEmpty(section.Error)
+                    && section.Error.IndexOf("API key", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.InvalidApiKey };
+                }
+
+                if (section.Status == SnapshotSectionStatus.Error)
                 {
                     return new SteamAchievementFetchResult
                     {
                         Status = SteamAchievementFetchStatus.ApiError,
-                        ApiErrorCode = result.Substring("ERROR:".Length).Trim()
+                        ApiErrorCode = string.IsNullOrWhiteSpace(section.Error) ? "error" : section.Error
                     };
                 }
 
-                CSteamGameSchema schema = JsonConvert.DeserializeObject<CSteamGameSchema>(result);
-                List<CAchievement> achievements = schema?.game?.availableGameStats?.achievements;
+                List<CAchievement> achievements = MapKitAchievements(section);
                 if (achievements == null || achievements.Count == 0)
-                {
                     return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList };
-                }
 
                 return new SteamAchievementFetchResult
                 {
@@ -315,23 +319,11 @@ namespace SmartGoldbergEmu.Services
                     Achievements = achievements
                 };
             }
-            catch (HttpRequestException httpEx)
+            catch (OperationCanceledException)
             {
-                var errorMsg = $"Web request error: {httpEx.Message}\n\nIs your internet connection working? The AppID might also be incorrect.";
-                Program.LogService?.LogError(errorMsg, httpEx);
-                return new SteamAchievementFetchResult { Failure = new ConnectionException(errorMsg, url, httpEx) };
-            }
-            catch (TaskCanceledException)
-            {
-                return new SteamAchievementFetchResult { Failure = new RequestTimeoutException(url) };
-            }
-            catch (JsonKitException jsonEx)
-            {
-                var errorMsg = $"Failed to parse achievement data: {jsonEx.Message}\n\nThe API response format may have changed.";
-                Program.LogService?.LogError(errorMsg, jsonEx);
                 return new SteamAchievementFetchResult
                 {
-                    Failure = new AchievementException(errorMsg, appId.ToString(), jsonEx)
+                    Failure = new RequestTimeoutException("AppDataKit achievements")
                 };
             }
             catch (Exception ex)
@@ -343,6 +335,32 @@ namespace SmartGoldbergEmu.Services
                     Failure = new AchievementException(errorMsg, appId.ToString(), ex)
                 };
             }
+        }
+
+        private static List<CAchievement> MapKitAchievements(AchievementsSection section)
+        {
+            if (section?.Items == null || section.Items.Count == 0)
+                return null;
+
+            var list = new List<CAchievement>(section.Items.Count);
+            foreach (AchievementSchemaEntry entry in section.Items)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.Name))
+                    continue;
+
+                list.Add(new CAchievement
+                {
+                    name = entry.Name,
+                    displayName = entry.DisplayName ?? string.Empty,
+                    description = entry.Description ?? string.Empty,
+                    hidden = entry.Hidden ? 1 : 0,
+                    icon = entry.IconUrl ?? string.Empty,
+                    icongray = entry.IconGrayUrl ?? string.Empty,
+                    icon_gray = entry.IconGrayUrl ?? string.Empty
+                });
+            }
+
+            return list;
         }
 
         // Add-mode preview is in-memory only; strip Steam CDN URLs so UI does not try to load remote icons.

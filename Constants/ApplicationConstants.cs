@@ -333,17 +333,11 @@ namespace SmartGoldbergEmu.Constants
 
         #region Online app metadata URLs
 
-        public const string SteamAppListArchiveAppListJsonUrl =
-            "https://raw.githubusercontent.com/delabarra/ISteamApps-GetAppList-v2-Archive/refs/heads/main/appList.json";
-
-        public const string SteamStoreAppDetailsApiUrlFormat = "https://store.steampowered.com/api/appdetails?appids={0}";
         public const string SteamWebApiKeyRegistrationUrl = "https://steamcommunity.com/dev/apikey";
         public const string SteamUserStatsSchemaApiUrlFormat = "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?l={0}&key={1}&appid={2}";
         public static readonly string GamesInfosDatasSteamStatsDbUrlFormat =
             "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/" + PathConstants.GoldbergStatsDbJsonFileName;
         public const string SteamCommunityLeaderboardsXmlUrlFormat = "https://steamcommunity.com/stats/{0}/leaderboards/?xml=1";
-        public const string SteamInventoryItemDefMetaApiUrlFormat = "https://api.steampowered.com/IInventoryService/GetItemDefMeta/v1?key={0}&appid={1}";
-        public const string SteamGameInventoryItemDefArchiveApiUrlFormat = "https://api.steampowered.com/IGameInventory/GetItemDefArchive/v0001?appid={0}&digest={1}";
         public const string SteamPublishedFileDetailsApiUrlPrefix = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=";
         public const string SteamDirectoryGetCmListForConnectUrl =
             "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=50";

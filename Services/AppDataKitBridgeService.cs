@@ -202,14 +202,70 @@ namespace SmartGoldbergEmu.Services
             return await ResolveDlcNamesForRootAsync(kit, root, cancellationToken).ConfigureAwait(false);
         }
 
-        private AppDataKit.AppDataService CreateKit()
+        public async Task<AchievementsSection> FetchAchievementsAsync(
+            ulong appId,
+            string language = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (appId == 0 || appId > uint.MaxValue)
+            {
+                return new AchievementsSection
+                {
+                    Status = SnapshotSectionStatus.Unavailable,
+                    Error = "Invalid app id."
+                };
+            }
+
+            AppDataKit.AppDataService kit = CreateKit(language);
+            return await kit.GetAchievementsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<StatsSection> FetchStatsAsync(
+            ulong appId,
+            string language = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (appId == 0 || appId > uint.MaxValue)
+            {
+                return new StatsSection
+                {
+                    Status = SnapshotSectionStatus.Unavailable,
+                    Error = "Invalid app id."
+                };
+            }
+
+            AppDataKit.AppDataService kit = CreateKit(language);
+            return await kit.GetStatsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Longer HTTP timeout: item def archives can be large.
+        public async Task<ItemsSection> FetchItemsAsync(
+            ulong appId,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (appId == 0 || appId > uint.MaxValue)
+            {
+                return new ItemsSection
+                {
+                    Status = SnapshotSectionStatus.Unavailable,
+                    Error = "Invalid app id."
+                };
+            }
+
+            AppDataKit.AppDataService kit = CreateKit(language: null, httpTimeout: TimeSpan.FromSeconds(120));
+            return await kit.GetItemsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+        }
+
+        private AppDataKit.AppDataService CreateKit(string language = null, TimeSpan? httpTimeout = null)
         {
             string apiKey = null;
             _steamApiKeyService.TryGetValidFormatKey(out apiKey);
             return new AppDataKit.AppDataService(new AppSnapshotOptions
             {
                 SteamWebApiKey = apiKey,
-                ProbeAssetUrls = false
+                ProbeAssetUrls = false,
+                Language = string.IsNullOrWhiteSpace(language) ? "english" : language.Trim(),
+                HttpTimeout = httpTimeout ?? TimeSpan.FromSeconds(30)
             });
         }
 

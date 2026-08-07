@@ -77,11 +77,6 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public async Task<bool> IsAppDataAvailableAsync(string appId, CancellationToken ct = default)
-        {
-            return await GetAppPicsRootOrFetchAsync(appId, null, ct).ConfigureAwait(false) != null;
-        }
-
         public async Task<KeyValue> GetAppKeyValueAsync(string appId, CancellationToken ct = default)
         {
             if (!uint.TryParse(appId, out uint id) || id == 0)
@@ -197,29 +192,6 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 ServiceLocator.LogService?.LogWarning($"Steam session pre-warm failed: {ex.Message}");
-            }
-        }
-
-        public async Task CloseSessionAsync()
-        {
-            if (_disposed)
-                return;
-
-            try
-            {
-                await _sessionLock.WaitAsync().ConfigureAwait(false);
-                try
-                {
-                    TeardownClient();
-                }
-                finally
-                {
-                    _sessionLock.Release();
-                }
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService?.LogWarning($"Steam session close failed: {ex.Message}");
             }
         }
 
@@ -430,48 +402,6 @@ namespace SmartGoldbergEmu.Services
             }
 
             return result;
-        }
-
-        // Game settings add-mode: merge app + linked-package depot ids, sorted numerically when parseable (CPU work off caller's sync context).
-        public async Task<List<string>> BuildOrderedDepotIdsFromPicsAsync(string appId, KeyValue cachedAppRoot, CancellationToken ct = default)
-        {
-            if (string.IsNullOrEmpty(appId))
-                return null;
-
-            KeyValue kv = await GetAppPicsRootOrFetchAsync(appId, cachedAppRoot, ct).ConfigureAwait(false);
-            if (kv == null)
-                return null;
-
-            PackageExtractionResult pkgData = await ExtractPackageDataForAppAsync(appId, kv, ct).ConfigureAwait(false);
-
-            return await Task.Run(() =>
-            {
-                AppDataExtractionResult appData = ExtractAppDataFromAppRoot(kv, appId);
-                var ids = new HashSet<string>(StringComparer.Ordinal);
-                if (appData.Depots != null)
-                {
-                    foreach (string d in appData.Depots)
-                    {
-                        if (!string.IsNullOrWhiteSpace(d))
-                            ids.Add(d.Trim());
-                    }
-                }
-                if (pkgData?.Depots != null)
-                {
-                    foreach (string d in pkgData.Depots)
-                    {
-                        if (!string.IsNullOrWhiteSpace(d))
-                            ids.Add(d.Trim());
-                    }
-                }
-                if (ids.Count == 0)
-                    return null;
-                return ids
-                    .Select(x => ulong.TryParse(x, out ulong u) ? (Key: u, Text: x) : (Key: ulong.MaxValue, Text: x))
-                    .OrderBy(t => t.Key)
-                    .Select(t => t.Text)
-                    .ToList();
-            }).ConfigureAwait(false);
         }
 
         private static List<uint> CollectLinkedPackageIds(KeyValue appRoot)

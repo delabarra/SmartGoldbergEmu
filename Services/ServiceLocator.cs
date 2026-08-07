@@ -62,7 +62,6 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<GameImageService> _gameImageService = new Lazy<GameImageService>();
         private static readonly Lazy<ImageNormalizationService> _imageNormalizationService = new Lazy<ImageNormalizationService>();
         private static readonly Lazy<IconService> _iconService = new Lazy<IconService>();
-        private static readonly Lazy<DlcService> _dlcService = new Lazy<DlcService>(() => new DlcService());
         private static volatile TaskReportService _taskReportService;
         private static readonly Lazy<SteamApiKeyService> _steamApiKeyService = new Lazy<SteamApiKeyService>();
         private static readonly Lazy<LaunchOptionService> _launchOptionService = new Lazy<LaunchOptionService>();
@@ -124,8 +123,6 @@ namespace SmartGoldbergEmu.Services
         public static ImageNormalizationService ImageNormalizationService => _imageNormalizationService.Value;
 
         public static IconService IconService => _iconService.Value;
-
-        public static DlcService DlcService => _dlcService.Value;
 
         public static TaskReportService TaskReportService => _taskReportService;
 

@@ -102,19 +102,20 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        public async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchPicsMetadataWithRootAsync(
+        // AppDataKit-first (steamcmd → disk VDF → PICS); returns metadata plus the appinfo KeyValue root.
+        public async Task<(OnlineAppData Metadata, KeyValue AppRoot)> FetchMetadataWithRootAsync(
             string appId,
-            KeyValue existingPicsRoot = null,
+            KeyValue existingAppRoot = null,
             ITaskReportService feedback = null)
         {
             if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
-                return (null, existingPicsRoot);
+                return (null, existingAppRoot);
 
             AppDataKitMetadataResult result = await _appDataKitBridge
-                .FetchMetadataAsync(appIdNum, existingPicsRoot, feedback)
+                .FetchMetadataAsync(appIdNum, existingAppRoot, feedback)
                 .ConfigureAwait(false);
             if (result == null || result.Failure != AppMetadataFetchFailure.None || result.Metadata == null)
-                return (null, result?.AppRoot ?? existingPicsRoot);
+                return (null, result?.AppRoot ?? existingAppRoot);
 
             return (result.Metadata, result.AppRoot);
         }

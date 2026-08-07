@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
 using Microsoft.Win32;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Abstractions;
@@ -1276,39 +1277,59 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             string language = GetLanguageForAchievements(gameConfig.AppId);
-            if (!_steamApiKeyService.TryGetValidFormatKey(out string apiKey))
+            if (!_steamApiKeyService.TryGetValidFormatKey(out _))
                 return;
 
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements from online API for app {gameConfig.AppId}");
-                    var achievementSchema = await SteamWebApiService.GetAchievementsAsync(gameConfig.AppId.ToString(), language, apiKey);
-                    if (achievementSchema == null || !achievementSchema.Success || achievementSchema.Achievements == null || achievementSchema.Achievements.Count == 0)
+                    ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements from AppDataKit for app {gameConfig.AppId}");
+                    AchievementsSection section = await ServiceLocator.AppDataKitBridgeService
+                        .FetchAchievementsAsync(gameConfig.AppId, language)
+                        .ConfigureAwait(false);
+                    if (section == null
+                        || section.Status != SnapshotSectionStatus.Ok
+                        || section.Items == null
+                        || section.Items.Count == 0)
                         return;
 
-                    var achievementsList = achievementSchema.Achievements.Select(a => new
-                    {
-                        name = a.Name,
-                        displayName = a.DisplayName,
-                        description = a.Description,
-                        icon = a.Icon,
-                        icongray = a.IconGray,
-                        hidden = a.Hidden ? 1 : 0
-                    }).ToList();
+                    var achievementsList = section.Items
+                        .Where(a => a != null && !string.IsNullOrWhiteSpace(a.Name))
+                        .Select(a => new
+                        {
+                            name = a.Name,
+                            displayName = a.DisplayName,
+                            description = a.Description,
+                            icon = ExtractAchievementIconFileName(a.IconUrl),
+                            icongray = ExtractAchievementIconFileName(a.IconGrayUrl),
+                            hidden = a.Hidden ? 1 : 0
+                        }).ToList();
 
-                    if (File.Exists(achievementsPath))
+                    if (achievementsList.Count == 0 || File.Exists(achievementsPath))
                         return;
 
                     File.WriteAllText(achievementsPath, JsonConvert.SerializeObject(achievementsList, JsonFormatting.Indented));
-                    ServiceLocator.LogService.LogDebug($"Generated {AchievementConstants.AchievementsFileName} from online API with {achievementsList.Count} achievement(s) for app {gameConfig.AppId}");
+                    ServiceLocator.LogService.LogDebug($"Generated {AchievementConstants.AchievementsFileName} from AppDataKit with {achievementsList.Count} achievement(s) for app {gameConfig.AppId}");
                 }
                 catch (Exception ex)
                 {
-                    ServiceLocator.LogService.LogError($"Failed to fetch achievements from online API for app {gameConfig.AppId}", ex);
+                    ServiceLocator.LogService.LogError($"Failed to fetch achievements from AppDataKit for app {gameConfig.AppId}", ex);
                 }
             }).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchAchievementsOnlineIfMissing));
+        }
+
+        // Schema writes expect the CDN file name (hash.jpg), not a full URL.
+        private static string ExtractAchievementIconFileName(string iconUrlOrName)
+        {
+            if (string.IsNullOrWhiteSpace(iconUrlOrName))
+                return string.Empty;
+
+            string trimmed = iconUrlOrName.Trim();
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out Uri uri))
+                return Path.GetFileName(uri.AbsolutePath) ?? string.Empty;
+
+            return Path.GetFileName(trimmed.Replace('\\', '/')) ?? trimmed;
         }
 
         private static void CopyDefaultItemsIfSourceAvailable(string steamSettingsPath, GameConfig gameConfig, ref bool anyFileGenerated)

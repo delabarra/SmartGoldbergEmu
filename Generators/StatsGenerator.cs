@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.Constants;
-using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Services;
 
@@ -49,28 +49,30 @@ namespace SmartGoldbergEmu.Generators
         {
             try
             {
-                if (string.IsNullOrEmpty(apiKey))
+                if (string.IsNullOrEmpty(apiKey) || !ulong.TryParse(appId, out ulong id) || id == 0)
                     return null;
 
-                var url = string.Format(AchievementConstants.SteamUserStatsApiUrl, language, apiKey, appId);
-                var responseContent = await HttpGetBodyAsync(url, requireSuccessStatusCode: false).ConfigureAwait(false);
-                if (string.IsNullOrEmpty(responseContent))
-                    return null;
-
-                var root = JsonObject.Parse(responseContent);
-                var availableGameStats = root["game"]?["availableGameStats"];
-                if (availableGameStats?["stats"] == null)
+                StatsSection section = await ServiceLocator.AppDataKitBridgeService
+                    .FetchStatsAsync(id, language)
+                    .ConfigureAwait(false);
+                if (section == null
+                    || section.Status != SnapshotSectionStatus.Ok
+                    || section.Items == null
+                    || section.Items.Count == 0)
                     return null;
 
                 var statsList = new List<object>();
-                foreach (JsonValue stat in (JsonArray)(availableGameStats["stats"] ?? new JsonArray()))
+                foreach (StatSchemaEntry stat in section.Items)
                 {
+                    if (stat == null || string.IsNullOrWhiteSpace(stat.Name))
+                        continue;
+
                     statsList.Add(new Dictionary<string, object>
                     {
-                        ["name"] = stat["name"]?.ToString() ?? "",
-                        ["type"] = NormalizeGoldbergStatType(stat["type"]?.ToString()),
-                        ["default"] = stat["defaultvalue"]?.ToString() ?? "0",
-                        ["global"] = stat["max"]?.ToString() ?? "0"
+                        ["name"] = stat.Name,
+                        ["type"] = NormalizeGoldbergStatType(stat.Type),
+                        ["default"] = string.IsNullOrEmpty(stat.DefaultValue) ? "0" : stat.DefaultValue,
+                        ["global"] = "0"
                     });
                 }
 
