@@ -733,8 +733,6 @@ namespace SmartGoldbergEmu.Services
         }
 
         private const string ArchiveReleaseUserSettingsDir = "release/files/settings/";
-        private static readonly string ArchiveSoundsDir =
-            ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalSoundsFolderName + "/";
 
         private static bool TryCopySteamUiSoundsTo(string targetSoundsPath, string logFallbackHint)
         {
@@ -742,7 +740,7 @@ namespace SmartGoldbergEmu.Services
                 return true;
 
             ServiceLocator.LogService?.LogWarning(
-                $"Steam overlay notification sounds were not copied ({logFallbackHint}); using bundled or extracted sounds if available.");
+                $"Steam overlay notification sounds were not copied ({logFallbackHint}); EnsureGlobalConfigFilesExistAsync will CDN-fallback.");
             return false;
         }
 
@@ -919,20 +917,7 @@ namespace SmartGoldbergEmu.Services
                 throw new UpdateException("Download cancelled by user");
             }
 
-            // Extract sounds to temp (we'll try Steam copy during the copy phase)
-            try
-            {
-                string tempSoundsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalSoundsFolderName);
-                Directory.CreateDirectory(tempSoundsPath);
-
-                session.TryExtractSingleFileFlat(ArchiveSoundsDir + PathConstants.SteamClientUiFriendNotificationWav, tempSoundsPath);
-                session.TryExtractSingleFileFlat(ArchiveSoundsDir + PathConstants.SteamClientUiAchievementNotificationWav, tempSoundsPath);
-            }
-            catch (Exception ex)
-            {
-                // Sounds are optional - log but don't fail
-                ServiceLocator.LogService?.LogWarning($"Optional sounds extraction failed: {ex.Message}");
-            }
+            // Fork-bundled WAVs are not extracted — EnsureGlobalConfigFilesExistAsync uses Steam client → CDN.
         }
 
         private static void DeleteGoldbergGenerateInterfacesInstallFolder()
@@ -1008,14 +993,9 @@ namespace SmartGoldbergEmu.Services
                     throw new UpdateException("Download cancelled by user");
                 }
 
-                string targetSoundsPath = PathConstants.GlobalSoundsPath;
-                Directory.CreateDirectory(targetSoundsPath);
-                if (!TryCopySteamUiSoundsTo(targetSoundsPath, "using extracted"))
-                {
-                    string tempSoundsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalSoundsFolderName);
-                    if (Directory.Exists(tempSoundsPath))
-                        CopyDirectoryContents(tempSoundsPath, targetSoundsPath, false);
-                }
+                Directory.CreateDirectory(PathConstants.GlobalSoundsPath);
+                TryCopySteamUiSoundsTo(PathConstants.GlobalSoundsPath, "EnsureGlobalConfigFilesExistAsync will CDN-fallback");
+                // Do not copy fork archive WAVs.
             }
             progressCallback?.Invoke("Files installed", 95);
         }
@@ -1579,6 +1559,9 @@ namespace SmartGoldbergEmu.Services
                 FormTitle = ApplicationConstants.WindowTitle,
                 Headline = "A new version of Goldberg Emulator is available.",
                 ReleaseNotes = result.ReleaseNotes,
+                AdditionalInfo =
+                    "Emulator binaries will be downloaded and installed.\r\n"
+                    + "Steam.dll / overlay WAVs from the fork archive are skipped (local Steam / CDN / EXAMPLE assets apply).",
                 ProceedQuestion = "Do you want to proceed with the installation?",
                 ManualDownloadLinks = GetGoldbergManualDownloadLinks()
             };

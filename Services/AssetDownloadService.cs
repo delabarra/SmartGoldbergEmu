@@ -3,15 +3,17 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Constants;
-using SmartGoldbergEmu.ExtractKit;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
 {
+    // Downloads overlay/EXAMPLE assets. WAVs + Steam.dll use Steam CDN client packages;
+    // avatar/font/glyphs use gbe_fork EXAMPLE.
     public class AssetDownloadService
     {
         private const int HttpTimeoutSeconds = 30;
+        private const int SteamDllPackageTimeoutSeconds = 120;
 
         public async Task<ValidationResult> DownloadSoundFilesAsync(string soundsPath)
         {
@@ -53,18 +55,57 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // IfAbsent: download Steam client bins_win32 package and extract Steam.dll (never fork/repack Steam.dll).
+        public async Task<ValidationResult> DownloadSteamDllAsync(string steamOldDirectory)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(steamOldDirectory))
+                    return ValidationResult.Failure("Target directory for Steam.dll is empty.");
+
+                string dest = Path.Combine(steamOldDirectory.Trim(), PathConstants.GoldbergSteamDllFileName);
+                if (File.Exists(dest))
+                    return ValidationResult.Success();
+
+                var cdn = ServiceLocator.SteamStaticCdnPreferenceService;
+                byte[] manifestBytes = await DownloadFirstAvailableAsync(
+                    cdn.GetClientWin32ManifestCandidateUrls(),
+                    HttpTimeoutSeconds).ConfigureAwait(false);
+                string manifestText = System.Text.Encoding.UTF8.GetString(manifestBytes);
+                if (!SteamClientManifestHelper.TryGetBinsWin32ZipVzFileName(manifestText, out string zipVzFileName))
+                    return ValidationResult.Failure("Could not resolve bins_win32 package from steam_client_win32 manifest.");
+
+                string relativePath = SteamClientManifestHelper.BuildClientPackageRelativePath(zipVzFileName);
+                byte[] packageBytes = await DownloadFirstAvailableAsync(
+                    cdn.GetClientPackageCandidateUrls(relativePath),
+                    SteamDllPackageTimeoutSeconds).ConfigureAwait(false);
+
+                byte[] steamDll = global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntry(
+                    packageBytes,
+                    SteamStaticCdnConstants.ClientBinsSteamDllEntryName);
+                if (steamDll == null || steamDll.Length == 0)
+                    return ValidationResult.Failure("bins_win32 package did not contain Steam.dll.");
+
+                Directory.CreateDirectory(steamOldDirectory.Trim());
+                await Task.Run(() => File.WriteAllBytes(dest, steamDll)).ConfigureAwait(false);
+                return ValidationResult.Success();
+            }
+            catch (Exception ex)
+            {
+                return ValidationResult.Failure("Failed to download Steam.dll from Steam client package: " + ex.Message);
+            }
+        }
+
         public async Task<bool> DownloadAvatarAsync(string avatarPath)
         {
             try
             {
-                await DownloadFirstAvailableToFileAsync(
-                    ServiceLocator.SteamStaticCdnPreferenceService.GetDefaultAvatarCandidateUrls(),
-                    avatarPath);
+                await DownloadAndWriteAsync(AssetConstants.AccountAvatarUrl, avatarPath).ConfigureAwait(false);
                 return true;
             }
             catch (Exception ex)
             {
-                LogRedactionHelper.WriteDebug($"Failed to download avatar from configured source: {ex.Message}");
+                LogRedactionHelper.WriteDebug($"Failed to download avatar from EXAMPLE: {ex.Message}");
                 return false;
             }
         }
@@ -117,7 +158,7 @@ namespace SmartGoldbergEmu.Services
 
                     try
                     {
-                        await DownloadAndWriteAsync(file.Url, destPath);
+                        await DownloadAndWriteAsync(file.Url, destPath).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -159,18 +200,13 @@ namespace SmartGoldbergEmu.Services
             throw lastError ?? new InvalidOperationException("All CDN candidate URLs failed.");
         }
 
-        private static async Task DownloadFirstAvailableToFileAsync(
-            IReadOnlyList<string> candidateUrls,
-            string destPath)
-        {
-            var content = await DownloadFirstAvailableAsync(candidateUrls, HttpTimeoutSeconds).ConfigureAwait(false);
-            await Task.Run(() => File.WriteAllBytes(destPath, content)).ConfigureAwait(false);
-        }
-
         private static async Task DownloadAndWriteAsync(string url, string destPath)
         {
-            var content = await HttpHelpers.GetByteArrayAsync(url, HttpTimeoutSeconds);
-            await Task.Run(() => File.WriteAllBytes(destPath, content));
+            var content = await HttpHelpers.GetByteArrayAsync(url, HttpTimeoutSeconds).ConfigureAwait(false);
+            string directory = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+            await Task.Run(() => File.WriteAllBytes(destPath, content)).ConfigureAwait(false);
         }
     }
 }

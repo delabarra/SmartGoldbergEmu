@@ -22,11 +22,14 @@ namespace SmartGoldbergEmu.Constants
         public const string ProbeStoreItemAssetsPath =
             "store_item_assets/steam/apps/570/header.jpg";
 
-        public const string DefaultAvatarRelativePath =
-            "b5bd56c1aa4644a474a2e4972be27ef9e82e517e_full.jpg";
-
         public const string ClientSoundsPackageRelativePath =
             "client/steamui_websrc_sounds_all.zip.vz.5ba6acd8f4dfe4b93437895b20344fab5bb3ff96_3714779";
+
+        // Steam client package manifest (Valve KeyValues); used to resolve current bins_win32 zipvz.
+        public const string ClientWin32ManifestRelativePath = "client/steam_client_win32";
+
+        // Entry name inside bins_win32 for the client Steam.dll.
+        public const string ClientBinsSteamDllEntryName = "Steam.dll";
 
         public static readonly IReadOnlyList<string> DefaultStoreItemAssetsHosts = new[]
         {
@@ -53,11 +56,6 @@ namespace SmartGoldbergEmu.Constants
             "cdn.cloudflare.steamstatic.com",
             "cdn.steamstatic.com",
             "steamcdn-a.akamaihd.net"
-        };
-
-        public static readonly IReadOnlyList<string> DefaultAvatarHosts = new[]
-        {
-            "avatars.steamstatic.com"
         };
 
         public static readonly IReadOnlyList<string> DefaultClientPackageHosts = new[]

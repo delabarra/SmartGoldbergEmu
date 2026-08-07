@@ -43,7 +43,6 @@ namespace SmartGoldbergEmu.Constants
             new GoldbergInstallFile("steamclient_experimental/steamclient64.dll", PathConstants.GoldbergSteamClientDll64),
             new GoldbergInstallFile("steamclient_experimental/GameOverlayRenderer.dll", PathConstants.GoldbergGameOverlayRendererDll32),
             new GoldbergInstallFile("steamclient_experimental/GameOverlayRenderer64.dll", PathConstants.GoldbergGameOverlayRendererDll64),
-            new GoldbergInstallFile("steam_old_lib/Steam.dll", PathConstants.GoldbergSteamDllFileName, SteamOldFolderName),
         };
 
         // Flat DLLs from older installs at goldberg\ root (pre-subfolder layout).

@@ -125,15 +125,6 @@ namespace SmartGoldbergEmu.Services
             return fileName.Length > 0;
         }
 
-        public IReadOnlyList<string> GetDefaultAvatarCandidateUrls()
-        {
-            ScheduleWarmUpIfNeeded();
-            var preferences = GetActivePreferences();
-            return BuildUniqueUrls(
-                preferences.AvatarHosts,
-                host => BuildHttpsUrl(host, SteamStaticCdnConstants.DefaultAvatarRelativePath));
-        }
-
         public IReadOnlyList<string> GetClientSoundsPackageCandidateUrls()
         {
             ScheduleWarmUpIfNeeded();
@@ -141,6 +132,27 @@ namespace SmartGoldbergEmu.Services
             return BuildUniqueUrls(
                 preferences.ClientPackageHosts,
                 host => BuildHttpsUrl(host, SteamStaticCdnConstants.ClientSoundsPackageRelativePath));
+        }
+
+        public IReadOnlyList<string> GetClientWin32ManifestCandidateUrls()
+        {
+            ScheduleWarmUpIfNeeded();
+            var preferences = GetActivePreferences();
+            return BuildUniqueUrls(
+                preferences.ClientPackageHosts,
+                host => BuildHttpsUrl(host, SteamStaticCdnConstants.ClientWin32ManifestRelativePath));
+        }
+
+        public IReadOnlyList<string> GetClientPackageCandidateUrls(string relativePathUnderClientHost)
+        {
+            ScheduleWarmUpIfNeeded();
+            if (string.IsNullOrWhiteSpace(relativePathUnderClientHost))
+                return Array.Empty<string>();
+
+            var preferences = GetActivePreferences();
+            return BuildUniqueUrls(
+                preferences.ClientPackageHosts,
+                host => BuildHttpsUrl(host, relativePathUnderClientHost.Trim().TrimStart('/')));
         }
 
         public async Task WarmUpAsync(CancellationToken cancellationToken = default)
@@ -265,7 +277,6 @@ namespace SmartGoldbergEmu.Services
                 SharedFastlyHosts = SteamStaticCdnConstants.DefaultSharedFastlyHosts.ToList(),
                 SteamAppsBareHosts = SteamStaticCdnConstants.DefaultSteamAppsBareHosts.ToList(),
                 GeneralCdnHosts = SteamStaticCdnConstants.DefaultGeneralCdnHosts.ToList(),
-                AvatarHosts = SteamStaticCdnConstants.DefaultAvatarHosts.ToList(),
                 ClientPackageHosts = SteamStaticCdnConstants.DefaultClientPackageHosts.ToList()
             });
         }
@@ -287,9 +298,6 @@ namespace SmartGoldbergEmu.Services
             preferences.GeneralCdnHosts = NormalizeHostList(
                 preferences.GeneralCdnHosts,
                 SteamStaticCdnConstants.DefaultGeneralCdnHosts);
-            preferences.AvatarHosts = NormalizeHostList(
-                preferences.AvatarHosts,
-                SteamStaticCdnConstants.DefaultAvatarHosts);
             preferences.ClientPackageHosts = NormalizeHostList(
                 preferences.ClientPackageHosts,
                 SteamStaticCdnConstants.DefaultClientPackageHosts);
@@ -346,11 +354,6 @@ namespace SmartGoldbergEmu.Services
                     $"steam/apps/{SteamStaticCdnConstants.ProbeAppId}/{SteamStaticCdnConstants.ProbeBareAssetPath}"),
                 cancellationToken).ConfigureAwait(false);
 
-            var avatarHosts = await RankHostsAsync(
-                SteamStaticCdnConstants.DefaultAvatarHosts,
-                host => BuildHttpsUrl(host, SteamStaticCdnConstants.DefaultAvatarRelativePath),
-                cancellationToken).ConfigureAwait(false);
-
             var clientPackageHosts = await RankHostsAsync(
                 SteamStaticCdnConstants.DefaultClientPackageHosts,
                 host => BuildHttpsUrl(host, SteamStaticCdnConstants.ClientSoundsPackageRelativePath),
@@ -363,7 +366,6 @@ namespace SmartGoldbergEmu.Services
                 SharedFastlyHosts = sharedFastlyHosts,
                 SteamAppsBareHosts = steamAppsBareHosts,
                 GeneralCdnHosts = generalCdnHosts,
-                AvatarHosts = avatarHosts,
                 ClientPackageHosts = clientPackageHosts
             });
         }

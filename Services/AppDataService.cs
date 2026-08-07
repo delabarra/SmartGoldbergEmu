@@ -740,23 +740,73 @@ namespace SmartGoldbergEmu.Services
                 if (!includeAssets)
                     return ValidationResult.Success();
 
-                ValidationResult soundResult = await EnsureSoundFilesExistAsync().ConfigureAwait(false);
-                if (!soundResult.IsValid)
-                    return soundResult;
-
-                ValidationResult fontResult = await EnsureFontFilesExistAsync().ConfigureAwait(false);
-                if (!fontResult.IsValid)
-                    return fontResult;
-
-                ValidationResult glyphResult = await EnsureGlyphFilesExistAsync().ConfigureAwait(false);
-                if (!glyphResult.IsValid)
-                    return glyphResult;
+                // Soft-fail: batch A (Steam lineage) ∥ batch B (EXAMPLE).
+                Task batchA = EnsureSteamLineageAssetsAsync();
+                Task batchB = EnsureExampleAssetsAsync();
+                await Task.WhenAll(batchA, batchB).ConfigureAwait(false);
 
                 return ValidationResult.Success();
             }
             catch (Exception ex)
             {
                 return ValidationResult.Failure($"{failurePrefix}: {ex.Message}");
+            }
+        }
+
+        // Batch A: Steam.dll + overlay WAVs (local Steam → CDN). Soft-fail; logs only.
+        private async Task EnsureSteamLineageAssetsAsync()
+        {
+            try
+            {
+                if (!SteamInstallationPathHelper.TryEnsureSteamDllFromSteamClient(
+                        PathConstants.GoldbergSteamOldDirectory, out string steamDllError)
+                    && !SteamInstallationPathHelper.IsSteamDllPresentInGoldbergFolder())
+                {
+                    ValidationResult cdnDll = await ServiceLocator.AssetDownloadService
+                        .DownloadSteamDllAsync(PathConstants.GoldbergSteamOldDirectory)
+                        .ConfigureAwait(false);
+                    if (!cdnDll.IsValid)
+                    {
+                        ServiceLocator.LogService?.LogWarning(
+                            "Steam.dll self-heal: " + (steamDllError ?? "missing")
+                            + "; CDN fallback: " + (cdnDll.ErrorMessage ?? "failed")
+                            + " (Steam.dll mode unavailable until fixed).");
+                    }
+                    else
+                    {
+                        ServiceLocator.LogService?.LogMessage(
+                            "Steam.dll self-heal: copied from Steam CDN bins_win32 package.");
+                    }
+                }
+
+                ValidationResult sounds = await EnsureSoundFilesExistAsync().ConfigureAwait(false);
+                if (!sounds.IsValid)
+                    ServiceLocator.LogService?.LogWarning("Overlay WAV self-heal soft-fail: " + sounds.ErrorMessage);
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning("Steam lineage assets soft-fail: " + ex.Message);
+            }
+        }
+
+        // Batch B: avatar + font + glyphs from EXAMPLE. Soft-fail; logs only.
+        private async Task EnsureExampleAssetsAsync()
+        {
+            try
+            {
+                await EnsureAvatarExistsAsync().ConfigureAwait(false);
+
+                ValidationResult fontResult = await EnsureFontFilesExistAsync().ConfigureAwait(false);
+                if (!fontResult.IsValid)
+                    ServiceLocator.LogService?.LogWarning("Overlay font self-heal soft-fail: " + fontResult.ErrorMessage);
+
+                ValidationResult glyphResult = await EnsureGlyphFilesExistAsync().ConfigureAwait(false);
+                if (!glyphResult.IsValid)
+                    ServiceLocator.LogService?.LogWarning("Controller glyphs self-heal soft-fail: " + glyphResult.ErrorMessage);
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning("EXAMPLE assets soft-fail: " + ex.Message);
             }
         }
 
@@ -812,10 +862,6 @@ ip_country=US
                         : await ServiceLocator.AssetDownloadService.DownloadSoundFilesAsync(soundsPath).ConfigureAwait(false);
                 }
 
-                if (result.IsValid)
-                {
-                    await EnsureAvatarExistsAsync().ConfigureAwait(false);
-                }
                 return result;
             }
             catch (Exception ex)
@@ -900,11 +946,11 @@ ip_country=US
             {
                 bool success = await ServiceLocator.AssetDownloadService.DownloadAvatarAsync(avatarPath).ConfigureAwait(false);
                 if (!success)
-                    LogRedactionHelper.WriteDebug("Failed to download avatar from configured source");
+                    LogRedactionHelper.WriteDebug("Failed to download avatar from EXAMPLE");
             }
             catch (Exception ex)
             {
-                LogRedactionHelper.WriteDebug($"Failed to download avatar from configured source: {ex.Message}");
+                LogRedactionHelper.WriteDebug($"Failed to download avatar from EXAMPLE: {ex.Message}");
             }
         }
 

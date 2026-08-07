@@ -29,6 +29,11 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamClientFriendSoundInnerPath = "steamui/sounds/recording_highlight.wav";
 
         /// <summary>
+        /// Default account avatar from gbe_fork steam_settings.EXAMPLE.
+        /// </summary>
+        public const string AccountAvatarUrl = GithubBaseUrl + "/account_avatar.jpg";
+
+        /// <summary>
         /// Font file: Roboto-Medium.
         /// </summary>
         public const string FontRobotoUrl = GithubBaseUrl + "/fonts.EXAMPLE/Roboto-Medium.ttf";

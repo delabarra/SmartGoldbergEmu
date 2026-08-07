@@ -11,10 +11,10 @@ namespace SmartGoldbergEmu.Tests.Constants
         public void GetReleaseInstallFiles_maps_expected_archive_entries()
         {
             var files = GoldbergInstallLayout.GetReleaseInstallFiles();
-            Assert.Equal(9, files.Count);
+            Assert.Equal(8, files.Count);
             Assert.Contains(files, f => f.ArchivePath == "release/experimental/x32/steam_api.dll");
             Assert.Contains(files, f => f.ArchivePath == "release/experimental/x64/steam_api64.dll");
-            Assert.Contains(files, f => f.ArchivePath == "release/steam_old_lib/Steam.dll");
+            Assert.DoesNotContain(files, f => f.ArchivePath == "release/steam_old_lib/Steam.dll");
 
             var x32SteamApi = files.First(f => f.FileName == PathConstants.GoldbergStandardSteamApiDll32);
             Assert.Equal(GoldbergInstallLayout.ExperimentalFolderName, x32SteamApi.InstallRelativeDirectory);

@@ -15,8 +15,6 @@ namespace SmartGoldbergEmu.Models
 
         public List<string> GeneralCdnHosts { get; set; } = new List<string>();
 
-        public List<string> AvatarHosts { get; set; } = new List<string>();
-
         public List<string> ClientPackageHosts { get; set; } = new List<string>();
 
         public bool IsExpired(TimeSpan ttl)
