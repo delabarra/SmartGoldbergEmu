@@ -47,7 +47,8 @@ namespace AppDataKit
         {
             var section = new DlcSection
             {
-                Source = "steamcmd.net",
+                // Store first (fast), then steamcmd. PICS fallback lives in the app bridge.
+                Source = "store.steampowered.com;steamcmd.net",
             };
 
             if (dlcAppIds == null || dlcAppIds.Count == 0)
@@ -105,14 +106,7 @@ namespace AppDataKit
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // steamcmd appinfo (same source as parent metadata) — Store often fails for DLC packages.
-                if (TryNameFromSteamCmd(await AppInfoClient.FetchFromSteamCmdAsync(
-                        dlcId, options, http, cancellationToken).ConfigureAwait(false), out string steamCmdName, out string steamCmdType))
-                {
-                    AddEntry(entries, dlcId, steamCmdName, steamCmdType);
-                    return;
-                }
-
+                // 1) Store appdetails (fastest when the package is listed).
                 StoreAppDetailsClient.BasicInfo store = await StoreAppDetailsClient.TryGetBasicAsync(
                     dlcId,
                     http,
@@ -121,6 +115,14 @@ namespace AppDataKit
                 if (store.Success)
                 {
                     AddEntry(entries, dlcId, store.Name, store.Type);
+                    return;
+                }
+
+                // 2) steamcmd appinfo — covers packages Store omits; cheaper than PICS.
+                if (TryNameFromSteamCmd(await AppInfoClient.FetchFromSteamCmdAsync(
+                        dlcId, options, http, cancellationToken).ConfigureAwait(false), out string steamCmdName, out string steamCmdType))
+                {
+                    AddEntry(entries, dlcId, steamCmdName, steamCmdType);
                     return;
                 }
 

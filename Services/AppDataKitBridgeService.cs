@@ -78,7 +78,7 @@ namespace SmartGoldbergEmu.Services
                     if (IsUsable(metadata))
                     {
                         Dictionary<long, string> dlc = resolveDlcNames
-                            ? await MergeStoreDlcNamesAsync(kit, metaSection.AppInfo, converted, cancellationToken)
+                            ? await MergeDlcNamesAsync(kit, metaSection.AppInfo, converted, cancellationToken)
                                 .ConfigureAwait(false)
                             : CollectDlcIdsOnly(converted);
                         return new AppDataKitMetadataResult
@@ -118,7 +118,7 @@ namespace SmartGoldbergEmu.Services
                 if (IsUsable(fromExisting))
                 {
                     Dictionary<long, string> dlc = resolveDlcNames
-                        ? await ResolveStoreNamesForRootAsync(kit, existingAppRoot, cancellationToken).ConfigureAwait(false)
+                        ? await ResolveDlcNamesForRootAsync(kit, existingAppRoot, cancellationToken).ConfigureAwait(false)
                         : CollectDlcIdsOnly(existingAppRoot);
                     return new AppDataKitMetadataResult
                     {
@@ -139,7 +139,7 @@ namespace SmartGoldbergEmu.Services
                 if (IsUsable(fromDisk))
                 {
                     Dictionary<long, string> dlc = resolveDlcNames
-                        ? await ResolveStoreNamesForRootAsync(kit, diskRoot, cancellationToken).ConfigureAwait(false)
+                        ? await ResolveDlcNamesForRootAsync(kit, diskRoot, cancellationToken).ConfigureAwait(false)
                         : CollectDlcIdsOnly(diskRoot);
                     return new AppDataKitMetadataResult
                     {
@@ -169,7 +169,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        // DLC ids from app root + Store names (no per-DLC PICS).
+        // DLC ids from app root; names: Store → steamcmd → PICS → "DLC {id}".
         public async Task<Dictionary<long, string>> FetchDlcAsync(
             ulong appId,
             KeyValue appRoot = null,
@@ -197,9 +197,9 @@ namespace SmartGoldbergEmu.Services
                 return new Dictionary<long, string>();
 
             if (kitInfo != null)
-                return await MergeStoreDlcNamesAsync(kit, kitInfo, root, cancellationToken).ConfigureAwait(false);
+                return await MergeDlcNamesAsync(kit, kitInfo, root, cancellationToken).ConfigureAwait(false);
 
-            return await ResolveStoreNamesForRootAsync(kit, root, cancellationToken).ConfigureAwait(false);
+            return await ResolveDlcNamesForRootAsync(kit, root, cancellationToken).ConfigureAwait(false);
         }
 
         private AppDataKit.AppDataService CreateKit()
@@ -253,7 +253,7 @@ namespace SmartGoldbergEmu.Services
 
             OnlineAppData metadata = BuildMetadata(appId, picsRoot, "Steam (game assets)");
             Dictionary<long, string> dlc = resolveDlcNames
-                ? await ResolveStoreNamesForRootAsync(kit, picsRoot, cancellationToken).ConfigureAwait(false)
+                ? await ResolveDlcNamesForRootAsync(kit, picsRoot, cancellationToken).ConfigureAwait(false)
                 : CollectDlcIdsOnly(picsRoot);
             return new AppDataKitMetadataResult
             {
@@ -265,17 +265,18 @@ namespace SmartGoldbergEmu.Services
             };
         }
 
-        private static async Task<Dictionary<long, string>> MergeStoreDlcNamesAsync(
+        private async Task<Dictionary<long, string>> MergeDlcNamesAsync(
             AppDataKit.AppDataService kit,
             AppInfoKeyValue appInfo,
             KeyValue convertedRoot,
             CancellationToken cancellationToken)
         {
             var result = CollectDlcIdsOnly(convertedRoot);
+            DlcSection section = null;
             try
             {
-                DlcSection section = await kit.GetDlcListFromAppInfoAsync(appInfo, cancellationToken).ConfigureAwait(false);
-                ApplyStoreDlcSection(section, result);
+                section = await kit.GetDlcListFromAppInfoAsync(appInfo, cancellationToken).ConfigureAwait(false);
+                ApplyResolvedDlcSection(section, result);
             }
             catch (Exception ex)
             {
@@ -283,10 +284,11 @@ namespace SmartGoldbergEmu.Services
                     "AppDataKit DLC name resolve failed: " + ex.Message);
             }
 
+            await FillUnresolvedViaPicsAsync(section, result, cancellationToken).ConfigureAwait(false);
             return result;
         }
 
-        private static async Task<Dictionary<long, string>> ResolveStoreNamesForRootAsync(
+        private async Task<Dictionary<long, string>> ResolveDlcNamesForRootAsync(
             AppDataKit.AppDataService kit,
             KeyValue root,
             CancellationToken cancellationToken)
@@ -295,6 +297,7 @@ namespace SmartGoldbergEmu.Services
             if (result.Count == 0)
                 return result;
 
+            DlcSection section = null;
             try
             {
                 var ids = new List<uint>(result.Count);
@@ -304,19 +307,94 @@ namespace SmartGoldbergEmu.Services
                         ids.Add((uint)id);
                 }
 
-                DlcSection section = await kit.ResolveDlcNamesAsync(ids, cancellationToken).ConfigureAwait(false);
-                ApplyStoreDlcSection(section, result);
+                section = await kit.ResolveDlcNamesAsync(ids, cancellationToken).ConfigureAwait(false);
+                ApplyResolvedDlcSection(section, result);
             }
             catch (Exception ex)
             {
                 Program.LogService?.LogWarning(
-                    "Store DLC name resolve failed: " + ex.Message);
+                    "DLC name resolve failed: " + ex.Message);
             }
 
+            await FillUnresolvedViaPicsAsync(section, result, cancellationToken).ConfigureAwait(false);
             return result;
         }
 
-        private static void ApplyStoreDlcSection(DlcSection section, Dictionary<long, string> result)
+        // Last resort: Steam PICS product info for ids Store + steamcmd could not name.
+        private async Task FillUnresolvedViaPicsAsync(
+            DlcSection section,
+            Dictionary<long, string> result,
+            CancellationToken cancellationToken)
+        {
+            if (result == null || result.Count == 0)
+                return;
+
+            var pending = new List<uint>();
+            var seen = new HashSet<uint>();
+
+            if (section?.UnresolvedAppIds != null)
+            {
+                foreach (uint id in section.UnresolvedAppIds)
+                {
+                    if (id == 0 || !seen.Add(id))
+                        continue;
+                    pending.Add(id);
+                }
+            }
+
+            foreach (KeyValuePair<long, string> kvp in result)
+            {
+                if (kvp.Key <= 0 || kvp.Key > uint.MaxValue)
+                    continue;
+                uint id = (uint)kvp.Key;
+                if (!IsPlaceholderDlcName(id, kvp.Value) || !seen.Add(id))
+                    continue;
+                pending.Add(id);
+            }
+
+            if (pending.Count == 0)
+                return;
+
+            bool sessionReady = await _steamProductInfo.TryEnsureSessionAsync(cancellationToken).ConfigureAwait(false);
+            if (!sessionReady)
+            {
+                Program.LogService?.LogWarning(
+                    "PICS DLC name fallback skipped: Steam session not ready ("
+                    + pending.Count + " unresolved).");
+                return;
+            }
+
+            foreach (uint id in pending)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    KeyValue kv = await _steamProductInfo
+                        .GetAppKeyValueAsync(id.ToString(), cancellationToken)
+                        .ConfigureAwait(false);
+                    if (kv != null
+                        && SteamPicsKeyValueHelper.TryGetAppDisplayInfo(kv, out string name, out _)
+                        && !string.IsNullOrWhiteSpace(name))
+                    {
+                        result[id] = name.Trim();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogWarning(
+                        "PICS DLC name resolve failed for " + id + ": " + ex.Message);
+                }
+            }
+        }
+
+        private static bool IsPlaceholderDlcName(uint dlcId, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return true;
+            return string.Equals(name.Trim(), "DLC " + dlcId, StringComparison.Ordinal);
+        }
+
+        private static void ApplyResolvedDlcSection(DlcSection section, Dictionary<long, string> result)
         {
             if (section == null
                 || (section.Status != SnapshotSectionStatus.Ok && section.Status != SnapshotSectionStatus.Partial)
