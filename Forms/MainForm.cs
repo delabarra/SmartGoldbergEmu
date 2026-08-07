@@ -969,18 +969,13 @@ namespace SmartGoldbergEmu.Forms
 
         private async void OnAddGame_Click(object sender, EventArgs e)
         {
-            var warmupCts = new System.Threading.CancellationTokenSource();
-            // Warm the anonymous Steam session while the user picks a file so collect can reuse it.
-            Task warmupTask = ServiceLocator.SteamProductInfoService.PreWarmSessionAsync(warmupCts.Token);
-            bool proceeded = false;
             try
             {
                 string executablePath = SelectGameExecutable();
                 if (string.IsNullOrEmpty(executablePath))
                     return;
 
-                proceeded = true;
-                await AddGameFromExecutable(executablePath, warmupTask);
+                await AddGameFromExecutable(executablePath);
             }
             catch (Exception ex)
             {
@@ -988,38 +983,10 @@ namespace SmartGoldbergEmu.Forms
                 if (!IsDisposed && !Disposing)
                     _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
             }
-            finally
-            {
-                if (!proceeded)
-                    warmupCts.Cancel();
-
-                try
-                {
-                    await warmupTask.ConfigureAwait(true);
-                }
-                catch
-                {
-                }
-
-                // User backed out of file selection: drop the connection we warmed for nothing.
-                if (!proceeded)
-                    await ServiceLocator.SteamProductInfoService.CloseSessionAsync().ConfigureAwait(true);
-
-                warmupCts.Dispose();
-            }
         }
 
-        private async Task AddGameFromExecutable(string executablePath, Task sessionWarmupTask = null)
+        private async Task AddGameFromExecutable(string executablePath)
         {
-            System.Threading.CancellationTokenSource localWarmupCts = null;
-            Task warmupTask = sessionWarmupTask;
-            if (warmupTask == null)
-            {
-                // Drag-drop: start warm in parallel with App ID resolve / search UI (do not await here).
-                localWarmupCts = new System.Threading.CancellationTokenSource();
-                warmupTask = ServiceLocator.SteamProductInfoService.PreWarmSessionAsync(localWarmupCts.Token);
-            }
-
             try
             {
                 if (IsDisposed || Disposing || string.IsNullOrWhiteSpace(executablePath))
@@ -1030,8 +997,6 @@ namespace SmartGoldbergEmu.Forms
 
                 _taskReportService.SetProgress(0, 0);
 
-                // Collect resolves App ID first (steam_appid.txt or search). PICS fetch ensures the session
-                // itself; awaiting warm here only delayed that UI behind a long "Connecting..." wait.
                 GameAddCollectResult collectResult = await ServiceLocator.GameAddCollector
                     .CollectFromExecutableAsync(executablePath, this, _taskReportService)
                     .ConfigureAwait(false);
@@ -1093,21 +1058,6 @@ namespace SmartGoldbergEmu.Forms
                 ClearPendingAddListEntry();
                 Program.LogService?.LogError($"Error adding game: {ex.Message}", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
-            }
-            finally
-            {
-                if (localWarmupCts != null)
-                {
-                    try
-                    {
-                        await warmupTask.ConfigureAwait(true);
-                    }
-                    catch
-                    {
-                    }
-
-                    localWarmupCts.Dispose();
-                }
             }
         }
 

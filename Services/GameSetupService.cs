@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SmartGoldbergEmu;
@@ -53,20 +51,21 @@ namespace SmartGoldbergEmu.Services
             };
 
         private readonly GameDataService _gameDataService;
-        private readonly SteamProductInfoService _steamProductInfo;
-        private readonly DlcService _dlcService;
+        private readonly AppDataKitBridgeService _appDataKitBridge;
         private readonly ITaskReportService _taskReportService;
 
         public GameSetupService()
-            : this(ServiceLocator.GameDataService, ServiceLocator.SteamProductInfoService, ServiceLocator.DlcService, null)
+            : this(ServiceLocator.GameDataService, ServiceLocator.AppDataKitBridgeService, null)
         {
         }
 
-        public GameSetupService(GameDataService gameDataService, SteamProductInfoService steamProductInfo, DlcService dlcService = null, ITaskReportService feedbackService = null)
+        public GameSetupService(
+            GameDataService gameDataService,
+            AppDataKitBridgeService appDataKitBridge = null,
+            ITaskReportService feedbackService = null)
         {
             _gameDataService = gameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
-            _steamProductInfo = steamProductInfo ?? throw new ArgumentNullException(nameof(steamProductInfo));
-            _dlcService = dlcService ?? ServiceLocator.DlcService;
+            _appDataKitBridge = appDataKitBridge ?? ServiceLocator.AppDataKitBridgeService;
             _taskReportService = feedbackService;
         }
 
@@ -102,12 +101,6 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        // Session establish can take up to ~25s + one ~22s retry; keep that off the product-info clock.
-        private static readonly TimeSpan PicsSessionEnsureTimeout = TimeSpan.FromSeconds(50);
-
-        // Bound for PICS product-info after a session is ready (or disk cache miss path).
-        private static readonly TimeSpan PicsProductInfoTimeout = TimeSpan.FromSeconds(20);
-
         public async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchPicsMetadataWithRootAsync(
             string appId,
             KeyValue existingPicsRoot = null,
@@ -116,130 +109,25 @@ namespace SmartGoldbergEmu.Services
             if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
                 return (null, existingPicsRoot);
 
-            var (metadata, picsRoot, _) = await FetchPicsMetadataCoreAsync(appIdNum, existingPicsRoot, feedback)
+            AppDataKitMetadataResult result = await _appDataKitBridge
+                .FetchMetadataAsync(appIdNum, existingPicsRoot, feedback)
                 .ConfigureAwait(false);
-            return (metadata, picsRoot);
+            if (result == null || result.Failure != AppMetadataFetchFailure.None || result.Metadata == null)
+                return (null, result?.AppRoot ?? existingPicsRoot);
+
+            return (result.Metadata, result.AppRoot);
         }
 
         public async Task<OnlineAppData> FetchMetadataAsync(ulong appId, IWin32Window owner = null, ITaskReportService feedback = null)
         {
-            var (metadata, _) = await FetchMetadataAndPicsAsync(appId, owner, feedback).ConfigureAwait(false);
-            return metadata;
-        }
-
-        private async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchMetadataAndPicsAsync(
-            ulong appId,
-            IWin32Window owner = null,
-            ITaskReportService feedback = null)
-        {
             if (appId == 0)
-                return (null, null);
+                return null;
 
             ITaskReportService fb = feedback ?? _taskReportService;
-            var (metadata, picsRoot, _) = await FetchPicsMetadataCoreAsync(appId, null, fb).ConfigureAwait(false);
-            return (metadata, picsRoot);
-        }
-
-        private enum PicsMetadataFailure
-        {
-            None,
-            TimedOut,
-            Unavailable
-        }
-
-        private async Task<(OnlineAppData Metadata, KeyValue PicsRoot, PicsMetadataFailure Failure)> FetchPicsMetadataCoreAsync(
-            ulong appId,
-            KeyValue existingPicsRoot,
-            ITaskReportService fb)
-        {
-            try
-            {
-                KeyValue picsRoot = existingPicsRoot;
-                if (picsRoot == null)
-                {
-                    // Disk cache does not need a live Steam session.
-                    picsRoot = SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(
-                        PathConstants.GamesDirectory,
-                        appId);
-
-                    if (picsRoot == null)
-                    {
-                        fb?.SetMessage(AddGameStatusMessages.ConnectingToSteam);
-                        using (var sessionCts = new CancellationTokenSource())
-                        {
-                            sessionCts.CancelAfter(PicsSessionEnsureTimeout);
-                            bool sessionReady = await _steamProductInfo.TryEnsureSessionAsync(sessionCts.Token)
-                                .ConfigureAwait(false);
-                            if (!sessionReady)
-                            {
-                                Program.LogService?.LogWarning(
-                                    $"Steam session not ready for app {appId} after {(int)PicsSessionEnsureTimeout.TotalSeconds}s.");
-                                fb?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
-                                return (null, null, PicsMetadataFailure.TimedOut);
-                            }
-                        }
-
-                        fb?.SetMessage("Fetching game assets...");
-                        using (var picsCts = new CancellationTokenSource())
-                        {
-                            picsCts.CancelAfter(PicsProductInfoTimeout);
-                            var picsHolder = new GameConfig { AppId = appId };
-                            picsRoot = await _steamProductInfo.WarmGameConfigAppPicsRootAsync(picsHolder, picsCts.Token)
-                                .ConfigureAwait(false);
-                        }
-                    }
-                }
-
-                if (picsRoot == null)
-                {
-                    fb?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
-                    return (null, null, PicsMetadataFailure.Unavailable);
-                }
-
-                var metadata = new OnlineAppData
-                {
-                    AppId = appId.ToString(),
-                    DataSources = "Steam (game assets)"
-                };
-                SteamPicsKeyValueHelper.PopulateMetadataFromAppRoot(picsRoot, metadata);
-                return (metadata, picsRoot, PicsMetadataFailure.None);
-            }
-            catch (OperationCanceledException)
-            {
-                Program.LogService?.LogWarning(
-                    $"Steam game assets timed out while fetching app {appId}.");
-                fb?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
-                return (null, null, PicsMetadataFailure.TimedOut);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Error fetching game assets metadata: {ex.Message}", ex);
-                fb?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
-                return (null, null, PicsMetadataFailure.Unavailable);
-            }
-        }
-
-        public async Task<Dictionary<long, string>> FetchDlcNamesAsync(
-            OnlineAppData metadata,
-            ITaskReportService feedbackService = null,
-            KeyValue picsAppRoot = null)
-        {
-            if (metadata == null)
-                return new Dictionary<long, string>();
-
-            try
-            {
-                DlcService dlcService = feedbackService != null
-                    ? new DlcService(_steamProductInfo, null, feedbackService)
-                    : _dlcService;
-
-                return await dlcService.GetDlcDataAsync(metadata.AppId, picsAppRoot: picsAppRoot).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Error fetching DLC names: {ex.Message}", ex);
-                return new Dictionary<long, string>();
-            }
+            AppDataKitMetadataResult result = await _appDataKitBridge
+                .FetchMetadataAsync(appId, null, fb)
+                .ConfigureAwait(false);
+            return result?.Metadata;
         }
 
         public async Task<GameSetupResult> SetupGameFromExecutable(string executablePath, IWin32Window owner = null, ITaskReportService feedbackService = null)
@@ -277,15 +165,20 @@ namespace SmartGoldbergEmu.Services
 
             OnlineAppData metadata = null;
             KeyValue picsRoot = null;
+            Dictionary<long, string> prefetchedDlc = null;
             if (appId > 0)
             {
                 feedbackService?.SetMessage(AddGameStatusMessages.LookingUpData(appId));
                 feedbackService?.SetProgress(0, 2);
-                // Suppress intermediate fetch chatter on the add-collect strip; keep LookingUpData until done.
+                // Add-collect: suppress intermediate chatter; still resolve DLC names via AppDataKit (steamcmd).
                 ITaskReportService metadataFeedback = restrictStatusToAddGameCollect ? null : feedbackService;
-                PicsMetadataFailure failure;
-                (metadata, picsRoot, failure) = await FetchPicsMetadataCoreAsync(appId, null, metadataFeedback)
+                AppDataKitMetadataResult fetch = await _appDataKitBridge
+                    .FetchMetadataAsync(appId, null, metadataFeedback, resolveDlcNames: true)
                     .ConfigureAwait(false);
+                metadata = fetch?.Metadata;
+                picsRoot = fetch?.AppRoot;
+                prefetchedDlc = fetch?.DlcData;
+                AppMetadataFetchFailure failure = fetch?.Failure ?? AppMetadataFetchFailure.Unavailable;
                 if (metadata == null)
                 {
                     Program.LogService?.LogWarning(
@@ -293,7 +186,7 @@ namespace SmartGoldbergEmu.Services
                     if (restrictStatusToAddGameCollect)
                     {
                         feedbackService?.SetMessage(
-                            failure == PicsMetadataFailure.TimedOut
+                            failure == AppMetadataFetchFailure.TimedOut
                                 ? AddGameStatusMessages.MetadataFetchTimedOut
                                 : AddGameStatusMessages.MetadataFetchFailed,
                             TaskReportKind.Error);
@@ -319,6 +212,7 @@ namespace SmartGoldbergEmu.Services
                 GameName = gameName,
                 Metadata = metadata,
                 AppPicsKeyValue = picsRoot,
+                PreFetchedDlcData = prefetchedDlc,
                 Cancelled = false
             };
         }
@@ -329,7 +223,11 @@ namespace SmartGoldbergEmu.Services
                 return null;
 
             ITaskReportService fb = feedbackService ?? _taskReportService;
-            var (metadata, picsRoot) = await FetchMetadataAndPicsAsync(game.AppId, null, fb).ConfigureAwait(false);
+            AppDataKitMetadataResult fetch = await _appDataKitBridge
+                .FetchMetadataAsync(game.AppId, game.AppPicsKeyValue, fb)
+                .ConfigureAwait(false);
+            OnlineAppData metadata = fetch?.Metadata;
+            KeyValue picsRoot = fetch?.AppRoot;
             game.AppPicsKeyValue = picsRoot;
 
             if (metadata != null && !string.IsNullOrEmpty(metadata.Name))
@@ -337,8 +235,7 @@ namespace SmartGoldbergEmu.Services
 
             if (game.AppId != 0)
             {
-                var metadataForDlc = metadata ?? new OnlineAppData { AppId = game.AppId.ToString() };
-                game.PreFetchedDlcData = await FetchDlcNamesAsync(metadataForDlc, fb, picsRoot).ConfigureAwait(false);
+                game.PreFetchedDlcData = fetch?.DlcData ?? new Dictionary<long, string>();
                 game.DlcCheckPerformed = true;
             }
 
@@ -385,8 +282,16 @@ namespace SmartGoldbergEmu.Services
 
             if (fetchDlc && setupResult.AppId != 0)
             {
-                var metadataForDlc = setupResult.Metadata ?? new OnlineAppData { AppId = setupResult.AppId.ToString() };
-                gameConfig.PreFetchedDlcData = await FetchDlcNamesAsync(metadataForDlc, feedbackService, setupResult.AppPicsKeyValue).ConfigureAwait(false);
+                if (setupResult.PreFetchedDlcData != null)
+                {
+                    gameConfig.PreFetchedDlcData = setupResult.PreFetchedDlcData;
+                }
+                else
+                {
+                    gameConfig.PreFetchedDlcData = await _appDataKitBridge
+                        .FetchDlcAsync(setupResult.AppId, setupResult.AppPicsKeyValue)
+                        .ConfigureAwait(false);
+                }
                 gameConfig.DlcCheckPerformed = true;
             }
 

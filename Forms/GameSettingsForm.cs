@@ -35,7 +35,6 @@ namespace SmartGoldbergEmu.Forms
         private readonly GameDataService _gameDataService;
         private readonly EmulatorConfigService _emulatorConfigService;
         private readonly ThemeService _themeService;
-        private readonly DlcService _dlcService;
         private readonly GameSettingsSaveService _gameSettingsSaveService;
         private readonly GameSaveWriter _gameSaveWriter;
         private readonly Action _onSaveCompleted;
@@ -83,7 +82,6 @@ namespace SmartGoldbergEmu.Forms
             _gameDataService = gameDataService ?? ServiceLocator.GameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
             _emulatorConfigService = emulatorConfigService ?? ServiceLocator.EmulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
             _themeService = themeService ?? ServiceLocator.ThemeService ?? throw new ArgumentNullException(nameof(themeService));
-            _dlcService = dlcService ?? ServiceLocator.DlcService ?? throw new ArgumentNullException(nameof(dlcService));
             _taskReportService = feedbackService;
             _gameSettingsSaveService = gameSettingsSaveService ?? ServiceLocator.GameSettingsSaveService ?? throw new ArgumentNullException(nameof(gameSettingsSaveService));
             _gameSaveWriter = gameSaveWriter ?? ServiceLocator.GameSaveWriter ?? throw new ArgumentNullException(nameof(gameSaveWriter));
@@ -1015,10 +1013,9 @@ namespace SmartGoldbergEmu.Forms
                     ClearTextBox(txtDLCList);
                 }
 
-                var dlcData = await _dlcService.GetDlcDataAsync(
-                    _gameConfig.AppId.ToString(),
-                    existingDlcData: null,
-                    picsAppRoot: _gameConfig.AppPicsKeyValue);
+                var dlcData = await ServiceLocator.AppDataKitBridgeService
+                    .FetchDlcAsync(_gameConfig.AppId, _gameConfig.AppPicsKeyValue)
+                    .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
                     return;

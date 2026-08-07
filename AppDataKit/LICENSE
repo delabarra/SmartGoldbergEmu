@@ -1,0 +1,11 @@
+AppDataKit — in-repo app data fetch kit
+=======================================
+
+Vendored into SmartGoldbergEmu as an internal dependency (same pattern as
+JsonKit / SteamKit / ExtractKit / StubKit).
+
+Provides Steam app metadata via steamcmd.net, Store DLC name lookup, CDN asset
+URL candidates, and Steam Web API helpers for achievements, stats, and items.
+
+No third-party package dependency beyond .NET Framework (System.Net.Http,
+System.Web.Extensions).

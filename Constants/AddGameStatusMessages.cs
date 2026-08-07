@@ -9,16 +9,16 @@ namespace SmartGoldbergEmu.Constants
         public const int StatusAutoClearDelayMs = 3000;
 
         public static string LookingUpData(ulong appId) =>
-            $"Looking up data for {appId} in Steam Network";
+            $"Looking up data for {appId}…";
 
         public static string ConnectingToSteam =>
-            "Connecting to Steam Network...";
+            "Connecting to Steam…";
 
         public static string RetrievingData(string gameName) =>
-            $"Retrieving data for {gameName} from Steam Network";
+            $"Retrieving data for {gameName}…";
 
         public static string WaitingToPreview(string gameName) =>
-            $"Awaiting preview of {gameName} data...";
+            $"Awaiting preview of {gameName}…";
 
         public static string GeneratingGoldbergFiles(string gameName) =>
             $"Generating {gameName} files for Goldberg";

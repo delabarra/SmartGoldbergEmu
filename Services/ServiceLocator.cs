@@ -53,6 +53,7 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<LaunchSessionCleanupService> _launchSessionCleanupService = new Lazy<LaunchSessionCleanupService>();
         private static readonly Lazy<GameLaunchService> _gameLaunchService = new Lazy<GameLaunchService>();
         private static readonly Lazy<SteamProductInfoService> _steamProductInfoService = new Lazy<SteamProductInfoService>();
+        private static readonly Lazy<AppDataKitBridgeService> _appDataKitBridgeService = new Lazy<AppDataKitBridgeService>();
         private static readonly Lazy<GameSetupService> _gameSetupService = new Lazy<GameSetupService>();
         private static readonly Lazy<ThemeService> _themeService = new Lazy<ThemeService>();
         private static readonly Lazy<EmulatorConfigService> _emulatorConfigService = new Lazy<EmulatorConfigService>();
@@ -109,6 +110,8 @@ namespace SmartGoldbergEmu.Services
         public static ThemeService ThemeService => _themeService.Value;
 
         public static SteamProductInfoService SteamProductInfoService => _steamProductInfoService.Value;
+
+        public static AppDataKitBridgeService AppDataKitBridgeService => _appDataKitBridgeService.Value;
 
         public static EmulatorConfigService EmulatorConfigService => _emulatorConfigService.Value;
 

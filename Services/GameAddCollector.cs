@@ -13,16 +13,12 @@ namespace SmartGoldbergEmu.Services
     public class GameAddCollector
     {
         private readonly GameSetupService _gameSetupService;
-        private readonly DlcService _dlcService;
-        private readonly SteamProductInfoService _steamProductInfo;
         private readonly EmulatorConfigService _emulatorConfigService;
         private readonly SteamApiKeyService _steamApiKeyService;
 
         public GameAddCollector()
             : this(
                 ServiceLocator.GameSetupService,
-                ServiceLocator.DlcService,
-                ServiceLocator.SteamProductInfoService,
                 ServiceLocator.EmulatorConfigService,
                 ServiceLocator.SteamApiKeyService)
         {
@@ -30,14 +26,10 @@ namespace SmartGoldbergEmu.Services
 
         public GameAddCollector(
             GameSetupService gameSetupService,
-            DlcService dlcService,
-            SteamProductInfoService steamProductInfoService,
             EmulatorConfigService emulatorConfigService,
             SteamApiKeyService steamApiKeyService)
         {
             _gameSetupService = gameSetupService ?? throw new ArgumentNullException(nameof(gameSetupService));
-            _dlcService = dlcService ?? throw new ArgumentNullException(nameof(dlcService));
-            _steamProductInfo = steamProductInfoService ?? throw new ArgumentNullException(nameof(steamProductInfoService));
             _emulatorConfigService = emulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
             _steamApiKeyService = steamApiKeyService ?? throw new ArgumentNullException(nameof(steamApiKeyService));
         }
@@ -69,8 +61,6 @@ namespace SmartGoldbergEmu.Services
             string displayName = !string.IsNullOrEmpty(setupResult.Metadata?.Name)
                 ? setupResult.Metadata.Name
                 : setupResult.GameName;
-            taskReport?.SetMessage(AddGameStatusMessages.RetrievingData(displayName));
-            taskReport?.SetProgress(1, 2);
 
             GameConfig game = await _gameSetupService
                 .CreateGameConfigAsync(executablePath, setupResult, feedbackService: null, fetchDlc: false)
@@ -85,14 +75,8 @@ namespace SmartGoldbergEmu.Services
 
             if (game.AppId > 0)
             {
-                // IDs from parent PICS only during collect; per-DLC name PICS is slow (session-serialized).
-                game.PreFetchedDlcData = await _dlcService
-                    .GetDlcDataAsync(
-                        game.AppId.ToString(),
-                        picsAppRoot: game.AppPicsKeyValue,
-                        statusReport: null,
-                        resolveNames: false)
-                    .ConfigureAwait(false);
+                game.PreFetchedDlcData = setupResult.PreFetchedDlcData
+                    ?? new Dictionary<long, string>();
                 game.DlcCheckPerformed = true;
 
                 (AchievementPreviewKind kind, string previewJson) = await ServiceLocator.GoldbergArtifactService
@@ -109,7 +93,6 @@ namespace SmartGoldbergEmu.Services
                 }
             }
 
-            taskReport?.SetProgress(2, 2);
             taskReport?.SetMessage(AddGameStatusMessages.WaitingToPreview(displayName));
             taskReport?.SetProgress(0, 0);
 
