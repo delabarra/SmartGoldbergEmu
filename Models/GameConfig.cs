@@ -1,6 +1,6 @@
 using System;
 using System.Xml.Serialization;
-using SteamKit;
+using AppDataKit;
 
 namespace SmartGoldbergEmu.Models
 {
@@ -57,16 +57,20 @@ namespace SmartGoldbergEmu.Models
         public GoldbergLaunchMode LaunchMode { get; set; }
 
         /// <summary>
-        /// Runtime-only Steam app product info from PICS as <see cref="KeyValue"/> (not persisted).
+        /// Runtime-only Steam app product info as <see cref="AppInfoKeyValue"/> (not persisted).
         /// </summary>
         [XmlIgnore]
-        public KeyValue AppPicsKeyValue { get; set; }
+        public AppInfoKeyValue AppInfo { get; set; }
 
         /// <summary>
         /// Gets or sets runtime-only pre-fetched DLC data (not persisted).
         /// </summary>
         [XmlIgnore]
         public System.Collections.Generic.Dictionary<long, string> PreFetchedDlcData { get; set; }
+
+        // Kit-first catalog SoT for this app (resources/{appId}.json); not persisted here, loaded/saved via AppCatalogSnapshotStore.
+        [XmlIgnore]
+        public AppCatalogSnapshot Catalog { get; set; }
 
         /// <summary>
         /// Gets or sets runtime-only supported languages (not persisted).

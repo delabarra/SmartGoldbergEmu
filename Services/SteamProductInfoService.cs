@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
@@ -105,33 +106,32 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        // In-memory root, then on-disk VDF export (games/{appId}/resources/{appId}.vdf), then live Steam PICS.
-        public async Task<KeyValue> GetAppPicsRootOrFetchAsync(string appId, KeyValue picsAppRoot, CancellationToken ct = default)
+        // In-memory root, then catalog JSON (games/{appId}/resources/{appId}.json), then live Steam PICS (converted once).
+        public async Task<AppInfoKeyValue> GetAppInfoOrFetchAsync(string appId, AppInfoKeyValue existingAppInfo, CancellationToken ct = default)
         {
-            if (picsAppRoot != null)
-                return picsAppRoot;
+            if (existingAppInfo != null)
+                return existingAppInfo;
 
-            if (ulong.TryParse(appId, out ulong appIdNum) && appIdNum != 0)
+            if (ulong.TryParse(appId, out ulong appIdNum) && appIdNum != 0
+                && AppCatalogSnapshotStore.TryLoad(appIdNum, out AppCatalogSnapshot catalog)
+                && catalog.AppInfo != null)
             {
-                KeyValue cached = SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(
-                    PathConstants.GamesDirectory,
-                    appIdNum);
-                if (cached != null)
-                    return cached;
+                return catalog.AppInfo;
             }
 
-            return await GetAppKeyValueAsync(appId, ct).ConfigureAwait(false);
+            KeyValue kv = await GetAppKeyValueAsync(appId, ct).ConfigureAwait(false);
+            return AppDataKitBridgeService.ConvertFromSteamKit(kv);
         }
 
-        public async Task<KeyValue> WarmGameConfigAppPicsRootAsync(GameConfig game, CancellationToken ct = default)
+        public async Task<AppInfoKeyValue> WarmGameConfigAppInfoAsync(GameConfig game, CancellationToken ct = default)
         {
             if (game == null || game.AppId == 0)
                 return null;
             string appId = game.AppId.ToString();
-            KeyValue kv = await GetAppPicsRootOrFetchAsync(appId, game.AppPicsKeyValue, ct).ConfigureAwait(false);
-            if (kv != null)
-                game.AppPicsKeyValue = kv;
-            return game.AppPicsKeyValue;
+            AppInfoKeyValue info = await GetAppInfoOrFetchAsync(appId, game.AppInfo, ct).ConfigureAwait(false);
+            if (info != null)
+                game.AppInfo = info;
+            return game.AppInfo;
         }
 
         // Returns true when an anonymous Steam CM session is ready for PICS.
@@ -353,20 +353,20 @@ namespace SmartGoldbergEmu.Services
 
         public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, CancellationToken ct = default)
         {
-            KeyValue appRoot = await GetAppPicsRootOrFetchAsync(appId, null, ct).ConfigureAwait(false);
-            return await ExtractPackageDataForAppAsync(appId, appRoot, ct).ConfigureAwait(false);
+            AppInfoKeyValue appInfo = await GetAppInfoOrFetchAsync(appId, null, ct).ConfigureAwait(false);
+            return await ExtractPackageDataForAppAsync(appId, appInfo, ct).ConfigureAwait(false);
         }
 
-        // Uses an in-memory app PICS root when supplied to avoid a duplicate app product-info fetch.
-        public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, KeyValue existingAppRoot, CancellationToken ct = default)
+        // Uses an in-memory catalog app root when supplied to avoid a duplicate app product-info fetch.
+        public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, AppInfoKeyValue existingAppInfo, CancellationToken ct = default)
         {
             var result = new PackageExtractionResult();
             try
             {
-                if (existingAppRoot == null)
+                if (existingAppInfo == null)
                     return result;
 
-                List<uint> packageIds = CollectLinkedPackageIds(existingAppRoot);
+                List<uint> packageIds = CollectLinkedPackageIds(existingAppInfo);
                 int n = 0;
                 foreach (uint pkg in packageIds)
                 {
@@ -404,20 +404,20 @@ namespace SmartGoldbergEmu.Services
             return result;
         }
 
-        private static List<uint> CollectLinkedPackageIds(KeyValue appRoot)
+        private static List<uint> CollectLinkedPackageIds(AppInfoKeyValue appRoot)
         {
             var ids = new HashSet<uint>();
-            KeyValue target = SteamPicsKeyValueHelper.ResolveAppInfoTarget(appRoot) ?? appRoot;
+            AppInfoKeyValue target = AppInfoKeyValueHelper.ResolveAppInfoTarget(appRoot) ?? appRoot;
             CollectPackageSectionsRecursive(target, ids, 0);
             return ids.OrderBy(x => x).ToList();
         }
 
-        private static void CollectPackageSectionsRecursive(KeyValue node, HashSet<uint> ids, int depth)
+        private static void CollectPackageSectionsRecursive(AppInfoKeyValue node, HashSet<uint> ids, int depth)
         {
             if (node?.Children == null || depth > 28)
                 return;
 
-            foreach (KeyValue child in node.Children)
+            foreach (AppInfoKeyValue child in node.Children)
             {
                 if (child == null || string.IsNullOrEmpty(child.Name))
                     continue;
@@ -432,12 +432,12 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void AddNumericKeysAsPackageIds(KeyValue section, HashSet<uint> ids)
+        private static void AddNumericKeysAsPackageIds(AppInfoKeyValue section, HashSet<uint> ids)
         {
             if (section?.Children == null)
                 return;
 
-            foreach (KeyValue c in section.Children)
+            foreach (AppInfoKeyValue c in section.Children)
             {
                 if (c != null && uint.TryParse(c.Name, out uint pkg) && pkg > 0)
                     ids.Add(pkg);
@@ -800,21 +800,21 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        public bool ExportAppPicsToValveTextFile(string appId, KeyValue picsData)
+        public bool ExportAppPicsToValveTextFile(string appId, AppInfoKeyValue appInfo)
         {
-            if (string.IsNullOrEmpty(appId) || picsData == null)
+            if (string.IsNullOrEmpty(appId) || appInfo == null)
                 return false;
-            return ExportAppPicsToValveTextFile(appId, picsData, GetDefaultAppPicsExportFilePath(appId));
+            return ExportAppPicsToValveTextFile(appId, appInfo, GetDefaultAppPicsExportFilePath(appId));
         }
 
-        public bool ExportAppPicsToValveTextFile(string appId, KeyValue picsData, string outputPath)
+        public bool ExportAppPicsToValveTextFile(string appId, AppInfoKeyValue appInfo, string outputPath)
         {
             try
             {
-                if (string.IsNullOrEmpty(appId) || picsData == null || string.IsNullOrEmpty(outputPath))
+                if (string.IsNullOrEmpty(appId) || appInfo == null || string.IsNullOrEmpty(outputPath))
                     return false;
 
-                return ExportAppPicsToValveTextFileCore(appId, picsData, outputPath);
+                return ExportAppInfoToValveTextFileCore(appId, appInfo, outputPath);
             }
             catch (Exception ex)
             {
@@ -823,18 +823,18 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static bool ExportAppPicsToValveTextFileCore(string appId, KeyValue picsData, string outputPath)
+        private static bool ExportAppInfoToValveTextFileCore(string appId, AppInfoKeyValue appInfo, string outputPath)
         {
             try
             {
-                if (picsData == null)
+                if (appInfo == null)
                     return false;
 
                 string directory = Path.GetDirectoryName(outputPath);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                     Directory.CreateDirectory(directory);
 
-                string text = SerializeKeyValueAsValveText(picsData, appId);
+                string text = SerializeAppInfoAsValveText(appInfo, appId);
                 File.WriteAllText(outputPath, text, Utf8WithoutBom);
                 return true;
             }
@@ -845,7 +845,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static string SerializeKeyValueAsValveText(KeyValue node, string id)
+        private static string SerializeAppInfoAsValveText(AppInfoKeyValue node, string id)
         {
             if (node == null)
                 return string.Empty;
@@ -858,11 +858,11 @@ namespace SmartGoldbergEmu.Services
                 {
                     sb.AppendLine($"\"{EscapeValveTextString(id)}\"");
                     sb.AppendLine("{");
-                    foreach (KeyValue child in node.Children)
+                    foreach (AppInfoKeyValue child in node.Children)
                     {
                         if (child == null)
                             continue;
-                        string childText = SerializeKeyValueNodeAsValveText(child, child.Name, 1);
+                        string childText = SerializeAppInfoNodeAsValveText(child, child.Name, 1);
                         if (!string.IsNullOrEmpty(childText))
                             sb.Append(childText);
                     }
@@ -871,11 +871,11 @@ namespace SmartGoldbergEmu.Services
                 }
                 else
                 {
-                    foreach (KeyValue child in node.Children)
+                    foreach (AppInfoKeyValue child in node.Children)
                     {
                         if (child == null)
                             continue;
-                        string childText = SerializeKeyValueNodeAsValveText(child, child.Name, 0);
+                        string childText = SerializeAppInfoNodeAsValveText(child, child.Name, 0);
                         if (!string.IsNullOrEmpty(childText))
                             sb.Append(childText);
                     }
@@ -885,7 +885,7 @@ namespace SmartGoldbergEmu.Services
             return sb.ToString();
         }
 
-        private static string SerializeKeyValueNodeAsValveText(KeyValue node, string name, int indentLevel)
+        private static string SerializeAppInfoNodeAsValveText(AppInfoKeyValue node, string name, int indentLevel)
         {
             if (node == null)
                 return string.Empty;
@@ -898,11 +898,11 @@ namespace SmartGoldbergEmu.Services
                 sb.AppendLine($"{indent}\"{EscapeValveTextString(name)}\"");
                 sb.AppendLine($"{indent}{{");
 
-                foreach (KeyValue child in node.Children)
+                foreach (AppInfoKeyValue child in node.Children)
                 {
                     if (child == null)
                         continue;
-                    string childText = SerializeKeyValueNodeAsValveText(child, child.Name, indentLevel + 1);
+                    string childText = SerializeAppInfoNodeAsValveText(child, child.Name, indentLevel + 1);
                     if (!string.IsNullOrEmpty(childText))
                         sb.Append(childText);
                 }

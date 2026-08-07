@@ -138,4 +138,17 @@ namespace AppDataKit
         public AppInfoKeyValue AppInfo { get; set; }
         public string Error { get; set; }
     }
+
+    // Typed full catalog fetch result (replaces GetAllJsonNodesAsync Dictionary path).
+    public sealed class AppDataSectionsResult
+    {
+        public uint AppId { get; set; }
+        public DateTime FetchedAtUtc { get; set; }
+        public AppMetadataSection Metadata { get; set; }
+        public DlcSection Dlc { get; set; }
+        public GameAssetsSection Assets { get; set; }
+        public AchievementsSection Achievements { get; set; }
+        public StatsSection Stats { get; set; }
+        public ItemsSection Items { get; set; }
+    }
 }

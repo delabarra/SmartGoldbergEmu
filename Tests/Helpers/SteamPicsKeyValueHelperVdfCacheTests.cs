@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
@@ -13,12 +14,13 @@ namespace SmartGoldbergEmu.Tests.Helpers
     public sealed class SteamPicsKeyValueHelperVdfCacheTests
     {
         [Fact]
-        public void TryLoadExportedAppPicsFromValveFile_returns_null_when_file_missing()
+        public void AppCatalogSnapshotStore_TryLoad_returns_false_when_file_missing()
         {
-            string gamesDir = Path.Combine(Path.GetTempPath(), "sge-vdf-missing-" + Guid.NewGuid().ToString("N"));
+            string gamesDir = Path.Combine(Path.GetTempPath(), "sge-catalog-missing-" + Guid.NewGuid().ToString("N"));
             try
             {
-                Assert.Null(SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(gamesDir, 480));
+                Assert.False(AppCatalogSnapshotStore.TryLoad(480, out AppCatalogSnapshot snapshot, gamesDir));
+                Assert.Null(snapshot);
             }
             finally
             {
@@ -35,7 +37,7 @@ namespace SmartGoldbergEmu.Tests.Helpers
             {
                 AppId = appId,
                 AppName = "Offline test",
-                AppPicsKeyValue = BuildLaunchOptionPicsRoot()
+                AppInfo = BuildLaunchOptionAppInfoRoot()
             };
 
             using (var service = new SteamProductInfoService())
@@ -57,7 +59,7 @@ namespace SmartGoldbergEmu.Tests.Helpers
             string vdfPath = PathConstants.CombineGamesPerAppValveDataFilePath(gamesDir, appId.ToString());
             Directory.CreateDirectory(Path.GetDirectoryName(vdfPath));
 
-            KeyValue appInfoRoot = BuildLaunchOptionPicsRoot();
+            AppInfoKeyValue appInfoRoot = BuildLaunchOptionAppInfoRoot();
             using (var exportService = new SteamProductInfoService())
             {
                 Assert.True(exportService.ExportAppPicsToValveTextFile(appId.ToString(), appInfoRoot, vdfPath));
@@ -71,7 +73,7 @@ namespace SmartGoldbergEmu.Tests.Helpers
 
             try
             {
-                KeyValue loaded = SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(gamesDir, appId);
+                KeyValue loaded = KeyValue.ParseVdf(File.ReadAllBytes(vdfPath));
                 Assert.NotNull(loaded);
                 Assert.NotNull(loaded.Children);
                 Assert.NotEmpty(loaded.Children);
@@ -81,7 +83,7 @@ namespace SmartGoldbergEmu.Tests.Helpers
                 {
                     AppId = appId,
                     AppName = "Offline test",
-                    AppPicsKeyValue = loaded
+                    AppInfo = AppDataKitBridgeService.ConvertFromSteamKit(loaded)
                 };
 
                 using (var service = new SteamProductInfoService())
@@ -101,15 +103,15 @@ namespace SmartGoldbergEmu.Tests.Helpers
             }
         }
 
-        private static KeyValue BuildLaunchOptionPicsRoot()
+        private static AppInfoKeyValue BuildLaunchOptionAppInfoRoot()
         {
-            var appInfo = new KeyValue(SteamPicsKeyNames.AppInfo);
-            var common = new KeyValue(PathConstants.SteamAppsCommonDirectoryName);
-            var launch = new KeyValue(SteamPicsKeyNames.Launch);
-            var entry = new KeyValue("0");
-            entry.Children.Add(new KeyValue(SteamPicsKeyNames.Description, "Play Game"));
-            entry.Children.Add(new KeyValue(SteamPicsKeyNames.Executable, "game.exe"));
-            entry.Children.Add(new KeyValue(SteamPicsKeyNames.Type, "default"));
+            var appInfo = new AppInfoKeyValue(SteamPicsKeyNames.AppInfo);
+            var common = new AppInfoKeyValue(PathConstants.SteamAppsCommonDirectoryName);
+            var launch = new AppInfoKeyValue(SteamPicsKeyNames.Launch);
+            var entry = new AppInfoKeyValue("0");
+            entry.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Description, "Play Game"));
+            entry.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Executable, "game.exe"));
+            entry.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Type, "default"));
             launch.Children.Add(entry);
             common.Children.Add(launch);
             appInfo.Children.Add(common);

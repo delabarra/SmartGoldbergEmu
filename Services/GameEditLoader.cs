@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
@@ -64,6 +65,20 @@ namespace SmartGoldbergEmu.Services
             if (appConfig?.DlcData != null && appConfig.DlcData.Count > 0)
                 bundle.DlcData = appConfig.DlcData;
 
+            if (AppCatalogSnapshotStore.TryLoad(appId, out AppCatalogSnapshot catalog))
+            {
+                bundle.Catalog = catalog;
+                bundle.Game.Catalog = catalog;
+                bundle.Game.AppInfo = catalog.AppInfo;
+
+                Dictionary<long, string> catalogDlc = catalog.ToDlcDictionary();
+                if (catalogDlc.Count > 0)
+                {
+                    bundle.DlcData = catalogDlc;
+                    bundle.Game.PreFetchedDlcData = catalogDlc;
+                }
+            }
+
             LoadSidecars(appId, bundle.Sidecars);
             return bundle;
         }
@@ -105,7 +120,8 @@ namespace SmartGoldbergEmu.Services
                 PreFetchedDlcData = source.PreFetchedDlcData,
                 DlcCheckPerformed = source.DlcCheckPerformed,
                 SupportedLanguages = source.SupportedLanguages,
-                AppPicsKeyValue = source.AppPicsKeyValue
+                AppInfo = source.AppInfo,
+                Catalog = source.Catalog
             };
         }
     }

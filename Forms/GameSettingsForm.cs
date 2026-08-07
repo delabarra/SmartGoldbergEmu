@@ -16,7 +16,7 @@ using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 using SmartGoldbergEmu.Validation;
-using SteamKit;
+using AppDataKit;
 
 namespace SmartGoldbergEmu.Forms
 {
@@ -672,17 +672,20 @@ namespace SmartGoldbergEmu.Forms
         {
             try
             {
-                var fetchResult = await ServiceLocator.GameSetupService
-                    .FetchMetadataWithRootAsync(appId, _gameConfig?.AppPicsKeyValue)
+                if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
+                    return;
+
+                AppCatalogSnapshot snapshot = await ServiceLocator.AppDataKitBridgeService
+                    .FetchMetadataSnapshotAsync(appIdNum, _gameConfig?.AppInfo)
                     .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
                     return;
 
                 if (InvokeRequired)
-                    Invoke(new Action(() => ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.AppRoot)));
+                    Invoke(new Action(() => ApplyFetchedCatalogSnapshot(snapshot)));
                 else
-                    ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.AppRoot);
+                    ApplyFetchedCatalogSnapshot(snapshot);
             }
             catch (Exception ex)
             {
@@ -690,15 +693,29 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void ApplyFetchedAppMetadata(OnlineAppData metadata, KeyValue appRoot = null)
+        private void ApplyFetchedCatalogSnapshot(AppCatalogSnapshot snapshot)
+        {
+            if (IsDisposed || Disposing || snapshot == null)
+                return;
+
+            if (_gameConfig != null && snapshot.Failure == AppMetadataFetchFailure.None && snapshot.IsUsable)
+            {
+                _gameConfig.Catalog = snapshot;
+                _gameConfig.PreFetchedDlcData = snapshot.ToDlcDictionary();
+            }
+
+            ApplyFetchedAppMetadata(snapshot.Online, snapshot.AppInfo);
+        }
+
+        private void ApplyFetchedAppMetadata(OnlineAppData metadata, AppInfoKeyValue appInfo = null)
         {
             if (IsDisposed || Disposing)
                 return;
             if (metadata == null)
                 return;
 
-            if (appRoot != null && _gameConfig != null)
-                _gameConfig.AppPicsKeyValue = appRoot;
+            if (appInfo != null && _gameConfig != null)
+                _gameConfig.AppInfo = appInfo;
 
             if (_metadata == null)
                 _metadata = metadata;
@@ -728,7 +745,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (_metadata != null && !string.IsNullOrWhiteSpace(_metadata.InstallDir))
                 return _metadata.InstallDir.Trim();
-            if (_gameConfig?.AppPicsKeyValue != null && SteamPicsKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.AppPicsKeyValue, out string fromPics))
+            if (_gameConfig?.AppInfo != null && AppInfoKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.AppInfo, out string fromPics))
                 return fromPics;
             return null;
         }
@@ -1013,7 +1030,7 @@ namespace SmartGoldbergEmu.Forms
                 }
 
                 var dlcData = await ServiceLocator.AppDataKitBridgeService
-                    .FetchDlcAsync(_gameConfig.AppId, _gameConfig.AppPicsKeyValue)
+                    .FetchDlcAsync(_gameConfig.AppId)
                     .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
@@ -1032,6 +1049,14 @@ namespace SmartGoldbergEmu.Forms
                     foreach (var kvp in dlcData)
                     {
                         _gameConfig.PreFetchedDlcData[kvp.Key] = kvp.Value;
+                    }
+
+                    _gameConfig.Catalog?.ApplyDlcDictionary(_gameConfig.PreFetchedDlcData);
+
+                    if (_gameConfig.Catalog != null && _isEditMode
+                        && Directory.Exists(PathConstants.CombineGameFolder(PathConstants.GamesDirectory, _gameConfig.AppId.ToString())))
+                    {
+                        AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
                     }
 
                     // Populate DLC list textbox

@@ -606,6 +606,7 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowRunWithoutEmu.Click += OnRunWithoutEmu_Click;
             miCtxRowRemove.Click += OnRemoveGame_Click;
             miCtxRowProperties.Click += OnGameProperties_Click;
+            miCtxRowRefreshCatalog.Click += OnRefreshGameCatalogAndAssets_Click;
             miCtxRowGenAchievements.Click += OnGenerateAchievements_Click;
             miCtxRowGenItems.Click += OnGenerateItems_Click;
             miCtxRowOpenValveDataFile.Click += OnOpenValveDataFile_Click;
@@ -1418,6 +1419,35 @@ namespace SmartGoldbergEmu.Forms
                 if (!lastError.Contains("\\") && !lastError.Contains("/"))
                     userMessage = $"Failed to remove game: {lastError}";
                 FormMessageBoxHelper.ShowIfAlive(this, userMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async void OnRefreshGameCatalogAndAssets_Click(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing)
+                return;
+            if (!TryGetSelectedGameWithAppId(out GameConfig selectedGame))
+                return;
+
+            Program.LogService?.LogMessage($"Starting catalog and asset refresh for game: {selectedGame.AppName} (App ID: {selectedGame.AppId})");
+
+            try
+            {
+                var feedbackService = GetLocatorTaskReportOrNull();
+                await ServiceLocator.GoldbergArtifactService
+                    .RefreshGameCatalogAndAssetsAsync(selectedGame, feedbackService)
+                    .ConfigureAwait(true);
+
+                if (IsDisposed || Disposing)
+                    return;
+
+                NotifyAddSaveListChanged(selectedGame.GameGuid, reloadMosaic: true);
+                Program.LogService?.LogMessage("Catalog and asset refresh completed successfully");
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Failed to refresh game data and assets: {ex.Message}", ex);
+                FormMessageBoxHelper.ShowIfAlive(this, "Failed to refresh game data and assets. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

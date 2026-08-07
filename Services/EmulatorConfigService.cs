@@ -16,6 +16,7 @@ using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Validation;
+using SteamKit;
 
 namespace SmartGoldbergEmu.Services
 {
@@ -743,8 +744,8 @@ namespace SmartGoldbergEmu.Services
         {
             ulong appId = gameConfig.AppId;
             var steam = ServiceLocator.SteamProductInfoService;
-            await steam.WarmGameConfigAppPicsRootAsync(gameConfig, cancellationToken).ConfigureAwait(false);
-            var packageData = await steam.ExtractPackageDataForAppAsync(appId.ToString(), gameConfig.AppPicsKeyValue, cancellationToken).ConfigureAwait(false);
+            await steam.WarmGameConfigAppInfoAsync(gameConfig, cancellationToken).ConfigureAwait(false);
+            var packageData = await steam.ExtractPackageDataForAppAsync(appId.ToString(), gameConfig.AppInfo, cancellationToken).ConfigureAwait(false);
             ServiceLocator.LogService.LogDebug($"Package extraction (game assets) for app {appId}: Depots={packageData.Depots?.Count ?? 0}, Branches={packageData.Branches?.Count ?? 0}, AppIds={packageData.AppIds?.Count ?? 0}");
             return packageData;
         }
@@ -752,8 +753,21 @@ namespace SmartGoldbergEmu.Services
         private async Task<AppDataExtractionResult> ExtractAppDataWithAppPicsRootAsync(GameConfig gameConfig, CancellationToken cancellationToken)
         {
             ulong appId = gameConfig.AppId;
-            await ServiceLocator.SteamProductInfoService.WarmGameConfigAppPicsRootAsync(gameConfig, cancellationToken).ConfigureAwait(false);
-            return ServiceLocator.SteamProductInfoService.ExtractAppDataFromAppRoot(gameConfig.AppPicsKeyValue, appId.ToString());
+
+            // Catalog already carries depot ids parsed from Metadata.AppInfo — skip the PICS warm round-trip when no root is cached yet.
+            if (gameConfig.AppInfo == null && gameConfig.Catalog?.AppDepotIds != null && gameConfig.Catalog.AppDepotIds.Count > 0)
+            {
+                return new AppDataExtractionResult
+                {
+                    Depots = gameConfig.Catalog.AppDepotIds.Select(id => id.ToString()).ToList()
+                };
+            }
+
+            await ServiceLocator.SteamProductInfoService.WarmGameConfigAppInfoAsync(gameConfig, cancellationToken).ConfigureAwait(false);
+            // ExtractAppDataFromAppRoot still walks SteamKit KeyValue (stats/depots/leaderboards/achievements extraction is package-PICS-shaped);
+            // convert once at this boundary rather than migrating that large extractor.
+            KeyValue appRootForExtraction = AppDataKitBridgeService.ConvertToSteamKit(gameConfig.AppInfo);
+            return ServiceLocator.SteamProductInfoService.ExtractAppDataFromAppRoot(appRootForExtraction, appId.ToString());
         }
 
         public async Task<bool> TryEnsureStatsJsonAsync(GameConfig gameConfig, CancellationToken cancellationToken = default)

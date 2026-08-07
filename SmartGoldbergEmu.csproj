@@ -141,6 +141,7 @@
     <Compile Include="Models\GoldbergLaunchModeAvailability.cs" />
     <Compile Include="Models\CAchievement.cs" />
     <Compile Include="Models\GameConfig.cs" />
+    <Compile Include="Models\AppCatalogSnapshot.cs" />
     <Compile Include="Models\StubExecutableTarget.cs" />
     <Compile Include="Models\StubKitApplyOutcome.cs" />
     <Compile Include="Models\StubKitApplyResult.cs" />
@@ -227,6 +228,7 @@
     <Compile Include="Helpers\SteamInstallationPathHelper.cs" />
     <Compile Include="Helpers\SteamClientManifestHelper.cs" />
     <Compile Include="Helpers\SteamLanguageDisplayHelper.cs" />
+    <Compile Include="Helpers\AppInfoKeyValueHelper.cs" />
     <Compile Include="Helpers\SteamPicsKeyValueHelper.cs" />
     <Compile Include="Helpers\ListViewColumnHelper.cs" />
     <Compile Include="Helpers\LogRedactionHelper.cs" />
@@ -291,6 +293,7 @@
     <Compile Include="Services\UriProtocolRegistryService.cs" />
     <Compile Include="Services\UriProtocolService.cs" />
     <Compile Include="Services\AppDataKitBridgeService.cs" />
+    <Compile Include="Services\AppCatalogSnapshotStore.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
     <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
     <Compile Include="Services\StubKitFeedback.cs" />
@@ -301,7 +304,6 @@
     <Compile Include="AppDataKit\AppInfoJsonConverter.cs" />
     <Compile Include="AppDataKit\AppInfoKeyValue.cs" />
     <Compile Include="AppDataKit\AppSnapshotTypes.cs" />
-    <Compile Include="AppDataKit\CdnDirectoryClient.cs" />
     <Compile Include="AppDataKit\CdnTypes.cs" />
     <Compile Include="AppDataKit\DepotParser.cs" />
     <Compile Include="AppDataKit\DlcResolver.cs" />

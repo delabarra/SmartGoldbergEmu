@@ -104,7 +104,7 @@ namespace AppDataKit
             return SteamWebApiClient.FetchItemsAsync(appId, _options.SteamWebApiKey, _options, cancellationToken);
         }
 
-        public async Task<Dictionary<string, object>> GetAllJsonNodesAsync(uint appId, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task<AppDataSectionsResult> GetAllSectionsAsync(uint appId, CancellationToken cancellationToken = default(CancellationToken))
         {
             DateTime fetchedAtUtc = DateTime.UtcNow;
 
@@ -145,15 +145,17 @@ namespace AppDataKit
 
             ItemsSection items = await GetItemsAsync(appId, cancellationToken).ConfigureAwait(false);
 
-            return AppDataJson.BuildNodes(
-                appId,
-                fetchedAtUtc,
-                metadata,
-                dlc,
-                gameAssets,
-                schemaSections.Item1,
-                schemaSections.Item2,
-                items);
+            return new AppDataSectionsResult
+            {
+                AppId = appId,
+                FetchedAtUtc = fetchedAtUtc,
+                Metadata = metadata,
+                Dlc = dlc,
+                Assets = gameAssets,
+                Achievements = schemaSections.Item1,
+                Stats = schemaSections.Item2,
+                Items = items
+            };
         }
 
         private async Task<AppMetadataSection> FetchMetadataSectionAsync(uint appId, CancellationToken cancellationToken)

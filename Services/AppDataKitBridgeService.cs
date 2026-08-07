@@ -11,23 +11,7 @@ using SteamKit;
 
 namespace SmartGoldbergEmu.Services
 {
-    public enum AppMetadataFetchFailure
-    {
-        None,
-        TimedOut,
-        Unavailable
-    }
-
-    public sealed class AppDataKitMetadataResult
-    {
-        public OnlineAppData Metadata { get; set; }
-        public KeyValue AppRoot { get; set; }
-        public Dictionary<long, string> DlcData { get; set; }
-        public bool FromAppDataKit { get; set; }
-        public AppMetadataFetchFailure Failure { get; set; }
-    }
-
-    // AppDataKit-first metadata/DLC; disk VDF then SteamKit PICS only when steamcmd is unusable.
+    // AppDataKit-first catalog; SteamKit PICS recovery only when steamcmd is unusable (never VDF).
     public sealed class AppDataKitBridgeService
     {
         private static readonly TimeSpan PicsSessionEnsureTimeout = TimeSpan.FromSeconds(50);
@@ -47,19 +31,86 @@ namespace SmartGoldbergEmu.Services
             _steamProductInfo = steamProductInfo ?? throw new ArgumentNullException(nameof(steamProductInfo));
         }
 
-        public async Task<AppDataKitMetadataResult> FetchMetadataAsync(
+        // Live full catalog (add-game collect + Goldberg refresh). Always network; SteamKit recovery only.
+        public async Task<AppCatalogSnapshot> FetchFullSnapshotAsync(
             ulong appId,
-            KeyValue existingAppRoot = null,
+            ITaskReportService feedback = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (appId == 0 || appId > uint.MaxValue)
+            {
+                return new AppCatalogSnapshot
+                {
+                    Failure = AppMetadataFetchFailure.Unavailable
+                };
+            }
+
+            uint id = (uint)appId;
+            AppDataKit.AppDataService kit = CreateKit(language: null, httpTimeout: TimeSpan.FromSeconds(120));
+
+            try
+            {
+                AppDataSectionsResult sections = await kit.GetAllSectionsAsync(id, cancellationToken).ConfigureAwait(false);
+                AppCatalogSnapshot snapshot = AppCatalogSnapshotStore.FinalizeSnapshot(
+                    id,
+                    sections.FetchedAtUtc,
+                    sections.Metadata,
+                    sections.Dlc,
+                    sections.Assets,
+                    sections.Achievements,
+                    sections.Stats,
+                    sections.Items,
+                    fromAppDataKit: true,
+                    AppMetadataFetchFailure.None);
+
+                if (snapshot != null && snapshot.IsUsable)
+                    return snapshot;
+
+                Program.LogService?.LogWarning(
+                    "AppDataKit full snapshot for app " + appId + " lacked a usable name; trying PICS recovery.");
+            }
+            catch (OperationCanceledException)
+            {
+                Program.LogService?.LogWarning("Full catalog fetch timed out for app " + appId + ".");
+                feedback?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
+                return new AppCatalogSnapshot { AppId = id, Failure = AppMetadataFetchFailure.TimedOut };
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError("AppDataKit full snapshot error for app " + appId + ": " + ex.Message, ex);
+            }
+
+            try
+            {
+                return await FetchFullViaPicsAsync(appId, kit, feedback, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                feedback?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
+                return new AppCatalogSnapshot { AppId = id, Failure = AppMetadataFetchFailure.TimedOut };
+            }
+            catch (Exception picsEx)
+            {
+                Program.LogService?.LogError("Steam PICS full snapshot recovery failed for app " + appId + ": " + picsEx.Message, picsEx);
+                feedback?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
+                return new AppCatalogSnapshot { AppId = id, Failure = AppMetadataFetchFailure.Unavailable };
+            }
+        }
+
+        // Live metadata (+ optional DLC names). Always network for kit path; optional in-memory root only as last non-PICS retry before PICS.
+        public async Task<AppCatalogSnapshot> FetchMetadataSnapshotAsync(
+            ulong appId,
+            AppInfoKeyValue existingAppInfo = null,
             ITaskReportService feedback = null,
             CancellationToken cancellationToken = default(CancellationToken),
             bool resolveDlcNames = true)
         {
             if (appId == 0 || appId > uint.MaxValue)
             {
-                return new AppDataKitMetadataResult
+                return new AppCatalogSnapshot
                 {
                     Failure = AppMetadataFetchFailure.Unavailable,
-                    AppRoot = existingAppRoot
+                    Metadata = existingAppInfo != null ? new AppMetadataSection { AppInfo = existingAppInfo } : null
                 };
             }
 
@@ -73,133 +124,112 @@ namespace SmartGoldbergEmu.Services
                     && (metaSection.Status == SnapshotSectionStatus.Ok || metaSection.Status == SnapshotSectionStatus.Partial)
                     && metaSection.AppInfo != null)
                 {
-                    KeyValue converted = ConvertToSteamKit(metaSection.AppInfo);
-                    OnlineAppData metadata = BuildMetadata(appId, converted, "SteamCmd");
-                    if (IsUsable(metadata))
+                    DlcSection dlcSection;
+                    if (resolveDlcNames)
                     {
-                        Dictionary<long, string> dlc = resolveDlcNames
-                            ? await MergeDlcNamesAsync(kit, metaSection.AppInfo, converted, cancellationToken)
-                                .ConfigureAwait(false)
-                            : CollectDlcIdsOnly(converted);
-                        return new AppDataKitMetadataResult
-                        {
-                            Metadata = metadata,
-                            AppRoot = converted,
-                            DlcData = dlc,
-                            FromAppDataKit = true,
-                            Failure = AppMetadataFetchFailure.None
-                        };
+                        Dictionary<long, string> dlcMap = await MergeDlcNamesAsync(kit, metaSection.AppInfo, cancellationToken)
+                            .ConfigureAwait(false);
+                        dlcSection = DlcSectionFromDictionary(dlcMap);
+                    }
+                    else
+                    {
+                        dlcSection = DlcSectionFromDictionary(CollectDlcIdsOnly(metaSection.AppInfo));
                     }
 
+                    AppCatalogSnapshot snapshot = AppCatalogSnapshotStore.FinalizeSnapshot(
+                        id,
+                        DateTime.UtcNow,
+                        metaSection,
+                        dlcSection,
+                        new GameAssetsSection { Status = SnapshotSectionStatus.Unavailable },
+                        new AchievementsSection { Status = SnapshotSectionStatus.Unavailable },
+                        new StatsSection { Status = SnapshotSectionStatus.Unavailable },
+                        new ItemsSection { Status = SnapshotSectionStatus.Unavailable },
+                        fromAppDataKit: true,
+                        AppMetadataFetchFailure.None);
+
+                    if (snapshot != null && snapshot.IsUsable)
+                        return snapshot;
+
                     Program.LogService?.LogWarning(
-                        "AppDataKit metadata for app " + appId + " lacked a usable name; trying cache/PICS.");
+                        "AppDataKit metadata for app " + appId + " lacked a usable name; trying PICS.");
                 }
                 else
                 {
                     string err = metaSection?.Error ?? "empty metadata";
                     Program.LogService?.LogWarning(
-                        "AppDataKit metadata unavailable for app " + appId + ": " + err + "; trying cache/PICS.");
+                        "AppDataKit metadata unavailable for app " + appId + ": " + err + "; trying PICS.");
                 }
             }
             catch (OperationCanceledException)
             {
                 Program.LogService?.LogWarning("App metadata timed out while fetching app " + appId + ".");
                 feedback?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
-                return new AppDataKitMetadataResult { Failure = AppMetadataFetchFailure.TimedOut };
+                return new AppCatalogSnapshot { AppId = id, Failure = AppMetadataFetchFailure.TimedOut };
             }
             catch (Exception ex)
             {
                 Program.LogService?.LogError("AppDataKit metadata error for app " + appId + ": " + ex.Message, ex);
             }
 
-            if (existingAppRoot != null)
+            // Session root only — never disk VDF. Used when a prior in-memory tree exists (e.g. same dialog).
+            if (existingAppInfo != null)
             {
-                OnlineAppData fromExisting = BuildMetadata(appId, existingAppRoot, "Cached app info");
+                OnlineAppData fromExisting = BuildMetadata(appId, existingAppInfo, "Cached app info");
                 if (IsUsable(fromExisting))
                 {
                     Dictionary<long, string> dlc = resolveDlcNames
-                        ? await ResolveDlcNamesForRootAsync(kit, existingAppRoot, cancellationToken).ConfigureAwait(false)
-                        : CollectDlcIdsOnly(existingAppRoot);
-                    return new AppDataKitMetadataResult
-                    {
-                        Metadata = fromExisting,
-                        AppRoot = existingAppRoot,
-                        DlcData = dlc,
-                        Failure = AppMetadataFetchFailure.None
-                    };
-                }
-            }
-
-            KeyValue diskRoot = SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(
-                PathConstants.GamesDirectory,
-                appId);
-            if (diskRoot != null)
-            {
-                OnlineAppData fromDisk = BuildMetadata(appId, diskRoot, "Cached app info");
-                if (IsUsable(fromDisk))
-                {
-                    Dictionary<long, string> dlc = resolveDlcNames
-                        ? await ResolveDlcNamesForRootAsync(kit, diskRoot, cancellationToken).ConfigureAwait(false)
-                        : CollectDlcIdsOnly(diskRoot);
-                    return new AppDataKitMetadataResult
-                    {
-                        Metadata = fromDisk,
-                        AppRoot = diskRoot,
-                        DlcData = dlc,
-                        Failure = AppMetadataFetchFailure.None
-                    };
+                        ? await ResolveDlcNamesForRootAsync(kit, existingAppInfo, cancellationToken).ConfigureAwait(false)
+                        : CollectDlcIdsOnly(existingAppInfo);
+                    return SnapshotFromAppInfo(id, existingAppInfo, dlc, fromAppDataKit: false);
                 }
             }
 
             try
             {
-                return await FetchViaPicsAsync(appId, kit, feedback, cancellationToken, resolveDlcNames)
+                return await FetchMetadataViaPicsAsync(appId, kit, feedback, cancellationToken, resolveDlcNames)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 feedback?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
-                return new AppDataKitMetadataResult { Failure = AppMetadataFetchFailure.TimedOut };
+                return new AppCatalogSnapshot { AppId = id, Failure = AppMetadataFetchFailure.TimedOut };
             }
             catch (Exception picsEx)
             {
                 Program.LogService?.LogError("Steam PICS fallback failed for app " + appId + ": " + picsEx.Message, picsEx);
                 feedback?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
-                return new AppDataKitMetadataResult { Failure = AppMetadataFetchFailure.Unavailable };
+                return new AppCatalogSnapshot { AppId = id, Failure = AppMetadataFetchFailure.Unavailable };
             }
         }
 
-        // DLC ids from app root; names: Store → steamcmd → PICS → "DLC {id}".
+        // Always live DLC path (fresh metadata + name resolve). Do not reuse stale session appinfo.
         public async Task<Dictionary<long, string>> FetchDlcAsync(
             ulong appId,
-            KeyValue appRoot = null,
             CancellationToken cancellationToken = default(CancellationToken))
         {
             if (appId == 0 || appId > uint.MaxValue)
                 return new Dictionary<long, string>();
 
             AppDataKit.AppDataService kit = CreateKit();
-            KeyValue root = appRoot;
-            AppInfoKeyValue kitInfo = null;
+            DlcSection section = await kit.GetDlcListAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+            var result = new Dictionary<long, string>();
+            ApplyResolvedDlcSection(section, result);
 
-            if (root == null)
+            if (result.Count == 0)
             {
                 AppMetadataSection meta = await kit.GetMetadataAsync((uint)appId, cancellationToken).ConfigureAwait(false);
-                if (meta?.AppInfo != null
-                    && (meta.Status == SnapshotSectionStatus.Ok || meta.Status == SnapshotSectionStatus.Partial))
+                if (meta?.AppInfo != null)
                 {
-                    kitInfo = meta.AppInfo;
-                    root = ConvertToSteamKit(meta.AppInfo);
+                    result = CollectDlcIdsOnly(meta.AppInfo);
+                    ApplyResolvedDlcSection(section, result);
+                    await FillUnresolvedViaPicsAsync(section, result, cancellationToken).ConfigureAwait(false);
+                    return result;
                 }
             }
 
-            if (root == null)
-                return new Dictionary<long, string>();
-
-            if (kitInfo != null)
-                return await MergeDlcNamesAsync(kit, kitInfo, root, cancellationToken).ConfigureAwait(false);
-
-            return await ResolveDlcNamesForRootAsync(kit, root, cancellationToken).ConfigureAwait(false);
+            await FillUnresolvedViaPicsAsync(section, result, cancellationToken).ConfigureAwait(false);
+            return result;
         }
 
         public async Task<AchievementsSection> FetchAchievementsAsync(
@@ -269,7 +299,53 @@ namespace SmartGoldbergEmu.Services
             });
         }
 
-        private async Task<AppDataKitMetadataResult> FetchViaPicsAsync(
+        private async Task<AppCatalogSnapshot> FetchFullViaPicsAsync(
+            ulong appId,
+            AppDataKit.AppDataService kit,
+            ITaskReportService feedback,
+            CancellationToken cancellationToken)
+        {
+            AppCatalogSnapshot metaSnap = await FetchMetadataViaPicsAsync(appId, kit, feedback, cancellationToken, resolveDlcNames: true)
+                .ConfigureAwait(false);
+            if (metaSnap == null || !metaSnap.IsUsable || metaSnap.AppInfo == null)
+                return metaSnap ?? new AppCatalogSnapshot { Failure = AppMetadataFetchFailure.Unavailable };
+
+            uint id = (uint)appId;
+            AppInfoKeyValue kitInfo = metaSnap.AppInfo;
+            if (metaSnap.Metadata == null)
+            {
+                metaSnap.Metadata = new AppMetadataSection
+                {
+                    Status = SnapshotSectionStatus.Ok,
+                    AppInfoSource = AppInfoSource.Pics,
+                    Source = "Pics",
+                    AppInfo = kitInfo
+                };
+            }
+
+            GameAssetsSection assets = await GameAssetParser.BuildAsync(kitInfo, id, new AppSnapshotOptions
+            {
+                ProbeAssetUrls = false
+            }, cancellationToken).ConfigureAwait(false);
+
+            AchievementsSection achievements = await kit.GetAchievementsAsync(id, cancellationToken).ConfigureAwait(false);
+            StatsSection stats = await kit.GetStatsAsync(id, cancellationToken).ConfigureAwait(false);
+            ItemsSection items = await kit.GetItemsAsync(id, cancellationToken).ConfigureAwait(false);
+
+            return AppCatalogSnapshotStore.FinalizeSnapshot(
+                id,
+                DateTime.UtcNow,
+                metaSnap.Metadata,
+                metaSnap.Dlc,
+                assets,
+                achievements,
+                stats,
+                items,
+                fromAppDataKit: false,
+                AppMetadataFetchFailure.None);
+        }
+
+        private async Task<AppCatalogSnapshot> FetchMetadataViaPicsAsync(
             ulong appId,
             AppDataKit.AppDataService kit,
             ITaskReportService feedback,
@@ -287,47 +363,65 @@ namespace SmartGoldbergEmu.Services
                         "Steam session not ready for app " + appId + " after "
                         + (int)PicsSessionEnsureTimeout.TotalSeconds + "s.");
                     feedback?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
-                    return new AppDataKitMetadataResult { Failure = AppMetadataFetchFailure.TimedOut };
+                    return new AppCatalogSnapshot { AppId = (uint)appId, Failure = AppMetadataFetchFailure.TimedOut };
                 }
             }
 
             feedback?.SetMessage(AddGameStatusMessages.LookingUpData(appId));
-            KeyValue picsRoot;
+            AppInfoKeyValue appInfo;
             using (var picsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
                 picsCts.CancelAfter(PicsProductInfoTimeout);
                 var holder = new GameConfig { AppId = appId };
-                picsRoot = await _steamProductInfo.WarmGameConfigAppPicsRootAsync(holder, picsCts.Token)
+                appInfo = await _steamProductInfo.WarmGameConfigAppInfoAsync(holder, picsCts.Token)
                     .ConfigureAwait(false);
             }
 
-            if (picsRoot == null)
+            if (appInfo == null)
             {
                 feedback?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
-                return new AppDataKitMetadataResult { Failure = AppMetadataFetchFailure.Unavailable };
+                return new AppCatalogSnapshot { AppId = (uint)appId, Failure = AppMetadataFetchFailure.Unavailable };
             }
 
-            OnlineAppData metadata = BuildMetadata(appId, picsRoot, "Steam (game assets)");
             Dictionary<long, string> dlc = resolveDlcNames
-                ? await ResolveDlcNamesForRootAsync(kit, picsRoot, cancellationToken).ConfigureAwait(false)
-                : CollectDlcIdsOnly(picsRoot);
-            return new AppDataKitMetadataResult
+                ? await ResolveDlcNamesForRootAsync(kit, appInfo, cancellationToken).ConfigureAwait(false)
+                : CollectDlcIdsOnly(appInfo);
+            return SnapshotFromAppInfo((uint)appId, appInfo, dlc, fromAppDataKit: false);
+        }
+
+        private static AppCatalogSnapshot SnapshotFromAppInfo(
+            uint appId,
+            AppInfoKeyValue appInfo,
+            Dictionary<long, string> dlc,
+            bool fromAppDataKit)
+        {
+            var meta = new AppMetadataSection
             {
-                Metadata = metadata,
-                AppRoot = picsRoot,
-                DlcData = dlc,
-                FromAppDataKit = false,
-                Failure = AppMetadataFetchFailure.None
+                Status = SnapshotSectionStatus.Ok,
+                AppInfoSource = fromAppDataKit ? AppInfoSource.SteamCmd : AppInfoSource.Pics,
+                Source = fromAppDataKit ? "SteamCmd" : "Pics",
+                AppInfo = appInfo
             };
+
+            return AppCatalogSnapshotStore.FinalizeSnapshot(
+                appId,
+                DateTime.UtcNow,
+                meta,
+                DlcSectionFromDictionary(dlc),
+                new GameAssetsSection { Status = SnapshotSectionStatus.Unavailable },
+                new AchievementsSection { Status = SnapshotSectionStatus.Unavailable },
+                new StatsSection { Status = SnapshotSectionStatus.Unavailable },
+                new ItemsSection { Status = SnapshotSectionStatus.Unavailable },
+                fromAppDataKit,
+                AppMetadataFetchFailure.None);
         }
 
         private async Task<Dictionary<long, string>> MergeDlcNamesAsync(
             AppDataKit.AppDataService kit,
             AppInfoKeyValue appInfo,
-            KeyValue convertedRoot,
             CancellationToken cancellationToken)
         {
-            var result = CollectDlcIdsOnly(convertedRoot);
+            var result = CollectDlcIdsOnly(appInfo);
             DlcSection section = null;
             try
             {
@@ -346,7 +440,7 @@ namespace SmartGoldbergEmu.Services
 
         private async Task<Dictionary<long, string>> ResolveDlcNamesForRootAsync(
             AppDataKit.AppDataService kit,
-            KeyValue root,
+            AppInfoKeyValue root,
             CancellationToken cancellationToken)
         {
             var result = CollectDlcIdsOnly(root);
@@ -376,7 +470,7 @@ namespace SmartGoldbergEmu.Services
             return result;
         }
 
-        // Last resort: Steam PICS product info for ids Store + steamcmd could not name.
+        // Package/live PICS remains SteamKit KeyValue: resolves names for DLC ids still missing after AppDataKit lookups.
         private async Task FillUnresolvedViaPicsAsync(
             DlcSection section,
             Dictionary<long, string> result,
@@ -469,10 +563,36 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static Dictionary<long, string> CollectDlcIdsOnly(KeyValue root)
+        private static DlcSection DlcSectionFromDictionary(Dictionary<long, string> dlc)
+        {
+            var section = new DlcSection { Status = SnapshotSectionStatus.Ok };
+            if (dlc == null || dlc.Count == 0)
+            {
+                section.Items = Array.Empty<DlcEntry>();
+                return section;
+            }
+
+            var items = new List<DlcEntry>(dlc.Count);
+            foreach (KeyValuePair<long, string> kvp in dlc)
+            {
+                if (kvp.Key <= 0 || kvp.Key > uint.MaxValue)
+                    continue;
+                items.Add(new DlcEntry
+                {
+                    AppId = (uint)kvp.Key,
+                    Name = string.IsNullOrWhiteSpace(kvp.Value) ? ("DLC " + kvp.Key) : kvp.Value.Trim(),
+                    Type = "dlc"
+                });
+            }
+
+            section.Items = items;
+            return section;
+        }
+
+        private static Dictionary<long, string> CollectDlcIdsOnly(AppInfoKeyValue root)
         {
             var ids = new List<long>();
-            SteamPicsKeyValueHelper.CollectDlcIdsFromAppRoot(root, ids);
+            AppInfoKeyValueHelper.CollectDlcIdsFromAppRoot(root, ids);
             var map = new Dictionary<long, string>();
             foreach (long id in ids)
             {
@@ -482,14 +602,14 @@ namespace SmartGoldbergEmu.Services
             return map;
         }
 
-        private static OnlineAppData BuildMetadata(ulong appId, KeyValue root, string dataSources)
+        private static OnlineAppData BuildMetadata(ulong appId, AppInfoKeyValue root, string dataSources)
         {
             var metadata = new OnlineAppData
             {
                 AppId = appId.ToString(),
                 DataSources = dataSources
             };
-            SteamPicsKeyValueHelper.PopulateMetadataFromAppRoot(root, metadata);
+            AppInfoKeyValueHelper.PopulateMetadataFromAppRoot(root, metadata);
             return metadata;
         }
 
@@ -498,6 +618,7 @@ namespace SmartGoldbergEmu.Services
             return metadata != null && !string.IsNullOrWhiteSpace(metadata.Name);
         }
 
+        // Package PICS boundary only (EmulatorConfigService.ExtractAppDataFromAppRoot edge; see 24-goldberg-launch-deploy.mdc).
         public static KeyValue ConvertToSteamKit(AppInfoKeyValue source)
         {
             if (source == null)
@@ -512,6 +633,26 @@ namespace SmartGoldbergEmu.Services
                 if (child == null)
                     continue;
                 target.Children.Add(ConvertToSteamKit(child));
+            }
+
+            return target;
+        }
+
+        // Converts a live PICS KeyValue root to the catalog SoT type — call once, then keep AppInfoKeyValue.
+        public static AppInfoKeyValue ConvertFromSteamKit(KeyValue source)
+        {
+            if (source == null)
+                return null;
+
+            var target = new AppInfoKeyValue(source.Name ?? string.Empty, source.Value ?? string.Empty);
+            if (source.Children == null)
+                return target;
+
+            foreach (KeyValue child in source.Children)
+            {
+                if (child == null)
+                    continue;
+                target.Children.Add(ConvertFromSteamKit(child));
             }
 
             return target;

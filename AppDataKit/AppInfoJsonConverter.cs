@@ -3,7 +3,8 @@ using System.Collections.Generic;
 
 namespace AppDataKit
 {
-    internal static class AppInfoJsonConverter
+    // JSON dictionary ↔ AppInfoKeyValue (steamcmd parse + catalog snapshot round-trip).
+    public static class AppInfoJsonConverter
     {
         public static AppInfoKeyValue ToKeyValue(object value)
         {

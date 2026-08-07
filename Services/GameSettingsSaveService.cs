@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
@@ -143,7 +144,7 @@ namespace SmartGoldbergEmu.Services
                     request.GameConfig.AppId,
                     request.Metadata,
                     request.TaskReportService,
-                    request.GameConfig.AppPicsKeyValue,
+                    request.GameConfig.AppInfo,
                     displayName).ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -245,7 +246,7 @@ namespace SmartGoldbergEmu.Services
             ulong appId,
             OnlineAppData metadata,
             ITaskReportService taskReport,
-            SteamKit.KeyValue appPicsData = null,
+            AppInfoKeyValue appPicsData = null,
             string gameDisplayName = null,
             bool reportFeedback = false)
         {
@@ -309,13 +310,27 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 string appIdText = gameConfig.AppId.ToString();
-                taskReport?.SetMessage("Fetching game assets...");
-                var picsData = await _steamProductInfoService.WarmGameConfigAppPicsRootAsync(gameConfig).ConfigureAwait(false);
+
+                // Already have a root from setup/edit load (AppInfo or the catalog snapshot) → skip the PICS re-warm.
+                AppInfoKeyValue picsData = gameConfig.AppInfo ?? gameConfig.Catalog?.AppInfo;
+                if (picsData != null)
+                {
+                    gameConfig.AppInfo = picsData;
+                }
+                else
+                {
+                    taskReport?.SetMessage("Fetching game assets...");
+                    picsData = await _steamProductInfoService.WarmGameConfigAppInfoAsync(gameConfig).ConfigureAwait(false);
+                }
+
                 if (picsData == null)
                 {
                     taskReport?.SetMessage("Game assets unavailable.", TaskReportKind.Warning);
                     return;
                 }
+
+                if (gameConfig.Catalog != null)
+                    AppCatalogSnapshotStore.TrySave(gameConfig.Catalog);
 
                 taskReport?.SetMessage("Exporting game assets...");
                 bool exported = _steamProductInfoService.ExportAppPicsToValveTextFile(appIdText, picsData);

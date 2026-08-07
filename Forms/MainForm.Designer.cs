@@ -102,6 +102,7 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowLauncherOptions = new System.Windows.Forms.ToolStripMenuItem();
             this.sepCtxRowBeforeEmulation = new System.Windows.Forms.ToolStripSeparator();
             this.miCtxRowEmulation = new System.Windows.Forms.ToolStripMenuItem();
+            this.miCtxRowRefreshCatalog = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowGenAchievements = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowGenItems = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowCreateSteamAppIdFile = new System.Windows.Forms.ToolStripMenuItem();
@@ -631,12 +632,19 @@ namespace SmartGoldbergEmu.Forms
             // miCtxRowEmulation
             // 
             this.miCtxRowEmulation.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.miCtxRowRefreshCatalog,
             this.miCtxRowGenAchievements,
             this.miCtxRowGenItems,
             this.miCtxRowCreateSteamAppIdFile});
             this.miCtxRowEmulation.Name = "miCtxRowEmulation";
             this.miCtxRowEmulation.Size = new System.Drawing.Size(203, 22);
             this.miCtxRowEmulation.Text = "Goldberg";
+            // 
+            // miCtxRowRefreshCatalog
+            // 
+            this.miCtxRowRefreshCatalog.Name = "miCtxRowRefreshCatalog";
+            this.miCtxRowRefreshCatalog.Size = new System.Drawing.Size(232, 22);
+            this.miCtxRowRefreshCatalog.Text = "Refresh game data and assets";
             // 
             // miCtxRowGenAchievements
             // 
@@ -891,6 +899,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ContextMenuStrip ctxGamesItem;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowProperties;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowRemove;
+        private System.Windows.Forms.ToolStripMenuItem miCtxRowRefreshCatalog;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowGenAchievements;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowGenItems;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowOpenExecutableFolder;

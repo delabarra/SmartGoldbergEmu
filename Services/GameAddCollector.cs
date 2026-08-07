@@ -70,6 +70,7 @@ namespace SmartGoldbergEmu.Services
             {
                 Game = game,
                 Metadata = setupResult.Metadata,
+                Catalog = setupResult.Catalog,
                 FormDefaults = _emulatorConfigService.LoadGameSettingsSnapshot(game.AppId, mergePerGameSteamSettings: false)
             };
 

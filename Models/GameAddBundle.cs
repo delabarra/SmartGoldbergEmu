@@ -9,6 +9,9 @@ namespace SmartGoldbergEmu.Models
 
         public OnlineAppData Metadata { get; set; }
 
+        // Kit-first catalog SoT captured during add-game collect (resources/{appId}.json shape).
+        public AppCatalogSnapshot Catalog { get; set; }
+
         /// <summary>Form defaults (global Goldberg merge; per-game steam_settings not loaded).</summary>
         public GameSettingsSnapshot FormDefaults { get; set; }
 

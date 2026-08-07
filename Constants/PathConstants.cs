@@ -312,6 +312,7 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamLibraryFoldersVdfPathKey = "path";
 
         public const string SteamProductInfoValveKeyValuesFileExtension = ".vdf";
+        public const string SteamProductInfoCatalogJsonFileExtension = ".json";
         public const string SteamApiRedistributableDllSearchPattern = "steam_api*.dll";
 
         // App backup sidecar beside steam_api / steam_api64 (our .bkp-style copy before swap or Goldberg deploy).
@@ -396,12 +397,20 @@ namespace SmartGoldbergEmu.Constants
             return Path.Combine(CombineGameFolder(gamesDirectoryRoot, appIdFolderName), GamesPerAppResourcesFolderName);
         }
 
-        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.vdf (PICS export written on game save)
+        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.vdf (write-only PICS export on game save)
         public static string CombineGamesPerAppValveDataFilePath(string gamesDirectoryRoot, string appIdFolderName)
         {
             return Path.Combine(
                 CombineGamesPerAppResourcesDirectory(gamesDirectoryRoot, appIdFolderName),
                 appIdFolderName + SteamProductInfoValveKeyValuesFileExtension);
+        }
+
+        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.json (catalog snapshot SoT; app never reads VDF)
+        public static string CombineGamesPerAppCatalogJsonFilePath(string gamesDirectoryRoot, string appIdFolderName)
+        {
+            return Path.Combine(
+                CombineGamesPerAppResourcesDirectory(gamesDirectoryRoot, appIdFolderName),
+                appIdFolderName + SteamProductInfoCatalogJsonFileExtension);
         }
 
         public static string GetSteamGameResourcesClientIconFileName(ulong appId)
