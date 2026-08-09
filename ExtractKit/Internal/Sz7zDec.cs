@@ -1,3 +1,5 @@
+using System;
+
 namespace SmartGoldbergEmu.ExtractKit.Internal
 {
     internal static class Sz7zDec
@@ -16,8 +18,16 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
         private const uint KArm64 = 0xa;
         private const uint KArmt = 0x3030701;
 
-        private static int DecodeLzma(byte[] props, int propsOffset, int propsSize, ulong inSize,
-            ILookInStream inStream, byte[] outBuffer, int outSize, ISzAlloc allocMain)
+        private static int DecodeLzma(
+            byte[] props,
+            int propsOffset,
+            int propsSize,
+            ulong inSize,
+            ILookInStream inStream,
+            byte[] outBuffer,
+            int outSize,
+            ISzAlloc allocMain,
+            Action<long, long> decodeProgress)
         {
             CLzmaDec state = new CLzmaDec();
             state.Construct();
@@ -28,6 +38,11 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             state.Dic = outBuffer;
             state.DicBufSize = outSize;
             LzmaDec.Init(state);
+
+            int lastReported = -1;
+            int reportStep = Math.Max(256 * 1024, outSize / 100);
+            if (reportStep < 1)
+                reportStep = 1;
 
             while (true)
             {
@@ -49,6 +64,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 inSize -= (ulong)inProcessed;
                 if (res != SzRes.Ok)
                     break;
+
+                ReportDecodeProgress(decodeProgress, state.DicPos, outSize, ref lastReported, reportStep);
 
                 if (status == ELzmaStatus.LzmaStatusFinishedWithMark)
                 {
@@ -72,12 +89,23 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                     break;
             }
 
+            if (res == SzRes.Ok)
+                ReportDecodeProgress(decodeProgress, outSize, outSize, ref lastReported, reportStep);
+
             LzmaDec.FreeProbs(state, allocMain);
             return res;
         }
 
-        private static int DecodeLzma2(byte[] props, int propsOffset, int propsSize, ulong inSize,
-            ILookInStream inStream, byte[] outBuffer, int outSize, ISzAlloc allocMain)
+        private static int DecodeLzma2(
+            byte[] props,
+            int propsOffset,
+            int propsSize,
+            ulong inSize,
+            ILookInStream inStream,
+            byte[] outBuffer,
+            int outSize,
+            ISzAlloc allocMain,
+            Action<long, long> decodeProgress)
         {
             CLzma2Dec state = new CLzma2Dec();
             state.Construct();
@@ -90,6 +118,11 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             state.Decoder.Dic = outBuffer;
             state.Decoder.DicBufSize = outSize;
             Lzma2Dec.Init(state);
+
+            int lastReported = -1;
+            int reportStep = Math.Max(256 * 1024, outSize / 100);
+            if (reportStep < 1)
+                reportStep = 1;
 
             while (true)
             {
@@ -112,6 +145,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 if (res != SzRes.Ok)
                     break;
 
+                ReportDecodeProgress(decodeProgress, state.Decoder.DicPos, outSize, ref lastReported, reportStep);
+
                 if (status == ELzmaStatus.LzmaStatusFinishedWithMark)
                 {
                     if (outSize != state.Decoder.DicPos || inSize != 0)
@@ -130,8 +165,27 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                     break;
             }
 
+            if (res == SzRes.Ok)
+                ReportDecodeProgress(decodeProgress, outSize, outSize, ref lastReported, reportStep);
+
             Lzma2Dec.FreeProbs(state, allocMain);
             return res;
+        }
+
+        private static void ReportDecodeProgress(
+            Action<long, long> decodeProgress,
+            int decodedBytes,
+            int totalBytes,
+            ref int lastReported,
+            int reportStep)
+        {
+            if (decodeProgress == null || totalBytes <= 0)
+                return;
+            if (decodedBytes < totalBytes && lastReported >= 0 && decodedBytes - lastReported < reportStep)
+                return;
+
+            lastReported = decodedBytes;
+            decodeProgress(decodedBytes, totalBytes);
         }
 
         private static int DecodeCopy(ulong inSize, ILookInStream inStream, byte[] outBuffer, int outOffset)
@@ -236,9 +290,21 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             return SzRes.ErrorUnsupported;
         }
 
-        private static int FolderDecode2(CSzFolder folder, byte[] propsData, int propsDataOffset, ulong[] unpackSizes,
-            int unpackIndex, ulong[] packPositions, int packIndex, ILookInStream inStream, ulong startPos,
-            byte[] outBuffer, int outSize, ISzAlloc allocMain, byte[][] tempBuf)
+        private static int FolderDecode2(
+            CSzFolder folder,
+            byte[] propsData,
+            int propsDataOffset,
+            ulong[] unpackSizes,
+            int unpackIndex,
+            ulong[] packPositions,
+            int packIndex,
+            ILookInStream inStream,
+            ulong startPos,
+            byte[] outBuffer,
+            int outSize,
+            ISzAlloc allocMain,
+            byte[][] tempBuf,
+            Action<long, long> decodeProgress)
         {
             int res = CheckSupportedFolder(folder);
             if (res != SzRes.Ok)
@@ -303,21 +369,27 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                     if (res != SzRes.Ok)
                         return res;
 
+                    // Progress only for the stream that fills the folder output buffer.
+                    Action<long, long> streamProgress =
+                        object.ReferenceEquals(outBufCur, outBuffer) ? decodeProgress : null;
+
                     if (coder.MethodId == KCopy)
                     {
                         if (packInSize != (ulong)outSizeCur)
                             return SzRes.ErrorData;
                         res = DecodeCopy(packInSize, inStream, outBufCur, outOffsetCur);
+                        if (res == SzRes.Ok && streamProgress != null)
+                            streamProgress(outSizeCur, outSize);
                     }
                     else if (coder.MethodId == KLzma)
                     {
                         res = DecodeLzma(propsData, coderPropsOffset, coder.PropsSize, packInSize,
-                            inStream, outBufCur, outSizeCur, allocMain);
+                            inStream, outBufCur, outSizeCur, allocMain, streamProgress);
                     }
                     else if (coder.MethodId == KLzma2)
                     {
                         res = DecodeLzma2(propsData, coderPropsOffset, coder.PropsSize, packInSize,
-                            inStream, outBufCur, outSizeCur, allocMain);
+                            inStream, outBufCur, outSizeCur, allocMain, streamProgress);
                     }
                     else
                     {
@@ -469,8 +541,15 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             return SzRes.Ok;
         }
 
-        public static int SzAr_DecodeFolder(CSzAr p, uint folderIndex, ILookInStream inStream, ulong startPos,
-            byte[] outBuffer, int outSize, ISzAlloc allocMain)
+        public static int SzAr_DecodeFolder(
+            CSzAr p,
+            uint folderIndex,
+            ILookInStream inStream,
+            ulong startPos,
+            byte[] outBuffer,
+            int outSize,
+            ISzAlloc allocMain,
+            Action<long, long> decodeProgress = null)
         {
             CSzFolder folder = new CSzFolder();
             int dataOffset = p.FoCodersOffsets[folderIndex];
@@ -497,7 +576,7 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 res = FolderDecode2(folder, p.CodersData, dataOffset,
                     p.CoderUnpackSizes, (int)p.FoToCoderUnpackSizes[folderIndex],
                     p.PackPositions, (int)p.FoStartPackStreamIndex[folderIndex],
-                    inStream, startPos, outBuffer, outSize, allocMain, tempBuf);
+                    inStream, startPos, outBuffer, outSize, allocMain, tempBuf, decodeProgress);
 
                 if (res == SzRes.Ok && Sz7zBitArray.WithValsCheck(p.FolderCrcs, folderIndex))
                 {

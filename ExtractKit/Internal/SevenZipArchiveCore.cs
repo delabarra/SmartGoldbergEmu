@@ -100,11 +100,36 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             return Encoding.Unicode.GetString(ToByteArray(name), 0, charCount * 2);
         }
 
+        public long GetEntryUncompressedSize(int fileIndex)
+        {
+            EnsureOpen();
+            if (fileIndex < 0 || fileIndex >= (int)_archive.NumFiles)
+                throw new ArgumentOutOfRangeException(nameof(fileIndex));
+
+            ulong[] positions = _archive.UnpackPositions;
+            if (positions == null || fileIndex + 1 >= positions.Length)
+                return 0;
+
+            ulong start = positions[fileIndex];
+            ulong end = positions[fileIndex + 1];
+            if (end < start)
+                return 0;
+
+            ulong size = end - start;
+            return size > (ulong)long.MaxValue ? long.MaxValue : (long)size;
+        }
+
         // Decodes the folder that contains fileIndex (cached in blockCache across files that
         // share a folder) and returns the file's slice as [offset, offset + outSize) inside
         // blockCache.Buffer. The cache buffer and its size are left intact so the next file in
         // the same folder reuses the decoded block; callers must read the returned slice.
-        public int ExtractFile(int fileIndex, BlockCache blockCache, out int offset, out int outSize)
+        // decodeProgress(decodedBytes, folderUnpackBytes) fires while a solid folder is decoded.
+        public int ExtractFile(
+            int fileIndex,
+            BlockCache blockCache,
+            out int offset,
+            out int outSize,
+            Action<long, long> decodeProgress = null)
         {
             offset = 0;
             outSize = 0;
@@ -124,7 +149,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 out offset,
                 out outSize,
                 _allocMain,
-                _allocTemp);
+                _allocTemp,
+                decodeProgress);
 
             if (res != SzRes.Ok)
                 return res;

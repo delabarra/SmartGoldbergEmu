@@ -1,3 +1,5 @@
+using System;
+
 namespace SmartGoldbergEmu.ExtractKit.Internal
 {
     internal static class Sz7zArcIn
@@ -1906,7 +1908,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             out int offset,
             out int outSizeProcessed,
             ISzAlloc allocMain,
-            ISzAlloc allocTemp)
+            ISzAlloc allocTemp,
+            Action<long, long> decodeProgress = null)
         {
             uint folderIndex = p.FileToFolder[fileIndex];
             int res = SzRes.Ok;
@@ -1945,7 +1948,15 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 
                 if (res == SzRes.Ok)
                 {
-                    res = Sz7zDec.SzAr_DecodeFolder(p.Db, folderIndex, inStream, p.DataPos, tempBuf, unpackSize, allocTemp);
+                    res = Sz7zDec.SzAr_DecodeFolder(
+                        p.Db,
+                        folderIndex,
+                        inStream,
+                        p.DataPos,
+                        tempBuf,
+                        unpackSize,
+                        allocTemp,
+                        decodeProgress);
                 }
             }
 

@@ -55,7 +55,12 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             return _entriesByPath.TryGetValue(EntryPath.Normalize(entryPath), out entry);
         }
 
-        public void ExtractEntry(ArchiveEntry entry, string destinationDirectory, bool flatFileName)
+        // decodeProgress(decodedBytes, folderUnpackBytes) fires while a solid 7z folder is decoded.
+        public void ExtractEntry(
+            ArchiveEntry entry,
+            string destinationDirectory,
+            bool flatFileName,
+            Action<long, long> decodeProgress = null)
         {
             if (entry == null)
                 throw new ArgumentNullException(nameof(entry));
@@ -79,7 +84,7 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                     Directory.CreateDirectory(destDir);
             }
 
-            ExtractEntryCore(entry.Index, destPath, flatFileName);
+            ExtractEntryCore(entry.Index, destPath, flatFileName, decodeProgress);
         }
 
         public void Dispose()
@@ -121,7 +126,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 {
                     string path = EntryPath.Normalize(_sevenZip.GetEntryPath(i));
                     bool isDir = path.EndsWith("/", StringComparison.Ordinal);
-                    _entries.Add(new ArchiveEntry(i, path, isDir, 0));
+                    long size = isDir ? 0 : _sevenZip.GetEntryUncompressedSize(i);
+                    _entries.Add(new ArchiveEntry(i, path, isDir, size));
                 }
 
                 BuildEntryIndex();
@@ -134,7 +140,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             {
                 string path = EntryPath.Normalize(_zip.GetEntryPath(i));
                 bool isDir = path.EndsWith("/", StringComparison.Ordinal);
-                _entries.Add(new ArchiveEntry(i, path, isDir, 0));
+                long size = isDir ? 0 : _zip.GetEntryUncompressedSize(i);
+                _entries.Add(new ArchiveEntry(i, path, isDir, size));
             }
 
             BuildEntryIndex();
@@ -152,7 +159,7 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             }
         }
 
-        private void ExtractEntryCore(int index, string destPath, bool flatFileName)
+        private void ExtractEntryCore(int index, string destPath, bool flatFileName, Action<long, long> decodeProgress)
         {
             if (_format == ArchiveFormat.SevenZip)
             {
@@ -162,7 +169,7 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 
                 int offset;
                 int outSize;
-                int res = _sevenZip.ExtractFile(index, _blockCache, out offset, out outSize);
+                int res = _sevenZip.ExtractFile(index, _blockCache, out offset, out outSize, decodeProgress);
                 if (res != SzRes.Ok)
                     throw new ExtractKitException("7z extraction failed (code " + res + ").");
 

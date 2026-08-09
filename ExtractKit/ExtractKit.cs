@@ -13,14 +13,18 @@ namespace SmartGoldbergEmu.ExtractKit
             return ArchivePath.IsSupportedPath(path);
         }
 
-        public static void ExtractAll(string archivePath, string outputDirectory)
+        // progressCallback(completedBytes, totalBytes, currentEntryFileName) — optional.
+        public static void ExtractAll(
+            string archivePath,
+            string outputDirectory,
+            Action<long, long, string> progressCallback = null)
         {
             string path = ArchivePath.RequireSupportedArchive(archivePath, nameof(archivePath));
             if (string.IsNullOrWhiteSpace(outputDirectory))
                 throw new ArgumentException("Output directory is required.", nameof(outputDirectory));
 
             Directory.CreateDirectory(outputDirectory);
-            ArchiveExtractor.ExtractAll(path, outputDirectory);
+            ArchiveExtractor.ExtractAll(path, outputDirectory, progressCallback);
         }
 
         public static byte[] DecompressVzip(byte[] vzipData)

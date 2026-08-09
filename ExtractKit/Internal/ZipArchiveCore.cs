@@ -81,6 +81,15 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             _opened = false;
         }
 
+        public long GetEntryUncompressedSize(int index)
+        {
+            EnsureOpen();
+            if (index < 0 || index >= _entries.Length)
+                throw new ArgumentOutOfRangeException(nameof(index));
+
+            return _entries[index].UncompressedSize;
+        }
+
         public string GetEntryPath(int index)
         {
             EnsureOpen();

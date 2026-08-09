@@ -340,6 +340,7 @@
     <Compile Include="StubKit\VariantV20.cs" />
     <Compile Include="StubKit\VariantV21.cs" />
     <Compile Include="ExtractKit\ArchiveEntry.cs" />
+    <Compile Include="ExtractKit\ArchiveExtractProgress.cs" />
     <Compile Include="ExtractKit\ArchiveExtractSession.cs" />
     <Compile Include="ExtractKit\ArchiveExtractor.cs" />
     <Compile Include="ExtractKit\ArchiveFormatSniffer.cs" />

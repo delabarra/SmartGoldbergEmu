@@ -496,20 +496,21 @@ namespace SmartGoldbergEmu.Services
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
 
-                // Extract (55-87) — archive work off the UI thread
+                // Extract (50-87) — DLLs + user assets as one byte-progress phase
                 try
                 {
                     await Task.Run(() =>
                     {
+                        progressCallback?.Invoke("Opening archive...", 50);
                         using (var session = new ArchiveExtractSession(archivePath))
                         {
-                            progressCallback?.Invoke("Extracting Goldberg emulator files...", 55);
-                            ExtractGoldbergReleaseLayoutSync(session, tempGoldbergFolder, cancellationCheck);
-                            progressCallback?.Invoke("Emulator files extracted", 77);
-
-                            progressCallback?.Invoke("Extracting user assets...", 80);
-                            ExtractUserAssetsToTempSync(session, tempUserAssetsFolder, cancellationCheck);
-                            progressCallback?.Invoke("User assets extracted", 87);
+                            ExtractGoldbergArchiveToTempSync(
+                                session,
+                                tempGoldbergFolder,
+                                tempUserAssetsFolder,
+                                cancellationCheck,
+                                progressCallback);
+                            progressCallback?.Invoke("Emulator files extracted", 87);
                         }
                     }).ConfigureAwait(false);
                 }
@@ -833,94 +834,248 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void ExtractGoldbergReleaseLayoutSync(
+        private static void ExtractGoldbergArchiveToTempSync(
             ArchiveExtractSession session,
             string tempGoldbergRoot,
-            Func<bool> cancellationCheck = null)
+            string tempUserAssetsFolder,
+            Func<bool> cancellationCheck = null,
+            Action<string, int> progressCallback = null)
         {
-            foreach (GoldbergInstallLayout.GoldbergInstallFile file in GoldbergInstallLayout.GetReleaseInstallFiles())
+            const string extractStatus = "Extracting emulator files...";
+            const int progressStart = 55;
+            const int progressEnd = 87;
+
+            IReadOnlyList<GoldbergInstallLayout.GoldbergInstallFile> files = GoldbergInstallLayout.GetReleaseInstallFiles();
+            int fileCount = files.Count;
+            long[] fileSizes = new long[fileCount];
+            long totalBytes = 0;
+            for (int i = 0; i < fileCount; i++)
+            {
+                fileSizes[i] = ResolveInstallFileUncompressedSize(session, files[i]);
+                if (fileSizes[i] > 0)
+                    totalBytes += fileSizes[i];
+            }
+
+            string avatarArchivePath = ArchiveReleaseUserSettingsDir + PathConstants.GlobalAccountAvatarFileName;
+            string fontArchivePath = ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalFontsFolderName + "/"
+                + PathConstants.GoldbergGlobalDefaultOverlayFontFileName;
+
+            long avatarSize;
+            long fontSize;
+            if (!session.TryGetEntryUncompressedSize(avatarArchivePath, out avatarSize) || avatarSize < 0)
+                avatarSize = 0;
+            if (!session.TryGetEntryUncompressedSize(fontArchivePath, out fontSize) || fontSize < 0)
+                fontSize = 0;
+            totalBytes += avatarSize + fontSize;
+
+            bool useFileCount = totalBytes <= 0;
+            if (useFileCount)
+            {
+                for (int i = 0; i < fileCount; i++)
+                    fileSizes[i] = 1;
+                avatarSize = 1;
+                fontSize = 1;
+                totalBytes = fileCount + 2;
+            }
+
+            long completedBytes = 0;
+            for (int i = 0; i < fileCount; i++)
             {
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
 
-                string relativeDir = file.InstallRelativeDirectory;
-                string destinationFolder = string.IsNullOrEmpty(relativeDir)
-                    ? tempGoldbergRoot
-                    : Path.Combine(tempGoldbergRoot, relativeDir);
-                Directory.CreateDirectory(destinationFolder);
-                ExtractInstallFileSync(session, file, destinationFolder);
+                GoldbergInstallLayout.GoldbergInstallFile file = files[i];
+                long entryWeight = Math.Max(0, fileSizes[i]);
+                ExtractEntryWithByteProgress(
+                    progressCallback,
+                    extractStatus,
+                    progressStart,
+                    progressEnd,
+                    ref completedBytes,
+                    totalBytes,
+                    entryWeight,
+                    decodeProgress =>
+                    {
+                        string relativeDir = file.InstallRelativeDirectory;
+                        string destinationFolder = string.IsNullOrEmpty(relativeDir)
+                            ? tempGoldbergRoot
+                            : Path.Combine(tempGoldbergRoot, relativeDir);
+                        Directory.CreateDirectory(destinationFolder);
+                        ExtractInstallFileSync(session, file, destinationFolder, decodeProgress);
+                    });
             }
+
+            if (cancellationCheck?.Invoke() == true)
+                throw new UpdateException("Download cancelled by user");
+
+            Directory.CreateDirectory(tempUserAssetsFolder);
+            string tempSettingsFolder = Path.Combine(tempUserAssetsFolder, PathConstants.GoldbergGlobalSettingsFolderName);
+            Directory.CreateDirectory(tempSettingsFolder);
+
+            try
+            {
+                ExtractEntryWithByteProgress(
+                    progressCallback,
+                    extractStatus,
+                    progressStart,
+                    progressEnd,
+                    ref completedBytes,
+                    totalBytes,
+                    avatarSize,
+                    decodeProgress => session.TryExtractSingleFileFlat(avatarArchivePath, tempSettingsFolder, decodeProgress));
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning($"Optional avatar extraction failed: {ex.Message}");
+                completedBytes += Math.Max(0, avatarSize);
+            }
+
+            if (cancellationCheck?.Invoke() == true)
+                throw new UpdateException("Download cancelled by user");
+
+            try
+            {
+                string tempFontsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalFontsFolderName);
+                Directory.CreateDirectory(tempFontsPath);
+                ExtractEntryWithByteProgress(
+                    progressCallback,
+                    extractStatus,
+                    progressStart,
+                    progressEnd,
+                    ref completedBytes,
+                    totalBytes,
+                    fontSize,
+                    decodeProgress => session.TryExtractSingleFileFlat(fontArchivePath, tempFontsPath, decodeProgress));
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning($"Optional fonts extraction failed: {ex.Message}");
+                completedBytes += Math.Max(0, fontSize);
+            }
+
+            if (cancellationCheck?.Invoke() == true)
+                throw new UpdateException("Download cancelled by user");
+
+            ReportArchiveExtractByteProgress(progressCallback, extractStatus, completedBytes, totalBytes, progressStart, progressEnd);
+
+            // Fork-bundled WAVs are not extracted — EnsureGlobalConfigFilesExistAsync uses Steam client → CDN.
+        }
+
+        private static void ExtractEntryWithByteProgress(
+            Action<string, int> progressCallback,
+            string extractStatus,
+            int progressStart,
+            int progressEnd,
+            ref long completedBytes,
+            long totalBytes,
+            long entryWeight,
+            Action<Action<long, long>> extract)
+        {
+            if (entryWeight < 0)
+                entryWeight = 0;
+
+            long baseCompleted = completedBytes;
+            ReportArchiveExtractByteProgress(
+                progressCallback,
+                extractStatus,
+                baseCompleted,
+                totalBytes,
+                progressStart,
+                progressEnd);
+
+            Action<long, long> decodeProgress = null;
+            if (progressCallback != null && entryWeight > 0 && totalBytes > 0)
+            {
+                decodeProgress = (decoded, folderSize) =>
+                {
+                    long remaining = totalBytes - baseCompleted;
+                    long weight = entryWeight;
+                    if (folderSize > entryWeight && remaining > entryWeight)
+                        weight = Math.Min(remaining, folderSize);
+
+                    long partial = ScaleExtractBytes(weight, decoded, folderSize);
+                    ReportArchiveExtractByteProgress(
+                        progressCallback,
+                        extractStatus,
+                        baseCompleted + partial,
+                        totalBytes,
+                        progressStart,
+                        progressEnd);
+                };
+            }
+
+            extract(decodeProgress);
+            completedBytes = baseCompleted + entryWeight;
+            ReportArchiveExtractByteProgress(
+                progressCallback,
+                extractStatus,
+                completedBytes,
+                totalBytes,
+                progressStart,
+                progressEnd);
+        }
+
+        private static long ResolveInstallFileUncompressedSize(
+            ArchiveExtractSession session,
+            GoldbergInstallLayout.GoldbergInstallFile file)
+        {
+            foreach (string archivePathCandidate in GoldbergInstallLayout.GetArchivePathCandidates(file))
+            {
+                if (session.TryGetEntryUncompressedSize(archivePathCandidate, out long size) && size > 0)
+                    return size;
+            }
+
+            return 0;
+        }
+
+        private static long ScaleExtractBytes(long fileWeight, long decodedBytes, long folderUnpackBytes)
+        {
+            if (fileWeight <= 0)
+                return 0;
+            if (folderUnpackBytes <= 0)
+                return fileWeight;
+            if (decodedBytes >= folderUnpackBytes)
+                return fileWeight;
+
+            long partial = (long)(fileWeight * (decodedBytes / (double)folderUnpackBytes));
+            if (partial < 0)
+                return 0;
+            if (partial > fileWeight)
+                return fileWeight;
+            return partial;
+        }
+
+        private static void ReportArchiveExtractByteProgress(
+            Action<string, int> progressCallback,
+            string statusMessage,
+            long completedBytes,
+            long totalBytes,
+            int progressStart,
+            int progressEnd)
+        {
+            if (progressCallback == null)
+                return;
+
+            int percentage = ArchiveExtractProgress.MapToPercent(completedBytes, totalBytes, progressStart, progressEnd);
+            progressCallback(statusMessage, percentage);
         }
 
         private static void ExtractInstallFileSync(
             ArchiveExtractSession session,
             GoldbergInstallLayout.GoldbergInstallFile file,
-            string destinationFolder)
+            string destinationFolder,
+            Action<long, long> decodeProgress = null)
         {
             string destinationPath = Path.Combine(destinationFolder, file.FileName);
             foreach (string archivePathCandidate in GoldbergInstallLayout.GetArchivePathCandidates(file))
             {
-                session.TryExtractSingleFileFlat(archivePathCandidate, destinationFolder);
+                session.TryExtractSingleFileFlat(archivePathCandidate, destinationFolder, decodeProgress);
                 if (File.Exists(destinationPath))
                     return;
             }
 
             throw new UpdateException(
                 "Required Goldberg file was not found in the archive: " + file.FileName);
-        }
-
-        private static void ExtractUserAssetsToTempSync(ArchiveExtractSession session, string tempUserAssetsFolder, Func<bool> cancellationCheck = null)
-        {
-            // Check for cancellation
-            if (cancellationCheck?.Invoke() == true)
-            {
-                throw new UpdateException("Download cancelled by user");
-            }
-
-            Directory.CreateDirectory(tempUserAssetsFolder);
-            string tempSettingsFolder = Path.Combine(tempUserAssetsFolder, PathConstants.GoldbergGlobalSettingsFolderName);
-            Directory.CreateDirectory(tempSettingsFolder);
-
-            // Extract avatar to temp
-            try
-            {
-                string avatarPath = ArchiveReleaseUserSettingsDir + PathConstants.GlobalAccountAvatarFileName;
-                session.TryExtractSingleFileFlat(avatarPath, tempSettingsFolder);
-            }
-            catch (Exception ex)
-            {
-                // Avatar is optional - log but don't fail
-                ServiceLocator.LogService?.LogWarning($"Optional avatar extraction failed: {ex.Message}");
-            }
-
-            // Check for cancellation
-            if (cancellationCheck?.Invoke() == true)
-            {
-                throw new UpdateException("Download cancelled by user");
-            }
-
-            // Extract fonts to temp
-            try
-            {
-                string tempFontsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalFontsFolderName);
-                Directory.CreateDirectory(tempFontsPath);
-
-                string fontFile = ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalFontsFolderName + "/" + PathConstants.GoldbergGlobalDefaultOverlayFontFileName;
-                session.TryExtractSingleFileFlat(fontFile, tempFontsPath);
-            }
-            catch (Exception ex)
-            {
-                // Fonts are optional - log but don't fail
-                ServiceLocator.LogService?.LogWarning($"Optional fonts extraction failed: {ex.Message}");
-            }
-
-            // Check for cancellation
-            if (cancellationCheck?.Invoke() == true)
-            {
-                throw new UpdateException("Download cancelled by user");
-            }
-
-            // Fork-bundled WAVs are not extracted — EnsureGlobalConfigFilesExistAsync uses Steam client → CDN.
         }
 
         private static void DeleteGoldbergGenerateInterfacesInstallFolder()

@@ -18,18 +18,32 @@ namespace SmartGoldbergEmu.ExtractKit
             _reader = ArchiveReader.Open(path);
         }
 
+        public bool TryGetEntryUncompressedSize(string fileInArchive, out long size)
+        {
+            size = 0;
+            if (!_reader.TryGetEntry(fileInArchive, out ArchiveEntry entry) || entry.IsDirectory)
+                return false;
+
+            size = entry.Size;
+            return true;
+        }
+
         public void ExtractSingleFileFlat(string fileInArchive, string destinationFolder)
         {
             if (!TryExtractSingleFileFlat(fileInArchive, destinationFolder))
                 throw new FileNotFoundException("Archive entry was not found: " + fileInArchive);
         }
 
-        public bool TryExtractSingleFileFlat(string fileInArchive, string destinationFolder)
+        // decodeProgress(decodedBytes, folderUnpackBytes) fires while a solid 7z folder is decoded.
+        public bool TryExtractSingleFileFlat(
+            string fileInArchive,
+            string destinationFolder,
+            Action<long, long> decodeProgress = null)
         {
             if (!_reader.TryGetEntry(fileInArchive, out ArchiveEntry entry))
                 return false;
 
-            _reader.ExtractEntry(entry, destinationFolder, flatFileName: true);
+            _reader.ExtractEntry(entry, destinationFolder, flatFileName: true, decodeProgress);
             return true;
         }
 

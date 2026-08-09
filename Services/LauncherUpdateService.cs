@@ -179,10 +179,21 @@ namespace SmartGoldbergEmu.Services
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
 
-                progressCallback?.Invoke("Extracting update package...", 75);
+                const string extractStatus = "Extracting launcher files...";
+                progressCallback?.Invoke(extractStatus, 75);
                 await Task.Run(() =>
                 {
-                    global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractAll(archivePath, extractRoot);
+                    global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractAll(
+                        archivePath,
+                        extractRoot,
+                        (completedBytes, totalBytes, fileName) =>
+                        {
+                            if (progressCallback == null || totalBytes <= 0)
+                                return;
+
+                            int percentage = ArchiveExtractProgress.MapToPercent(completedBytes, totalBytes, 75, 89);
+                            progressCallback(extractStatus, percentage);
+                        });
                 }).ConfigureAwait(false);
 
                 if (cancellationCheck?.Invoke() == true)
