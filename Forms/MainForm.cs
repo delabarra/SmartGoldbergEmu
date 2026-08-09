@@ -1407,6 +1407,47 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
+        private void OnReinstallLauncher_Click(object sender, EventArgs e)
+        {
+            _ = OnReinstallLauncherAsync().ForgetFaults(Program.LogService, nameof(OnReinstallLauncherAsync));
+        }
+
+        private async Task OnReinstallLauncherAsync()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            var dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(this,
+                "This will download the latest SmartGoldbergEmu release and reinstall it.\n\n" +
+                "The application will close and restart. Your games folder, Goldberg files, and settings will be preserved.\n\n" +
+                "Proceed?",
+                "Reinstall",
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Question);
+
+            if (dialogResult != DialogResult.OK)
+                return;
+
+            Program.LogService?.LogMessage("Manual launcher reinstall triggered by user");
+            _taskReportService.SetMessage("Reinstalling launcher...");
+
+            try
+            {
+                await LauncherUpdateService.DownloadAndApplyWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Launcher reinstall failed: {ex.Message}", ex);
+                _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher reinstall", ex), TaskReportKind.Error);
+            }
+            finally
+            {
+                _taskReportService.SetMessage(string.Empty);
+            }
+        }
+
         private void OnExit_Click(object sender, EventArgs e)
         {
             this.Close();

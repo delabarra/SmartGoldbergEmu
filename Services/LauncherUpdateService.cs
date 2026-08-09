@@ -541,6 +541,23 @@ namespace SmartGoldbergEmu.Services
             return content;
         }
 
+        // Download latest release and apply even when already on that version (File → Launcher → Reinstall).
+        public static Task DownloadAndApplyWithUIAsync(ILogService logger, Control uiRoot)
+        {
+            if (logger == null)
+                throw new ArgumentNullException(nameof(logger));
+            if (uiRoot == null)
+                throw new ArgumentNullException(nameof(uiRoot));
+
+            // Re-resolve the latest release so reinstall works after a prior "up to date" check.
+            _downloadUrl = null;
+
+            return ControlInvokeAsyncHelper.InvokeAsync(uiRoot, async () =>
+            {
+                await RunDownloadAndApplyWithProgressFormAsync(logger).ConfigureAwait(true);
+            });
+        }
+
         private static async Task RunDownloadAndApplyWithProgressFormAsync(ILogService logger)
         {
             using (var progressForm = new ProgressForm())
