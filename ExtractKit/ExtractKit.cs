@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using SmartGoldbergEmu.ExtractKit.Internal;
 
@@ -30,6 +31,14 @@ namespace SmartGoldbergEmu.ExtractKit
         public static byte[] ExtractVzipEntry(byte[] vzipData, string entryPath)
         {
             return VZipArchive.ExtractEntry(vzipData, entryPath);
+        }
+
+        // Stream CDN packages from disk: decompress once, write named entries to destinations.
+        public static void ExtractVzipEntriesToFiles(
+            string vzipFilePath,
+            IReadOnlyList<KeyValuePair<string, string>> entryPathToDestFile)
+        {
+            VZipArchive.ExtractEntriesToFilesFromPath(vzipFilePath, entryPathToDestFile);
         }
     }
 }

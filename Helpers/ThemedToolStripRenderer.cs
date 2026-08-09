@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Models;
 
@@ -10,6 +11,16 @@ namespace SmartGoldbergEmu.Helpers
     /// </summary>
     internal class ThemedToolStripRenderer : ToolStripProfessionalRenderer
     {
+        // Invert RGB, keep alpha — stock check glyph stays the same shape, black becomes white.
+        private static readonly ColorMatrix InvertRgbColorMatrix = new ColorMatrix(new float[][]
+        {
+            new float[] { -1f, 0f, 0f, 0f, 0f },
+            new float[] { 0f, -1f, 0f, 0f, 0f },
+            new float[] { 0f, 0f, -1f, 0f, 0f },
+            new float[] { 0f, 0f, 0f, 1f, 0f },
+            new float[] { 1f, 1f, 1f, 0f, 1f }
+        });
+
         private readonly ThemeColors _colors;
         private readonly ThemeMode _themeMode;
 
@@ -40,6 +51,62 @@ namespace SmartGoldbergEmu.Helpers
         {
             e.ArrowColor = _colors.MenuForeground;
             base.OnRenderArrow(e);
+        }
+
+        // Keep the stock check glyph; invert its colors in dark mode so the tick stays visible.
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            if (_themeMode != ThemeMode.Dark)
+            {
+                base.OnRenderItemCheck(e);
+                return;
+            }
+
+            Rectangle imageRect = e.ImageRectangle;
+            Rectangle bounds = new Rectangle(imageRect.Left - 2, 1, imageRect.Width + 4, e.Item.Height - 2);
+
+            Color fill = e.Item.Selected ? ColorTable.CheckSelectedBackground : ColorTable.CheckBackground;
+            if (e.Item.Pressed)
+                fill = ColorTable.CheckPressedBackground;
+
+            using (var brush = new SolidBrush(fill))
+                e.Graphics.FillRectangle(brush, bounds);
+
+            using (var borderPen = new Pen(_colors.Border))
+                e.Graphics.DrawRectangle(borderPen, bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+
+            if (imageRect == Rectangle.Empty || e.Image == null)
+                return;
+
+            Image image = e.Image;
+            bool disposeImage = false;
+            if (!e.Item.Enabled)
+            {
+                image = CreateDisabledImage(e.Image);
+                disposeImage = true;
+            }
+
+            try
+            {
+                using (ImageAttributes attrs = new ImageAttributes())
+                {
+                    attrs.SetColorMatrix(InvertRgbColorMatrix);
+                    e.Graphics.DrawImage(
+                        image,
+                        imageRect,
+                        0,
+                        0,
+                        imageRect.Width,
+                        imageRect.Height,
+                        GraphicsUnit.Pixel,
+                        attrs);
+                }
+            }
+            finally
+            {
+                if (disposeImage)
+                    image.Dispose();
+            }
         }
     }
 

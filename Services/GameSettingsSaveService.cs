@@ -235,6 +235,10 @@ namespace SmartGoldbergEmu.Services
                     .ConfigureAwait(false);
                 if (!itemGenResult.Success && itemGenResult.ErrorMessage != "Skipped.")
                     Program.LogService?.LogMessage("Item definitions not created for new game: " + itemGenResult.ErrorMessage);
+
+                // Archive JSON is on disk in the catalog file / items.json; drop the in-memory copy.
+                if (request.GameConfig?.Catalog?.Items != null)
+                    request.GameConfig.Catalog.Items.ArchiveJson = null;
             }
             catch (Exception ex)
             {

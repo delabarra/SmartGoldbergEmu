@@ -84,6 +84,18 @@ namespace SmartGoldbergEmu.Models
         [XmlIgnore]
         public bool DlcCheckPerformed { get; set; }
 
+        // Drop in-memory Steam trees after they are written to disk / no longer needed by the UI row.
+        public void ReleaseHeavyRuntimeData()
+        {
+            if (Catalog?.Items != null)
+                Catalog.Items.ArchiveJson = null;
+
+            AppInfo = null;
+            Catalog = null;
+            PreFetchedDlcData = null;
+            SupportedLanguages = null;
+        }
+
         /// <summary>
         /// Initializes a new instance of the GameConfig class.
         /// </summary>

@@ -29,5 +29,15 @@ namespace SmartGoldbergEmu.Models
             ItemsJson = "{}";
             AchievementPreview = AchievementPreviewKind.NoApiKey;
         }
+
+        // Drop collect-time Steam trees and preview JSON once the dialog/save pipeline no longer needs them.
+        public void ReleaseHeavyRuntimeData()
+        {
+            AchievementsPreviewJson = null;
+            ItemsJson = null;
+            Metadata = null;
+            Catalog = null;
+            Game?.ReleaseHeavyRuntimeData();
+        }
     }
 }

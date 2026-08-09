@@ -30,5 +30,14 @@ namespace SmartGoldbergEmu.Models
             Sidecars = new GameEditSidecarContent();
             DlcData = new Dictionary<long, string>();
         }
+
+        public void ReleaseHeavyRuntimeData()
+        {
+            Catalog = null;
+            DlcData = null;
+            Sidecars = null;
+            SettingsSnapshot = null;
+            Game?.ReleaseHeavyRuntimeData();
+        }
     }
 }

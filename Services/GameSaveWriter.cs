@@ -91,6 +91,10 @@ namespace SmartGoldbergEmu.Services
             if (!assetsDownloaded)
                 TryRunCallback(request.OnAssetsDownloaded);
 
+            // Catalog/AppInfo are on disk (and list Tag is thin); drop the draft graphs so add/remove cycles do not retain them.
+            gameConfig.ReleaseHeavyRuntimeData();
+            formRequest.Metadata = null;
+
             return GameSettingsSaveResult.Success();
         }
 

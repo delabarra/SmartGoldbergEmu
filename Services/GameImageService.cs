@@ -124,32 +124,30 @@ namespace SmartGoldbergEmu.Services
                 var completed = 0;
                 var lockObj = new object();
 
-                async Task RunWithProgressAsync(Func<Task> work)
-                {
-                    await work().ConfigureAwait(false);
-                    if (_disposed || !reportFeedback)
-                        return;
-                    lock (lockObj)
+                await HttpHelpers.ForEachBoundedAsync(
+                    downloadRequests,
+                    HttpHelpers.DefaultMaxConcurrentDownloads,
+                    async request =>
                     {
-                        if (_disposed)
+                        await DownloadImageAsync(
+                            remoteAppId,
+                            gamePath,
+                            request.FileName,
+                            request.CandidateUrls).ConfigureAwait(false);
+
+                        if (_disposed || !reportFeedback)
                             return;
-                        completed++;
-                        Feedback?.SetProgress(completed, Math.Max(totalDownloads, 1));
-                        Feedback?.SetMessage($"Downloading assets... {completed}/{totalDownloads}");
-                    }
-                }
 
-                var tasks = new List<Task>(totalDownloads);
-                foreach (var request in downloadRequests)
-                {
-                    tasks.Add(RunWithProgressAsync(() => DownloadImageAsync(
-                        remoteAppId,
-                        gamePath,
-                        request.FileName,
-                        request.CandidateUrls)));
-                }
+                        lock (lockObj)
+                        {
+                            if (_disposed)
+                                return;
+                            completed++;
+                            Feedback?.SetProgress(completed, Math.Max(totalDownloads, 1));
+                            Feedback?.SetMessage($"Downloading assets... {completed}/{totalDownloads}");
+                        }
+                    }).ConfigureAwait(false);
 
-                await Task.WhenAll(tasks).ConfigureAwait(false);
                 return ApplyDownloadOutcomeFeedback(gamePath, totalDownloads, displayName, appId, reportFeedback && !_disposed);
             }
             catch (Exception ex)
@@ -638,26 +636,6 @@ namespace SmartGoldbergEmu.Services
             return IsBareImageFileName(normalized);
         }
 
-        private static bool IsBareImageFileName(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value)
-                || value.IndexOf('/') >= 0
-                || value.IndexOf('\\') >= 0)
-            {
-                return false;
-            }
-
-            var extension = Path.GetExtension(value);
-            if (string.IsNullOrEmpty(extension))
-                return false;
-
-            return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".gif", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".webp", StringComparison.OrdinalIgnoreCase);
-        }
-
         private static void CollectLogoHashDownloadRequests(
             List<AssetDownloadRequest> requests,
             AppInfoKeyValue picsData,
@@ -705,7 +683,39 @@ namespace SmartGoldbergEmu.Services
             if (slashIndex != 40 || slashIndex >= normalized.Length - 1)
                 return false;
 
-            return IsSha1HexHash(normalized.Substring(0, 40));
+            if (!IsSha1HexHash(normalized.Substring(0, 40)))
+                return false;
+
+            // Hashed store paths without an image extension are skipped (avoids downloading non-image blobs).
+            return HasImageFileExtension(normalized.Substring(slashIndex + 1));
+        }
+
+        private static bool HasImageFileExtension(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                return false;
+
+            var extension = Path.GetExtension(fileName);
+            if (string.IsNullOrEmpty(extension))
+                return false;
+
+            return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".gif", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".webp", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsBareImageFileName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)
+                || value.IndexOf('/') >= 0
+                || value.IndexOf('\\') >= 0)
+            {
+                return false;
+            }
+
+            return HasImageFileExtension(value);
         }
 
         private static List<string> CollectUniqueIconHashes(AppInfoKeyValue picsData)

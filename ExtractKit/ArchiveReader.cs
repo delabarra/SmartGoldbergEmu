@@ -87,7 +87,14 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             _sevenZip?.Close();
             _sevenZip = null;
             _zip = null;
-            _blockCache = null;
+            if (_blockCache != null)
+            {
+                // Drop solid-folder decode buffer so LOH can reclaim after Goldberg extract.
+                _blockCache.Buffer = null;
+                _blockCache.BufferSize = 0;
+                _blockCache.BlockIndex = uint.MaxValue;
+                _blockCache = null;
+            }
             _entries = null;
             _entriesByPath = null;
             if (_fileStream != null)

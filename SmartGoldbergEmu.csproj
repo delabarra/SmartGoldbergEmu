@@ -235,10 +235,12 @@
     <Compile Include="Helpers\MarkdownToRichTextHelper.cs" />
     <Compile Include="Helpers\MenuCheckMarkHelper.cs" />
     <Compile Include="Helpers\MosaicViewHelper.cs" />
+    <Compile Include="Helpers\ImageListOwnedImages.cs" />
     <Compile Include="Helpers\GameFolderPathHelper.cs" />
     <Compile Include="Helpers\PathValidationHelper.cs" />
     <Compile Include="Helpers\ShellFolderHelper.cs" />
     <Compile Include="Helpers\HttpHelpers.cs" />
+    <Compile Include="Helpers\LargeObjectHeapHelper.cs" />
     <Compile Include="Helpers\PlaceholderTextBoxHelper.cs" />
     <Compile Include="Helpers\ThemedToolStripRenderer.cs" />
     <Compile Include="Helpers\ThemedToolStripRendererFactory.cs" />

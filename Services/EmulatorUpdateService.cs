@@ -565,6 +565,8 @@ namespace SmartGoldbergEmu.Services
                 }).ConfigureAwait(false);
 
                 progressCallback?.Invoke("Installation complete!", 100);
+                // 7z solid-folder decode buffers are unreachable after session dispose; compact LOH so WS can drop (net48).
+                LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
             }
             catch (Exception ex)
             {
@@ -734,14 +736,15 @@ namespace SmartGoldbergEmu.Services
 
         private const string ArchiveReleaseUserSettingsDir = "release/files/settings/";
 
-        private static bool TryCopySteamUiSoundsTo(string targetSoundsPath, string logFallbackHint)
+        // Prefer local Steam WAVs; CDN fills gaps later in EnsureGlobalConfigFilesExistAsync.
+        private static bool TryCopySteamUiSoundsTo(string targetSoundsPath)
         {
-            if (SteamInstallationPathHelper.TryCopyOverlayNotificationSoundsFromSteam(targetSoundsPath))
-                return true;
+            if (!SteamInstallationPathHelper.TryCopyOverlayNotificationSoundsFromSteam(targetSoundsPath))
+                return false;
 
-            ServiceLocator.LogService?.LogWarning(
-                $"Steam overlay notification sounds were not copied ({logFallbackHint}); EnsureGlobalConfigFilesExistAsync will CDN-fallback.");
-            return false;
+            ServiceLocator.LogService?.LogMessage(
+                "Overlay notification sounds ready (source: Steam steamui\\sounds).");
+            return true;
         }
 
         private static ProcessStartInfo CreateDefenderMpPreferenceStartInfo(string path, bool add, ProcessWindowStyle? windowStyle = null)
@@ -994,7 +997,7 @@ namespace SmartGoldbergEmu.Services
                 }
 
                 Directory.CreateDirectory(PathConstants.GlobalSoundsPath);
-                TryCopySteamUiSoundsTo(PathConstants.GlobalSoundsPath, "EnsureGlobalConfigFilesExistAsync will CDN-fallback");
+                TryCopySteamUiSoundsTo(PathConstants.GlobalSoundsPath);
                 // Do not copy fork archive WAVs.
             }
             progressCallback?.Invoke("Files installed", 95);

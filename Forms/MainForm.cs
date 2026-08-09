@@ -37,6 +37,9 @@ namespace SmartGoldbergEmu.Forms
         private ImageList _tileImageList;
         private ImageList _compactTileImageList;
         private ImageList _logoImageList;
+        private readonly ImageListOwnedImages _tileOwnedImages = new ImageListOwnedImages();
+        private readonly ImageListOwnedImages _compactTileOwnedImages = new ImageListOwnedImages();
+        private readonly ImageListOwnedImages _logoOwnedImages = new ImageListOwnedImages();
         private ApiKeyStatusIndicatorHelper _apiKeyStatusIndicatorHelper;
         private UriFileWatcherHelper _uriFileWatcherHelper;
         private string _persistedDetailsColumnWidths;
@@ -248,6 +251,12 @@ namespace SmartGoldbergEmu.Forms
                 _gameListRefreshTimer = null;
             }
 
+            // ImageList.Dispose owns Depth32Bit originals; drop side-map refs first to avoid double-Dispose.
+            _gameDisplayService.ReleaseIconImageOwnership();
+            _tileOwnedImages.ReleaseOwnership();
+            _compactTileOwnedImages.ReleaseOwnership();
+            _logoOwnedImages.ReleaseOwnership();
+
             _largeImageList?.Dispose();
             _largeImageList = null;
             _smallImageList?.Dispose();
@@ -258,6 +267,10 @@ namespace SmartGoldbergEmu.Forms
             _compactTileImageList = null;
             _logoImageList?.Dispose();
             _logoImageList = null;
+
+            _tileOwnedImages.Dispose();
+            _compactTileOwnedImages.Dispose();
+            _logoOwnedImages.Dispose();
 
             _apiKeyStatusIndicatorHelper?.Dispose();
             _uriFileWatcherHelper?.Dispose();
@@ -359,6 +372,27 @@ namespace SmartGoldbergEmu.Forms
             return null;
         }
 
+        private ImageListOwnedImages GetTileOwnedImagesForViewMode(string viewMode)
+        {
+            if (viewMode == ApplicationConstants.ViewModeTile)
+                return _tileOwnedImages;
+            if (viewMode == ApplicationConstants.ViewModeCompactTiles)
+                return _compactTileOwnedImages;
+            if (viewMode == ApplicationConstants.ViewModeLogos)
+                return _logoOwnedImages;
+            return null;
+        }
+
+        private void ClearInactiveMosaicImageLists(string activeViewMode)
+        {
+            if (activeViewMode != ApplicationConstants.ViewModeTile)
+                _tileOwnedImages.Clear(_tileImageList);
+            if (activeViewMode != ApplicationConstants.ViewModeCompactTiles)
+                _compactTileOwnedImages.Clear(_compactTileImageList);
+            if (activeViewMode != ApplicationConstants.ViewModeLogos)
+                _logoOwnedImages.Clear(_logoImageList);
+        }
+
         private void LoadGames(string viewMode = null)
         {
             try
@@ -396,7 +430,11 @@ namespace SmartGoldbergEmu.Forms
                 if (targetImageList == null)
                     return;
 
-                targetImageList.Images.Clear();
+                var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+                if (ownedImages == null)
+                    return;
+
+                ownedImages.Clear(targetImageList);
 
                 var effectiveTheme = _themeService.EffectiveTheme;
                 _themeService.GetFallbackMosaicArtColors(effectiveTheme, out var mosaicBackground, out var mosaicForeground);
@@ -439,7 +477,7 @@ namespace SmartGoldbergEmu.Forms
                         continue;
                     }
 
-                    targetImageList.Images.Add(imageKey, imageCopy);
+                    ownedImages.Set(targetImageList, imageKey, imageCopy);
                     addedAppIds.Add(imageKey);
                 }
 
@@ -475,6 +513,10 @@ namespace SmartGoldbergEmu.Forms
                 if (targetImageList == null)
                     return;
 
+                var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+                if (ownedImages == null)
+                    return;
+
                 string imageKey = GameDisplayService.GetMosaicImageKey(game);
                 if (string.IsNullOrEmpty(imageKey))
                     return;
@@ -505,9 +547,7 @@ namespace SmartGoldbergEmu.Forms
                     return;
                 }
 
-                if (targetImageList.Images.ContainsKey(imageKey))
-                    targetImageList.Images.RemoveByKey(imageKey);
-                targetImageList.Images.Add(imageKey, imageCopy);
+                ownedImages.Set(targetImageList, imageKey, imageCopy);
 
                 var item = GameDisplayService.FindListItemByGameGuid(lstGames, game.GameGuid);
                 if (item != null)
@@ -579,18 +619,9 @@ namespace SmartGoldbergEmu.Forms
             if (string.IsNullOrEmpty(imageKey))
                 return;
 
-            RemoveMosaicImageKeyFromList(_tileImageList, imageKey);
-            RemoveMosaicImageKeyFromList(_compactTileImageList, imageKey);
-            RemoveMosaicImageKeyFromList(_logoImageList, imageKey);
-        }
-
-        private static void RemoveMosaicImageKeyFromList(ImageList imageList, string imageKey)
-        {
-            if (imageList?.Images == null || string.IsNullOrEmpty(imageKey))
-                return;
-
-            if (imageList.Images.ContainsKey(imageKey))
-                imageList.Images.RemoveByKey(imageKey);
+            _tileOwnedImages.Remove(_tileImageList, imageKey);
+            _compactTileOwnedImages.Remove(_compactTileImageList, imageKey);
+            _logoOwnedImages.Remove(_logoImageList, imageKey);
         }
 
         private void SetupContextMenus()
@@ -831,6 +862,7 @@ namespace SmartGoldbergEmu.Forms
             string detailsColumnWidths = null)
         {
             _appDataService.SetViewMode(viewMode);
+            ClearInactiveMosaicImageLists(viewMode);
             lstGames.BeginUpdate();
             try
             {
@@ -1066,36 +1098,55 @@ namespace SmartGoldbergEmu.Forms
         {
             bool existedBeforeDialog = _gameDataService.GetGame(gameConfig.GameGuid) != null;
             PendingAddGameSave pendingAddSave = null;
-            using (var gameSettingsForm = new GameSettingsForm(
-                gameConfig,
-                isEditMode: false,
-                metadata: metadata,
-                feedbackService: _taskReportService,
-                onSaveCompleted: null,
-                addBundle: addBundle))
+            try
             {
-                DialogResult dialogResult = gameSettingsForm.ShowDialog(this);
-                pendingAddSave = gameSettingsForm.PendingAddSave;
-                bool existsAfterDialog = _gameDataService.GetGame(gameConfig.GameGuid) != null;
-                bool gameWasAdded = !existedBeforeDialog && existsAfterDialog;
-
-                if (dialogResult == DialogResult.Retry && gameSettingsForm.EditExistingGameGuid != Guid.Empty)
+                using (var gameSettingsForm = new GameSettingsForm(
+                    gameConfig,
+                    isEditMode: false,
+                    metadata: metadata,
+                    feedbackService: _taskReportService,
+                    onSaveCompleted: null,
+                    addBundle: addBundle))
                 {
+                    DialogResult dialogResult = gameSettingsForm.ShowDialog(this);
+                    pendingAddSave = gameSettingsForm.PendingAddSave;
+                    bool existsAfterDialog = _gameDataService.GetGame(gameConfig.GameGuid) != null;
+                    bool gameWasAdded = !existedBeforeDialog && existsAfterDialog;
+
+                    if (dialogResult == DialogResult.Retry && gameSettingsForm.EditExistingGameGuid != Guid.Empty)
+                    {
+                        ClearPendingAddListEntry();
+                        _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                        EditGame(gameSettingsForm.EditExistingGameGuid);
+                        return true;
+                    }
+
+                    if (dialogResult == DialogResult.OK || gameWasAdded)
+                    {
+                        if (pendingAddSave != null)
+                            return await CompletePendingAddSaveAsync(pendingAddSave).ConfigureAwait(true);
+                        return true;
+                    }
+
                     ClearPendingAddListEntry();
-                    _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
-                    EditGame(gameSettingsForm.EditExistingGameGuid);
-                    return true;
+                    return false;
                 }
-
-                if (dialogResult == DialogResult.OK || gameWasAdded)
+            }
+            finally
+            {
+                if (pendingAddSave == null)
                 {
-                    if (pendingAddSave != null)
-                        return await CompletePendingAddSaveAsync(pendingAddSave).ConfigureAwait(true);
-                    return true;
+                    addBundle?.ReleaseHeavyRuntimeData();
+                    gameConfig?.ReleaseHeavyRuntimeData();
                 }
-
-                ClearPendingAddListEntry();
-                return false;
+                else if (addBundle != null)
+                {
+                    // Do not touch Game here: failed save may restore the draft; success already released it.
+                    addBundle.AchievementsPreviewJson = null;
+                    addBundle.ItemsJson = null;
+                    addBundle.Metadata = null;
+                    addBundle.Catalog = null;
+                }
             }
         }
 
@@ -1168,6 +1219,11 @@ namespace SmartGoldbergEmu.Forms
                     return false;
                 }
 
+                pending.Metadata = null;
+                pending.CustomStatsRawJson = null;
+                pending.AdditionalFilesSaveRequest = null;
+                pending.SaveDlcAndPaths = null;
+                pending.GameConfig = null;
                 return true;
             }
             catch (Exception ex)
@@ -1191,8 +1247,10 @@ namespace SmartGoldbergEmu.Forms
 
             Guid gameGuid = _pendingAddGameListService.GetDraft().GameGuid;
             string mosaicKey = _pendingAddMosaicImageKey;
+            GameConfig draft = _pendingAddGameListService.GetDraft();
             _pendingAddGameListService.Clear();
             _pendingAddMosaicImageKey = null;
+            draft?.ReleaseHeavyRuntimeData();
             RemovePendingAddFromListView(gameGuid, mosaicKey);
         }
 
@@ -2549,16 +2607,23 @@ namespace SmartGoldbergEmu.Forms
 
             GameEditBundle editBundle = ServiceLocator.GameEditLoader.Load(game);
 
-            using (var gameSettingsForm = new GameSettingsForm(
-                game,
-                isEditMode: true,
-                metadata: null,
-                feedbackService: _taskReportService,
-                onSaveCompleted: RefreshGames,
-                editBundle: editBundle))
+            try
             {
-                if (gameSettingsForm.ShowDialog(this) != DialogResult.OK)
-                    _taskReportService.Clear();
+                using (var gameSettingsForm = new GameSettingsForm(
+                    game,
+                    isEditMode: true,
+                    metadata: null,
+                    feedbackService: _taskReportService,
+                    onSaveCompleted: RefreshGames,
+                    editBundle: editBundle))
+                {
+                    if (gameSettingsForm.ShowDialog(this) != DialogResult.OK)
+                        _taskReportService.Clear();
+                }
+            }
+            finally
+            {
+                editBundle?.ReleaseHeavyRuntimeData();
             }
         }
 

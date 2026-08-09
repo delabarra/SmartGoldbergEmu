@@ -354,6 +354,7 @@ namespace SmartGoldbergEmu.Forms
             if (!string.IsNullOrEmpty(_addBundle.AchievementsPreviewJson))
             {
                 _achievementsRawJson = _addBundle.AchievementsPreviewJson;
+                _addBundle.AchievementsPreviewJson = null;
                 RefreshAchievementsPreview();
             }
 
@@ -1205,6 +1206,12 @@ namespace SmartGoldbergEmu.Forms
             {
                 _themeService.ThemeChanged -= ThemeService_ThemeChanged;
             }
+            // Designer ImageList.Dispose owns remaining Depth32Bit originals.
+            _achievementPreviewOwnedImages.ReleaseOwnership();
+            _achievementPreviewOwnedImages.Dispose();
+            _achievementsRawJson = null;
+            _achievementsPreviewListCache = null;
+            _addBundle?.ReleaseHeavyRuntimeData();
             base.OnFormClosed(e);
         }
 
@@ -1436,6 +1443,7 @@ namespace SmartGoldbergEmu.Forms
         private bool _achievementsPreviewSortApplied;
         private int _achievementsPreviewSortColumn;
         private bool _achievementsPreviewSortAscending = true;
+        private readonly ImageListOwnedImages _achievementPreviewOwnedImages = new ImageListOwnedImages();
         private const string AchievementsPreviewColumnAchievement = "Achievement";
         private const string AchievementsPreviewColumnDescription = "Description";
         private bool _balancingAchievementsColumns;
@@ -1618,7 +1626,7 @@ namespace SmartGoldbergEmu.Forms
                 try
                 {
                     lstAchievementsPreview.Items.Clear();
-                    imgAchievementsPreview.Images.Clear();
+                    _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
                 }
                 finally
                 {
@@ -1642,7 +1650,7 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 lstAchievementsPreview.Items.Clear();
-                imgAchievementsPreview.Images.Clear();
+                _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
 
                 int imageIndex = 0;
                 foreach (int srcIdx in indices)
@@ -1652,7 +1660,9 @@ namespace SmartGoldbergEmu.Forms
                     if (string.IsNullOrWhiteSpace(iconPath))
                         iconPath = achievement.IconPath;
 
-                    imgAchievementsPreview.Images.Add(_achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize));
+                    Image previewIcon = _achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize);
+                    string imageKey = imageIndex.ToString(CultureInfo.InvariantCulture);
+                    _achievementPreviewOwnedImages.Set(imgAchievementsPreview, imageKey, previewIcon);
 
                     var preview = _achievementService.BuildAchievementPreviewText(
                         ToAchievementPreviewData(achievement),

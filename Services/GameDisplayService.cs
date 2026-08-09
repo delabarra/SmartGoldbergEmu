@@ -13,6 +13,9 @@ namespace SmartGoldbergEmu.Services
     public class GameDisplayService
     {
         private readonly IconService _iconService;
+        // Depth32Bit ImageList Clear/Remove do not Dispose bitmaps; track what we Add.
+        private readonly ImageListOwnedImages _largeIconOwnedImages = new ImageListOwnedImages();
+        private readonly ImageListOwnedImages _smallIconOwnedImages = new ImageListOwnedImages();
 
         public GameDisplayService() : this(ServiceLocator.IconService)
         {
@@ -45,9 +48,9 @@ namespace SmartGoldbergEmu.Services
                 if (loadIcons)
                 {
                     if (largeImageList != null && IsIconView(viewMode))
-                        largeImageList.Images.Clear();
+                        _largeIconOwnedImages.Clear(largeImageList);
                     if (smallImageList != null && IsDetailsView(viewMode))
-                        smallImageList.Images.Clear();
+                        _smallIconOwnedImages.Clear(smallImageList);
                 }
 
                 foreach (var game in games)
@@ -209,6 +212,10 @@ namespace SmartGoldbergEmu.Services
             if (imageList == null || string.IsNullOrEmpty(filePath))
                 return -1;
 
+            // Reuse by path so pending-add / edit updates do not append duplicate GDI bitmaps.
+            if (imageList.Images.ContainsKey(filePath))
+                return imageList.Images.IndexOfKey(filePath);
+
             Icon icon = null;
             try
             {
@@ -221,8 +228,9 @@ namespace SmartGoldbergEmu.Services
                 if (bitmap == null)
                     return -1;
 
-                imageList.Images.Add(bitmap);
-                return imageList.Images.Count - 1;
+                var owned = largeIcon ? _largeIconOwnedImages : _smallIconOwnedImages;
+                owned.Set(imageList, filePath, bitmap);
+                return imageList.Images.IndexOfKey(filePath);
             }
             catch
             {
@@ -475,6 +483,13 @@ namespace SmartGoldbergEmu.Services
             }
 
             item.ToolTipText = BuildGameListItemToolTip(game, isImportPending, isAddPending);
+        }
+
+        // Call before disposing MainForm icon ImageLists so this map does not double-Dispose.
+        public void ReleaseIconImageOwnership()
+        {
+            _largeIconOwnedImages.ReleaseOwnership();
+            _smallIconOwnedImages.ReleaseOwnership();
         }
 
         public PendingListSyncResult SyncPendingAddListItem(

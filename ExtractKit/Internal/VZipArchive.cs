@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 
@@ -6,7 +7,152 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 {
     internal static class VZipArchive
     {
+        private const int HeaderSize = 7;
+        private const int PropsSize = 5;
+        private const int FooterSize = 10;
+        private const int CopyBufferSize = 65536;
+
         public static byte[] Decompress(byte[] data)
+        {
+            ParseHeader(data, out byte[] props, out int compressedOffset, out int compressedLength, out uint expectedCrc, out uint expectedSize);
+
+            var output = new byte[(int)expectedSize];
+            DecodeLzma(data, props, compressedOffset, compressedLength, output, expectedCrc);
+            return output;
+        }
+
+        // Decompress VZip to a temp .zip on disk, then extract named entries with a bounded copy buffer.
+        public static void ExtractEntriesToFiles(byte[] vzipData, IReadOnlyList<KeyValuePair<string, string>> entryPathToDestFile)
+        {
+            if (entryPathToDestFile == null || entryPathToDestFile.Count == 0)
+                throw new ArgumentException("At least one entry mapping is required.", nameof(entryPathToDestFile));
+
+            byte[] zipBytes = Decompress(vzipData);
+            WriteZipAndExtractEntries(zipBytes, entryPathToDestFile);
+        }
+
+        public static void ExtractEntriesToFilesFromPath(
+            string vzipFilePath,
+            IReadOnlyList<KeyValuePair<string, string>> entryPathToDestFile)
+        {
+            if (string.IsNullOrWhiteSpace(vzipFilePath))
+                throw new ArgumentException("VZip path is required.", nameof(vzipFilePath));
+            if (!File.Exists(vzipFilePath))
+                throw new FileNotFoundException("VZip package not found.", vzipFilePath);
+            if (entryPathToDestFile == null || entryPathToDestFile.Count == 0)
+                throw new ArgumentException("At least one entry mapping is required.", nameof(entryPathToDestFile));
+
+            byte[] data = File.ReadAllBytes(vzipFilePath);
+            byte[] zipBytes;
+            try
+            {
+                zipBytes = Decompress(data);
+            }
+            finally
+            {
+                // Drop compressed package before holding the unzipped ZIP so peaks do not stack.
+                data = null;
+            }
+
+            WriteZipAndExtractEntries(zipBytes, entryPathToDestFile);
+        }
+
+        private static void WriteZipAndExtractEntries(
+            byte[] zipBytes,
+            IReadOnlyList<KeyValuePair<string, string>> entryPathToDestFile)
+        {
+            if (zipBytes == null)
+                throw new ExtractKitException("VZip decompress produced no output.");
+
+            string tempZipPath = Path.Combine(
+                Path.GetTempPath(),
+                "sge-vzip-" + Guid.NewGuid().ToString("N") + ".zip");
+
+            try
+            {
+                File.WriteAllBytes(tempZipPath, zipBytes);
+                zipBytes = null;
+
+                using (var stream = new FileStream(tempZipPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false))
+                {
+                    var buffer = new byte[CopyBufferSize];
+                    for (int i = 0; i < entryPathToDestFile.Count; i++)
+                    {
+                        string entryPath = entryPathToDestFile[i].Key;
+                        string destPath = entryPathToDestFile[i].Value;
+                        if (string.IsNullOrWhiteSpace(entryPath))
+                            throw new ArgumentException("Entry path is required.");
+                        if (string.IsNullOrWhiteSpace(destPath))
+                            throw new ArgumentException("Destination path is required.");
+
+                        ZipArchiveEntry entry = zip.GetEntry(entryPath);
+                        if (entry == null)
+                            throw new ExtractKitException("Entry not found in VZip archive: " + entryPath);
+
+                        string destDir = Path.GetDirectoryName(destPath);
+                        if (!string.IsNullOrEmpty(destDir))
+                            Directory.CreateDirectory(destDir);
+
+                        using (Stream entryStream = entry.Open())
+                        using (var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                        {
+                            int read;
+                            while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
+                                fileStream.Write(buffer, 0, read);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                zipBytes = null;
+                try
+                {
+                    if (File.Exists(tempZipPath))
+                        File.Delete(tempZipPath);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        public static byte[] ExtractEntry(byte[] data, string entryPath)
+        {
+            if (string.IsNullOrWhiteSpace(entryPath))
+                throw new ArgumentException("Entry path is required.", nameof(entryPath));
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "sge-vzip-entry-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            string destPath = Path.Combine(tempDir, "entry.bin");
+            try
+            {
+                ExtractEntriesToFiles(
+                    data,
+                    new[] { new KeyValuePair<string, string>(entryPath, destPath) });
+                return File.ReadAllBytes(destPath);
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(tempDir))
+                        Directory.Delete(tempDir, recursive: true);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static void ParseHeader(
+            byte[] data,
+            out byte[] props,
+            out int compressedOffset,
+            out int compressedLength,
+            out uint expectedCrc,
+            out uint expectedSize)
         {
             if (data == null || data.Length < 18)
                 throw new ExtractKitException("Invalid VZip payload.");
@@ -15,37 +161,40 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             if (data[data.Length - 2] != (byte)'z' || data[data.Length - 1] != (byte)'v')
                 throw new ExtractKitException("Invalid VZip footer.");
 
-            const int headerSize = 7;
-            const int propsSize = 5;
-            const int footerSize = 10;
-
-            uint expectedCrc = BitConverter.ToUInt32(data, data.Length - footerSize);
-            uint expectedSize = BitConverter.ToUInt32(data, data.Length - footerSize + 4);
-            int compressedOffset = headerSize + propsSize;
-            int compressedLength = data.Length - compressedOffset - footerSize;
+            expectedCrc = BitConverter.ToUInt32(data, data.Length - FooterSize);
+            expectedSize = BitConverter.ToUInt32(data, data.Length - FooterSize + 4);
+            compressedOffset = HeaderSize + PropsSize;
+            compressedLength = data.Length - compressedOffset - FooterSize;
             if (compressedLength <= 0)
                 throw new ExtractKitException("Invalid VZip payload size.");
             if (expectedSize > int.MaxValue)
                 throw new ExtractKitException("VZip output is too large.");
 
-            var props = new byte[propsSize];
-            Buffer.BlockCopy(data, headerSize, props, 0, propsSize);
-            var compressed = new byte[compressedLength];
-            Buffer.BlockCopy(data, compressedOffset, compressed, 0, compressedLength);
+            props = new byte[PropsSize];
+            Buffer.BlockCopy(data, HeaderSize, props, 0, PropsSize);
+        }
 
-            var output = new byte[(int)expectedSize];
+        private static void DecodeLzma(
+            byte[] data,
+            byte[] props,
+            int compressedOffset,
+            int compressedLength,
+            byte[] output,
+            uint expectedCrc)
+        {
             int destLen = output.Length;
-            int srcLen = compressed.Length;
+            int srcLen = compressedLength;
             ELzmaStatus status;
+            // Decode in place from the VZip buffer (no second full compressed copy).
             int res = LzmaDec.LzmaDecode(
                 output,
                 ref destLen,
-                compressed,
-                0,
+                data,
+                compressedOffset,
                 ref srcLen,
                 props,
                 0,
-                (uint)propsSize,
+                (uint)PropsSize,
                 ELzmaFinishMode.LzmaFinishEnd,
                 out status,
                 SzAlloc.Instance);
@@ -58,29 +207,6 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             uint actualCrc = ComputeCrc32(output);
             if (actualCrc != expectedCrc)
                 throw new ExtractKitException("Decompressed VZip CRC mismatch.");
-
-            return output;
-        }
-
-        public static byte[] ExtractEntry(byte[] data, string entryPath)
-        {
-            if (string.IsNullOrWhiteSpace(entryPath))
-                throw new ArgumentException("Entry path is required.", nameof(entryPath));
-
-            byte[] zipBytes = Decompress(data);
-            using (var stream = new MemoryStream(zipBytes))
-            using (var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false))
-            {
-                var entry = zip.GetEntry(entryPath);
-                if (entry == null)
-                    throw new ExtractKitException("Entry not found in VZip archive: " + entryPath);
-                using (var entryStream = entry.Open())
-                using (var ms = new MemoryStream())
-                {
-                    entryStream.CopyTo(ms);
-                    return ms.ToArray();
-                }
-            }
         }
 
         private static uint ComputeCrc32(byte[] data)

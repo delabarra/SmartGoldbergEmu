@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
@@ -14,9 +15,11 @@ namespace SmartGoldbergEmu.Services
     {
         private const int HttpTimeoutSeconds = 30;
         private const int SteamDllPackageTimeoutSeconds = 120;
+        private const string SteamCdnHealTempFolderName = "steam-cdn-heal";
 
         public async Task<ValidationResult> DownloadSoundFilesAsync(string soundsPath)
         {
+            string tempVzipPath = null;
             try
             {
                 var achievementPath = Path.Combine(soundsPath, PathConstants.SteamClientUiAchievementNotificationWav);
@@ -27,37 +30,47 @@ namespace SmartGoldbergEmu.Services
                 if (!needsAchievement && !needsFriend)
                     return ValidationResult.Success();
 
-                var packageBytes = await DownloadFirstAvailableAsync(
+                tempVzipPath = CreateTempPackagePath("sounds.zip.vzip");
+                await DownloadFirstAvailableToFileAsync(
                     ServiceLocator.SteamStaticCdnPreferenceService.GetClientSoundsPackageCandidateUrls(),
+                    tempVzipPath,
                     HttpTimeoutSeconds).ConfigureAwait(false);
 
+                var mappings = new List<KeyValuePair<string, string>>(2);
                 if (needsAchievement)
                 {
-                    var data = global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntry(
-                        packageBytes,
-                        AssetConstants.SteamClientAchievementSoundInnerPath);
-                    await Task.Run(() => File.WriteAllBytes(achievementPath, data)).ConfigureAwait(false);
+                    mappings.Add(new KeyValuePair<string, string>(
+                        AssetConstants.SteamClientAchievementSoundInnerPath,
+                        achievementPath));
                 }
 
                 if (needsFriend)
                 {
-                    var data = global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntry(
-                        packageBytes,
-                        AssetConstants.SteamClientFriendSoundInnerPath);
-                    await Task.Run(() => File.WriteAllBytes(friendPath, data)).ConfigureAwait(false);
+                    mappings.Add(new KeyValuePair<string, string>(
+                        AssetConstants.SteamClientFriendSoundInnerPath,
+                        friendPath));
                 }
 
+                // One VZip decompress for both WAVs (previously decompressed twice in RAM).
+                global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntriesToFiles(tempVzipPath, mappings);
                 return ValidationResult.Success();
             }
             catch (Exception ex)
             {
                 return ValidationResult.Failure($"Failed to download sound files from Steam client package: {ex.Message}");
             }
+            finally
+            {
+                TryCleanupSteamCdnHealTemp();
+                // Return LOH pages after bins_win32 / sounds VZip transient buffers (net48 does not by default).
+                LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
+            }
         }
 
         // IfAbsent: download Steam client bins_win32 package and extract Steam.dll (never fork/repack Steam.dll).
         public async Task<ValidationResult> DownloadSteamDllAsync(string steamOldDirectory)
         {
+            string tempVzipPath = null;
             try
             {
                 if (string.IsNullOrWhiteSpace(steamOldDirectory))
@@ -72,27 +85,41 @@ namespace SmartGoldbergEmu.Services
                     cdn.GetClientWin32ManifestCandidateUrls(),
                     HttpTimeoutSeconds).ConfigureAwait(false);
                 string manifestText = System.Text.Encoding.UTF8.GetString(manifestBytes);
+                manifestBytes = null;
                 if (!SteamClientManifestHelper.TryGetBinsWin32ZipVzFileName(manifestText, out string zipVzFileName))
                     return ValidationResult.Failure("Could not resolve bins_win32 package from steam_client_win32 manifest.");
 
                 string relativePath = SteamClientManifestHelper.BuildClientPackageRelativePath(zipVzFileName);
-                byte[] packageBytes = await DownloadFirstAvailableAsync(
+                tempVzipPath = CreateTempPackagePath(zipVzFileName);
+                await DownloadFirstAvailableToFileAsync(
                     cdn.GetClientPackageCandidateUrls(relativePath),
+                    tempVzipPath,
                     SteamDllPackageTimeoutSeconds).ConfigureAwait(false);
 
-                byte[] steamDll = global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntry(
-                    packageBytes,
-                    SteamStaticCdnConstants.ClientBinsSteamDllEntryName);
-                if (steamDll == null || steamDll.Length == 0)
+                Directory.CreateDirectory(steamOldDirectory.Trim());
+                global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntriesToFiles(
+                    tempVzipPath,
+                    new[]
+                    {
+                        new KeyValuePair<string, string>(
+                            SteamStaticCdnConstants.ClientBinsSteamDllEntryName,
+                            dest)
+                    });
+
+                if (!File.Exists(dest) || new FileInfo(dest).Length == 0)
                     return ValidationResult.Failure("bins_win32 package did not contain Steam.dll.");
 
-                Directory.CreateDirectory(steamOldDirectory.Trim());
-                await Task.Run(() => File.WriteAllBytes(dest, steamDll)).ConfigureAwait(false);
                 return ValidationResult.Success();
             }
             catch (Exception ex)
             {
                 return ValidationResult.Failure("Failed to download Steam.dll from Steam client package: " + ex.Message);
+            }
+            finally
+            {
+                TryCleanupSteamCdnHealTemp();
+                // Return LOH pages after bins_win32 VZip transient buffers (net48 does not by default).
+                LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
             }
         }
 
@@ -200,13 +227,129 @@ namespace SmartGoldbergEmu.Services
             throw lastError ?? new InvalidOperationException("All CDN candidate URLs failed.");
         }
 
-        private static async Task DownloadAndWriteAsync(string url, string destPath)
+        private static async Task DownloadFirstAvailableToFileAsync(
+            IReadOnlyList<string> candidateUrls,
+            string destPath,
+            int timeoutSeconds)
         {
-            var content = await HttpHelpers.GetByteArrayAsync(url, HttpTimeoutSeconds).ConfigureAwait(false);
+            if (candidateUrls == null || candidateUrls.Count == 0)
+                throw new InvalidOperationException("No CDN candidate URLs are configured.");
+            if (string.IsNullOrWhiteSpace(destPath))
+                throw new ArgumentException("Destination path is required.", nameof(destPath));
+
             string directory = Path.GetDirectoryName(destPath);
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
-            await Task.Run(() => File.WriteAllBytes(destPath, content)).ConfigureAwait(false);
+
+            Exception lastError = null;
+            using (IHttpService http = HttpServiceFactory.Create(TimeSpan.FromSeconds(timeoutSeconds)))
+            {
+                foreach (var url in candidateUrls)
+                {
+                    if (string.IsNullOrWhiteSpace(url))
+                        continue;
+
+                    try
+                    {
+                        await HttpHelpers.DownloadFileAtomicAsync(http, url, destPath).ConfigureAwait(false);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex;
+                        TryDeleteFile(destPath);
+                    }
+                }
+            }
+
+            throw lastError ?? new InvalidOperationException("All CDN candidate URLs failed.");
+        }
+
+        private static async Task DownloadAndWriteAsync(string url, string destPath)
+        {
+            string directory = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            using (IHttpService http = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
+            {
+                await HttpHelpers.DownloadFileAtomicAsync(http, url, destPath).ConfigureAwait(false);
+            }
+        }
+
+        private static string GetSteamCdnHealTempFolder()
+        {
+            return Path.Combine(
+                PathConstants.AppBaseDirectory,
+                PathConstants.LauncherUpdateTempFolderName,
+                SteamCdnHealTempFolderName);
+        }
+
+        private static string CreateTempPackagePath(string fileName)
+        {
+            string safeName = string.IsNullOrWhiteSpace(fileName)
+                ? "package.zip.vzip"
+                : Path.GetFileName(fileName.Trim());
+            string folder = GetSteamCdnHealTempFolder();
+            Directory.CreateDirectory(folder);
+            return Path.Combine(folder, safeName);
+        }
+
+        // Removes steam-cdn-heal entirely (packages included) and empty parent temp\.
+        private static void TryCleanupSteamCdnHealTemp()
+        {
+            TryDeleteDirectory(GetSteamCdnHealTempFolder());
+
+            string tempRoot = Path.Combine(PathConstants.AppBaseDirectory, PathConstants.LauncherUpdateTempFolderName);
+            TryDeleteEmptyDirectory(tempRoot);
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                if (Directory.Exists(path))
+                    Directory.Delete(path, true);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryDeleteEmptyDirectory(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            try
+            {
+                if (!Directory.Exists(path))
+                    return;
+                if (Directory.GetFileSystemEntries(path).Length != 0)
+                    return;
+                Directory.Delete(path, false);
+            }
+            catch
+            {
+            }
         }
     }
 }

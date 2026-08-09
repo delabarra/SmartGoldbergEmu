@@ -75,6 +75,7 @@ namespace SmartGoldbergEmu.Services
             var achievementService = CreateAchievementService(report, game.AppId);
             await achievementService.GenerateAchievementsAsync(game, showProgress: report != null).ConfigureAwait(false);
             await TryPatchCatalogAchievementsAsync(game).ConfigureAwait(false);
+            game.ReleaseHeavyRuntimeData();
         }
 
         public async Task GenerateAchievementsForAddSaveAsync(
@@ -110,6 +111,7 @@ namespace SmartGoldbergEmu.Services
             ItemGeneratorResult result = await generator.GenerateAndSaveAsync(game, showProgress: report != null).ConfigureAwait(false);
             if (result.Success)
                 await TryPatchCatalogItemsAsync(game).ConfigureAwait(false);
+            game.ReleaseHeavyRuntimeData();
             return result;
         }
 
@@ -202,6 +204,9 @@ namespace SmartGoldbergEmu.Services
             }
 
             report?.SetMessageWithAutoClear("Game data and assets refreshed.");
+
+            // ListView Tag must not keep the full catalog/AppInfo tree after disk write.
+            game.ReleaseHeavyRuntimeData();
         }
 
         // Menu-driven achievement/item generation already wrote the Goldberg sidecar; patch the catalog JSON section too so it stays current.

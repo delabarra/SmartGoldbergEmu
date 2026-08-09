@@ -851,18 +851,26 @@ ip_country=US
                 var achievementSoundPath = Path.Combine(soundsPath, PathConstants.SteamClientUiAchievementNotificationWav);
                 var friendSoundPath = Path.Combine(soundsPath, PathConstants.SteamClientUiFriendNotificationWav);
 
-                ValidationResult result;
                 if (File.Exists(achievementSoundPath) && File.Exists(friendSoundPath))
-                    result = ValidationResult.Success();
-                else
+                    return ValidationResult.Success();
+
+                if (TryCopyFromSteam(soundsPath).IsValid)
                 {
-                    var steamResult = TryCopyFromSteam(soundsPath);
-                    result = steamResult.IsValid
-                        ? steamResult
-                        : await ServiceLocator.AssetDownloadService.DownloadSoundFilesAsync(soundsPath).ConfigureAwait(false);
+                    ServiceLocator.LogService?.LogMessage(
+                        "Overlay notification sounds ready (source: Steam steamui\\sounds).");
+                    return ValidationResult.Success();
                 }
 
-                return result;
+                ValidationResult cdnResult = await ServiceLocator.AssetDownloadService
+                    .DownloadSoundFilesAsync(soundsPath)
+                    .ConfigureAwait(false);
+                if (cdnResult.IsValid)
+                {
+                    ServiceLocator.LogService?.LogMessage(
+                        "Overlay notification sounds ready (source: Steam CDN).");
+                }
+
+                return cdnResult;
             }
             catch (Exception ex)
             {
