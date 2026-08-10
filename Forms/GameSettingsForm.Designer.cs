@@ -64,9 +64,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblSteamAPIStatus = new System.Windows.Forms.Label();
             this.lblSteamAPIStatusX32Value = new System.Windows.Forms.Label();
             this.lblSteamAPIStatusX64Value = new System.Windows.Forms.Label();
-            this.lblSteamApiHealth = new System.Windows.Forms.Label();
-            this.lblSteamApiHealthValue = new System.Windows.Forms.Label();
-            this.lblSteamApiHealthNote = new System.Windows.Forms.Label();
+            this.lblSteamApiHint = new System.Windows.Forms.Label();
             this.lblPatchOpMessage = new System.Windows.Forms.Label();
             this.lblLaunchMode = new System.Windows.Forms.Label();
             this.rdoLaunchSteamClient = new System.Windows.Forms.RadioButton();
@@ -545,7 +543,7 @@ namespace SmartGoldbergEmu.Forms
             | System.Windows.Forms.AnchorStyles.Right)));
             this.cmbSteamLaunchOptions.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbSteamLaunchOptions.FormattingEnabled = true;
-            this.cmbSteamLaunchOptions.Location = new System.Drawing.Point(150, 21);
+            this.cmbSteamLaunchOptions.Location = new System.Drawing.Point(143, 22);
             this.cmbSteamLaunchOptions.Name = "cmbSteamLaunchOptions";
             this.cmbSteamLaunchOptions.Size = new System.Drawing.Size(304, 21);
             this.cmbSteamLaunchOptions.TabIndex = 1;
@@ -557,7 +555,7 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.btnRemoveUserLaunchOption.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnRemoveUserLaunchOption.Enabled = false;
-            this.btnRemoveUserLaunchOption.Location = new System.Drawing.Point(460, 20);
+            this.btnRemoveUserLaunchOption.Location = new System.Drawing.Point(453, 20);
             this.btnRemoveUserLaunchOption.Name = "btnRemoveUserLaunchOption";
             this.btnRemoveUserLaunchOption.Size = new System.Drawing.Size(23, 23);
             this.btnRemoveUserLaunchOption.TabIndex = 2;
@@ -579,7 +577,7 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.txtUserLaunchOptionName.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.txtUserLaunchOptionName.Location = new System.Drawing.Point(150, 49);
+            this.txtUserLaunchOptionName.Location = new System.Drawing.Point(143, 49);
             this.txtUserLaunchOptionName.Name = "txtUserLaunchOptionName";
             this.txtUserLaunchOptionName.Size = new System.Drawing.Size(422, 20);
             this.txtUserLaunchOptionName.TabIndex = 5;
@@ -588,7 +586,7 @@ namespace SmartGoldbergEmu.Forms
             // btnSaveUserLaunchOption
             // 
             this.btnSaveUserLaunchOption.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnSaveUserLaunchOption.Location = new System.Drawing.Point(578, 47);
+            this.btnSaveUserLaunchOption.Location = new System.Drawing.Point(575, 47);
             this.btnSaveUserLaunchOption.Name = "btnSaveUserLaunchOption";
             this.btnSaveUserLaunchOption.Size = new System.Drawing.Size(23, 23);
             this.btnSaveUserLaunchOption.TabIndex = 6;
@@ -611,9 +609,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpBasicInfo.Controls.Add(this.lblSteamAPIStatus);
             this.grpBasicInfo.Controls.Add(this.lblSteamAPIStatusX32Value);
             this.grpBasicInfo.Controls.Add(this.lblSteamAPIStatusX64Value);
-            this.grpBasicInfo.Controls.Add(this.lblSteamApiHealth);
-            this.grpBasicInfo.Controls.Add(this.lblSteamApiHealthValue);
-            this.grpBasicInfo.Controls.Add(this.lblSteamApiHealthNote);
+            this.grpBasicInfo.Controls.Add(this.lblSteamApiHint);
             this.grpBasicInfo.Controls.Add(this.lblPatchOpMessage);
             this.grpBasicInfo.Controls.Add(this.lblLaunchMode);
             this.grpBasicInfo.Controls.Add(this.rdoLaunchSteamClient);
@@ -624,7 +620,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpBasicInfo.Location = new System.Drawing.Point(20, 10);
             this.grpBasicInfo.Name = "grpBasicInfo";
             this.grpBasicInfo.Padding = new System.Windows.Forms.Padding(10);
-            this.grpBasicInfo.Size = new System.Drawing.Size(635, 207);
+            this.grpBasicInfo.Size = new System.Drawing.Size(635, 200);
             this.grpBasicInfo.TabIndex = 0;
             this.grpBasicInfo.TabStop = false;
             this.grpBasicInfo.Text = "Game Info";
@@ -693,14 +689,14 @@ namespace SmartGoldbergEmu.Forms
             this.lblSteamAPIStatus.AutoSize = true;
             this.lblSteamAPIStatus.Location = new System.Drawing.Point(20, 118);
             this.lblSteamAPIStatus.Name = "lblSteamAPIStatus";
-            this.lblSteamAPIStatus.Size = new System.Drawing.Size(93, 13);
+            this.lblSteamAPIStatus.Size = new System.Drawing.Size(60, 13);
             this.lblSteamAPIStatus.TabIndex = 8;
-            this.lblSteamAPIStatus.Text = "Steam API Status:";
+            this.lblSteamAPIStatus.Text = "Steam API:";
             // 
             // lblSteamAPIStatusX32Value
             // 
             this.lblSteamAPIStatusX32Value.AutoSize = true;
-            this.lblSteamAPIStatusX32Value.Location = new System.Drawing.Point(147, 105);
+            this.lblSteamAPIStatusX32Value.Location = new System.Drawing.Point(147, 107);
             this.lblSteamAPIStatusX32Value.Name = "lblSteamAPIStatusX32Value";
             this.lblSteamAPIStatusX32Value.Size = new System.Drawing.Size(140, 13);
             this.lblSteamAPIStatusX32Value.TabIndex = 9;
@@ -709,45 +705,26 @@ namespace SmartGoldbergEmu.Forms
             // lblSteamAPIStatusX64Value
             // 
             this.lblSteamAPIStatusX64Value.AutoSize = true;
-            this.lblSteamAPIStatusX64Value.Location = new System.Drawing.Point(147, 118);
+            this.lblSteamAPIStatusX64Value.Location = new System.Drawing.Point(147, 120);
             this.lblSteamAPIStatusX64Value.Name = "lblSteamAPIStatusX64Value";
             this.lblSteamAPIStatusX64Value.Size = new System.Drawing.Size(140, 13);
             this.lblSteamAPIStatusX64Value.TabIndex = 10;
             this.lblSteamAPIStatusX64Value.Text = "lblSteamAPIStatusX64Value";
             // 
-            // lblSteamApiHealth
+            // lblSteamApiHint
             // 
-            this.lblSteamApiHealth.AutoSize = true;
-            this.lblSteamApiHealth.Location = new System.Drawing.Point(20, 145);
-            this.lblSteamApiHealth.Name = "lblSteamApiHealth";
-            this.lblSteamApiHealth.Size = new System.Drawing.Size(94, 13);
-            this.lblSteamApiHealth.TabIndex = 15;
-            this.lblSteamApiHealth.Text = "Steam API Health:";
-            // 
-            // lblSteamApiHealthValue
-            // 
-            this.lblSteamApiHealthValue.AutoSize = true;
-            this.lblSteamApiHealthValue.Location = new System.Drawing.Point(147, 145);
-            this.lblSteamApiHealthValue.Name = "lblSteamApiHealthValue";
-            this.lblSteamApiHealthValue.Size = new System.Drawing.Size(86, 13);
-            this.lblSteamApiHealthValue.TabIndex = 16;
-            this.lblSteamApiHealthValue.Text = "(health summary)";
-            this.lblSteamApiHealthValue.Visible = false;
-            // 
-            // lblSteamApiHealthNote
-            // 
-            this.lblSteamApiHealthNote.AutoSize = true;
-            this.lblSteamApiHealthNote.Location = new System.Drawing.Point(147, 158);
-            this.lblSteamApiHealthNote.Name = "lblSteamApiHealthNote";
-            this.lblSteamApiHealthNote.Size = new System.Drawing.Size(66, 13);
-            this.lblSteamApiHealthNote.TabIndex = 19;
-            this.lblSteamApiHealthNote.Text = "(health note)";
-            this.lblSteamApiHealthNote.Visible = false;
+            this.lblSteamApiHint.AutoSize = true;
+            this.lblSteamApiHint.Location = new System.Drawing.Point(147, 147);
+            this.lblSteamApiHint.Name = "lblSteamApiHint";
+            this.lblSteamApiHint.Size = new System.Drawing.Size(47, 13);
+            this.lblSteamApiHint.TabIndex = 19;
+            this.lblSteamApiHint.Text = "(api hint)";
+            this.lblSteamApiHint.Visible = false;
             // 
             // lblPatchOpMessage
             // 
             this.lblPatchOpMessage.AutoSize = true;
-            this.lblPatchOpMessage.Location = new System.Drawing.Point(147, 171);
+            this.lblPatchOpMessage.Location = new System.Drawing.Point(147, 160);
             this.lblPatchOpMessage.Name = "lblPatchOpMessage";
             this.lblPatchOpMessage.Size = new System.Drawing.Size(87, 13);
             this.lblPatchOpMessage.TabIndex = 14;
@@ -818,13 +795,13 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.btnRestoreDlls.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnRestoreDlls.Enabled = false;
-            this.btnRestoreDlls.Location = new System.Drawing.Point(508, 140);
+            this.btnRestoreDlls.Location = new System.Drawing.Point(510, 148);
             this.btnRestoreDlls.Name = "btnRestoreDlls";
             this.btnRestoreDlls.Size = new System.Drawing.Size(88, 23);
             this.btnRestoreDlls.TabIndex = 8;
             this.btnRestoreDlls.Text = "Restore";
-            this.toolTip.SetToolTip(this.btnRestoreDlls, "Replace modified steam_api DLLs with a clean copy from elsewhere in the game fold" +
-        "er.");
+            this.toolTip.SetToolTip(this.btnRestoreDlls, "Restore Steamworks files if a clean candidate is found in the game folder.\r\nInclu" +
+        "des renamed copies such as steam_api_o.dll or steam_api64.bak.dll.");
             this.btnRestoreDlls.UseVisualStyleBackColor = false;
             this.btnRestoreDlls.Click += new System.EventHandler(this.OnRestoreDlls_Click);
             // 
@@ -2453,9 +2430,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ColumnHeader colInventoryFiller;
         private Label lblPatchOpMessage;
         private Label lblSteamAPIStatusX64Value;
-        private Label lblSteamApiHealthValue;
-        private Label lblSteamApiHealthNote;
-        private Label lblSteamApiHealth;
+        private Label lblSteamApiHint;
         private Button btnAddSubscribedGroupClan;
         private Button btnRemoveSubscribedGroupClan;
         private Button btnRemoveSubscribedGroup;

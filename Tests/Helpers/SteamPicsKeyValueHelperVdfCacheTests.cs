@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using AppDataKit;
@@ -100,6 +101,98 @@ namespace SmartGoldbergEmu.Tests.Helpers
             {
                 if (Directory.Exists(gamesDir))
                     Directory.Delete(gamesDir, recursive: true);
+            }
+        }
+
+        [Fact]
+        public async Task TryLoadAppInfoFromValveDataFile_reads_exported_vdf_without_catalog_json()
+        {
+            const ulong appId = 99112234;
+            string gamesDir = Path.Combine(Path.GetTempPath(), "sge-vdf-fallback-" + Guid.NewGuid().ToString("N"));
+            string vdfPath = PathConstants.CombineGamesPerAppValveDataFilePath(gamesDir, appId.ToString());
+            Directory.CreateDirectory(Path.GetDirectoryName(vdfPath));
+
+            try
+            {
+                using (var service = new SteamProductInfoService())
+                {
+                    Assert.True(service.ExportAppPicsToValveTextFile(
+                        appId.ToString(),
+                        BuildLaunchOptionAppInfoRoot(),
+                        vdfPath));
+
+                    Assert.True(service.TryLoadAppInfoFromValveDataFile(
+                        appId.ToString(),
+                        out AppInfoKeyValue loaded,
+                        gamesDir));
+                    Assert.NotNull(loaded);
+
+                    var launchService = new LaunchOptionService(service, new ThemeService());
+                    var game = new GameConfig
+                    {
+                        AppId = appId,
+                        AppName = "VDF fallback",
+                        AppInfo = loaded
+                    };
+
+                    List<LaunchOption> options = await launchService.ExtractLaunchOptionsAsync(game);
+                    Assert.Single(options);
+                    Assert.Equal("Play Game", options[0].Description);
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(gamesDir))
+                    Directory.Delete(gamesDir, recursive: true);
+            }
+        }
+
+        [Fact]
+        public async Task ExtractLaunchOptionsAsync_keeps_32bit_osarch_options_on_64bit_host()
+        {
+            const ulong appId = 99112235;
+            var appInfo = new AppInfoKeyValue(SteamPicsKeyNames.AppInfo);
+            var common = new AppInfoKeyValue(PathConstants.SteamAppsCommonDirectoryName);
+            var launch = new AppInfoKeyValue(SteamPicsKeyNames.Launch);
+
+            var x86 = new AppInfoKeyValue("0");
+            x86.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Description, "Play x86"));
+            x86.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Executable, "game.exe"));
+            x86.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Type, "default"));
+            var x86Cfg = new AppInfoKeyValue(SteamPicsKeyNames.Config);
+            x86Cfg.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.OsList, "windows"));
+            x86Cfg.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.OsArch, "32"));
+            x86.Children.Add(x86Cfg);
+
+            var x64 = new AppInfoKeyValue("1");
+            x64.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Description, "Play x64"));
+            x64.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Executable, "x64/game.exe"));
+            x64.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.Type, "none"));
+            var x64Cfg = new AppInfoKeyValue(SteamPicsKeyNames.Config);
+            x64Cfg.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.OsList, "windows"));
+            x64Cfg.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.OsArch, "64"));
+            x64.Children.Add(x64Cfg);
+
+            launch.Children.Add(x86);
+            launch.Children.Add(x64);
+            common.Children.Add(launch);
+            appInfo.Children.Add(common);
+
+            var game = new GameConfig
+            {
+                AppId = appId,
+                AppName = "Dual arch",
+                AppInfo = appInfo
+            };
+
+            using (var service = new SteamProductInfoService())
+            {
+                var launchService = new LaunchOptionService(service, new ThemeService());
+                var options = await launchService.ExtractLaunchOptionsAsync(game);
+
+                Assert.Contains(options, o => o.Description == "Play x86");
+                if (Environment.Is64BitOperatingSystem)
+                    Assert.Contains(options, o => o.Description == "Play x64");
             }
         }
 

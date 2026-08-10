@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
@@ -144,6 +143,30 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
+        // PE FileVersion, or ProductVersion if FileVersion is empty.
+        public static string GetFileVersion(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return string.Empty;
+
+            try
+            {
+                FileVersionInfo info = FileVersionInfo.GetVersionInfo(path);
+                if (info == null)
+                    return string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(info.FileVersion))
+                    return info.FileVersion.Trim();
+                if (!string.IsNullOrWhiteSpace(info.ProductVersion))
+                    return info.ProductVersion.Trim();
+                return string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
         /// <summary>
         /// True when the file is a Valve steam_api binary suitable for scanning interface version strings (not emulator builds).
         /// </summary>
@@ -238,40 +261,27 @@ namespace SmartGoldbergEmu.Validation
             int restoredCount = 0;
             try
             {
-                if (status.X32Found && !status.X32IsClean && !string.IsNullOrEmpty(status.X32Path))
+                List<SteamApiFinding> dirtyFindings = GetDirtyFindings(status);
+                foreach (SteamApiFinding finding in dirtyFindings)
                 {
-                    string backupPath = FindCleanBackupPathForBitness(status.CleanBackups, targetIs64Bit: false);
+                    if (finding == null || string.IsNullOrEmpty(finding.Path))
+                        continue;
 
-                    if (!string.IsNullOrEmpty(backupPath))
+                    string backupPath = FindCleanBackupPathForBitness(status.CleanBackups, finding.Is64Bit);
+                    if (string.IsNullOrEmpty(backupPath))
+                        continue;
+                    if (backupPath.Equals(finding.Path, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (File.Exists(finding.Path))
                     {
-                        if (File.Exists(status.X32Path))
-                        {
-                            string modPath = status.X32Path + PathConstants.SteamApiBackupSidecarExtension;
-                            if (File.Exists(modPath))
-                                File.Delete(modPath);
-                            File.Move(status.X32Path, modPath);
-                        }
-                        File.Copy(backupPath, status.X32Path, true);
-                        restoredCount++;
+                        string modPath = finding.Path + PathConstants.SteamApiBackupSidecarExtension;
+                        if (File.Exists(modPath))
+                            File.Delete(modPath);
+                        File.Move(finding.Path, modPath);
                     }
-                }
-
-                if (status.X64Found && !status.X64IsClean && !string.IsNullOrEmpty(status.X64Path))
-                {
-                    string backupPath = FindCleanBackupPathForBitness(status.CleanBackups, targetIs64Bit: true);
-
-                    if (!string.IsNullOrEmpty(backupPath))
-                    {
-                        if (File.Exists(status.X64Path))
-                        {
-                            string modPath = status.X64Path + PathConstants.SteamApiBackupSidecarExtension;
-                            if (File.Exists(modPath))
-                                File.Delete(modPath);
-                            File.Move(status.X64Path, modPath);
-                        }
-                        File.Copy(backupPath, status.X64Path, true);
-                        restoredCount++;
-                    }
+                    File.Copy(backupPath, finding.Path, true);
+                    restoredCount++;
                 }
             }
             catch (Exception ex)
@@ -284,6 +294,35 @@ namespace SmartGoldbergEmu.Validation
             if (restoredCount == 0 && string.IsNullOrEmpty(errorMessage))
                 errorMessage = "Could not find matching backup DLLs to restore.";
             return restoredCount;
+        }
+
+        // Dirty live steam_api paths that Restore can replace from CleanBackups.
+        public static List<SteamApiFinding> GetDirtyFindings(SteamApiStatus status)
+        {
+            var dirty = new List<SteamApiFinding>();
+            if (status == null)
+                return dirty;
+
+            if (status.Findings != null && status.Findings.Count > 0)
+            {
+                foreach (SteamApiFinding finding in status.Findings)
+                {
+                    if (finding != null && !finding.IsClean && !string.IsNullOrEmpty(finding.Path))
+                        dirty.Add(finding);
+                }
+                return dirty;
+            }
+
+            if (status.X32Found && !status.X32IsClean && !string.IsNullOrEmpty(status.X32Path))
+                dirty.Add(new SteamApiFinding { Path = status.X32Path, Is64Bit = false, IsClean = false });
+            if (status.X64Found && !status.X64IsClean && !string.IsNullOrEmpty(status.X64Path))
+                dirty.Add(new SteamApiFinding { Path = status.X64Path, Is64Bit = true, IsClean = false });
+            return dirty;
+        }
+
+        public static bool HasDirtySteamApi(SteamApiStatus status)
+        {
+            return GetDirtyFindings(status).Count > 0;
         }
 
         /// <summary>
@@ -301,6 +340,7 @@ namespace SmartGoldbergEmu.Validation
             try
             {
                 List<string> allFiles = EnumerateSteamApiNamedFilesSafe(gameFolder);
+                status.Findings = CollectSteamApiFindings(allFiles, gameFolder);
 
                 if (TrySelectBestPrimaryCandidate(allFiles, gameFolder, targetIs64Bit: false, out string x32Path))
                 {
@@ -316,9 +356,12 @@ namespace SmartGoldbergEmu.Validation
                     status.X64IsClean = IsKnownGoodValveSteamApi(x64Path);
                 }
 
-                if ((status.X32Found && !status.X32IsClean) || (status.X64Found && !status.X64IsClean))
+                if (HasDirtySteamApi(status))
                 {
-                    status.CleanBackups = FindCleanBackupDlls(gameFolder, status.X32Path, status.X64Path);
+                    var excludeDirty = new List<string>();
+                    foreach (SteamApiFinding finding in GetDirtyFindings(status))
+                        excludeDirty.Add(finding.Path);
+                    status.CleanBackups = FindCleanBackupDlls(gameFolder, excludeDirty);
                 }
             }
             catch (Exception ex)
@@ -327,6 +370,102 @@ namespace SmartGoldbergEmu.Validation
             }
 
             return status;
+        }
+
+        // Exact steam_api.dll / steam_api64.dll only (renamed copies stay restore sources via FindCleanBackupDlls).
+        public static List<SteamApiFinding> CollectSteamApiFindings(IEnumerable<string> allFiles, string gameFolder)
+        {
+            var findings = new List<SteamApiFinding>();
+            if (allFiles == null)
+                return findings;
+
+            string normalizedRoot = TryGetNormalizedDirectoryPrefix(gameFolder);
+            var scored = new List<ScoredSteamApiFinding>();
+
+            foreach (string filePath in allFiles)
+            {
+                if (string.IsNullOrEmpty(filePath) || IsExcludedFromPrimarySteamApiDetection(filePath))
+                    continue;
+
+                if (!IsExactSteamApiDllFileName(filePath))
+                    continue;
+
+                if (IsPrimarySteamApiCandidate(filePath, targetIs64Bit: false))
+                {
+                    scored.Add(new ScoredSteamApiFinding
+                    {
+                        Path = filePath,
+                        Is64Bit = false,
+                        Score = ScorePrimarySteamApiCandidate(filePath, targetIs64Bit: false, normalizedRoot)
+                    });
+                }
+                else if (IsPrimarySteamApiCandidate(filePath, targetIs64Bit: true))
+                {
+                    scored.Add(new ScoredSteamApiFinding
+                    {
+                        Path = filePath,
+                        Is64Bit = true,
+                        Score = ScorePrimarySteamApiCandidate(filePath, targetIs64Bit: true, normalizedRoot)
+                    });
+                }
+            }
+
+            scored.Sort((a, b) =>
+            {
+                int arch = a.Is64Bit.CompareTo(b.Is64Bit);
+                if (arch != 0)
+                    return arch;
+                int byScore = b.Score.CompareTo(a.Score);
+                if (byScore != 0)
+                    return byScore;
+                // Prefer normal game folders (e.g. x64\) over side trees like compat\.
+                int prefA = GetSteamApiPathDisplayPreference(a.Path);
+                int prefB = GetSteamApiPathDisplayPreference(b.Path);
+                int byPref = prefB.CompareTo(prefA);
+                if (byPref != 0)
+                    return byPref;
+                return string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
+            });
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ScoredSteamApiFinding item in scored)
+            {
+                if (!seen.Add(item.Path))
+                    continue;
+                findings.Add(new SteamApiFinding
+                {
+                    Path = item.Path,
+                    Is64Bit = item.Is64Bit,
+                    IsClean = IsKnownGoodValveSteamApi(item.Path)
+                });
+            }
+
+            return findings;
+        }
+
+        // Higher = listed earlier within the same arch/score (main x64 before compat).
+        private static int GetSteamApiPathDisplayPreference(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return 0;
+
+            string normalized = filePath.Replace('/', '\\');
+            if (normalized.IndexOf("\\compat\\", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 0;
+            if (normalized.IndexOf("\\x64\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                normalized.IndexOf("\\bin\\x64\\", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 2;
+            if (normalized.IndexOf("\\x86\\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                normalized.IndexOf("\\bin\\Win32\\", StringComparison.OrdinalIgnoreCase) >= 0)
+                return 2;
+            return 1;
+        }
+
+        private sealed class ScoredSteamApiFinding
+        {
+            public string Path;
+            public bool Is64Bit;
+            public int Score;
         }
 
         // Presence-only scan used when choosing a default launch mode for a newly added game.
@@ -769,6 +908,16 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
+        private static bool IsExactSteamApiDllFileName(string filePath)
+        {
+            string fileName = Path.GetFileName(filePath);
+            if (string.IsNullOrEmpty(fileName))
+                return false;
+
+            return fileName.Equals(SteamApiDll32, StringComparison.OrdinalIgnoreCase) ||
+                   fileName.Equals(SteamApiDll64, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool IsExcludedFromPrimarySteamApiDetection(string filePath)
         {
             string fileName = Path.GetFileName(filePath);
@@ -886,38 +1035,54 @@ namespace SmartGoldbergEmu.Validation
         /// </summary>
         public static List<string> FindCleanBackupDlls(string gameFolder, string mainX32Path = null, string mainX64Path = null)
         {
+            var exclude = new List<string>();
+            if (!string.IsNullOrEmpty(mainX32Path))
+                exclude.Add(mainX32Path);
+            if (!string.IsNullOrEmpty(mainX64Path))
+                exclude.Add(mainX64Path);
+            return FindCleanBackupDlls(gameFolder, exclude);
+        }
+
+        public static List<string> FindCleanBackupDlls(string gameFolder, IEnumerable<string> excludePaths)
+        {
             List<string> cleanBackups = new List<string>();
 
             if (string.IsNullOrEmpty(gameFolder) || !Directory.Exists(gameFolder))
                 return cleanBackups;
 
+            var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (excludePaths != null)
+            {
+                foreach (string path in excludePaths)
+                {
+                    if (!string.IsNullOrEmpty(path))
+                        excluded.Add(path);
+                }
+            }
+
             try
             {
                 List<string> allFiles = EnumerateSteamApiNamedFilesSafe(gameFolder);
-                Regex steamApiPattern = new Regex(@"steam_api", RegexOptions.IgnoreCase);
 
                 foreach (string filePath in allFiles)
                 {
                     string fileName = Path.GetFileName(filePath);
 
-                    if ((!string.IsNullOrEmpty(mainX32Path) && filePath.Equals(mainX32Path, StringComparison.OrdinalIgnoreCase)) ||
-                        (!string.IsNullOrEmpty(mainX64Path) && filePath.Equals(mainX64Path, StringComparison.OrdinalIgnoreCase)) ||
-                        IsExcludedFromPrimarySteamApiDetection(filePath))
-                    {
+                    if (excluded.Contains(filePath) || IsExcludedFromPrimarySteamApiDetection(filePath))
                         continue;
-                    }
 
-                    if (steamApiPattern.IsMatch(fileName))
+                    // Candidate name filter: *steam_api*.dll*
+                    if (!IsSteamApiDllCandidateFileName(fileName))
+                        continue;
+
+                    if (IsIgnoredSteamApiFile(filePath))
+                        continue;
+
+                    if (IsKnownGoodValveSteamApi(filePath) ||
+                        TryGetKnownGoodWindowsSteamApiBitness(filePath, out _) ||
+                        IsLikelyOfficialSteamClientApi(filePath))
                     {
-                        if (IsIgnoredSteamApiFile(filePath))
-                            continue;
-
-                        if (IsKnownGoodValveSteamApi(filePath) ||
-                            TryGetKnownGoodWindowsSteamApiBitness(filePath, out _) ||
-                            IsLikelyOfficialSteamClientApi(filePath))
-                        {
-                            cleanBackups.Add(filePath);
-                        }
+                        cleanBackups.Add(filePath);
                     }
                 }
             }
@@ -950,6 +1115,19 @@ namespace SmartGoldbergEmu.Validation
                 return false;
 
             return inferredIs64 == targetIs64Bit;
+        }
+
+        // Filename matches *steam_api*.dll* (steam_api before .dll; trailing suffix allowed).
+        private static bool IsSteamApiDllCandidateFileName(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName))
+                return false;
+
+            int steamApiIndex = fileName.IndexOf("steam_api", StringComparison.OrdinalIgnoreCase);
+            if (steamApiIndex < 0)
+                return false;
+
+            return fileName.IndexOf(".dll", steamApiIndex, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsLikelyOfficialSteamClientApi(string path)

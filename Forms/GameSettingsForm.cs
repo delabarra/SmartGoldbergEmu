@@ -1199,6 +1199,7 @@ namespace SmartGoldbergEmu.Forms
         {
             CancelModsListResolve();
             StopAndDisposeRestoreMessageHideTimer();
+            ClearSteamApiFindingLabels();
             if (_themeService != null)
             {
                 _themeService.ThemeChanged -= ThemeService_ThemeChanged;
@@ -2024,34 +2025,19 @@ namespace SmartGoldbergEmu.Forms
         private Models.SteamApiStatus _currentApiStatus;
         private DateTime _restoreMessageVisibleUntilUtc = DateTime.MinValue;
         private System.Windows.Forms.Timer _restoreMessageHideTimer;
+        private readonly List<Label> _steamApiFindingLabels = new List<Label>();
 
-        private const string SteamApiDisplayCheckMark = "\u2714\uFE0F";
-        private const string SteamApiDisplayQuestionMark = "\u2753";
-        private const string SteamApiDisplayWarningMark = "\u26A0\uFE0F";
-        private const string SteamApiMessageSuccessPrefix = "\u2713";
-        private const string SteamApiMessageErrorPrefix = "\u274C";
         private const int SteamApiStatusRowGap = 2;
         private const int LaunchModeToSteamApiGap = 6;
         private const int SteamApiBlockGap = 4;
-        private const int SteamApiHealthMaxLinesWhenNoStatus = 2;
-        private const string SteamApiHealthNoDllsFoundHeadline =
-            SteamApiMessageErrorPrefix + " No Steamworks API file was found (steam_api.dll / steam_api64.dll).";
-        private const string SteamApiHealthNoDllsFoundNote =
-            "Some games may require the Steam.dll launch mode; others may not require the use of Steamworks at all.";
-        private const string SteamApiHealthGoodHeadline = "Valid Steamworks DLLs found.";
-        private const string SteamApiHealthModifiedHeadline = "No valid Steamworks DLLs found.";
-        private const string SteamApiHealthValidBackupFoundFormat = "Valid {0} ({1}) found.";
-        private const string SteamApiHealthValidBackupFoundNoVersionFormat = "Valid Steamworks DLL ({0}) found.";
-        private const string SteamApiStatusValidUnknownVersion =
-            "Valid Steamworks DLL, unknown version ({0})";
-        private const string SteamApiStatusModified =
-            "Modified Steamworks DLL ({0})";
+        private const string SteamApiNoDllsFoundMessage =
+            "No Steamworks files found.";
         private const string SteamApiRestoreOpApplied =
-            SteamApiMessageSuccessPrefix + " Valid Steamworks DLLs were restored.";
+            "Steamworks DLLs were restored.";
         private const string SteamApiRestoreOpNoBackups =
-            SteamApiMessageErrorPrefix + " No matching valid backup DLLs were found.";
+            "No backup files were found.";
         private const string SteamApiRestoreOpNoMatchBackup =
-            SteamApiMessageErrorPrefix + " Could not restore valid Steamworks DLLs from backup.";
+            "Could not restore Steamworks files from backup.";
 
         private void ValidateSteamApiDlls()
         {
@@ -2060,12 +2046,10 @@ namespace SmartGoldbergEmu.Forms
                 string gameFolder = txtGameFolder?.Text?.Trim();
                 if (string.IsNullOrEmpty(gameFolder) || !Directory.Exists(gameFolder))
                 {
-                    UpdateSteamApiStatusLabels(
-                        null,
-                        null,
-                        SteamApiDisplaySeverity.Neutral,
-                        SteamApiDisplaySeverity.Neutral);
-                    ClearSteamApiHealth();
+                    ClearSteamApiFindingLabels();
+                    HideAndClearLabel(lblSteamAPIStatusX32Value);
+                    HideAndClearLabel(lblSteamAPIStatusX64Value);
+                    ClearSteamApiHint();
                     ClearExpiredPatchOpMessage();
                     UpdateRestoreDllsButton(canRestore: false);
                     ReflowSteamApiPanels();
@@ -2075,35 +2059,30 @@ namespace SmartGoldbergEmu.Forms
                 var apiStatus = SteamApiValidator.DetectAndValidateSteamApi(gameFolder);
                 _currentApiStatus = apiStatus;
 
-                string x32Text = null;
-                string x64Text = null;
-                SteamApiDisplaySeverity x32Severity = SteamApiDisplaySeverity.Neutral;
-                SteamApiDisplaySeverity x64Severity = SteamApiDisplaySeverity.Neutral;
+                List<SteamApiFinding> findings = apiStatus.Findings;
+                bool hasFindings = findings != null && findings.Count > 0;
 
-                if (!apiStatus.X32Found && !apiStatus.X64Found)
+                if (!hasFindings)
                 {
-                    x32Text = SteamApiHealthNoDllsFoundHeadline;
-                    x32Severity = SteamApiDisplaySeverity.Error;
+                    ClearSteamApiFindingLabels();
+                    HideAndClearLabel(lblSteamAPIStatusX64Value);
+                    SetSteamApiStatusLabel(lblSteamAPIStatusX32Value, SteamApiNoDllsFoundMessage, SteamApiDisplaySeverity.Neutral);
+                    ClearSteamApiHint();
                 }
                 else
                 {
-                    if (apiStatus.X32Found)
-                        x32Text = BuildSteamApiDisplayLine("x32", SteamApiValidator.SteamApiDll32, apiStatus.X32Path, apiStatus.X32IsClean, out x32Severity);
-                    if (apiStatus.X64Found)
-                        x64Text = BuildSteamApiDisplayLine("x64", SteamApiValidator.SteamApiDll64, apiStatus.X64Path, apiStatus.X64IsClean, out x64Severity);
+                    ClearSteamApiHint();
+                    HideAndClearLabel(lblSteamAPIStatusX32Value);
+                    HideAndClearLabel(lblSteamAPIStatusX64Value);
+                    RebuildSteamApiFindingLabels(findings);
                 }
 
-                UpdateSteamApiStatusLabels(x32Text, x64Text, x32Severity, x64Severity);
-
-                bool canRestore = (apiStatus.X32Found && !apiStatus.X32IsClean && apiStatus.CleanBackups.Count > 0) ||
-                                 (apiStatus.X64Found && !apiStatus.X64IsClean && apiStatus.CleanBackups.Count > 0);
-
-                UpdateRestoreDllsButton(canRestore: canRestore);
-
-                UpdateSteamApiHealthFromStatus(apiStatus, canRestore);
+                bool canRestore = SteamApiValidator.HasDirtySteamApi(apiStatus) &&
+                                  apiStatus.CleanBackups != null &&
+                                  apiStatus.CleanBackups.Count > 0;
+                UpdateRestoreDllsButton(canRestore);
 
                 ClearExpiredPatchOpMessage();
-
                 ReflowSteamApiPanels();
             }
             catch (Exception ex)
@@ -2112,41 +2091,51 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void UpdateSteamApiHealthFromStatus(SteamApiStatus apiStatus, bool canRestore)
+        private void RebuildSteamApiFindingLabels(IList<SteamApiFinding> findings)
         {
-            if (apiStatus == null)
-            {
-                ClearSteamApiHealth();
+            ClearSteamApiFindingLabels();
+            if (findings == null || grpBasicInfo == null)
                 return;
+
+            foreach (SteamApiFinding finding in findings)
+            {
+                if (finding == null || string.IsNullOrEmpty(finding.Path))
+                    continue;
+
+                string architecture = finding.Is64Bit ? "x64" : "x32";
+                SteamApiDisplaySeverity severity;
+                string text = BuildSteamApiDisplayLine(architecture, finding.Path, finding.IsClean, out severity);
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                Label label = new Label
+                {
+                    AutoSize = false,
+                    Name = "lblSteamApiFinding" + _steamApiFindingLabels.Count.ToString(),
+                    Text = text,
+                    Visible = true
+                };
+                ApplySteamApiStatusColor(label, severity);
+                grpBasicInfo.Controls.Add(label);
+                _steamApiFindingLabels.Add(label);
+            }
+        }
+
+        private void ClearSteamApiFindingLabels()
+        {
+            if (_steamApiFindingLabels.Count == 0)
+                return;
+
+            foreach (Label label in _steamApiFindingLabels)
+            {
+                if (label == null)
+                    continue;
+                if (grpBasicInfo != null)
+                    grpBasicInfo.Controls.Remove(label);
+                label.Dispose();
             }
 
-            if (!apiStatus.X32Found && !apiStatus.X64Found)
-            {
-                UpdateSteamApiHealthForNoDlls(canRestore);
-                return;
-            }
-
-            if (canRestore)
-            {
-                UpdateSteamApiHealthLabel(
-                    BuildSteamApiRestoreAvailableHealthMessage(apiStatus),
-                    SteamApiDisplaySeverity.Success);
-                return;
-            }
-
-            if (IsSteamApiInGoodStatusForRecoveryHint(apiStatus))
-            {
-                UpdateSteamApiHealthLabel(SteamApiHealthGoodHeadline, SteamApiDisplaySeverity.Success);
-                return;
-            }
-
-            if (apiStatus.X32Found || apiStatus.X64Found)
-            {
-                UpdateSteamApiHealthLabel(SteamApiHealthModifiedHeadline, SteamApiDisplaySeverity.Warning);
-                return;
-            }
-
-            ClearSteamApiHealth();
+            _steamApiFindingLabels.Clear();
         }
 
         private void UpdateRestoreDllsButton(bool canRestore)
@@ -2159,144 +2148,38 @@ namespace SmartGoldbergEmu.Forms
             btnRestoreDlls.Enabled = canRestore;
         }
 
-        private void UpdateSteamApiHealthForNoDlls(bool canRestore)
+        private void ClearSteamApiHint()
         {
-            HideAndClearLabel(lblSteamApiHealthValue);
-
-            if (!canRestore)
-            {
-                if (lblSteamApiHealthNote == null)
-                    return;
-
-                lblSteamApiHealthNote.Text = SteamApiHealthNoDllsFoundNote;
-                lblSteamApiHealthNote.Visible = true;
-                ApplySteamApiStatusColor(lblSteamApiHealthNote, SteamApiDisplaySeverity.Warning);
-                return;
-            }
-
-            HideAndClearLabel(lblSteamApiHealthNote);
+            HideAndClearLabel(lblSteamApiHint);
         }
 
-        private void ClearSteamApiHealth()
+        private void SetSteamApiHint(string text, SteamApiDisplaySeverity severity)
         {
-            HideAndClearLabel(lblSteamApiHealthValue);
-            HideAndClearLabel(lblSteamApiHealthNote);
-        }
-
-        private void UpdateSteamApiHealthTwoLine(
-            string headline,
-            SteamApiDisplaySeverity headlineSeverity,
-            string note,
-            SteamApiDisplaySeverity noteSeverity)
-        {
-            if (lblSteamApiHealthValue == null)
+            if (lblSteamApiHint == null)
                 return;
 
-            lblSteamApiHealthValue.Text = headline ?? string.Empty;
-            lblSteamApiHealthValue.Visible = !string.IsNullOrWhiteSpace(headline);
-            if (lblSteamApiHealthValue.Visible)
-                ApplySteamApiStatusColor(lblSteamApiHealthValue, headlineSeverity);
-            else
-                lblSteamApiHealthValue.Height = 0;
-
-            if (lblSteamApiHealthNote == null)
-                return;
-
-            if (string.IsNullOrWhiteSpace(note))
-            {
-                HideAndClearLabel(lblSteamApiHealthNote);
-                return;
-            }
-
-            lblSteamApiHealthNote.Text = note;
-            lblSteamApiHealthNote.Visible = true;
-            ApplySteamApiStatusColor(lblSteamApiHealthNote, noteSeverity);
-        }
-
-        private void UpdateSteamApiHealthLabel(string text, SteamApiDisplaySeverity severity)
-        {
             if (string.IsNullOrWhiteSpace(text))
             {
-                ClearSteamApiHealth();
+                ClearSteamApiHint();
                 return;
             }
 
-            UpdateSteamApiHealthTwoLine(text, severity, null, SteamApiDisplaySeverity.Neutral);
-        }
-
-        private static bool IsSteamApiInGoodStatusForRecoveryHint(SteamApiStatus status)
-        {
-            if (status == null)
-                return false;
-            if (!SteamApiArchAcceptableForGoodHint(status.X32Found, status.X32IsClean, status.X32Path))
-                return false;
-            if (!SteamApiArchAcceptableForGoodHint(status.X64Found, status.X64IsClean, status.X64Path))
-                return false;
-            return true;
-        }
-
-        private static bool SteamApiArchAcceptableForGoodHint(bool found, bool isClean, string path)
-        {
-            if (!found)
-                return true;
-            if (isClean)
-                return true;
-            string productName = SteamApiValidator.GetFileProductName(path);
-            if (string.IsNullOrWhiteSpace(productName))
-                return false;
-            return productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string BuildSteamApiRestoreAvailableHealthMessage(SteamApiStatus status)
-        {
-            if (status == null)
-                return string.Empty;
-
-            var lines = new List<string>();
-            TryAddRestoreAvailableHealthLine(status, targetIs64Bit: false, SteamApiValidator.SteamApiDll32, "x32", lines);
-            TryAddRestoreAvailableHealthLine(status, targetIs64Bit: true, SteamApiValidator.SteamApiDll64, "x64", lines);
-
-            if (lines.Count == 0)
-                return "Valid Steamworks DLL backup found.";
-
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        private static void TryAddRestoreAvailableHealthLine(
-            SteamApiStatus status,
-            bool targetIs64Bit,
-            string canonicalDllName,
-            string architecture,
-            List<string> lines)
-        {
-            bool found = targetIs64Bit ? status.X64Found : status.X32Found;
-            bool isClean = targetIs64Bit ? status.X64IsClean : status.X32IsClean;
-            if (!found || isClean)
-                return;
-
-            string backupPath = SteamApiValidator.FindCleanBackupPathForBitness(status.CleanBackups, targetIs64Bit);
-            if (string.IsNullOrEmpty(backupPath))
-                return;
-
-            string fileArch = $"{canonicalDllName} {architecture}";
-            if (SteamApiValidator.TryGetWindowsSteamworksVersionLabel(backupPath, out string steamworksVersion) &&
-                !string.IsNullOrWhiteSpace(steamworksVersion))
-            {
-                lines.Add(string.Format(SteamApiHealthValidBackupFoundFormat, steamworksVersion, fileArch));
-                return;
-            }
-
-            lines.Add(string.Format(SteamApiHealthValidBackupFoundNoVersionFormat, fileArch));
+            lblSteamApiHint.Text = text;
+            lblSteamApiHint.Visible = true;
+            ApplySteamApiStatusColor(lblSteamApiHint, severity);
         }
 
         private static string BuildSteamApiDisplayLine(
             string architecture,
-            string fileName,
             string filePath,
             bool isCleanKnownHash,
             out SteamApiDisplaySeverity severity)
         {
-            string fileArch = $"{fileName} {architecture}";
+            string fileVersion = SteamApiValidator.GetFileVersion(filePath);
+            string productName = SteamApiValidator.GetFileProductName(filePath);
+            string fileVersionPart = string.IsNullOrWhiteSpace(fileVersion)
+                ? string.Empty
+                : $" - {fileVersion}";
 
             if (isCleanKnownHash)
             {
@@ -2304,36 +2187,40 @@ namespace SmartGoldbergEmu.Forms
                 if (SteamApiValidator.TryGetWindowsSteamworksVersionLabel(filePath, out string steamworksVersion) &&
                     !string.IsNullOrWhiteSpace(steamworksVersion))
                 {
-                    return $"{SteamApiDisplayCheckMark} {steamworksVersion} ({fileArch})";
+                    string signName = ResolveSteamApiSignDisplayName(productName);
+                    return $"{steamworksVersion.Trim()} {architecture}{fileVersionPart}{FormatSteamApiSignPart(signName)}";
                 }
 
-                return $"{SteamApiDisplayQuestionMark} {string.Format(SteamApiStatusValidUnknownVersion, fileArch)}";
+                return $"Steamworks {architecture} (unknown ver.){fileVersionPart}{FormatSteamApiSignPart("Steam signed")}";
             }
 
-            string productName = SteamApiValidator.GetFileProductName(filePath);
-            if (string.IsNullOrWhiteSpace(productName))
-                productName = "Unknown Product";
-
-            if (productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(productName) &&
+                productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase))
             {
                 severity = SteamApiDisplaySeverity.Success;
-                return $"{SteamApiDisplayQuestionMark} {string.Format(SteamApiStatusValidUnknownVersion, fileArch)}";
+                return $"Steamworks {architecture} (unknown ver.){fileVersionPart}{FormatSteamApiSignPart("Steam signed")}";
             }
 
             severity = SteamApiDisplaySeverity.Warning;
-            return $"{SteamApiDisplayWarningMark} {string.Format(SteamApiStatusModified, fileArch)} â€” {productName}";
+            string patchedSign = ResolveSteamApiSignDisplayName(productName);
+            return $"Patched Steamworks {architecture}{fileVersionPart}{FormatSteamApiSignPart(patchedSign)}";
         }
 
-        private void UpdateSteamApiStatusLabels(
-            string x32Text,
-            string x64Text,
-            SteamApiDisplaySeverity x32Severity,
-            SteamApiDisplaySeverity x64Severity)
+        // Steam Client API → "Steam"; otherwise the PE ProductName (or empty).
+        private static string ResolveSteamApiSignDisplayName(string productName)
         {
-            SetSteamApiStatusLabel(lblSteamAPIStatusX32Value, x32Text, x32Severity);
-            SetSteamApiStatusLabel(lblSteamAPIStatusX64Value, x64Text, x64Severity);
+            if (string.IsNullOrWhiteSpace(productName))
+                return string.Empty;
+            if (productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase))
+                return "Steam";
+            return productName.Trim();
+        }
 
-            ReflowSteamApiPanels();
+        private static string FormatSteamApiSignPart(string signName)
+        {
+            if (string.IsNullOrWhiteSpace(signName))
+                return string.Empty;
+            return $" - ({signName.Trim()})";
         }
 
         private void SetSteamApiStatusLabel(Label label, string text, SteamApiDisplaySeverity severity)
@@ -2386,55 +2273,57 @@ namespace SmartGoldbergEmu.Forms
             if (lblSteamAPIStatus != null)
                 lblSteamAPIStatus.Top = statusRowY;
 
-            int statusAnchorY = statusRowY;
+            // Keep btnRestoreDlls.Location from the designer; only use Left above to reserve label width.
 
-            bool hasX32 = SteamApiLabelHasContent(lblSteamAPIStatusX32Value);
-            bool hasX64 = SteamApiLabelHasContent(lblSteamAPIStatusX64Value);
-            bool hasStatus = hasX32 || hasX64;
+            int y = statusRowY;
+            bool laidOutFinding = false;
 
-            int y = statusAnchorY;
+            if (_steamApiFindingLabels.Count > 0)
+            {
+                foreach (Label findingLabel in _steamApiFindingLabels)
+                {
+                    if (!SteamApiLabelHasContent(findingLabel))
+                        continue;
+                    if (laidOutFinding)
+                        y += SteamApiStatusRowGap;
+                    y = LayoutSteamApiLabelAt(findingLabel, statusLeft, y, right, 0);
+                    laidOutFinding = true;
+                }
 
-            if (hasX32)
-                y = LayoutSteamApiLabelAt(lblSteamAPIStatusX32Value, statusLeft, y, right, 0);
-            else
                 CollapseSteamApiLabelHeight(lblSteamAPIStatusX32Value);
-
-            if (hasX64)
-            {
-                if (hasX32)
-                    y += SteamApiStatusRowGap;
-                y = LayoutSteamApiLabelAt(lblSteamAPIStatusX64Value, statusLeft, y, right, 0);
-            }
-            else
                 CollapseSteamApiLabelHeight(lblSteamAPIStatusX64Value);
-
-            int healthLeft = lblSteamApiHealthValue != null ? lblSteamApiHealthValue.Left : statusLeft;
-            int healthDesignerY = lblSteamApiHealthValue != null ? lblSteamApiHealthValue.Top : y;
-            int healthY = hasStatus ? Math.Max(y + SteamApiBlockGap, healthDesignerY) : healthDesignerY;
-            int healthMaxLines = hasStatus ? 0 : SteamApiHealthMaxLinesWhenNoStatus;
-
-            if (SteamApiLabelHasContent(lblSteamApiHealthValue))
-                y = LayoutSteamApiLabelAt(lblSteamApiHealthValue, healthLeft, healthY, right, healthMaxLines);
+            }
             else
             {
-                CollapseSteamApiLabelHeight(lblSteamApiHealthValue);
-                y = healthY;
+                bool hasX32 = SteamApiLabelHasContent(lblSteamAPIStatusX32Value);
+                bool hasX64 = SteamApiLabelHasContent(lblSteamAPIStatusX64Value);
+
+                if (hasX32)
+                {
+                    y = LayoutSteamApiLabelAt(lblSteamAPIStatusX32Value, statusLeft, y, right, 0);
+                    laidOutFinding = true;
+                }
+                else
+                    CollapseSteamApiLabelHeight(lblSteamAPIStatusX32Value);
+
+                if (hasX64)
+                {
+                    if (laidOutFinding)
+                        y += SteamApiStatusRowGap;
+                    y = LayoutSteamApiLabelAt(lblSteamAPIStatusX64Value, statusLeft, y, right, 0);
+                    laidOutFinding = true;
+                }
+                else
+                    CollapseSteamApiLabelHeight(lblSteamAPIStatusX64Value);
             }
 
-            if (SteamApiLabelHasContent(lblSteamApiHealthNote))
-                y = LayoutSteamApiLabelAt(lblSteamApiHealthNote, healthLeft, y + SteamApiStatusRowGap, right, 0);
+            if (SteamApiLabelHasContent(lblSteamApiHint))
+                y = LayoutSteamApiLabelAt(lblSteamApiHint, statusLeft, y + SteamApiBlockGap, right, 0);
             else
-                CollapseSteamApiLabelHeight(lblSteamApiHealthNote);
-
-            int patchLeft = lblPatchOpMessage != null ? lblPatchOpMessage.Left : healthLeft;
-            bool hasHealthContent = SteamApiLabelHasContent(lblSteamApiHealthValue) ||
-                                    SteamApiLabelHasContent(lblSteamApiHealthNote);
-            int patchY = hasHealthContent
-                ? y + SteamApiStatusRowGap
-                : (lblPatchOpMessage != null ? lblPatchOpMessage.Top : y);
+                CollapseSteamApiLabelHeight(lblSteamApiHint);
 
             if (SteamApiLabelHasContent(lblPatchOpMessage))
-                LayoutSteamApiLabelAt(lblPatchOpMessage, patchLeft, patchY, right, 0);
+                LayoutSteamApiLabelAt(lblPatchOpMessage, statusLeft, y + SteamApiStatusRowGap, right, 0);
             else
                 CollapseSteamApiLabelHeight(lblPatchOpMessage);
         }
@@ -2470,7 +2359,7 @@ namespace SmartGoldbergEmu.Forms
             HideAndClearLabel(lblPatchOpMessage);
         }
 
-        // Uses designer Left; Top is stacked for status rows or designer-based anchors for health/patch.
+        // Uses designer Left; Top is stacked under launch mode for status / hint / patch rows.
         private static int LayoutSteamApiLabelAt(Label label, int left, int top, int rightEdge, int maxLines)
         {
             if (label == null)
@@ -2554,7 +2443,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("Error restoring Steam API DLLs", ex);
-                ShowRestoreOpMessage(SteamApiMessageErrorPrefix + " " + ex.Message, SteamApiDisplaySeverity.Error);
+                ShowRestoreOpMessage(ex.Message, SteamApiDisplaySeverity.Error);
             }
         }
 
@@ -2575,7 +2464,7 @@ namespace SmartGoldbergEmu.Forms
             else
             {
                 ShowRestoreOpMessage(
-                    string.IsNullOrEmpty(errorMessage) ? SteamApiRestoreOpNoMatchBackup : SteamApiMessageErrorPrefix + " " + errorMessage,
+                    string.IsNullOrEmpty(errorMessage) ? SteamApiRestoreOpNoMatchBackup : errorMessage,
                     SteamApiDisplaySeverity.Error);
             }
         }

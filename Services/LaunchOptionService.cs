@@ -471,7 +471,7 @@ namespace SmartGoldbergEmu.Services
         }
 
         // Async PICS fetch so callers can await without blocking the WinForms message pump.
-        // Prefer an already-known app root (catalog, in-memory, or on-disk catalog JSON) before warming PICS; never falls back to VDF.
+        // Prefer catalog / in-memory / on-disk JSON, then resources/{appId}.vdf, then live PICS.
         public async Task<List<LaunchOption>> ExtractLaunchOptionsAsync(GameConfig game, CancellationToken cancellationToken = default)
         {
             if (TryGetEmptyListIfInvalidGame(game, out List<LaunchOption> early))
@@ -955,6 +955,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // Steam shows 32-bit options on 64-bit Windows (WoW64). Only 64-bit-only and arm64-only entries are host-gated.
         private static bool HostMatchesLaunchOsArch(string osArchFromVdf)
         {
             if (string.IsNullOrWhiteSpace(osArchFromVdf))
@@ -970,7 +971,7 @@ namespace SmartGoldbergEmu.Services
                 return osIs64Bit;
 
             if (s == "32" || s == "win32" || s == "x86" || s == "i386")
-                return !osIs64Bit;
+                return true;
 
             if (s.IndexOf("arm64", StringComparison.Ordinal) >= 0 || s.IndexOf("aarch64", StringComparison.Ordinal) >= 0)
                 return HostCpuIsArm64();
@@ -980,7 +981,7 @@ namespace SmartGoldbergEmu.Services
             if (has64 && !has32)
                 return osIs64Bit;
             if (has32 && !has64)
-                return !osIs64Bit;
+                return true;
 
             return true;
         }

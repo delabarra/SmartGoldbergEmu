@@ -2522,7 +2522,7 @@ namespace SmartGoldbergEmu.Forms
             Program.LogService?.LogDebug("Validating Steam API DLLs before launch");
             var apiStatus = SteamApiValidator.DetectAndValidateSteamApi(validationRoot);
 
-            if (!((apiStatus.X32Found && !apiStatus.X32IsClean) || (apiStatus.X64Found && !apiStatus.X64IsClean)))
+            if (!SteamApiValidator.HasDirtySteamApi(apiStatus))
             {
                 Program.LogService?.LogDebug("Steam API DLLs validation passed");
                 return true;

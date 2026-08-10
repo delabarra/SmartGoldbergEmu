@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AppDataKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
@@ -77,6 +78,13 @@ namespace SmartGoldbergEmu.Services
                     bundle.DlcData = catalogDlc;
                     bundle.Game.PreFetchedDlcData = catalogDlc;
                 }
+            }
+            else if (ServiceLocator.SteamProductInfoService.TryLoadAppInfoFromValveDataFile(
+                appId.ToString(),
+                out AppInfoKeyValue fromVdf)
+                && fromVdf != null)
+            {
+                bundle.Game.AppInfo = fromVdf;
             }
 
             LoadSidecars(appId, bundle.Sidecars);

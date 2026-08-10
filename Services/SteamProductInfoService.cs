@@ -106,7 +106,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        // In-memory root, then catalog JSON (games/{appId}/resources/{appId}.json), then live Steam PICS (converted once).
+        // In-memory → catalog JSON → on-disk resources/{appId}.vdf → live Steam PICS (converted once).
         public async Task<AppInfoKeyValue> GetAppInfoOrFetchAsync(string appId, AppInfoKeyValue existingAppInfo, CancellationToken ct = default)
         {
             if (existingAppInfo != null)
@@ -119,8 +119,44 @@ namespace SmartGoldbergEmu.Services
                 return catalog.AppInfo;
             }
 
+            // Pre-catalog installs still have launch data in the Valve text export beside resources/.
+            if (TryLoadAppInfoFromValveDataFile(appId, out AppInfoKeyValue fromVdf) && fromVdf != null)
+                return fromVdf;
+
             KeyValue kv = await GetAppKeyValueAsync(appId, ct).ConfigureAwait(false);
             return AppDataKitBridgeService.ConvertFromSteamKit(kv);
+        }
+
+        // Reads games/{appId}/resources/{appId}.vdf when catalog JSON is missing (legacy / export-only installs).
+        public bool TryLoadAppInfoFromValveDataFile(string appId, out AppInfoKeyValue appInfo, string gamesDirectoryRoot = null)
+        {
+            appInfo = null;
+            if (string.IsNullOrWhiteSpace(appId))
+                return false;
+
+            try
+            {
+                string root = string.IsNullOrWhiteSpace(gamesDirectoryRoot)
+                    ? PathConstants.GamesDirectory
+                    : gamesDirectoryRoot;
+                string path = PathConstants.CombineGamesPerAppValveDataFilePath(root, appId.Trim());
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return false;
+
+                KeyValue kv = KeyValue.ParseVdf(File.ReadAllBytes(path));
+                if (kv == null)
+                    return false;
+
+                appInfo = AppDataKitBridgeService.ConvertFromSteamKit(kv);
+                return appInfo != null;
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning(
+                    "Failed to load game assets VDF for app " + appId + ": " + ex.Message);
+                appInfo = null;
+                return false;
+            }
         }
 
         public async Task<AppInfoKeyValue> WarmGameConfigAppInfoAsync(GameConfig game, CancellationToken ct = default)

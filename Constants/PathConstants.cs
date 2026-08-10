@@ -397,7 +397,7 @@ namespace SmartGoldbergEmu.Constants
             return Path.Combine(CombineGameFolder(gamesDirectoryRoot, appIdFolderName), GamesPerAppResourcesFolderName);
         }
 
-        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.vdf (write-only PICS export on game save)
+        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.vdf (PICS Valve-text export; read fallback when catalog JSON is missing)
         public static string CombineGamesPerAppValveDataFilePath(string gamesDirectoryRoot, string appIdFolderName)
         {
             return Path.Combine(
@@ -405,7 +405,7 @@ namespace SmartGoldbergEmu.Constants
                 appIdFolderName + SteamProductInfoValveKeyValuesFileExtension);
         }
 
-        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.json (catalog snapshot SoT; app never reads VDF)
+        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.json (catalog snapshot SoT)
         public static string CombineGamesPerAppCatalogJsonFilePath(string gamesDirectoryRoot, string appIdFolderName)
         {
             return Path.Combine(
