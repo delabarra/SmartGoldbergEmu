@@ -1347,21 +1347,12 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            var dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                "This will download and reinstall Goldberg Emulator files.\n\nProceed?",
-                "Reinstall",
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Question);
-
-            if (dialogResult != DialogResult.OK)
-                return;
-
             Program.LogService?.LogMessage("Manual reinstall triggered by user");
-            _taskReportService.SetMessage("Reinstalling...");
+            _taskReportService.SetMessage("Preparing emulator reinstall...");
 
             try
             {
-                await EmulatorUpdateService.DownloadAndInstallWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                await EmulatorUpdateService.ReinstallWithUIAsync(Program.LogService, this).ConfigureAwait(true);
                 if (IsDisposed || Disposing)
                     return;
             }
@@ -1369,6 +1360,36 @@ namespace SmartGoldbergEmu.Forms
             {
                 Program.LogService?.LogError($"Reinstall failed: {ex.Message}", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Reinstall", ex), TaskReportKind.Error);
+            }
+            finally
+            {
+                _taskReportService.SetMessage(string.Empty);
+            }
+        }
+
+        private void OnViewEmulatorChangelog_Click(object sender, EventArgs e)
+        {
+            _ = OnViewEmulatorChangelogAsync().ForgetFaults(Program.LogService, nameof(OnViewEmulatorChangelogAsync));
+        }
+
+        private async Task OnViewEmulatorChangelogAsync()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            Program.LogService?.LogMessage("View emulator changelog triggered by user");
+            _taskReportService.SetMessage("Loading changelog...");
+
+            try
+            {
+                await EmulatorUpdateService.ShowLatestChangelogWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Emulator changelog failed: {ex.Message}", ex);
+                _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Emulator changelog", ex), TaskReportKind.Error);
             }
             finally
             {

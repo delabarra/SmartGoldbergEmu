@@ -45,12 +45,14 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileForkSelect = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileCheckUpdates = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileReinstall = new System.Windows.Forms.ToolStripMenuItem();
+            this.miMnuFileGoldbergViewChangelog = new System.Windows.Forms.ToolStripMenuItem();
             this.sepMnuFileBeforeGoldbergFolders = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileOpenGoldbergFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileCheckLauncherUpdates = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileLauncherCheckUpdates = new System.Windows.Forms.ToolStripMenuItem();
-            this.miMnuFileLauncherViewChangelog = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileLauncherReinstall = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
+            this.miMnuFileLauncherViewChangelog = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.sepMnuFileBeforeExit = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileExit = new System.Windows.Forms.ToolStripMenuItem();
@@ -137,7 +139,6 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxViewAddGame = new System.Windows.Forms.ToolStripMenuItem();
             this.sepCtxViewAfterAdd = new System.Windows.Forms.ToolStripSeparator();
             this.miCtxViewRefresh = new System.Windows.Forms.ToolStripMenuItem();
-            this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.mnuMain.SuspendLayout();
             this.ctxGamesItem.SuspendLayout();
             this.stripMain.SuspendLayout();
@@ -188,6 +189,7 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileCheckUpdates,
             this.miMnuFileReinstall,
             this.sepMnuFileBeforeGoldbergFolders,
+            this.miMnuFileGoldbergViewChangelog,
             this.miMnuFileOpenGoldbergFolder});
             this.miMnuFileGoldbergUpdate.Name = "miMnuFileGoldbergUpdate";
             this.miMnuFileGoldbergUpdate.Size = new System.Drawing.Size(180, 22);
@@ -213,6 +215,13 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileReinstall.Size = new System.Drawing.Size(188, 22);
             this.miMnuFileReinstall.Text = "♻️ Reinstall";
             this.miMnuFileReinstall.Click += new System.EventHandler(this.OnReinstall_Click);
+            // 
+            // miMnuFileGoldbergViewChangelog
+            // 
+            this.miMnuFileGoldbergViewChangelog.Name = "miMnuFileGoldbergViewChangelog";
+            this.miMnuFileGoldbergViewChangelog.Size = new System.Drawing.Size(188, 22);
+            this.miMnuFileGoldbergViewChangelog.Text = "View Changelog";
+            this.miMnuFileGoldbergViewChangelog.Click += new System.EventHandler(this.OnViewEmulatorChangelog_Click);
             // 
             // sepMnuFileBeforeGoldbergFolders
             // 
@@ -244,19 +253,24 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileLauncherCheckUpdates.Text = "🡇 Check for Updates";
             this.miMnuFileLauncherCheckUpdates.Click += new System.EventHandler(this.OnCheckLauncherUpdates_Click);
             // 
-            // miMnuFileLauncherViewChangelog
-            // 
-            this.miMnuFileLauncherViewChangelog.Name = "miMnuFileLauncherViewChangelog";
-            this.miMnuFileLauncherViewChangelog.Size = new System.Drawing.Size(185, 22);
-            this.miMnuFileLauncherViewChangelog.Text = "View Changelog";
-            this.miMnuFileLauncherViewChangelog.Click += new System.EventHandler(this.OnViewLauncherChangelog_Click);
-            // 
             // miMnuFileLauncherReinstall
             // 
             this.miMnuFileLauncherReinstall.Name = "miMnuFileLauncherReinstall";
             this.miMnuFileLauncherReinstall.Size = new System.Drawing.Size(185, 22);
             this.miMnuFileLauncherReinstall.Text = "♻️ Reinstall";
             this.miMnuFileLauncherReinstall.Click += new System.EventHandler(this.OnReinstallLauncher_Click);
+            // 
+            // toolStripSeparator3
+            // 
+            this.toolStripSeparator3.Name = "toolStripSeparator3";
+            this.toolStripSeparator3.Size = new System.Drawing.Size(182, 6);
+            // 
+            // miMnuFileLauncherViewChangelog
+            // 
+            this.miMnuFileLauncherViewChangelog.Name = "miMnuFileLauncherViewChangelog";
+            this.miMnuFileLauncherViewChangelog.Size = new System.Drawing.Size(185, 22);
+            this.miMnuFileLauncherViewChangelog.Text = "View Changelog";
+            this.miMnuFileLauncherViewChangelog.Click += new System.EventHandler(this.OnViewLauncherChangelog_Click);
             // 
             // miMnuFileSettings
             // 
@@ -897,11 +911,6 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxViewRefresh.Text = "Refresh";
             this.miCtxViewRefresh.Click += new System.EventHandler(this.OnCtxViewRefresh_Click);
             // 
-            // toolStripSeparator3
-            // 
-            this.toolStripSeparator3.Name = "toolStripSeparator3";
-            this.toolStripSeparator3.Size = new System.Drawing.Size(182, 6);
-            // 
             // MainForm
             // 
             this.AllowDrop = true;
@@ -944,6 +953,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripSeparator sepMnuFileBeforeExit;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileGoldbergUpdate;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileReinstall;
+        private System.Windows.Forms.ToolStripMenuItem miMnuFileGoldbergViewChangelog;
         private System.Windows.Forms.ListView lstGames;
         private System.Windows.Forms.ContextMenuStrip ctxGamesItem;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowProperties;

@@ -1628,6 +1628,143 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // Confirm via changelog, then download and install even when already on that version.
+        public static async Task ReinstallWithUIAsync(ILogService logger, Control uiOwner)
+        {
+            await FetchLatestAndPresentOnUiAsync(
+                logger,
+                uiOwner,
+                "reinstall",
+                "Reinstall Error",
+                "Error preparing emulator reinstall",
+                async result =>
+                {
+                    if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Reinstall Failed"))
+                        return;
+
+                    var dialogResult = UpdateChangelogForm.ShowDialogIfAlive(
+                        uiOwner,
+                        BuildReinstallChangelogContent(result));
+                    if (dialogResult != DialogResult.OK)
+                    {
+                        logger?.LogMessage("User cancelled emulator reinstall");
+                        return;
+                    }
+
+                    logger?.LogMessage("User confirmed emulator reinstall");
+                    await RunDownloadAndInstallWithProgressFormAsync(logger).ConfigureAwait(true);
+                }).ConfigureAwait(false);
+        }
+
+        public static async Task ShowLatestChangelogWithUIAsync(ILogService logger, Control uiOwner)
+        {
+            await FetchLatestAndPresentOnUiAsync(
+                logger,
+                uiOwner,
+                "changelog",
+                "Changelog Error",
+                "Error loading changelog",
+                result =>
+                {
+                    if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Changelog Unavailable"))
+                        return Task.CompletedTask;
+
+                    UpdateChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
+                    return Task.CompletedTask;
+                }).ConfigureAwait(false);
+        }
+
+        private static async Task FetchLatestAndPresentOnUiAsync(
+            ILogService logger,
+            Control uiOwner,
+            string failureContext,
+            string catchCaption,
+            string catchMessagePrefix,
+            Func<UpdateCheckResult, Task> presentOnUiAsync)
+        {
+            if (logger == null)
+                throw new ArgumentNullException(nameof(logger));
+            if (uiOwner == null)
+                throw new ArgumentNullException(nameof(uiOwner));
+            if (presentOnUiAsync == null)
+                throw new ArgumentNullException(nameof(presentOnUiAsync));
+
+            void RunSyncOnUi(Action a)
+            {
+                if (uiOwner.IsDisposed || uiOwner.Disposing)
+                    return;
+                if (uiOwner.InvokeRequired)
+                    uiOwner.Invoke(a);
+                else
+                    a();
+            }
+
+            try
+            {
+                var result = await Task.Run(() => CheckForUpdatesAsync(isStartup: false)).ConfigureAwait(false);
+                await ControlInvokeAsyncHelper.InvokeAsync(uiOwner, () => presentOnUiAsync(result))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LogGoldbergUpdateFailure(logger, ex, failureContext);
+                string detail = GetUpdateFailureDetail(ex);
+                RunSyncOnUi(() =>
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        uiOwner,
+                        catchMessagePrefix + ": " + detail,
+                        catchCaption,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                });
+            }
+        }
+
+        private static bool EnsureReleaseCheckSucceeded(
+            IWin32Window owner,
+            UpdateCheckResult result,
+            string failureCaption)
+        {
+            if (result != null && result.Success)
+                return true;
+
+            FormMessageBoxHelper.ShowIfAlive(
+                owner,
+                BuildEmulatorUpdateCheckFailedUserMessage(result),
+                failureCaption,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private static string BuildEmulatorUpdateCheckFailedUserMessage(UpdateCheckResult result)
+        {
+            const string manualHint =
+                "Try again later, or download manually from the fork / repack release pages.";
+
+            if (result == null)
+                return "Failed to check for emulator updates.\n\n" + manualHint;
+
+            if (result.TimedOut
+                || string.Equals(result.ErrorMessage, "Request timed out", StringComparison.OrdinalIgnoreCase))
+            {
+                return "The emulator update check timed out.\n\n"
+                    + "Check your connection and try again.\n\n"
+                    + manualHint;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                return "Failed to check for emulator updates.\n\n"
+                    + result.ErrorMessage.Trim()
+                    + "\n\n"
+                    + manualHint;
+            }
+
+            return "Failed to check for emulator updates.\n\n" + manualHint;
+        }
+
         // Runs the HTTP check off the UI thread; presents dialogs on uiOwner (async install, no DoEvents wait loop).
         public static async Task CheckForUpdatesWithUIAsync(
             ILogService logger,
@@ -1779,17 +1916,67 @@ namespace SmartGoldbergEmu.Services
 
         private static UpdateChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
         {
+            return CreateChangelogContent(
+                result,
+                "A new version of Goldberg Emulator is available.",
+                "Emulator binaries will be downloaded and installed.\r\n"
+                + "Steam.dll / overlay WAVs from the fork archive are skipped (local Steam / CDN / EXAMPLE assets apply).",
+                "Do you want to proceed with the installation?");
+        }
+
+        private static UpdateChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)
+        {
+            string versionLabel = FormatLatestVersionLabel(result, "latest");
+            return CreateChangelogContent(
+                result,
+                "Reinstall Goldberg Emulator (" + versionLabel + ").",
+                "This will download the latest Goldberg Emulator release and reinstall it.\r\n"
+                + "Steam.dll / overlay WAVs from the fork archive are skipped (local Steam / CDN / EXAMPLE assets apply).",
+                "Do you want to proceed?");
+        }
+
+        private static UpdateChangelogDialogContent BuildViewChangelogContent(UpdateCheckResult result)
+        {
+            string latestLabel = FormatLatestVersionLabel(result, "unknown");
+            string currentLabel = string.IsNullOrWhiteSpace(result?.CurrentVersion)
+                ? "unknown"
+                : result.CurrentVersion.Trim();
+            return CreateChangelogContent(
+                result,
+                "Goldberg Emulator release notes (" + latestLabel + ").",
+                "Current version: " + currentLabel + "\r\n" +
+                "Latest version: " + latestLabel,
+                proceedQuestion: string.Empty,
+                okButtonText: "Close",
+                showCancelButton: false);
+        }
+
+        private static UpdateChangelogDialogContent CreateChangelogContent(
+            UpdateCheckResult result,
+            string headline,
+            string additionalInfo,
+            string proceedQuestion,
+            string okButtonText = null,
+            bool showCancelButton = true)
+        {
             return new UpdateChangelogDialogContent
             {
                 FormTitle = ApplicationConstants.WindowTitle,
-                Headline = "A new version of Goldberg Emulator is available.",
-                ReleaseNotes = result.ReleaseNotes,
-                AdditionalInfo =
-                    "Emulator binaries will be downloaded and installed.\r\n"
-                    + "Steam.dll / overlay WAVs from the fork archive are skipped (local Steam / CDN / EXAMPLE assets apply).",
-                ProceedQuestion = "Do you want to proceed with the installation?",
+                Headline = headline,
+                ReleaseNotes = result?.ReleaseNotes,
+                AdditionalInfo = additionalInfo,
+                ProceedQuestion = proceedQuestion,
+                OkButtonText = okButtonText,
+                ShowCancelButton = showCancelButton,
                 ManualDownloadLinks = GetGoldbergManualDownloadLinks()
             };
+        }
+
+        private static string FormatLatestVersionLabel(UpdateCheckResult result, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(result?.LatestVersion)
+                ? fallback
+                : result.LatestVersion.Trim();
         }
     }
 }

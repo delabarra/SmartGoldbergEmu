@@ -39,8 +39,17 @@ namespace SmartGoldbergEmu.Services
             "Launcher release repository is not configured yet. Set GitHubOwner and GitHubRepo in Constants/LauncherReleaseConstants.cs, or add launcher_update_api_url under [application] in settings.ini.";
 
         private const string NoPublishedReleaseMessage = "No published latest release (HTTP 404).";
+        private const string RateLimitMessage =
+            "GitHub API rate limit exceeded. Try again later or use authenticated requests.";
+        private const string MissingReleaseZipMessage =
+            "Could not find launcher release zip in the latest GitHub release";
+        private const string RequestTimedOutMessage = "Request timed out";
+        private const string MissingReleaseTagMessage =
+            "Latest GitHub release did not include a version tag.";
 
-        public static async Task<UpdateCheckResult> CheckForUpdatesAsync(bool isStartup = false)
+        public static async Task<UpdateCheckResult> CheckForUpdatesAsync(
+            bool isStartup = false,
+            bool requireDownloadAsset = true)
         {
             var result = new UpdateCheckResult
             {
@@ -64,26 +73,11 @@ namespace SmartGoldbergEmu.Services
                         .GetAsync(releasesApiUrl)
                         .ConfigureAwait(false))
                     {
-                        if (response.StatusCode == HttpStatusCode.NotFound)
-                        {
-                            result.ErrorMessage = NoPublishedReleaseMessage;
+                        if (!await EnsureReleaseHttpSucceededAsync(response, result).ConfigureAwait(false))
                             return result;
-                        }
 
-                        if (response.StatusCode == HttpStatusCode.Forbidden)
-                        {
-                            string errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                            if (errorContent.Contains("rate limit"))
-                            {
-                                result.ErrorMessage =
-                                    "GitHub API rate limit exceeded. Try again later or use authenticated requests.";
-                                return result;
-                            }
-                        }
-
-                        response.EnsureSuccessStatusCode();
                         string json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        if (!TryParseLatestReleaseJson(json, result))
+                        if (!TryParseLatestReleaseJson(json, result, requireDownloadAsset))
                             return result;
 
                         string currentVersion = GetInstalledVersion();
@@ -101,44 +95,107 @@ namespace SmartGoldbergEmu.Services
             catch (TaskCanceledException)
             {
                 result.TimedOut = true;
-                result.ErrorMessage = "Request timed out";
+                result.ErrorMessage = RequestTimedOutMessage;
             }
             catch (Exception ex)
             {
-                result.ErrorMessage = $"Update check failed: {ex.Message}";
+                result.ErrorMessage = "Update check failed: " + ex.Message;
             }
 
             return result;
         }
 
-        private static bool TryParseLatestReleaseJson(string json, UpdateCheckResult result)
+        // True when the response is usable; false when result.ErrorMessage is set.
+        private static async Task<bool> EnsureReleaseHttpSucceededAsync(
+            HttpResponseMessage response,
+            UpdateCheckResult result)
+        {
+            if (response == null)
+            {
+                result.ErrorMessage = "Update check failed: empty HTTP response.";
+                return false;
+            }
+
+            if (response.IsSuccessStatusCode)
+                return true;
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                result.ErrorMessage = NoPublishedReleaseMessage;
+                return false;
+            }
+
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                string errorContent = response.Content != null
+                    ? await response.Content.ReadAsStringAsync().ConfigureAwait(false)
+                    : null;
+                if (!string.IsNullOrEmpty(errorContent)
+                    && errorContent.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    result.ErrorMessage = RateLimitMessage;
+                    return false;
+                }
+
+                result.ErrorMessage = "GitHub refused the release check (HTTP 403 Forbidden).";
+                return false;
+            }
+
+            string reason = string.IsNullOrWhiteSpace(response.ReasonPhrase)
+                ? response.StatusCode.ToString()
+                : response.ReasonPhrase.Trim();
+            result.ErrorMessage =
+                "GitHub release check failed (HTTP " + (int)response.StatusCode + " " + reason + ").";
+            return false;
+        }
+
+        private static bool TryParseLatestReleaseJson(
+            string json,
+            UpdateCheckResult result,
+            bool requireDownloadAsset)
         {
             var releaseData = JsonObject.Parse(json);
             _latestVersion = releaseData["tag_name"]?.ToString();
             result.LatestVersion = _latestVersion;
             result.ReleaseNotes = releaseData["body"]?.ToString();
 
+            if (string.IsNullOrWhiteSpace(_latestVersion))
+            {
+                result.ErrorMessage = MissingReleaseTagMessage;
+                return false;
+            }
+
             _downloadUrl = null;
             result.DownloadUrl = null;
-            foreach (JsonObject asset in (JsonArray)releaseData["assets"])
+            JsonArray assets = releaseData["assets"] as JsonArray;
+            if (assets != null)
             {
-                string name = asset["name"]?.ToString();
-                if (string.IsNullOrEmpty(name))
-                    continue;
-                if (!name.StartsWith(LauncherReleaseConstants.ReleaseZipNamePrefix, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                    continue;
+                foreach (JsonObject asset in assets)
+                {
+                    string name = asset["name"]?.ToString();
+                    if (string.IsNullOrEmpty(name))
+                        continue;
+                    if (!name.StartsWith(LauncherReleaseConstants.ReleaseZipNamePrefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                        continue;
 
-                _downloadUrl = asset["browser_download_url"]?.ToString();
-                result.DownloadUrl = _downloadUrl;
-                break;
+                    _downloadUrl = asset["browser_download_url"]?.ToString();
+                    result.DownloadUrl = _downloadUrl;
+                    break;
+                }
             }
 
             if (string.IsNullOrEmpty(_downloadUrl))
             {
-                result.ErrorMessage = "Could not find launcher release zip in the latest GitHub release";
-                return false;
+                if (requireDownloadAsset)
+                {
+                    result.ErrorMessage = MissingReleaseZipMessage;
+                    return false;
+                }
+
+                // Changelog view only needs tag + notes.
+                return true;
             }
 
             return true;
@@ -482,7 +539,8 @@ namespace SmartGoldbergEmu.Services
 
                     UpdateChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
                     return Task.CompletedTask;
-                }).ConfigureAwait(false);
+                },
+                requireDownloadAsset: false).ConfigureAwait(false);
         }
 
         private static async Task FetchLatestAndPresentOnUiAsync(
@@ -492,7 +550,8 @@ namespace SmartGoldbergEmu.Services
             string catchLogMessage,
             string catchCaption,
             string catchMessagePrefix,
-            Func<UpdateCheckResult, Task> presentOnUiAsync)
+            Func<UpdateCheckResult, Task> presentOnUiAsync,
+            bool requireDownloadAsset = true)
         {
             if (logger == null)
                 throw new ArgumentNullException(nameof(logger));
@@ -503,7 +562,9 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                var result = await Task.Run(() => CheckForUpdatesAsync(isStartup)).ConfigureAwait(false);
+                var result = await Task.Run(
+                        () => CheckForUpdatesAsync(isStartup, requireDownloadAsset))
+                    .ConfigureAwait(false);
                 await ControlInvokeAsyncHelper.InvokeAsync(uiOwner, () => presentOnUiAsync(result))
                     .ConfigureAwait(false);
             }
@@ -624,14 +685,57 @@ namespace SmartGoldbergEmu.Services
 
         private static string BuildUpdateCheckFailedUserMessage(UpdateCheckResult result)
         {
-            if (result != null && result.ErrorMessage == NoPublishedReleaseMessage)
+            const string manualHint =
+                "Manually check for the latest release on SmartGoldbergEmu's GitHub releases page.";
+
+            if (result == null)
+                return "Failed to check for launcher updates.\n\n" + manualHint;
+
+            if (result.TimedOut
+                || string.Equals(result.ErrorMessage, RequestTimedOutMessage, StringComparison.Ordinal))
             {
-                return "No launcher release has been published yet.\n\n" +
-                    "Check back later for updates.";
+                return "The launcher update check timed out.\n\n"
+                    + "Check your connection and try again.\n\n"
+                    + manualHint;
             }
 
-            return "Failed to check for launcher updates.\n\n" +
-                "Manually check for the latest release on SmartGoldbergEmu's GitHub releases page.";
+            if (string.Equals(result.ErrorMessage, NoPublishedReleaseMessage, StringComparison.Ordinal))
+            {
+                return "No launcher release has been published yet.\n\n"
+                    + "Check back later for updates.";
+            }
+
+            if (string.Equals(result.ErrorMessage, ReleaseRepositoryNotConfiguredMessage, StringComparison.Ordinal))
+                return result.ErrorMessage;
+
+            if (string.Equals(result.ErrorMessage, RateLimitMessage, StringComparison.Ordinal)
+                || (!string.IsNullOrEmpty(result.ErrorMessage)
+                    && result.ErrorMessage.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return RateLimitMessage + "\n\n" + manualHint;
+            }
+
+            if (string.Equals(result.ErrorMessage, MissingReleaseZipMessage, StringComparison.Ordinal))
+            {
+                return "A launcher release was found, but it does not include a downloadable zip yet.\n\n"
+                    + manualHint;
+            }
+
+            if (string.Equals(result.ErrorMessage, MissingReleaseTagMessage, StringComparison.Ordinal))
+            {
+                return "The latest GitHub release response did not include a version tag.\n\n"
+                    + manualHint;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                return "Failed to check for launcher updates.\n\n"
+                    + result.ErrorMessage.Trim()
+                    + "\n\n"
+                    + manualHint;
+            }
+
+            return "Failed to check for launcher updates.\n\n" + manualHint;
         }
 
         private const string PreserveUserDataInfo =
