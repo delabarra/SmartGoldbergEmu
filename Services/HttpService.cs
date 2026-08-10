@@ -88,7 +88,7 @@ namespace SmartGoldbergEmu.Services
             return await _apiClient.GetAsync(uri, cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task DownloadFileAsync(string uri, string filePath, Action<double> progressCallback = null, CancellationToken cancellationToken = default)
+        public async Task DownloadFileAsync(string uri, string filePath, Action<long, long> progressCallback = null, CancellationToken cancellationToken = default)
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(HttpService));
@@ -96,37 +96,55 @@ namespace SmartGoldbergEmu.Services
             using (var response = await _downloadClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
             {
                 response.EnsureSuccessStatusCode();
-                
-                var totalBytes = response.Content.Headers.ContentLength ?? 0;
-                var downloadedBytes = 0L;
-                
+
+                long contentLength = response.Content.Headers.ContentLength ?? -1;
+                long totalBytes = contentLength > 0 ? contentLength : -1;
+                long downloadedBytes = 0L;
+                const long unknownLengthReportStepBytes = 256 * 1024;
+
                 using (var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
                 using (var fileStream = System.IO.File.Create(filePath))
                 {
-                    var buffer = new byte[65536]; // 64KB for better throughput
+                    var buffer = new byte[65536];
                     int bytesRead;
-                    var lastReportedProgress = 0.0;
-                    
+                    double lastReportedRatio = 0.0;
+                    long lastReportedBytes = 0L;
+
+                    if (progressCallback != null)
+                        progressCallback(0L, totalBytes);
+
                     while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false)) > 0)
                     {
                         await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
                         downloadedBytes += bytesRead;
-                        
-                        if (progressCallback != null && totalBytes > 0)
+
+                        if (progressCallback == null)
+                            continue;
+
+                        if (totalBytes > 0)
                         {
-                            var progress = (double)downloadedBytes / totalBytes;
-                            if (progress - lastReportedProgress >= 0.01 || progress >= 1.0)
+                            double ratio = downloadedBytes / (double)totalBytes;
+                            if (ratio - lastReportedRatio >= 0.01 || downloadedBytes >= totalBytes)
                             {
-                                lastReportedProgress = progress;
-                                progressCallback(progress);
+                                lastReportedRatio = ratio;
+                                lastReportedBytes = downloadedBytes;
+                                progressCallback(downloadedBytes, totalBytes);
                             }
                         }
+                        else if (downloadedBytes - lastReportedBytes >= unknownLengthReportStepBytes)
+                        {
+                            lastReportedBytes = downloadedBytes;
+                            progressCallback(downloadedBytes, totalBytes);
+                        }
                     }
+
+                    if (progressCallback != null && (downloadedBytes != lastReportedBytes || downloadedBytes == 0))
+                        progressCallback(downloadedBytes, totalBytes > 0 ? totalBytes : downloadedBytes);
                 }
             }
         }
 
-        public async Task DownloadFileAsync(Uri uri, string filePath, Action<double> progressCallback = null, CancellationToken cancellationToken = default)
+        public async Task DownloadFileAsync(Uri uri, string filePath, Action<long, long> progressCallback = null, CancellationToken cancellationToken = default)
         {
             await DownloadFileAsync(uri.ToString(), filePath, progressCallback, cancellationToken).ConfigureAwait(false);
         }

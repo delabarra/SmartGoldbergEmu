@@ -565,7 +565,7 @@ namespace SmartGoldbergEmu.Services
                     }
                 }).ConfigureAwait(false);
 
-                progressCallback?.Invoke("Installation complete!", 100);
+                progressCallback?.Invoke("Installation complete", 100);
                 // 7z solid-folder decode buffers are unreachable after session dispose; compact LOH so WS can drop (net48).
                 LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
             }
@@ -616,10 +616,9 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
-                    await DownloadFileAsync(_downloadUrl, archivePath, (progress) =>
+                    await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
                     {
-                        int percentage = 15 + (int)(progress * 25);
-                        progressCallback?.Invoke(downloadMessage, percentage);
+                        ReportGoldbergDownloadProgress(progressCallback, downloadMessage, 15, 40, received, total);
                     }, cancellationCheck).ConfigureAwait(false);
                     return false;
                 }
@@ -682,32 +681,77 @@ namespace SmartGoldbergEmu.Services
                     throw new UpdateException("Windows Defender exclusion was denied. Installation aborted.");
             }
 
-            await DownloadFileAsync(_downloadUrl, archivePath, (progress) =>
+            await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
             {
-                int percentage = 20 + (int)(progress * 20);
-                progressCallback?.Invoke(downloadMessage, percentage);
+                ReportGoldbergDownloadProgress(progressCallback, downloadMessage, 20, 40, received, total);
             }, cancellationCheck).ConfigureAwait(false);
 
             return exclusionAddedDuringFallback;
         }
 
-        private static async Task DownloadFileAsync(string url, string destinationPath, Action<double> progressCallback = null, Func<bool> cancellationCheck = null, TimeSpan? timeout = null)
+        private static void ReportGoldbergDownloadProgress(
+            Action<string, int> progressCallback,
+            string downloadMessage,
+            int progressStart,
+            int progressEnd,
+            long bytesReceived,
+            long totalBytes)
+        {
+            if (progressCallback == null)
+                return;
+
+            int span = Math.Max(1, progressEnd - progressStart);
+            int percentage;
+            string sizeText;
+            if (totalBytes > 0)
+            {
+                double ratio = Math.Min(1.0, bytesReceived / (double)totalBytes);
+                percentage = progressStart + (int)(ratio * span);
+                sizeText = HttpHelpers.FormatByteSizeRange(bytesReceived, totalBytes);
+            }
+            else
+            {
+                // No Content-Length: keep the bar moving in the download band and show bytes received.
+                double softRatio = 1.0 - (1.0 / (1.0 + bytesReceived / (8.0 * 1024 * 1024)));
+                if (softRatio > 0.95)
+                    softRatio = 0.95;
+                percentage = progressStart + (int)(softRatio * span);
+                sizeText = HttpHelpers.FormatByteSize(bytesReceived);
+            }
+
+            if (percentage > progressEnd)
+                percentage = progressEnd;
+            progressCallback(downloadMessage + " " + sizeText, percentage);
+        }
+
+        private static async Task DownloadFileAsync(
+            string url,
+            string destinationPath,
+            Action<long, long> progressCallback = null,
+            Func<bool> cancellationCheck = null,
+            TimeSpan? timeout = null)
         {
             var cts = new CancellationTokenSource();
             var effectiveTimeout = timeout ?? DownloadTimeout;
-            var lastReportedProgress = 0.0;
+            long lastReportedBytes = -1L;
             var progressLock = new object();
-            Action<double> wrappedProgress = (p) =>
+            Action<long, long> wrappedProgress = (received, total) =>
             {
                 if (cancellationCheck?.Invoke() == true)
                     cts.Cancel();
                 lock (progressLock)
                 {
-                    if (progressCallback != null && (p - lastReportedProgress >= 0.01 || p >= 1.0))
-                    {
-                        lastReportedProgress = p;
-                        progressCallback(p);
-                    }
+                    if (progressCallback == null)
+                        return;
+
+                    bool shouldReport = received != lastReportedBytes
+                        || (total > 0 && received >= total)
+                        || received == 0;
+                    if (!shouldReport)
+                        return;
+
+                    lastReportedBytes = received;
+                    progressCallback(received, total);
                 }
             };
 
@@ -878,6 +922,7 @@ namespace SmartGoldbergEmu.Services
                 totalBytes = fileCount + 2;
             }
 
+            bool includeByteSize = !useFileCount;
             long completedBytes = 0;
             for (int i = 0; i < fileCount; i++)
             {
@@ -894,6 +939,7 @@ namespace SmartGoldbergEmu.Services
                     ref completedBytes,
                     totalBytes,
                     entryWeight,
+                    includeByteSize,
                     decodeProgress =>
                     {
                         string relativeDir = file.InstallRelativeDirectory;
@@ -922,6 +968,7 @@ namespace SmartGoldbergEmu.Services
                     ref completedBytes,
                     totalBytes,
                     avatarSize,
+                    includeByteSize,
                     decodeProgress => session.TryExtractSingleFileFlat(avatarArchivePath, tempSettingsFolder, decodeProgress));
             }
             catch (Exception ex)
@@ -945,6 +992,7 @@ namespace SmartGoldbergEmu.Services
                     ref completedBytes,
                     totalBytes,
                     fontSize,
+                    includeByteSize,
                     decodeProgress => session.TryExtractSingleFileFlat(fontArchivePath, tempFontsPath, decodeProgress));
             }
             catch (Exception ex)
@@ -956,7 +1004,8 @@ namespace SmartGoldbergEmu.Services
             if (cancellationCheck?.Invoke() == true)
                 throw new UpdateException("Download cancelled by user");
 
-            ReportArchiveExtractByteProgress(progressCallback, extractStatus, completedBytes, totalBytes, progressStart, progressEnd);
+            ReportArchiveExtractByteProgress(
+                progressCallback, extractStatus, completedBytes, totalBytes, progressStart, progressEnd, includeByteSize);
 
             // Fork-bundled WAVs are not extracted — EnsureGlobalConfigFilesExistAsync uses Steam client → CDN.
         }
@@ -969,6 +1018,7 @@ namespace SmartGoldbergEmu.Services
             ref long completedBytes,
             long totalBytes,
             long entryWeight,
+            bool includeByteSize,
             Action<Action<long, long>> extract)
         {
             if (entryWeight < 0)
@@ -981,7 +1031,8 @@ namespace SmartGoldbergEmu.Services
                 baseCompleted,
                 totalBytes,
                 progressStart,
-                progressEnd);
+                progressEnd,
+                includeByteSize);
 
             Action<long, long> decodeProgress = null;
             if (progressCallback != null && entryWeight > 0 && totalBytes > 0)
@@ -1000,7 +1051,8 @@ namespace SmartGoldbergEmu.Services
                         baseCompleted + partial,
                         totalBytes,
                         progressStart,
-                        progressEnd);
+                        progressEnd,
+                        includeByteSize);
                 };
             }
 
@@ -1012,7 +1064,8 @@ namespace SmartGoldbergEmu.Services
                 completedBytes,
                 totalBytes,
                 progressStart,
-                progressEnd);
+                progressEnd,
+                includeByteSize);
         }
 
         private static long ResolveInstallFileUncompressedSize(
@@ -1051,12 +1104,26 @@ namespace SmartGoldbergEmu.Services
             long completedBytes,
             long totalBytes,
             int progressStart,
-            int progressEnd)
+            int progressEnd,
+            bool includeByteSize)
         {
             if (progressCallback == null)
                 return;
 
             int percentage = ArchiveExtractProgress.MapToPercent(completedBytes, totalBytes, progressStart, progressEnd);
+            if (includeByteSize && totalBytes > 0)
+            {
+                long shownCompleted = completedBytes;
+                if (shownCompleted < 0)
+                    shownCompleted = 0;
+                if (shownCompleted > totalBytes)
+                    shownCompleted = totalBytes;
+
+                string sizeText = HttpHelpers.FormatByteSizeRange(shownCompleted, totalBytes);
+                progressCallback(statusMessage + " " + sizeText, percentage);
+                return;
+            }
+
             progressCallback(statusMessage, percentage);
         }
 
@@ -1531,7 +1598,7 @@ namespace SmartGoldbergEmu.Services
                         () => progressForm.DisableCancel()).ConfigureAwait(true);
 
                     logger?.LogMessage("Goldberg emulator update completed successfully");
-                    progressForm.ShowSuccessAndClose("Installation complete!");
+                    progressForm.ShowSuccessAndClose("Installation complete");
                     await WaitForProgressFormCloseAsync(progressForm).ConfigureAwait(true);
                     return true;
                 }

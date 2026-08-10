@@ -50,6 +50,9 @@ namespace SmartGoldbergEmu.Forms
 
             lblStatus.Text = message ?? string.Empty;
             pbarProgress.Value = clamped;
+            // Startup update path pumps with DoEvents; force a paint so download updates are visible.
+            lblStatus.Update();
+            pbarProgress.Update();
         }
 
         public bool IsCancelled => System.Threading.Volatile.Read(ref _cancelledFlag) != 0;

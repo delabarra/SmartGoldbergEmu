@@ -114,6 +114,75 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
+        public static string FormatByteSize(long bytes)
+        {
+            if (bytes < 0)
+                bytes = 0;
+
+            string unit;
+            string format;
+            double divisor;
+            ResolveByteSizeUnit(bytes, out divisor, out unit, out format);
+            return (bytes / divisor).ToString(format) + " " + unit;
+        }
+
+        // Shared unit from the larger value: "12.3 / 45.0 MB".
+        public static string FormatByteSizeRange(long completedBytes, long totalBytes)
+        {
+            if (completedBytes < 0)
+                completedBytes = 0;
+            if (totalBytes < 0)
+                totalBytes = 0;
+            if (completedBytes > totalBytes && totalBytes > 0)
+                completedBytes = totalBytes;
+
+            long unitSource = totalBytes > completedBytes ? totalBytes : completedBytes;
+            string unit;
+            string format;
+            double divisor;
+            ResolveByteSizeUnit(unitSource, out divisor, out unit, out format);
+            return (completedBytes / divisor).ToString(format)
+                + " / "
+                + (totalBytes / divisor).ToString(format)
+                + " "
+                + unit;
+        }
+
+        private static void ResolveByteSizeUnit(long bytes, out double divisor, out string unit, out string format)
+        {
+            const double kb = 1024.0;
+            const double mb = kb * 1024.0;
+            const double gb = mb * 1024.0;
+
+            if (bytes >= gb)
+            {
+                divisor = gb;
+                unit = "GB";
+                format = "0.00";
+                return;
+            }
+
+            if (bytes >= mb)
+            {
+                divisor = mb;
+                unit = "MB";
+                format = "0.0";
+                return;
+            }
+
+            if (bytes >= kb)
+            {
+                divisor = kb;
+                unit = "KB";
+                format = "0.0";
+                return;
+            }
+
+            divisor = 1.0;
+            unit = "B";
+            format = "0";
+        }
+
         private static async Task RunBoundedItemAsync<T>(
             SemaphoreSlim gate,
             T item,

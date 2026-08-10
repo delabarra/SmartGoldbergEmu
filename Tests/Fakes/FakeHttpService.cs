@@ -40,12 +40,12 @@ namespace SmartGoldbergEmu.Tests.Fakes
             return GetAsync(uri.ToString(), cancellationToken);
         }
 
-        public Task DownloadFileAsync(string uri, string filePath, Action<double> progressCallback = null, CancellationToken cancellationToken = default)
+        public Task DownloadFileAsync(string uri, string filePath, Action<long, long> progressCallback = null, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("FakeHttpService does not support downloads.");
         }
 
-        public Task DownloadFileAsync(Uri uri, string filePath, Action<double> progressCallback = null, CancellationToken cancellationToken = default)
+        public Task DownloadFileAsync(Uri uri, string filePath, Action<long, long> progressCallback = null, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("FakeHttpService does not support downloads.");
         }

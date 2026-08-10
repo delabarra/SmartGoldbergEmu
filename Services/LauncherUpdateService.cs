@@ -170,10 +170,28 @@ namespace SmartGoldbergEmu.Services
                 Directory.CreateDirectory(workRoot);
 
                 progressCallback?.Invoke("Downloading launcher update...", 15);
-                await DownloadFileAsync(_downloadUrl, archivePath, progress =>
+                await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
                 {
-                    int percentage = 15 + (int)(progress * 55);
-                    progressCallback?.Invoke("Downloading launcher update...", percentage);
+                    int percentage;
+                    string sizeText;
+                    if (total > 0)
+                    {
+                        double ratio = Math.Min(1.0, received / (double)total);
+                        percentage = 15 + (int)(ratio * 55);
+                        sizeText = HttpHelpers.FormatByteSizeRange(received, total);
+                    }
+                    else
+                    {
+                        double softRatio = 1.0 - (1.0 / (1.0 + received / (8.0 * 1024 * 1024)));
+                        if (softRatio > 0.95)
+                            softRatio = 0.95;
+                        percentage = 15 + (int)(softRatio * 55);
+                        sizeText = HttpHelpers.FormatByteSize(received);
+                    }
+
+                    if (percentage > 70)
+                        percentage = 70;
+                    progressCallback?.Invoke("Downloading launcher update... " + sizeText, percentage);
                 }, cancellationCheck).ConfigureAwait(false);
 
                 if (cancellationCheck?.Invoke() == true)
@@ -192,7 +210,21 @@ namespace SmartGoldbergEmu.Services
                                 return;
 
                             int percentage = ArchiveExtractProgress.MapToPercent(completedBytes, totalBytes, 75, 89);
-                            progressCallback(extractStatus, percentage);
+                            // File-count fallback uses tiny totals; only show sizes for real byte progress.
+                            if (totalBytes < 1024)
+                            {
+                                progressCallback(extractStatus, percentage);
+                                return;
+                            }
+
+                            long shownCompleted = completedBytes;
+                            if (shownCompleted < 0)
+                                shownCompleted = 0;
+                            if (shownCompleted > totalBytes)
+                                shownCompleted = totalBytes;
+
+                            string sizeText = HttpHelpers.FormatByteSizeRange(shownCompleted, totalBytes);
+                            progressCallback(extractStatus + " " + sizeText, percentage);
                         });
                 }).ConfigureAwait(false);
 
@@ -230,7 +262,7 @@ namespace SmartGoldbergEmu.Services
         private static async Task DownloadFileAsync(
             string url,
             string destinationPath,
-            Action<double> progressCallback,
+            Action<long, long> progressCallback,
             Func<bool> cancellationCheck)
         {
             var effectiveTimeout = DownloadTimeout;
