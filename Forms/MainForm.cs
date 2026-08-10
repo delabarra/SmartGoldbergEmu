@@ -660,6 +660,7 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowOpenExecutableFolder.Click += OnOpenExecutableFolder_Click;
             miCtxRowOpenSettingsFolder.Click += OnOpenSettingsFolder_Click;
             miCtxRowOpenInventoryFile.Click += OnOpenInventoryFile_Click;
+            miCtxRowOpenGameAssetsFolder.Click += OnOpenGameAssetsFolder_Click;
 
             miCtxRowCopyGuid.Click += OnCopyGuid_Click;
             miCtxRowCreateShortcut.Click += OnCreateShortcut_Click;
@@ -2257,6 +2258,17 @@ namespace SmartGoldbergEmu.Forms
             ShellFolderHelper.OpenFolderForOwner(this, settingsPath, createIfMissing: true, "Error", "Failed to open settings folder");
         }
 
+        private void OnOpenGameAssetsFolder_Click(object sender, EventArgs e)
+        {
+            if (!TryGetSelectedGameWithAppId(out GameConfig game))
+                return;
+
+            string assetsPath = PathConstants.CombineGamesPerAppResourcesDirectory(
+                PathConstants.GamesDirectory,
+                game.AppId.ToString());
+            ShellFolderHelper.OpenFolderForOwner(this, assetsPath, createIfMissing: true, "Error", "Failed to open game assets folder");
+        }
+
         private void OnOpenGoldbergFolder_Click(object sender, EventArgs e) =>
             ShellFolderHelper.OpenFolderForOwner(this, PathConstants.GoldbergDirectory, createIfMissing: true, "Error", "Failed to open Goldberg folder");
 
@@ -2323,7 +2335,6 @@ namespace SmartGoldbergEmu.Forms
                 try
                 {
                     Clipboard.SetText(game.GameGuid.ToString());
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Entry GUID copied to clipboard:\n{game.GameGuid}", "GUID copied", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
@@ -2406,6 +2417,12 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowCreateShortcut.Enabled = true;
             var game = GetSelectedGame();
             miCtxRowOpenValveDataFile.Enabled = game != null && game.AppId > 0;
+            miCtxRowOpenGameAssetsFolder.Enabled = game != null && game.AppId > 0;
+
+            miCtxRowGuid.Enabled = game != null;
+            miCtxRowCopyGuid.Text = game != null
+                ? game.GameGuid.ToString()
+                : "{guid}";
 
             miCtxRowRemoveSteamStub.Visible = true;
             // Keep enabled when StartFolder/AppId may yield launch options even if Path is unresolved.

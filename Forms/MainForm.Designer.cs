@@ -111,11 +111,12 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenExecutableFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenSettingsFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenInventoryFile = new System.Windows.Forms.ToolStripMenuItem();
+            this.miCtxRowOpenGameAssetsFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenValveDataFile = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenExtraDllsFolder = new System.Windows.Forms.ToolStripMenuItem();
-            this.miCtxRowTools = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowRemoveSteamStub = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowCreateShortcut = new System.Windows.Forms.ToolStripMenuItem();
+            this.miCtxRowGuid = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowCopyGuid = new System.Windows.Forms.ToolStripMenuItem();
             this.sepCtxRowBeforeProps = new System.Windows.Forms.ToolStripSeparator();
             this.miCtxRowProperties = new System.Windows.Forms.ToolStripMenuItem();
@@ -133,6 +134,8 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxViewAddGame = new System.Windows.Forms.ToolStripMenuItem();
             this.sepCtxViewAfterAdd = new System.Windows.Forms.ToolStripSeparator();
             this.miCtxViewRefresh = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+            this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.mnuMain.SuspendLayout();
             this.ctxGamesItem.SuspendLayout();
             this.stripMain.SuspendLayout();
@@ -167,14 +170,14 @@ namespace SmartGoldbergEmu.Forms
             // miMnuFileAddGame
             // 
             this.miMnuFileAddGame.Name = "miMnuFileAddGame";
-            this.miMnuFileAddGame.Size = new System.Drawing.Size(180, 22);
+            this.miMnuFileAddGame.Size = new System.Drawing.Size(145, 22);
             this.miMnuFileAddGame.Text = "➕ Add Game";
             this.miMnuFileAddGame.Click += new System.EventHandler(this.OnAddGame_Click);
             // 
             // sepMnuFileAfterAddGame
             // 
             this.sepMnuFileAfterAddGame.Name = "sepMnuFileAfterAddGame";
-            this.sepMnuFileAfterAddGame.Size = new System.Drawing.Size(177, 6);
+            this.sepMnuFileAfterAddGame.Size = new System.Drawing.Size(142, 6);
             // 
             // miMnuFileGoldbergUpdate
             // 
@@ -185,39 +188,39 @@ namespace SmartGoldbergEmu.Forms
             this.sepMnuFileBeforeGoldbergFolders,
             this.miMnuFileOpenGoldbergFolder});
             this.miMnuFileGoldbergUpdate.Name = "miMnuFileGoldbergUpdate";
-            this.miMnuFileGoldbergUpdate.Size = new System.Drawing.Size(180, 22);
+            this.miMnuFileGoldbergUpdate.Size = new System.Drawing.Size(145, 22);
             this.miMnuFileGoldbergUpdate.Text = "🎮  Emulator";
             // 
             // miMnuFileForkSelect
             // 
             this.miMnuFileForkSelect.Name = "miMnuFileForkSelect";
-            this.miMnuFileForkSelect.Size = new System.Drawing.Size(194, 22);
+            this.miMnuFileForkSelect.Size = new System.Drawing.Size(188, 22);
             this.miMnuFileForkSelect.Text = "⇅ Fork select";
             this.miMnuFileForkSelect.Click += new System.EventHandler(this.OnForkSelect_Click);
             // 
             // miMnuFileCheckUpdates
             // 
             this.miMnuFileCheckUpdates.Name = "miMnuFileCheckUpdates";
-            this.miMnuFileCheckUpdates.Size = new System.Drawing.Size(194, 22);
+            this.miMnuFileCheckUpdates.Size = new System.Drawing.Size(188, 22);
             this.miMnuFileCheckUpdates.Text = "🡇 Check for Updates";
             this.miMnuFileCheckUpdates.Click += new System.EventHandler(this.OnCheckUpdates_Click);
             // 
             // miMnuFileReinstall
             // 
             this.miMnuFileReinstall.Name = "miMnuFileReinstall";
-            this.miMnuFileReinstall.Size = new System.Drawing.Size(194, 22);
+            this.miMnuFileReinstall.Size = new System.Drawing.Size(188, 22);
             this.miMnuFileReinstall.Text = "♻️ Reinstall";
             this.miMnuFileReinstall.Click += new System.EventHandler(this.OnReinstall_Click);
             // 
             // sepMnuFileBeforeGoldbergFolders
             // 
             this.sepMnuFileBeforeGoldbergFolders.Name = "sepMnuFileBeforeGoldbergFolders";
-            this.sepMnuFileBeforeGoldbergFolders.Size = new System.Drawing.Size(191, 6);
+            this.sepMnuFileBeforeGoldbergFolders.Size = new System.Drawing.Size(185, 6);
             // 
             // miMnuFileOpenGoldbergFolder
             // 
             this.miMnuFileOpenGoldbergFolder.Name = "miMnuFileOpenGoldbergFolder";
-            this.miMnuFileOpenGoldbergFolder.Size = new System.Drawing.Size(194, 22);
+            this.miMnuFileOpenGoldbergFolder.Size = new System.Drawing.Size(188, 22);
             this.miMnuFileOpenGoldbergFolder.Text = "Open goldberg folder";
             this.miMnuFileOpenGoldbergFolder.Click += new System.EventHandler(this.OnOpenGoldbergFolder_Click);
             // 
@@ -227,7 +230,7 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileLauncherCheckUpdates,
             this.miMnuFileLauncherReinstall});
             this.miMnuFileCheckLauncherUpdates.Name = "miMnuFileCheckLauncherUpdates";
-            this.miMnuFileCheckLauncherUpdates.Size = new System.Drawing.Size(180, 22);
+            this.miMnuFileCheckLauncherUpdates.Size = new System.Drawing.Size(145, 22);
             this.miMnuFileCheckLauncherUpdates.Text = "🚀  Launcher";
             // 
             // miMnuFileLauncherCheckUpdates
@@ -247,19 +250,19 @@ namespace SmartGoldbergEmu.Forms
             // miMnuFileSettings
             // 
             this.miMnuFileSettings.Name = "miMnuFileSettings";
-            this.miMnuFileSettings.Size = new System.Drawing.Size(180, 22);
+            this.miMnuFileSettings.Size = new System.Drawing.Size(145, 22);
             this.miMnuFileSettings.Text = "⚙️  Settings";
             this.miMnuFileSettings.Click += new System.EventHandler(this.OnSettings_Click);
             // 
             // sepMnuFileBeforeExit
             // 
             this.sepMnuFileBeforeExit.Name = "sepMnuFileBeforeExit";
-            this.sepMnuFileBeforeExit.Size = new System.Drawing.Size(177, 6);
+            this.sepMnuFileBeforeExit.Size = new System.Drawing.Size(142, 6);
             // 
             // miMnuFileExit
             // 
             this.miMnuFileExit.Name = "miMnuFileExit";
-            this.miMnuFileExit.Size = new System.Drawing.Size(180, 22);
+            this.miMnuFileExit.Size = new System.Drawing.Size(145, 22);
             this.miMnuFileExit.Text = "     Exit";
             this.miMnuFileExit.Click += new System.EventHandler(this.OnExit_Click);
             // 
@@ -553,12 +556,16 @@ namespace SmartGoldbergEmu.Forms
             this.sepCtxRowBeforeEmulation,
             this.miCtxRowEmulation,
             this.miCtxRowFilesFolders,
-            this.miCtxRowTools,
+            this.miCtxRowRemoveSteamStub,
+            this.toolStripSeparator1,
+            this.miCtxRowGuid,
+            this.miCtxRowCreateShortcut,
+            this.toolStripSeparator2,
+            this.miCtxRowRemove,
             this.sepCtxRowBeforeProps,
-            this.miCtxRowProperties,
-            this.miCtxRowRemove});
+            this.miCtxRowProperties});
             this.ctxGamesItem.Name = "ctxGamesItem";
-            this.ctxGamesItem.Size = new System.Drawing.Size(204, 220);
+            this.ctxGamesItem.Size = new System.Drawing.Size(204, 298);
             // 
             // miCtxRowRun
             // 
@@ -585,7 +592,7 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowSteamWorkshop});
             this.miCtxRowSteamPages.Name = "miCtxRowSteamPages";
             this.miCtxRowSteamPages.Size = new System.Drawing.Size(203, 22);
-            this.miCtxRowSteamPages.Text = "Steam";
+            this.miCtxRowSteamPages.Text = "Steam Links";
             // 
             // miCtxRowSteamStore
             // 
@@ -613,7 +620,7 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowLauncherOptions});
             this.miCtxRowTroubleshooting.Name = "miCtxRowTroubleshooting";
             this.miCtxRowTroubleshooting.Size = new System.Drawing.Size(203, 22);
-            this.miCtxRowTroubleshooting.Text = "SteamDB";
+            this.miCtxRowTroubleshooting.Text = "SteamDB Links";
             // 
             // miCtxRowSteamDb
             // 
@@ -647,30 +654,30 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowCreateSteamAppIdFile});
             this.miCtxRowEmulation.Name = "miCtxRowEmulation";
             this.miCtxRowEmulation.Size = new System.Drawing.Size(203, 22);
-            this.miCtxRowEmulation.Text = "Goldberg";
+            this.miCtxRowEmulation.Text = "Game Data";
             // 
             // miCtxRowRefreshCatalog
             // 
             this.miCtxRowRefreshCatalog.Name = "miCtxRowRefreshCatalog";
-            this.miCtxRowRefreshCatalog.Size = new System.Drawing.Size(232, 22);
-            this.miCtxRowRefreshCatalog.Text = "Refresh game data and assets";
+            this.miCtxRowRefreshCatalog.Size = new System.Drawing.Size(228, 22);
+            this.miCtxRowRefreshCatalog.Text = "Update game data and assets";
             // 
             // miCtxRowGenAchievements
             // 
             this.miCtxRowGenAchievements.Name = "miCtxRowGenAchievements";
-            this.miCtxRowGenAchievements.Size = new System.Drawing.Size(197, 22);
-            this.miCtxRowGenAchievements.Text = "Generate achievements";
+            this.miCtxRowGenAchievements.Size = new System.Drawing.Size(228, 22);
+            this.miCtxRowGenAchievements.Text = "Update achievements data";
             // 
             // miCtxRowGenItems
             // 
             this.miCtxRowGenItems.Name = "miCtxRowGenItems";
-            this.miCtxRowGenItems.Size = new System.Drawing.Size(197, 22);
-            this.miCtxRowGenItems.Text = "Generate items";
+            this.miCtxRowGenItems.Size = new System.Drawing.Size(228, 22);
+            this.miCtxRowGenItems.Text = "Update items data";
             // 
             // miCtxRowCreateSteamAppIdFile
             // 
             this.miCtxRowCreateSteamAppIdFile.Name = "miCtxRowCreateSteamAppIdFile";
-            this.miCtxRowCreateSteamAppIdFile.Size = new System.Drawing.Size(197, 22);
+            this.miCtxRowCreateSteamAppIdFile.Size = new System.Drawing.Size(228, 22);
             this.miCtxRowCreateSteamAppIdFile.Text = "Create steam_appid.txt";
             // 
             // miCtxRowFilesFolders
@@ -679,11 +686,12 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenExecutableFolder,
             this.miCtxRowOpenSettingsFolder,
             this.miCtxRowOpenInventoryFile,
+            this.miCtxRowOpenGameAssetsFolder,
             this.miCtxRowOpenValveDataFile,
             this.miCtxRowOpenExtraDllsFolder});
             this.miCtxRowFilesFolders.Name = "miCtxRowFilesFolders";
             this.miCtxRowFilesFolders.Size = new System.Drawing.Size(203, 22);
-            this.miCtxRowFilesFolders.Text = "Files && folders";
+            this.miCtxRowFilesFolders.Text = "Files && Folders";
             // 
             // miCtxRowOpenExecutableFolder
             // 
@@ -703,6 +711,12 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenInventoryFile.Size = new System.Drawing.Size(218, 22);
             this.miCtxRowOpenInventoryFile.Text = "Open items.json";
             // 
+            // miCtxRowOpenGameAssetsFolder
+            // 
+            this.miCtxRowOpenGameAssetsFolder.Name = "miCtxRowOpenGameAssetsFolder";
+            this.miCtxRowOpenGameAssetsFolder.Size = new System.Drawing.Size(218, 22);
+            this.miCtxRowOpenGameAssetsFolder.Text = "Open game assets folder";
+            // 
             // miCtxRowOpenValveDataFile
             // 
             this.miCtxRowOpenValveDataFile.Name = "miCtxRowOpenValveDataFile";
@@ -716,34 +730,32 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenExtraDllsFolder.Text = "Open extra DLLs folder";
             this.miCtxRowOpenExtraDllsFolder.Click += new System.EventHandler(this.OnOpenExtraDllsFolder_Click);
             // 
-            // miCtxRowTools
-            // 
-            this.miCtxRowTools.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.miCtxRowRemoveSteamStub,
-            this.miCtxRowCreateShortcut,
-            this.miCtxRowCopyGuid});
-            this.miCtxRowTools.Name = "miCtxRowTools";
-            this.miCtxRowTools.Size = new System.Drawing.Size(203, 22);
-            this.miCtxRowTools.Text = "Tools";
-            // 
             // miCtxRowRemoveSteamStub
             // 
             this.miCtxRowRemoveSteamStub.Name = "miCtxRowRemoveSteamStub";
-            this.miCtxRowRemoveSteamStub.Size = new System.Drawing.Size(177, 22);
+            this.miCtxRowRemoveSteamStub.Size = new System.Drawing.Size(203, 22);
             this.miCtxRowRemoveSteamStub.Text = "Remove SteamStub";
             // 
             // miCtxRowCreateShortcut
             // 
             this.miCtxRowCreateShortcut.Name = "miCtxRowCreateShortcut";
-            this.miCtxRowCreateShortcut.Size = new System.Drawing.Size(177, 22);
+            this.miCtxRowCreateShortcut.Size = new System.Drawing.Size(203, 22);
             this.miCtxRowCreateShortcut.Text = "Create shortcut";
+            // 
+            // miCtxRowGuid
+            // 
+            this.miCtxRowGuid.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.miCtxRowCopyGuid});
+            this.miCtxRowGuid.Name = "miCtxRowGuid";
+            this.miCtxRowGuid.Size = new System.Drawing.Size(203, 22);
+            this.miCtxRowGuid.Text = "Copy GUID";
+            this.miCtxRowGuid.ToolTipText = "Library entry identifier (not App ID).";
             // 
             // miCtxRowCopyGuid
             // 
             this.miCtxRowCopyGuid.Name = "miCtxRowCopyGuid";
-            this.miCtxRowCopyGuid.Size = new System.Drawing.Size(177, 22);
-            this.miCtxRowCopyGuid.Text = "Copy entry GUID";
-            this.miCtxRowCopyGuid.ToolTipText = "Library entry identifier (not App ID).";
+            this.miCtxRowCopyGuid.Size = new System.Drawing.Size(180, 22);
+            this.miCtxRowCopyGuid.Text = "{guid}";
             // 
             // sepCtxRowBeforeProps
             // 
@@ -864,6 +876,16 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxViewRefresh.Text = "Refresh";
             this.miCtxViewRefresh.Click += new System.EventHandler(this.OnCtxViewRefresh_Click);
             // 
+            // toolStripSeparator1
+            // 
+            this.toolStripSeparator1.Name = "toolStripSeparator1";
+            this.toolStripSeparator1.Size = new System.Drawing.Size(200, 6);
+            // 
+            // toolStripSeparator2
+            // 
+            this.toolStripSeparator2.Name = "toolStripSeparator2";
+            this.toolStripSeparator2.Size = new System.Drawing.Size(200, 6);
+            // 
             // MainForm
             // 
             this.AllowDrop = true;
@@ -949,6 +971,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripSeparator sepCtxRowAfterRun;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowOpenInventoryFile;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowCreateSteamAppIdFile;
+        private System.Windows.Forms.ToolStripMenuItem miCtxRowGuid;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowCopyGuid;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowSteamCommunity;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowSteamWorkshop;
@@ -959,7 +982,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripMenuItem miCtxRowSteamPages;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowEmulation;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowFilesFolders;
-        private System.Windows.Forms.ToolStripMenuItem miCtxRowTools;
+        private System.Windows.Forms.ToolStripMenuItem miCtxRowOpenGameAssetsFolder;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowRemoveSteamStub;
         private System.Windows.Forms.ToolStripSeparator sepCtxRowBeforeProps;
         private ToolStripSeparator sepCtxViewSortBeforeNone;
@@ -988,6 +1011,8 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripMenuItem miThemeDark;
         private System.Windows.Forms.ToolStripMenuItem miThemeSystem;
         private ToolStripSeparator sepCtxRowBeforeEmulation;
+        private ToolStripSeparator toolStripSeparator1;
+        private ToolStripSeparator toolStripSeparator2;
     }
 }
 
