@@ -25,11 +25,18 @@ namespace SmartGoldbergEmu.Constants
         public const string ClientSoundsPackageRelativePath =
             "client/steamui_websrc_sounds_all.zip.vz.5ba6acd8f4dfe4b93437895b20344fab5bb3ff96_3714779";
 
-        // Steam client package manifest (Valve KeyValues); used to resolve current bins_win32 zipvz.
+        // Steam client package manifest (Valve KeyValues); used to resolve current bins_win32 / resources_all zipvz.
         public const string ClientWin32ManifestRelativePath = "client/steam_client_win32";
+
+        // Manifest package block that contains clientui\images (hashed UI assets).
+        public const string ClientResourcesAllPackageName = "resources_all";
 
         // Entry name inside bins_win32 for the client Steam.dll.
         public const string ClientBinsSteamDllEntryName = "Steam.dll";
+
+        // Entry path inside resources_all for the hashed clientui image cached under LocalAppData.
+        public const string ClientResourcesUiHashedImageEntryPath =
+            "clientui/images/8669e97b288da32670e77181618c3dfb.png";
 
         public static readonly IReadOnlyList<string> DefaultStoreItemAssetsHosts = new[]
         {

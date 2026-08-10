@@ -67,6 +67,11 @@ namespace SmartGoldbergEmu.Services
         private readonly string _gamesDirectory;
         private readonly ITaskReportService _taskReportService;
         private readonly FallbackMosaicArtCache _fallbackMosaicArtCache = new FallbackMosaicArtCache();
+        private readonly object _waitingPlaceholderSync = new object();
+        private Bitmap _waitingMosaicPlaceholderBitmap;
+        private ApngAnimationDecoder.FrameBitmap[] _waitingMosaicAnimationFrames;
+        private bool _waitingMosaicPlaceholderLoadAttempted;
+        private bool _waitingMosaicAnimationDecodeAttempted;
         private bool _disposed;
 
         private ITaskReportService Feedback => _taskReportService ?? ServiceLocator.TaskReportService;
@@ -178,6 +183,59 @@ namespace SmartGoldbergEmu.Services
             return _fallbackMosaicArtCache.TryCloneForImageList();
         }
 
+        // Steam clientui hashed spinner under %LocalAppData%\SmartGoldbergEmu\ — used while add/save waits for real art.
+        public Bitmap TryCloneWaitingMosaicPlaceholderBitmap()
+        {
+            if (_disposed)
+                return null;
+
+            EnsureWaitingMosaicPlaceholderLoaded();
+            lock (_waitingPlaceholderSync)
+            {
+                if (_disposed || _waitingMosaicPlaceholderBitmap == null)
+                    return null;
+                return new Bitmap(_waitingMosaicPlaceholderBitmap);
+            }
+        }
+
+        // Borrowed APNG frames for mosaic waiting animation (owned by this service; do not dispose).
+        public bool TryGetWaitingMosaicAnimationFrames(out ApngAnimationDecoder.FrameBitmap[] frames)
+        {
+            frames = null;
+            if (_disposed)
+                return false;
+
+            lock (_waitingPlaceholderSync)
+            {
+                if (_disposed
+                    || _waitingMosaicAnimationFrames == null
+                    || _waitingMosaicAnimationFrames.Length < 2)
+                {
+                    return false;
+                }
+
+                frames = _waitingMosaicAnimationFrames;
+                return true;
+            }
+        }
+
+        public Task<bool> EnsureWaitingMosaicAnimationAsync()
+        {
+            if (_disposed)
+                return Task.FromResult(false);
+
+            lock (_waitingPlaceholderSync)
+            {
+                if (_waitingMosaicAnimationFrames != null && _waitingMosaicAnimationFrames.Length >= 2)
+                    return Task.FromResult(true);
+                if (_waitingMosaicAnimationDecodeAttempted)
+                    return Task.FromResult(false);
+                _waitingMosaicAnimationDecodeAttempted = true;
+            }
+
+            return Task.Run(() => DecodeWaitingMosaicAnimation());
+        }
+
         /// <summary>
         /// Store Banner list image: PICS <c>header_image</c> and <c>header.jpg</c>. Missing file → caller shows mosaic placeholder.
         /// </summary>
@@ -242,6 +300,107 @@ namespace SmartGoldbergEmu.Services
             _disposed = true;
             _httpService?.Dispose();
             _fallbackMosaicArtCache.Dispose();
+            lock (_waitingPlaceholderSync)
+            {
+                DisposeWaitingMosaicPlaceholders_NoLock();
+            }
+        }
+
+        private void EnsureWaitingMosaicPlaceholderLoaded()
+        {
+            lock (_waitingPlaceholderSync)
+            {
+                if (_disposed || _waitingMosaicPlaceholderBitmap != null)
+                    return;
+
+                string path = PathConstants.LocalAppDataSteamClientUiHashedImagePath;
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return;
+
+                if (_waitingMosaicPlaceholderLoadAttempted)
+                    return;
+
+                _waitingMosaicPlaceholderLoadAttempted = true;
+                try
+                {
+                    // GDI+ reads the default APNG frame only; animation frames are decoded separately.
+                    using (var loaded = Image.FromFile(path))
+                    {
+                        _waitingMosaicPlaceholderBitmap = new Bitmap(loaded);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogWarning(
+                        $"Could not load waiting mosaic placeholder from {path}: {ex.Message}");
+                    _waitingMosaicPlaceholderBitmap = null;
+                }
+            }
+        }
+
+        private bool DecodeWaitingMosaicAnimation()
+        {
+            string path = PathConstants.LocalAppDataSteamClientUiHashedImagePath;
+            ApngAnimationDecoder.FrameBitmap[] decoded = null;
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return false;
+                if (!ApngAnimationDecoder.TryDecode(path, out decoded) || decoded == null || decoded.Length < 2)
+                {
+                    if (decoded != null)
+                    {
+                        for (int i = 0; i < decoded.Length; i++)
+                            decoded[i]?.Dispose();
+                    }
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning(
+                    $"Could not decode waiting mosaic APNG from {path}: {ex.Message}");
+                if (decoded != null)
+                {
+                    for (int i = 0; i < decoded.Length; i++)
+                        decoded[i]?.Dispose();
+                }
+                return false;
+            }
+
+            lock (_waitingPlaceholderSync)
+            {
+                if (_disposed)
+                {
+                    for (int i = 0; i < decoded.Length; i++)
+                        decoded[i]?.Dispose();
+                    return false;
+                }
+
+                if (_waitingMosaicAnimationFrames != null)
+                {
+                    for (int i = 0; i < decoded.Length; i++)
+                        decoded[i]?.Dispose();
+                    return _waitingMosaicAnimationFrames.Length >= 2;
+                }
+
+                _waitingMosaicAnimationFrames = decoded;
+                if (_waitingMosaicPlaceholderBitmap == null)
+                    _waitingMosaicPlaceholderBitmap = new Bitmap(decoded[0].Bitmap);
+                return true;
+            }
+        }
+
+        private void DisposeWaitingMosaicPlaceholders_NoLock()
+        {
+            _waitingMosaicPlaceholderBitmap?.Dispose();
+            _waitingMosaicPlaceholderBitmap = null;
+            if (_waitingMosaicAnimationFrames != null)
+            {
+                for (int i = 0; i < _waitingMosaicAnimationFrames.Length; i++)
+                    _waitingMosaicAnimationFrames[i]?.Dispose();
+                _waitingMosaicAnimationFrames = null;
+            }
         }
 
         private bool ApplyDownloadOutcomeFeedback(

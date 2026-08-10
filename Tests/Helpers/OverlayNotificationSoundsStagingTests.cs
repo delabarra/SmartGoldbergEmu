@@ -36,5 +36,29 @@ namespace SmartGoldbergEmu.Tests.Helpers
                 try { Directory.Delete(dest, recursive: true); } catch { }
             }
         }
+
+        [Fact]
+        public void EnsureLibraryAliasesInSoundsFolder_creates_missing_source_names_from_overlay()
+        {
+            string sounds = TestFileHelper.CreateTempDirectory("sge-sounds-alias-");
+            try
+            {
+                File.WriteAllBytes(
+                    Path.Combine(sounds, PathConstants.SteamClientUiAchievementNotificationWav),
+                    new byte[] { 1, 2, 3 });
+                File.WriteAllBytes(
+                    Path.Combine(sounds, PathConstants.SteamClientUiFriendNotificationWav),
+                    new byte[] { 4, 5, 6 });
+
+                OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(sounds);
+
+                Assert.True(File.Exists(Path.Combine(sounds, PathConstants.SteamClientUiAchievementSourceWav)));
+                Assert.True(File.Exists(Path.Combine(sounds, PathConstants.SteamClientUiFriendSourceWav)));
+            }
+            finally
+            {
+                try { Directory.Delete(sounds, recursive: true); } catch { }
+            }
+        }
     }
 }

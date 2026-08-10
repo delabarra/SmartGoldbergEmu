@@ -12,18 +12,26 @@ namespace SmartGoldbergEmu.Helpers
     public static class MosaicViewHelper
     {
         /// <summary>
-        /// Tile view image dimensions: 256×120 pixels (actual image size from header.jpg).
-        /// This is what ImageList.ImageSize should be set to.
+        /// Store Banner ImageList cell and normal artwork: 256×120.
         /// </summary>
         public const int TileViewImageWidth = 256;
         public const int TileViewImageHeight = 120;
 
+        // Waiting spinner only: 20px smaller than the cell, centered (does not affect game art spacing).
+        public const int TileViewWaitingArtworkWidth = TileViewImageWidth - 20;
+        public const int TileViewWaitingArtworkHeight = TileViewImageHeight - 20;
+
         /// <summary>
-        /// Compact tiles view display dimensions: 171x256 pixels.
-        /// Source image is cover.jpg (2:3 ratio), scaled down for ImageList compatibility.
+        /// Library Cover ImageList cell / artwork: 171×256.
         /// </summary>
         public const int CompactTilesViewImageWidth = 171;
         public const int CompactTilesViewImageHeight = 256;
+
+        public static Size TileViewImageSize => new Size(TileViewImageWidth, TileViewImageHeight);
+        public static Size TileViewWaitingArtworkSize => new Size(TileViewWaitingArtworkWidth, TileViewWaitingArtworkHeight);
+        public static Size CompactTilesViewImageSize => new Size(CompactTilesViewImageWidth, CompactTilesViewImageHeight);
+        // Library Cover fills the ImageList cell.
+        public static Size CompactTilesArtworkSize => CompactTilesViewImageSize;
 
         /// <summary>
         /// Logos view cell dimensions: 200×170 pixels. Logos are letterboxed inside to preserve aspect ratio.
@@ -88,32 +96,6 @@ namespace SmartGoldbergEmu.Helpers
         /// </summary>
         public const int LogoViewWidth = LogoViewImageWidth + (LogoViewPadding * 2);   // 200 + 8 = 208
         public const int LogoViewHeight = LogoViewImageHeight + (LogoViewPadding * 2); // 170 + 8 = 178
-
-        /// <summary>
-        /// Scales an image proportionally into the tile view cell (256×120), same as the main list ImageList path.
-        /// </summary>
-        public static Bitmap CreateTileViewDisplayBitmap(Image source)
-        {
-            if (source == null)
-                throw new ArgumentNullException(nameof(source));
-
-            var targetSize = new Size(TileViewImageWidth, TileViewImageHeight);
-            var output = new Bitmap(targetSize.Width, targetSize.Height);
-
-            using (var graphics = Graphics.FromImage(output))
-            {
-                graphics.Clear(Color.Transparent);
-                graphics.CompositingQuality = CompositingQuality.HighQuality;
-                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.SmoothingMode = SmoothingMode.HighQuality;
-                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-                var destinationRect = GetContainDestinationRect(source.Size, targetSize);
-                graphics.DrawImage(source, destinationRect);
-            }
-
-            return output;
-        }
 
         /// <summary>
         /// Composites a logos-view cell with a light drop shadow so logos read clearly on pale ListView backgrounds.

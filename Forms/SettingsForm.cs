@@ -762,8 +762,7 @@ namespace SmartGoldbergEmu.Forms
                 openFileDialog.FilterIndex = 1;
                 FileDialogBrowseHelper.ApplyInitialDirectory(
                     openFileDialog,
-                    FileDialogBrowseHelper.Purpose.Font,
-                    PathConstants.GlobalFontsPath);
+                    FileDialogBrowseHelper.Purpose.Font);
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
@@ -861,6 +860,8 @@ namespace SmartGoldbergEmu.Forms
                 if (!Directory.Exists(soundsPath))
                     Directory.CreateDirectory(soundsPath);
 
+                OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
+
                 var soundExtensions = new[] { ".wav", ".mp3", ".ogg" };
                 var soundFiles = Directory.GetFiles(soundsPath)
                     .Where(file => soundExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
@@ -915,8 +916,7 @@ namespace SmartGoldbergEmu.Forms
                 openFileDialog.FilterIndex = 1;
                 FileDialogBrowseHelper.ApplyInitialDirectory(
                     openFileDialog,
-                    FileDialogBrowseHelper.Purpose.Sound,
-                    PathConstants.GlobalSoundsPath);
+                    FileDialogBrowseHelper.Purpose.Sound);
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
@@ -1400,9 +1400,7 @@ namespace SmartGoldbergEmu.Forms
                     FileDialogBrowseHelper.Purpose.Avatar,
                     !string.IsNullOrEmpty(_pendingAvatarSourcePath)
                         ? Path.GetDirectoryName(_pendingAvatarSourcePath)
-                        : null,
-                    Path.GetDirectoryName(_avatarPath),
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyPictures));
+                        : null);
 
                 if (openFileDialog.ShowDialog() != DialogResult.OK)
                     return;
@@ -1873,20 +1871,16 @@ namespace SmartGoldbergEmu.Forms
                 c.Checked = value;
         }
 
-        private static void SelectCmbOptional(ComboBox cmb, string value, string def)
+        private static void SelectCmbPosition(ComboBox cmb, string value, string def)
         {
-            if (string.IsNullOrEmpty(value) || string.Equals(value, def, StringComparison.Ordinal))
+            if (cmb == null)
                 return;
-            int i = cmb.FindStringExact(value);
-            if (i >= 0)
-                cmb.SelectedIndex = i;
-        }
 
-        private void SelectCmbAchievementPos(string value, string def)
-        {
             string v = string.IsNullOrEmpty(value) ? def : value;
-            int i = cmbPosAchievement.FindStringExact(v);
-            cmbPosAchievement.SelectedIndex = i >= 0 ? i : cmbPosAchievement.FindStringExact(def);
+            int i = cmb.FindStringExact(v);
+            if (i < 0 && !string.IsNullOrEmpty(def))
+                i = cmb.FindStringExact(def);
+            cmb.SelectedIndex = i >= 0 ? i : (cmb.Items.Count > 0 ? 0 : -1);
         }
 
         private void LoadLanguageList()
@@ -2000,13 +1994,13 @@ namespace SmartGoldbergEmu.Forms
             SetNudFloatIfDiff(numNotificationDurationProgress, o.NotificationDurationProgress, d.NotificationDurationProgress);
             if (o.AchievementUnlockDatetimeFormat != d.AchievementUnlockDatetimeFormat)
                 cmbAchievementDateTimeFormat.Text = o.AchievementUnlockDatetimeFormat;
-            SelectCmbAchievementPos(o.PosAchievement, d.PosAchievement);
+            SelectCmbPosition(cmbPosAchievement, o.PosAchievement, d.PosAchievement);
             SetNudFloatIfDiff(numIconSize, o.IconSize, d.IconSize);
             SetChkIfDiff(chkUploadAchievementsToGPU, o.UploadAchievementsIconsToGpu, d.UploadAchievementsIconsToGpu);
             SetChkIfDiff(chkDisableAchievementNotification, o.DisableAchievementNotification, d.DisableAchievementNotification);
             SetChkIfDiff(chkDisableAchievementProgress, o.DisableAchievementProgress, d.DisableAchievementProgress);
-            SelectCmbOptional(cmbPosInvitation, o.PosInvitation, d.PosInvitation);
-            SelectCmbOptional(cmbPosChatMsg, o.PosChatMsg, d.PosChatMsg);
+            SelectCmbPosition(cmbPosInvitation, o.PosInvitation, d.PosInvitation);
+            SelectCmbPosition(cmbPosChatMsg, o.PosChatMsg, d.PosChatMsg);
         }
 
         private void LoadOverlayMetrics(OverlaySettings o)

@@ -9,8 +9,8 @@ using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
 {
-    // Downloads overlay/EXAMPLE assets. WAVs + Steam.dll use Steam CDN client packages;
-    // avatar/font/glyphs use gbe_fork EXAMPLE.
+    // Downloads overlay/EXAMPLE assets. WAVs + Steam.dll + LocalAppData clientui image use Steam CDN
+    // client packages; avatar/font/glyphs use gbe_fork EXAMPLE.
     public class AssetDownloadService
     {
         private const int HttpTimeoutSeconds = 30;
@@ -53,6 +53,7 @@ namespace SmartGoldbergEmu.Services
 
                 // One VZip decompress for both WAVs (previously decompressed twice in RAM).
                 global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntriesToFiles(tempVzipPath, mappings);
+                OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
                 return ValidationResult.Success();
             }
             catch (Exception ex)
@@ -119,6 +120,65 @@ namespace SmartGoldbergEmu.Services
             {
                 TryCleanupSteamCdnHealTemp();
                 // Return LOH pages after bins_win32 VZip transient buffers (net48 does not by default).
+                LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
+            }
+        }
+
+        // IfAbsent: download resources_all and extract the hashed clientui image into LocalAppData.
+        public async Task<ValidationResult> DownloadSteamClientUiHashedImageAsync(string destinationFilePath)
+        {
+            string tempVzipPath = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(destinationFilePath))
+                    return ValidationResult.Failure("Destination path for Steam clientui image is empty.");
+
+                string dest = destinationFilePath.Trim();
+                if (File.Exists(dest))
+                    return ValidationResult.Success();
+
+                var cdn = ServiceLocator.SteamStaticCdnPreferenceService;
+                byte[] manifestBytes = await DownloadFirstAvailableAsync(
+                    cdn.GetClientWin32ManifestCandidateUrls(),
+                    HttpTimeoutSeconds).ConfigureAwait(false);
+                string manifestText = System.Text.Encoding.UTF8.GetString(manifestBytes);
+                manifestBytes = null;
+                if (!SteamClientManifestHelper.TryGetResourcesAllZipVzFileName(manifestText, out string zipVzFileName))
+                    return ValidationResult.Failure("Could not resolve resources_all package from steam_client_win32 manifest.");
+
+                string relativePath = SteamClientManifestHelper.BuildClientPackageRelativePath(zipVzFileName);
+                tempVzipPath = CreateTempPackagePath(zipVzFileName);
+                await DownloadFirstAvailableToFileAsync(
+                    cdn.GetClientPackageCandidateUrls(relativePath),
+                    tempVzipPath,
+                    SteamDllPackageTimeoutSeconds).ConfigureAwait(false);
+
+                string destDirectory = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrEmpty(destDirectory))
+                    Directory.CreateDirectory(destDirectory);
+
+                global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntriesToFiles(
+                    tempVzipPath,
+                    new[]
+                    {
+                        new KeyValuePair<string, string>(
+                            SteamStaticCdnConstants.ClientResourcesUiHashedImageEntryPath,
+                            dest)
+                    });
+
+                if (!File.Exists(dest) || new FileInfo(dest).Length == 0)
+                    return ValidationResult.Failure("resources_all package did not contain the hashed clientui image.");
+
+                return ValidationResult.Success();
+            }
+            catch (Exception ex)
+            {
+                return ValidationResult.Failure(
+                    "Failed to download Steam clientui image from resources_all package: " + ex.Message);
+            }
+            finally
+            {
+                TryCleanupSteamCdnHealTemp();
                 LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
             }
         }

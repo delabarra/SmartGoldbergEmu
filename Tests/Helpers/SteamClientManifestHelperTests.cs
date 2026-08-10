@@ -18,6 +18,18 @@ namespace SmartGoldbergEmu.Tests.Helpers
         }
 
         [Fact]
+        public void TryGetResourcesAllZipVzFileName_ParsesManifestSnippet()
+        {
+            const string manifest = "\"resources_all\"\n{\n\t\"file\"\t\t\"resources_all.zip.abc\"\n\t\"zipvz\"\t\t\"resources_all.zip.vz.3c8b3203e5c69d75ea0684c2409b86fe4d0d6f83_2856188\"\n}\n";
+
+            Assert.True(SteamClientManifestHelper.TryGetResourcesAllZipVzFileName(manifest, out string zipVz));
+            Assert.Equal("resources_all.zip.vz.3c8b3203e5c69d75ea0684c2409b86fe4d0d6f83_2856188", zipVz);
+            Assert.Equal(
+                "client/resources_all.zip.vz.3c8b3203e5c69d75ea0684c2409b86fe4d0d6f83_2856188",
+                SteamClientManifestHelper.BuildClientPackageRelativePath(zipVz));
+        }
+
+        [Fact]
         public void TryGetBinsWin32ZipVzFileName_RejectsMissingBlock()
         {
             Assert.False(SteamClientManifestHelper.TryGetBinsWin32ZipVzFileName("\"win32\" { }", out _));

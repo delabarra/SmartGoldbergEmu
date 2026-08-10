@@ -29,6 +29,16 @@ namespace SmartGoldbergEmu.Helpers
             _owned[key] = image;
         }
 
+        // ImageList entry borrows a shared animation frame; previous owned image (if any) is disposed.
+        public void SetShared(ImageList imageList, string key, Image image)
+        {
+            if (imageList == null || string.IsNullOrEmpty(key) || image == null)
+                return;
+
+            Remove(imageList, key);
+            imageList.Images.Add(key, image);
+        }
+
         public void Remove(ImageList imageList, string key)
         {
             if (string.IsNullOrEmpty(key))

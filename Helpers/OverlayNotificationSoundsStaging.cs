@@ -47,5 +47,41 @@ namespace SmartGoldbergEmu.Helpers
 
             return copiedFileCount > 0;
         }
+
+        // Settings combo lists library names and hides overlay_*.wav. CDN/older installs may only
+        // have overlay files — mirror them to the Steam source names so the list is not empty.
+        public static void EnsureLibraryAliasesInSoundsFolder(string soundsDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(soundsDirectory) || !Directory.Exists(soundsDirectory))
+                return;
+
+            TryCopyAliasIfMissing(
+                soundsDirectory,
+                PathConstants.SteamClientUiAchievementNotificationWav,
+                PathConstants.SteamClientUiAchievementSourceWav);
+            TryCopyAliasIfMissing(
+                soundsDirectory,
+                PathConstants.SteamClientUiFriendNotificationWav,
+                PathConstants.SteamClientUiFriendSourceWav);
+        }
+
+        private static void TryCopyAliasIfMissing(string soundsDirectory, string overlayFileName, string libraryFileName)
+        {
+            try
+            {
+                string libraryPath = Path.Combine(soundsDirectory, libraryFileName);
+                if (File.Exists(libraryPath))
+                    return;
+
+                string overlayPath = Path.Combine(soundsDirectory, overlayFileName);
+                if (!File.Exists(overlayPath))
+                    return;
+
+                File.Copy(overlayPath, libraryPath);
+            }
+            catch
+            {
+            }
+        }
     }
 }

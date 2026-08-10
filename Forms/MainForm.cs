@@ -50,6 +50,15 @@ namespace SmartGoldbergEmu.Forms
         private bool _gameListRefreshFullTiles;
         private int _tileImageLoadGeneration;
         private string _pendingAddMosaicImageKey;
+        // After games.ini commit, draft is cleared but assets may still be downloading — keep waiting art on these rows.
+        private readonly HashSet<Guid> _addSaveWaitingForAssetsGuids = new HashSet<Guid>();
+        private readonly HashSet<string> _waitingMosaicAnimatedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private Timer _waitingMosaicAnimTimer;
+        private int _waitingMosaicAnimFrameIndex;
+        private string _waitingMosaicAnimViewMode;
+        private Bitmap[] _waitingMosaicDisplayFrames;
+        private string _waitingMosaicDisplayFramesViewMode;
+        private bool _waitingMosaicDisplayFramesDropShadow;
         private int _stubKitDropDownLoadId;
         private bool _stubKitDropDownReopening;
 
@@ -251,6 +260,8 @@ namespace SmartGoldbergEmu.Forms
                 _gameListRefreshTimer = null;
             }
 
+            StopWaitingMosaicAnimation(disposeDisplayFrames: true);
+
             // ImageList.Dispose owns Depth32Bit originals; drop side-map refs first to avoid double-Dispose.
             _gameDisplayService.ReleaseIconImageOwnership();
             _tileOwnedImages.ReleaseOwnership();
@@ -293,8 +304,8 @@ namespace SmartGoldbergEmu.Forms
         {
             _largeImageList = CreateImageList(new Size(32, 32));
             _smallImageList = CreateImageList(new Size(16, 16));
-            _tileImageList = CreateImageList(new Size(MosaicViewHelper.TileViewImageWidth, MosaicViewHelper.TileViewImageHeight));
-            _compactTileImageList = CreateImageList(new Size(MosaicViewHelper.CompactTilesViewImageWidth, MosaicViewHelper.CompactTilesViewImageHeight));
+            _tileImageList = CreateImageList(MosaicViewHelper.TileViewImageSize);
+            _compactTileImageList = CreateImageList(MosaicViewHelper.CompactTilesViewImageSize);
             _logoImageList = CreateImageList(MosaicViewHelper.LogoViewImageSize);
         }
 
@@ -436,6 +447,8 @@ namespace SmartGoldbergEmu.Forms
                     return;
 
                 ownedImages.Clear(targetImageList);
+                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+                _waitingMosaicAnimatedKeys.Clear();
 
                 var effectiveTheme = _themeService.EffectiveTheme;
                 _themeService.GetFallbackMosaicArtColors(effectiveTheme, out var mosaicBackground, out var mosaicForeground);
@@ -483,6 +496,8 @@ namespace SmartGoldbergEmu.Forms
 
                     ownedImages.Set(targetImageList, imageKey, imageCopy);
                     addedAppIds.Add(imageKey);
+                    if (ShouldUseWaitingMosaicPlaceholder(game))
+                        RegisterWaitingMosaicAnimation(imageKey, viewMode);
                 }
 
                 if (IsDisposed || Disposing || generation != _tileImageLoadGeneration)
@@ -560,6 +575,11 @@ namespace SmartGoldbergEmu.Forms
                 if (item != null)
                     item.ImageKey = imageKey;
 
+                if (ShouldUseWaitingMosaicPlaceholder(game))
+                    RegisterWaitingMosaicAnimation(imageKey, viewMode);
+                else
+                    UnregisterWaitingMosaicAnimation(imageKey);
+
                 lstGames.Invalidate();
             }
             catch (Exception ex)
@@ -575,6 +595,17 @@ namespace SmartGoldbergEmu.Forms
             ImageNormalizationService imageNormalizationService,
             bool logosDropShadow)
         {
+            if (ShouldUseWaitingMosaicPlaceholder(game))
+            {
+                Bitmap waitingDisplay = TryCreateWaitingMosaicDisplayBitmap(
+                    viewMode,
+                    gameImageService,
+                    imageNormalizationService,
+                    logosDropShadow);
+                if (waitingDisplay != null)
+                    return waitingDisplay;
+            }
+
             string imagePath;
             if (viewMode == ApplicationConstants.ViewModeTile)
             {
@@ -595,11 +626,11 @@ namespace SmartGoldbergEmu.Forms
                 {
                     using (var image = Image.FromFile(imagePath))
                     {
-                        if (viewMode == ApplicationConstants.ViewModeTile)
-                            return MosaicViewHelper.CreateTileViewDisplayBitmap(image);
-                        if (viewMode == ApplicationConstants.ViewModeLogos)
-                            return MosaicViewHelper.CreateLogoViewDisplayBitmap(image, logosDropShadow);
-                        return imageNormalizationService.CreateCompactTileDisplayBitmapFromImage(image);
+                        return CreateMosaicDisplayBitmapFromSource(
+                            image,
+                            viewMode,
+                            imageNormalizationService,
+                            logosDropShadow);
                     }
                 }
                 catch
@@ -612,13 +643,349 @@ namespace SmartGoldbergEmu.Forms
                 if (rawFallback == null)
                     return null;
 
-                if (viewMode == ApplicationConstants.ViewModeTile)
-                    return MosaicViewHelper.CreateTileViewDisplayBitmap(rawFallback);
-                if (viewMode == ApplicationConstants.ViewModeLogos)
-                    return MosaicViewHelper.CreateLogoViewDisplayBitmap(rawFallback, logosDropShadow);
-
-                return imageNormalizationService.CreateCompactTileDisplayBitmapFromImage(rawFallback);
+                return CreateMosaicDisplayBitmapFromSource(
+                    rawFallback,
+                    viewMode,
+                    imageNormalizationService,
+                    logosDropShadow);
             }
+        }
+
+        private bool ShouldUseWaitingMosaicPlaceholder(GameConfig game)
+        {
+            if (game == null || game.GameGuid == Guid.Empty)
+                return false;
+
+            if (_addSaveWaitingForAssetsGuids.Contains(game.GameGuid))
+                return true;
+
+            // New add drafts only (not update drafts that already show library art under the AppId key).
+            return _pendingAddGameListService.IsPendingGame(game)
+                && !_pendingAddGameListService.IsPendingUpdate(game);
+        }
+
+        private static Bitmap TryCreateWaitingMosaicDisplayBitmap(
+            string viewMode,
+            GameImageService gameImageService,
+            ImageNormalizationService imageNormalizationService,
+            bool logosDropShadow)
+        {
+            // Prefer Steam clientui hashed spinner; if missing, use FallbackTileArt.csv mosaic art.
+            using (var rawWaiting = gameImageService.TryCloneWaitingMosaicPlaceholderBitmap())
+            {
+                if (rawWaiting != null)
+                    return CreateMosaicDisplayBitmapFromSource(rawWaiting, viewMode, imageNormalizationService, logosDropShadow, waitingPlaceholder: true);
+            }
+
+            using (var rawCsvFallback = gameImageService.TryCloneMosaicFallbackBitmap())
+            {
+                if (rawCsvFallback == null)
+                    return null;
+                return CreateMosaicDisplayBitmapFromSource(rawCsvFallback, viewMode, imageNormalizationService, logosDropShadow, waitingPlaceholder: true);
+            }
+        }
+
+        private static Bitmap CreateMosaicDisplayBitmapFromSource(
+            Image source,
+            string viewMode,
+            ImageNormalizationService imageNormalizationService,
+            bool logosDropShadow,
+            bool waitingPlaceholder = false)
+        {
+            if (source == null || imageNormalizationService == null)
+                return null;
+
+            return imageNormalizationService.CreateMosaicDisplayBitmap(source, viewMode, logosDropShadow, waitingPlaceholder);
+        }
+
+        // Seeds the AppId mosaic key with waiting art before the list drops the pending-* key (avoids a blank tile on Save).
+        private bool TrySeedMosaicKeyWithWaitingPlaceholder(string imageKey, string viewMode)
+        {
+            if (string.IsNullOrEmpty(imageKey) || !IsMosaicViewMode(viewMode))
+                return false;
+
+            var targetImageList = GetTileImageListForViewMode(viewMode);
+            var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+            if (targetImageList == null || ownedImages == null)
+                return false;
+
+            var gameImageService = ServiceLocator.GameImageService;
+            var imageNormalizationService = ServiceLocator.ImageNormalizationService;
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+
+            Bitmap waitingDisplay = TryCreateWaitingMosaicDisplayBitmap(
+                viewMode,
+                gameImageService,
+                imageNormalizationService,
+                logosDropShadow);
+            if (waitingDisplay == null)
+                return false;
+
+            ownedImages.Set(targetImageList, imageKey, waitingDisplay);
+            RegisterWaitingMosaicAnimation(imageKey, viewMode);
+            return true;
+        }
+
+        private void RegisterWaitingMosaicAnimation(string imageKey, string viewMode)
+        {
+            if (string.IsNullOrEmpty(imageKey) || !IsMosaicViewMode(viewMode))
+                return;
+
+            _waitingMosaicAnimatedKeys.Add(imageKey);
+            _waitingMosaicAnimViewMode = viewMode;
+            // Kick decode immediately so the spinner starts soon after the first static frame.
+            _ = EnsureWaitingMosaicAnimationRunningAsync()
+                .ForgetFaults(Program.LogService, nameof(EnsureWaitingMosaicAnimationRunningAsync));
+        }
+
+        private void UnregisterWaitingMosaicAnimation(string imageKey)
+        {
+            if (string.IsNullOrEmpty(imageKey))
+                return;
+
+            _waitingMosaicAnimatedKeys.Remove(imageKey);
+            if (_waitingMosaicAnimatedKeys.Count == 0)
+                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+        }
+
+        private async Task EnsureWaitingMosaicAnimationRunningAsync()
+        {
+            if (IsDisposed || Disposing || _waitingMosaicAnimatedKeys.Count == 0)
+                return;
+
+            bool ready = await ServiceLocator.GameImageService.EnsureWaitingMosaicAnimationAsync().ConfigureAwait(true);
+            if (IsDisposed || Disposing || !ready || _waitingMosaicAnimatedKeys.Count == 0)
+                return;
+
+            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var frames)
+                || frames == null
+                || frames.Length < 2)
+            {
+                return;
+            }
+
+            // Prefer prebuilt mosaic-sized frames; if that fails, tick path scales source frames live.
+            TryBuildWaitingMosaicDisplayFrames(_waitingMosaicAnimViewMode);
+
+            if (_waitingMosaicAnimTimer == null)
+            {
+                _waitingMosaicAnimTimer = new Timer();
+                _waitingMosaicAnimTimer.Tick += WaitingMosaicAnimTimer_Tick;
+            }
+
+            if (_waitingMosaicAnimFrameIndex < 0
+                || _waitingMosaicAnimFrameIndex >= frames.Length)
+            {
+                _waitingMosaicAnimFrameIndex = 0;
+            }
+
+            int interval = GetWaitingMosaicFrameDelayMs(_waitingMosaicAnimFrameIndex);
+            if (interval < 15)
+                interval = 15;
+            _waitingMosaicAnimTimer.Interval = interval;
+            ApplyWaitingMosaicAnimationFrame();
+            if (!_waitingMosaicAnimTimer.Enabled)
+                _waitingMosaicAnimTimer.Start();
+        }
+
+        private void WaitingMosaicAnimTimer_Tick(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing || _waitingMosaicAnimatedKeys.Count == 0)
+            {
+                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+                return;
+            }
+
+            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var frames)
+                || frames == null
+                || frames.Length < 2)
+            {
+                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+                return;
+            }
+
+            _waitingMosaicAnimFrameIndex++;
+            if (_waitingMosaicAnimFrameIndex >= frames.Length)
+                _waitingMosaicAnimFrameIndex = 0;
+
+            ApplyWaitingMosaicAnimationFrame();
+
+            int interval = GetWaitingMosaicFrameDelayMs(_waitingMosaicAnimFrameIndex);
+            if (interval < 15)
+                interval = 15;
+            if (_waitingMosaicAnimTimer != null && _waitingMosaicAnimTimer.Interval != interval)
+                _waitingMosaicAnimTimer.Interval = interval;
+        }
+
+        private void ApplyWaitingMosaicAnimationFrame()
+        {
+            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var sourceFrames)
+                || sourceFrames == null
+                || sourceFrames.Length == 0
+                || _waitingMosaicAnimFrameIndex < 0
+                || _waitingMosaicAnimFrameIndex >= sourceFrames.Length)
+            {
+                return;
+            }
+
+            string viewMode = _waitingMosaicAnimViewMode ?? _appDataService.GetViewMode();
+            var targetImageList = GetTileImageListForViewMode(viewMode);
+            var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+            if (targetImageList == null || ownedImages == null || !IsMosaicViewMode(viewMode))
+                return;
+
+            Image frameSource = null;
+            bool disposeFrameSource = false;
+            if (_waitingMosaicDisplayFrames != null
+                && _waitingMosaicDisplayFrames.Length == sourceFrames.Length
+                && string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal))
+            {
+                frameSource = _waitingMosaicDisplayFrames[_waitingMosaicAnimFrameIndex];
+            }
+            else
+            {
+                bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                    && _appDataService.GetLogosViewDropShadow();
+                frameSource = CreateMosaicDisplayBitmapFromSource(
+                    sourceFrames[_waitingMosaicAnimFrameIndex].Bitmap,
+                    viewMode,
+                    ServiceLocator.ImageNormalizationService,
+                    logosDropShadow,
+                    waitingPlaceholder: true);
+                disposeFrameSource = true;
+            }
+
+            if (frameSource == null)
+                return;
+
+            try
+            {
+                // Copy keys — Set may re-enter UI and mutate the waiting set.
+                string[] keys = new string[_waitingMosaicAnimatedKeys.Count];
+                _waitingMosaicAnimatedKeys.CopyTo(keys);
+
+                foreach (string key in keys)
+                {
+                    if (string.IsNullOrEmpty(key))
+                        continue;
+
+                    // New owned bitmap each tick so ImageList/ListView pick up a changed image.
+                    ownedImages.Set(targetImageList, key, new Bitmap(frameSource));
+                }
+
+                // ListView caches ImageList slots; clear+restore ImageKey forces a visual update.
+                foreach (ListViewItem item in lstGames.Items)
+                {
+                    string imageKey = item.ImageKey;
+                    if (string.IsNullOrEmpty(imageKey) || !_waitingMosaicAnimatedKeys.Contains(imageKey))
+                        continue;
+                    item.ImageKey = string.Empty;
+                    item.ImageKey = imageKey;
+                }
+
+                lstGames.Invalidate();
+                lstGames.Update();
+            }
+            finally
+            {
+                if (disposeFrameSource)
+                    frameSource.Dispose();
+            }
+        }
+
+        private bool TryBuildWaitingMosaicDisplayFrames(string viewMode)
+        {
+            if (!IsMosaicViewMode(viewMode))
+                return false;
+
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+
+            if (_waitingMosaicDisplayFrames != null
+                && string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal)
+                && _waitingMosaicDisplayFramesDropShadow == logosDropShadow)
+            {
+                return true;
+            }
+
+            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var sourceFrames)
+                || sourceFrames == null
+                || sourceFrames.Length < 2)
+            {
+                return false;
+            }
+
+            DisposeWaitingMosaicDisplayFrames();
+
+            var imageNormalizationService = ServiceLocator.ImageNormalizationService;
+            var built = new Bitmap[sourceFrames.Length];
+            try
+            {
+                for (int i = 0; i < sourceFrames.Length; i++)
+                {
+                    built[i] = CreateMosaicDisplayBitmapFromSource(
+                        sourceFrames[i].Bitmap,
+                        viewMode,
+                        imageNormalizationService,
+                        logosDropShadow,
+                        waitingPlaceholder: true);
+                }
+            }
+            catch
+            {
+                for (int i = 0; i < built.Length; i++)
+                    built[i]?.Dispose();
+                return false;
+            }
+
+            _waitingMosaicDisplayFrames = built;
+            _waitingMosaicDisplayFramesViewMode = viewMode;
+            _waitingMosaicDisplayFramesDropShadow = logosDropShadow;
+            return true;
+        }
+
+        private int GetWaitingMosaicFrameDelayMs(int frameIndex)
+        {
+            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var frames)
+                || frames == null
+                || frames.Length == 0)
+            {
+                return 33;
+            }
+
+            if (frameIndex < 0 || frameIndex >= frames.Length)
+                frameIndex = 0;
+            return frames[frameIndex].DelayMilliseconds;
+        }
+
+        private void StopWaitingMosaicAnimation(bool disposeDisplayFrames)
+        {
+            if (_waitingMosaicAnimTimer != null)
+            {
+                _waitingMosaicAnimTimer.Stop();
+                _waitingMosaicAnimTimer.Tick -= WaitingMosaicAnimTimer_Tick;
+                _waitingMosaicAnimTimer.Dispose();
+                _waitingMosaicAnimTimer = null;
+            }
+
+            _waitingMosaicAnimFrameIndex = 0;
+            if (disposeDisplayFrames || _waitingMosaicAnimatedKeys.Count == 0)
+            {
+                _waitingMosaicAnimatedKeys.Clear();
+                DisposeWaitingMosaicDisplayFrames();
+            }
+        }
+
+        private void DisposeWaitingMosaicDisplayFrames()
+        {
+            if (_waitingMosaicDisplayFrames == null)
+                return;
+
+            for (int i = 0; i < _waitingMosaicDisplayFrames.Length; i++)
+                _waitingMosaicDisplayFrames[i]?.Dispose();
+            _waitingMosaicDisplayFrames = null;
+            _waitingMosaicDisplayFramesViewMode = null;
         }
 
         private void RemoveMosaicImageKey(string imageKey)
@@ -626,6 +993,7 @@ namespace SmartGoldbergEmu.Forms
             if (string.IsNullOrEmpty(imageKey))
                 return;
 
+            UnregisterWaitingMosaicAnimation(imageKey);
             _tileOwnedImages.Remove(_tileImageList, imageKey);
             _compactTileOwnedImages.Remove(_compactTileImageList, imageKey);
             _logoOwnedImages.Remove(_logoImageList, imageKey);
@@ -1195,6 +1563,8 @@ namespace SmartGoldbergEmu.Forms
             Guid savedGameGuid = draftToRestore.GameGuid;
             bool isUpdate = pending.IsUpdateOfExisting;
             _pendingAddGameListService.Clear();
+            if (!isUpdate && savedGameGuid != Guid.Empty)
+                _addSaveWaitingForAssetsGuids.Add(savedGameGuid);
 
             GameSettingsSnapshot snapshot = pending.SettingsSnapshot ?? new GameSettingsSnapshot { AppId = pending.GameConfig.AppId };
 
@@ -1236,6 +1606,7 @@ namespace SmartGoldbergEmu.Forms
 
                 if (!saveResult.IsSuccess)
                 {
+                    _addSaveWaitingForAssetsGuids.Remove(savedGameGuid);
                     if (_gameDataService.GetGame(draftToRestore.GameGuid) == null || isUpdate)
                     {
                         _pendingAddGameListService.SetDraft(draftToRestore, isUpdate: isUpdate);
@@ -1266,6 +1637,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
+                _addSaveWaitingForAssetsGuids.Remove(savedGameGuid);
                 if (_gameDataService.GetGame(draftToRestore.GameGuid) == null || isUpdate)
                 {
                     _pendingAddGameListService.SetDraft(draftToRestore, isUpdate: isUpdate);
@@ -1289,6 +1661,7 @@ namespace SmartGoldbergEmu.Forms
             GameConfig draft = _pendingAddGameListService.GetDraft();
             _pendingAddGameListService.Clear();
             _pendingAddMosaicImageKey = null;
+            _addSaveWaitingForAssetsGuids.Remove(gameGuid);
             draft?.ReleaseHeavyRuntimeData();
 
             if (wasUpdate && _gameDataService.GetGame(gameGuid) != null)
@@ -2382,8 +2755,7 @@ namespace SmartGoldbergEmu.Forms
                     saveFileDialog.Title = "Create Shortcut";
                     FileDialogBrowseHelper.ApplyInitialDirectory(
                         saveFileDialog,
-                        FileDialogBrowseHelper.Purpose.Shortcut,
-                        Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+                        FileDialogBrowseHelper.Purpose.Shortcut);
 
                     if (saveFileDialog.ShowDialog() == DialogResult.OK)
                     {
@@ -2934,6 +3306,7 @@ namespace SmartGoldbergEmu.Forms
             var game = _gameDataService.GetGame(gameGuid);
             if (game == null)
             {
+                _addSaveWaitingForAssetsGuids.Remove(gameGuid);
                 ScheduleRefreshGames(reloadTiles: true);
                 return;
             }
@@ -2943,9 +3316,23 @@ namespace SmartGoldbergEmu.Forms
 
             var viewMode = _appDataService.GetViewMode();
             var tileImageList = GetTileImageListForViewMode(viewMode);
+            string libraryMosaicKey = GameDisplayService.GetMosaicImageKey(game);
+
+            if (reloadMosaic)
+                _addSaveWaitingForAssetsGuids.Remove(gameGuid);
+
             var item = GameDisplayService.FindListItemByGameGuid(lstGames, gameGuid);
             if (item != null)
             {
+                bool libraryKeySeeded = false;
+                if (IsMosaicViewMode(viewMode)
+                    && !reloadMosaic
+                    && _addSaveWaitingForAssetsGuids.Contains(gameGuid)
+                    && !string.IsNullOrEmpty(libraryMosaicKey))
+                {
+                    libraryKeySeeded = TrySeedMosaicKeyWithWaitingPlaceholder(libraryMosaicKey, viewMode);
+                }
+
                 _gameDisplayService.UpdateListViewItem(
                     item,
                     game,
@@ -2958,14 +3345,30 @@ namespace SmartGoldbergEmu.Forms
 
                 if (IsMosaicViewMode(viewMode))
                 {
-                    if (!string.IsNullOrEmpty(priorMosaicKey)
+                    bool libraryKeyReady = !string.IsNullOrEmpty(libraryMosaicKey)
+                        && tileImageList != null
+                        && tileImageList.Images.ContainsKey(libraryMosaicKey);
+
+                    // If the AppId key is not ready yet, keep pointing at pending-* art so Save does not blank the tile.
+                    if (!reloadMosaic
+                        && !libraryKeyReady
+                        && !string.IsNullOrEmpty(priorMosaicKey)
+                        && tileImageList != null
+                        && tileImageList.Images.ContainsKey(priorMosaicKey))
+                    {
+                        item.ImageKey = priorMosaicKey;
+                    }
+                    else if (!string.IsNullOrEmpty(priorMosaicKey)
                         && priorMosaicKey.StartsWith("pending-", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(priorMosaicKey, GameDisplayService.GetMosaicImageKey(game), StringComparison.Ordinal))
+                        && !string.Equals(priorMosaicKey, libraryMosaicKey, StringComparison.Ordinal)
+                        && (reloadMosaic || libraryKeySeeded || libraryKeyReady))
                     {
                         RemoveMosaicImageKey(priorMosaicKey);
                     }
 
                     if (reloadMosaic)
+                        _ = UpsertMosaicTileForGameAsync(game, viewMode).ForgetFaults(Program.LogService, nameof(UpsertMosaicTileForGameAsync));
+                    else if (!libraryKeyReady && _addSaveWaitingForAssetsGuids.Contains(gameGuid))
                         _ = UpsertMosaicTileForGameAsync(game, viewMode).ForgetFaults(Program.LogService, nameof(UpsertMosaicTileForGameAsync));
                 }
 

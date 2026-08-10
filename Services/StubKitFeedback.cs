@@ -28,7 +28,7 @@ namespace SmartGoldbergEmu.Services
                 + Environment.NewLine
                 + "NOTE:"
                 + Environment.NewLine
-                + "Solves\"Application load error #:0000065432\" errors.";
+                + "Solves \"Application load error #:0000065432\" errors.";
         }
 
         public static string ResultMessage(StubKitApplyOutcome outcome, string gameName)

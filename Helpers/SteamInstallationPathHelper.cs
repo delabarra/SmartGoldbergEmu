@@ -74,6 +74,48 @@ namespace SmartGoldbergEmu.Helpers
             return PathConstants.CombineSteamClientUiSoundsPath(PathConstants.GetProgramFilesX86DefaultSteamInstallationRoot());
         }
 
+        public static string ResolveSteamClientUiImagesDirectory()
+        {
+            foreach (string root in EnumerateSteamInstallationRootsInProbeOrder())
+            {
+                string candidate = PathConstants.CombineSteamClientUiImagesPath(root);
+                if (!string.IsNullOrEmpty(candidate) && Directory.Exists(candidate))
+                    return candidate;
+            }
+
+            return PathConstants.CombineSteamClientUiImagesPath(PathConstants.GetProgramFilesX86DefaultSteamInstallationRoot());
+        }
+
+        // IfAbsent: copy hashed clientui image into %LocalAppData%\SmartGoldbergEmu\.
+        public static bool TryCopySteamClientUiHashedImageFromSteam(string destinationFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(destinationFilePath))
+                return false;
+            if (File.Exists(destinationFilePath))
+                return true;
+
+            string imagesDirectory = ResolveSteamClientUiImagesDirectory();
+            if (string.IsNullOrEmpty(imagesDirectory) || !Directory.Exists(imagesDirectory))
+                return false;
+
+            string sourcePath = Path.Combine(imagesDirectory, PathConstants.SteamClientUiHashedImageFileName);
+            if (!File.Exists(sourcePath))
+                return false;
+
+            try
+            {
+                string destDirectory = Path.GetDirectoryName(destinationFilePath);
+                if (!string.IsNullOrEmpty(destDirectory))
+                    Directory.CreateDirectory(destDirectory);
+                File.Copy(sourcePath, destinationFilePath, false);
+                return File.Exists(destinationFilePath);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         // Copies Steam steamui\sounds WAVs into global sounds (original names) and overlay copies for the emulator.
         public static bool TryCopyOverlayNotificationSoundsFromSteam(string targetSoundsPath)
         {

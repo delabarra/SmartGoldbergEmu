@@ -326,6 +326,11 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamAppsCommonDirectoryName = "common";
         public const string SteamClientSteamUiFolderName = "steamui";
         public const string SteamClientUiSoundsFolderName = GoldbergGlobalSoundsFolderName;
+        public const string SteamClientClientUiFolderName = "clientui";
+        public const string SteamClientClientUiImagesFolderName = "images";
+
+        // Hashed Steam clientui image cached under %LocalAppData%\SmartGoldbergEmu\ (self-heal: Steam → CDN).
+        public const string SteamClientUiHashedImageFileName = "8669e97b288da32670e77181618c3dfb.png";
 
         /// <summary>
         /// Default Steam client folder name under Program Files (x86) when probing library VDF.
@@ -364,6 +369,21 @@ namespace SmartGoldbergEmu.Constants
                 return null;
             return Path.Combine(root, SteamClientSteamUiFolderName, SteamClientUiSoundsFolderName);
         }
+
+        // {steamInstallationRoot}\clientui\images
+        public static string CombineSteamClientUiImagesPath(string steamInstallationRoot)
+        {
+            if (string.IsNullOrWhiteSpace(steamInstallationRoot))
+                return null;
+            string root = steamInstallationRoot.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (root.Length == 0)
+                return null;
+            return Path.Combine(root, SteamClientClientUiFolderName, SteamClientClientUiImagesFolderName);
+        }
+
+        // %LocalAppData%\SmartGoldbergEmu\8669e97b288da32670e77181618c3dfb.png
+        public static string LocalAppDataSteamClientUiHashedImagePath =>
+            Path.Combine(LocalAppDataPerUserDirectory, SteamClientUiHashedImageFileName);
 
         // Program Files (x86)\Steam when registry does not yield a path.
         public static string GetProgramFilesX86DefaultSteamInstallationRoot()

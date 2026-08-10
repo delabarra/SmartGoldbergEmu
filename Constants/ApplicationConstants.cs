@@ -222,6 +222,9 @@ namespace SmartGoldbergEmu.Constants
         /// </summary>
         public const string SettingSectionApplication = "application";
 
+        // Last OpenFileDialog / FolderBrowserDialog directories per FileDialogBrowseHelper.Purpose (ui_settings.ini).
+        public const string SettingSectionBrowseFolders = "browse_folders";
+
         #endregion
 
         #region File Extensions

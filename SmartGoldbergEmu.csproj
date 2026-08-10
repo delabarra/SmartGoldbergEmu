@@ -238,6 +238,7 @@
     <Compile Include="Helpers\MarkdownToRichTextHelper.cs" />
     <Compile Include="Helpers\MenuCheckMarkHelper.cs" />
     <Compile Include="Helpers\MosaicViewHelper.cs" />
+    <Compile Include="Helpers\ApngAnimationDecoder.cs" />
     <Compile Include="Helpers\ImageListOwnedImages.cs" />
     <Compile Include="Helpers\GameFolderPathHelper.cs" />
     <Compile Include="Helpers\PathValidationHelper.cs" />

@@ -2,11 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows.Forms;
+using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Models;
+using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
     // Isolates OpenFileDialog / FolderBrowserDialog start folders per purpose.
     // WinForms otherwise reuses one process-wide last directory across all pickers.
+    // Last folders are persisted in ui_settings.ini so they survive app restarts.
     public static class FileDialogBrowseHelper
     {
         public enum Purpose
@@ -27,6 +31,7 @@ namespace SmartGoldbergEmu.Helpers
 
         private static readonly object Sync = new object();
         private static readonly Dictionary<Purpose, string> LastDirectories = new Dictionary<Purpose, string>();
+        private static bool _loadedFromDisk;
 
         public static void ApplyInitialDirectory(FileDialog dialog, Purpose purpose, params string[] preferredDirectories)
         {
@@ -77,12 +82,16 @@ namespace SmartGoldbergEmu.Helpers
 
             try
             {
+                EnsureLoadedFromDisk();
+
                 string full = Path.GetFullPath(directory.Trim());
                 if (!Directory.Exists(full))
                     return;
 
                 lock (Sync)
                     LastDirectories[purpose] = full;
+
+                PersistDirectory(purpose, full);
             }
             catch
             {
@@ -91,6 +100,9 @@ namespace SmartGoldbergEmu.Helpers
 
         private static string ResolveExistingDirectory(Purpose purpose, string[] preferredDirectories)
         {
+            EnsureLoadedFromDisk();
+
+            // Prefer call-site seeds (e.g. current game folder text), not install/copy destinations.
             if (preferredDirectories != null)
             {
                 for (int i = 0; i < preferredDirectories.Length; i++)
@@ -111,7 +123,104 @@ namespace SmartGoldbergEmu.Helpers
                 }
             }
 
-            return null;
+            return TryNormalizeExistingDirectory(GetPurposeDefaultDirectory(purpose));
+        }
+
+        // First-open defaults only; remembered paths from ui_settings.ini win once set.
+        private static string GetPurposeDefaultDirectory(Purpose purpose)
+        {
+            switch (purpose)
+            {
+                case Purpose.Avatar:
+                    return TryEnsureDirectory(PathConstants.GlobalSettingsPath);
+                case Purpose.Font:
+                    return TryEnsureDirectory(PathConstants.GlobalFontsPath);
+                case Purpose.Sound:
+                    return TryEnsureDirectory(PathConstants.GlobalSoundsPath);
+                case Purpose.Shortcut:
+                    return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                default:
+                    return null;
+            }
+        }
+
+        private static string TryEnsureDirectory(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return null;
+
+            try
+            {
+                Directory.CreateDirectory(path);
+                return path;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void EnsureLoadedFromDisk()
+        {
+            if (_loadedFromDisk)
+                return;
+
+            lock (Sync)
+            {
+                if (_loadedFromDisk)
+                    return;
+
+                try
+                {
+                    string path = PathConstants.UiSettingsFilePath;
+                    if (File.Exists(path))
+                    {
+                        var iniService = new IniFileService();
+                        IniFile uiIni = iniService.ParseFile(path);
+                        foreach (Purpose purpose in Enum.GetValues(typeof(Purpose)))
+                        {
+                            string value = iniService.GetValue(
+                                uiIni,
+                                ApplicationConstants.SettingSectionBrowseFolders,
+                                purpose.ToString());
+                            string existing = TryNormalizeExistingDirectory(value);
+                            if (!string.IsNullOrEmpty(existing))
+                                LastDirectories[purpose] = existing;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+
+                _loadedFromDisk = true;
+            }
+        }
+
+        private static void PersistDirectory(Purpose purpose, string directory)
+        {
+            try
+            {
+                string path = PathConstants.UiSettingsFilePath;
+                string uiSettingsDirectory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(uiSettingsDirectory))
+                    Directory.CreateDirectory(uiSettingsDirectory);
+
+                var iniService = new IniFileService();
+                IniFile uiIni = File.Exists(path)
+                    ? iniService.ParseFile(path)
+                    : new IniFile();
+
+                iniService.SetValue(
+                    uiIni,
+                    ApplicationConstants.SettingSectionBrowseFolders,
+                    purpose.ToString(),
+                    directory);
+                iniService.WriteFile(uiIni, path);
+            }
+            catch
+            {
+            }
         }
 
         private static string TryNormalizeExistingDirectory(string path)

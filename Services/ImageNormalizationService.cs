@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using SmartGoldbergEmu;
+using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 
 namespace SmartGoldbergEmu.Services
@@ -46,7 +47,7 @@ namespace SmartGoldbergEmu.Services
         {
             return EnsureImageFileNormalized(
                 tileFilePath,
-                new Size(MosaicViewHelper.TileViewImageWidth, MosaicViewHelper.TileViewImageHeight),
+                MosaicViewHelper.TileViewImageSize,
                 trimTransparentPadding: false,
                 imageKind: "tile",
                 resizeStrategy: ResizeStrategy.FixWidthCropHeight);
@@ -56,20 +57,57 @@ namespace SmartGoldbergEmu.Services
         {
             return EnsureImageFileNormalized(
                 compactTileFilePath,
-                new Size(MosaicViewHelper.CompactTilesViewImageWidth, MosaicViewHelper.CompactTilesViewImageHeight),
+                MosaicViewHelper.CompactTilesViewImageSize,
                 trimTransparentPadding: false,
                 imageKind: "compact tile",
                 resizeStrategy: ResizeStrategy.FixHeightCropWidth);
         }
 
-        public Bitmap CreateCompactTileDisplayBitmapFromImage(Image source)
+        // Single path for Store Banner / Library Cover / Logos mosaic ImageList bitmaps.
+        public Bitmap CreateMosaicDisplayBitmap(Image source, string viewMode, bool logosDropShadow = false)
+        {
+            return CreateMosaicDisplayBitmap(source, viewMode, logosDropShadow, waitingPlaceholder: false);
+        }
+
+        public Bitmap CreateMosaicDisplayBitmap(Image source, string viewMode, bool logosDropShadow, bool waitingPlaceholder)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
 
-            return CreateBitmapWithResizeStrategy(
+            if (viewMode == ApplicationConstants.ViewModeTile)
+                return CreateStoreBannerDisplayBitmap(source, waitingPlaceholder);
+            if (viewMode == ApplicationConstants.ViewModeLogos)
+                return MosaicViewHelper.CreateLogoViewDisplayBitmap(source, logosDropShadow);
+            return CreateLibraryCoverDisplayBitmap(source);
+        }
+
+        // Store Banner: width-fixed / height-cropped. Normal art fills the cell; waiting art uses the inset size.
+        public Bitmap CreateStoreBannerDisplayBitmap(Image source, bool waitingPlaceholder = false)
+        {
+            if (source == null)
+                throw new ArgumentNullException(nameof(source));
+
+            Size artworkSize = waitingPlaceholder
+                ? MosaicViewHelper.TileViewWaitingArtworkSize
+                : MosaicViewHelper.TileViewImageSize;
+
+            return CreateCenteredArtworkBitmap(
                 source,
-                new Size(MosaicViewHelper.CompactTilesViewImageWidth, MosaicViewHelper.CompactTilesViewImageHeight),
+                artworkSize,
+                MosaicViewHelper.TileViewImageSize,
+                ResizeStrategy.FixWidthCropHeight);
+        }
+
+        // Library Cover: height-fixed / width-cropped into the ImageList cell.
+        public Bitmap CreateLibraryCoverDisplayBitmap(Image source)
+        {
+            if (source == null)
+                throw new ArgumentNullException(nameof(source));
+
+            return CreateCenteredArtworkBitmap(
+                source,
+                MosaicViewHelper.CompactTilesArtworkSize,
+                MosaicViewHelper.CompactTilesViewImageSize,
                 ResizeStrategy.FixHeightCropWidth);
         }
 
@@ -84,6 +122,43 @@ namespace SmartGoldbergEmu.Services
         public bool EnsureHeaderFileNormalizedForSteamBounds(string headerFilePath)
         {
             return EnsureImageFitsWithinMaxSize(headerFilePath, HeaderMaxSize, "header");
+        }
+
+        private static Bitmap CreateCenteredArtworkBitmap(
+            Image source,
+            Size artworkSize,
+            Size cellSize,
+            ResizeStrategy resizeStrategy)
+        {
+            if (artworkSize.Width <= 0 || artworkSize.Height <= 0)
+                throw new ArgumentOutOfRangeException(nameof(artworkSize));
+            if (cellSize.Width <= 0 || cellSize.Height <= 0)
+                throw new ArgumentOutOfRangeException(nameof(cellSize));
+
+            var artwork = CreateBitmapWithResizeStrategy(source, artworkSize, resizeStrategy);
+            if (artwork.Width == cellSize.Width && artwork.Height == cellSize.Height)
+                return artwork;
+
+            try
+            {
+                var output = new Bitmap(cellSize.Width, cellSize.Height, PixelFormat.Format32bppArgb);
+                using (var graphics = Graphics.FromImage(output))
+                {
+                    graphics.Clear(Color.Transparent);
+                    graphics.CompositingQuality = CompositingQuality.HighQuality;
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    graphics.SmoothingMode = SmoothingMode.HighQuality;
+                    graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    int x = (cellSize.Width - artwork.Width) / 2;
+                    int y = (cellSize.Height - artwork.Height) / 2;
+                    graphics.DrawImageUnscaled(artwork, x, y);
+                }
+                return output;
+            }
+            finally
+            {
+                artwork.Dispose();
+            }
         }
 
         private bool EnsureImageFileNormalized(
