@@ -336,6 +336,7 @@ namespace SmartGoldbergEmu.Constants
         /// Default Steam client folder name under Program Files (x86) when probing library VDF.
         /// </summary>
         public const string SteamClientRelativeRootFolderName = "Steam";
+        public const string SteamClientExecutableFileName = "steam.exe";
 
         public const string SteamUserDataFolderName = "userdata";
 

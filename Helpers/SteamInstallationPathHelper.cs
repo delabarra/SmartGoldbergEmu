@@ -39,7 +39,7 @@ namespace SmartGoldbergEmu.Helpers
                 {
                     string steamPath = steamKey?.GetValue(SteamClientRegistryValueNames.SteamPath) as string;
                     string normalized = NormalizeSteamRoot(steamPath);
-                    if (!string.IsNullOrEmpty(normalized) && Directory.Exists(normalized))
+                    if (IsUsableSteamInstallationRoot(normalized))
                         return normalized;
                 }
             }
@@ -231,16 +231,46 @@ namespace SmartGoldbergEmu.Helpers
             return File.Exists(PathConstants.CombineGoldbergSteamDllPath());
         }
 
+        // Registry path only counts when the folder exists and steam.exe is present (stale InstallPath after uninstall).
+        public static bool TryResolveExistingSteamInstallationRoot(out string steamRoot)
+        {
+            steamRoot = ResolveSteamRootFromCurrentUserIfPresent();
+            if (!string.IsNullOrEmpty(steamRoot))
+                return true;
+
+            string lmRoot = GetLocalMachineSteamInstallPath();
+            if (IsUsableSteamInstallationRoot(lmRoot))
+            {
+                steamRoot = lmRoot;
+                return true;
+            }
+
+            steamRoot = null;
+            return false;
+        }
+
+        public static bool IsUsableSteamInstallationRoot(string steamRoot)
+        {
+            if (string.IsNullOrEmpty(steamRoot) || !Directory.Exists(steamRoot))
+                return false;
+
+            try
+            {
+                return File.Exists(Path.Combine(steamRoot, PathConstants.SteamClientExecutableFileName));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool TryResolveSteamUserDataDirectoryForSteam64(string steamId64, out string userDataPath)
         {
             userDataPath = null;
             if (!SteamIdHelper.TryGetSteam3AccountId(steamId64, out string steam3AccountId))
                 return false;
 
-            string steamRoot = ResolveSteamRootFromCurrentUserIfPresent();
-            if (string.IsNullOrEmpty(steamRoot))
-                steamRoot = GetLocalMachineSteamInstallPath();
-            if (string.IsNullOrEmpty(steamRoot))
+            if (!TryResolveExistingSteamInstallationRoot(out string steamRoot))
                 return false;
 
             userDataPath = PathConstants.CombineSteamUserDataAccountPath(steamRoot, steam3AccountId);
@@ -253,10 +283,7 @@ namespace SmartGoldbergEmu.Helpers
             if (appId == 0 || !SteamIdHelper.TryGetSteam3AccountId(steamId64, out string steam3AccountId))
                 return false;
 
-            string steamRoot = ResolveSteamRootFromCurrentUserIfPresent();
-            if (string.IsNullOrEmpty(steamRoot))
-                steamRoot = GetLocalMachineSteamInstallPath();
-            if (string.IsNullOrEmpty(steamRoot))
+            if (!TryResolveExistingSteamInstallationRoot(out string steamRoot))
                 return false;
 
             gameDataPath = PathConstants.CombineSteamUserDataGamePath(steamRoot, steam3AccountId, appId);

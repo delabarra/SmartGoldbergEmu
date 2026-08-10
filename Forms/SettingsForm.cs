@@ -38,11 +38,15 @@ namespace SmartGoldbergEmu.Forms
         private string _persistedCustomLocalSavePath = string.Empty;
         private string _persistedSavesFolderName = ApplicationConstants.DefaultSavesFolderName;
         private int _previousSaveLocationIndex = -1;
+        private bool _steamUserdataSaveLocationAvailable;
+        private bool _suppressSaveLocationSelectedIndexChanged;
 
         private const int SaveLocationDefault = 0;
         private const int SaveLocationPortable = 1;
         private const int SaveLocationSteamUserdata = 2;
         private const int SaveLocationCustom = 3;
+        private const string SaveLocationSteamUserdataLabel = "Steam userdata (Steam client)";
+        private const string SaveLocationSteamUserdataUnavailableTag = " [Steam client folder not found]";
         private Dictionary<string, string> _steamIdProfiles;
         private string _lastValidatedApiKey = string.Empty;
         private bool _lastApiKeyValidationSucceeded = false;
@@ -664,9 +668,15 @@ namespace SmartGoldbergEmu.Forms
                 
                 if (string.IsNullOrEmpty(folderPath))
                 {
-                    string message = cmbSaveLocation != null && cmbSaveLocation.SelectedIndex == SaveLocationSteamUserdata
-                        ? "Could not open the Steam userdata folder. Set a valid Steam64 ID on the User tab and ensure Steam is installed."
-                        : "Unable to determine save folder location.";
+                    string message = "Unable to determine save folder location.";
+                    if (cmbSaveLocation != null && cmbSaveLocation.SelectedIndex == SaveLocationSteamUserdata)
+                    {
+                        string steamId = txtSteamID != null ? txtSteamID.Text.Trim() : string.Empty;
+                        message = !SteamIdHelper.TryGetSteam3AccountId(steamId, out _)
+                            ? "Could not open the Steam userdata folder. Set a valid Steam64 ID on the User tab."
+                            : "Could not open the Steam userdata folder. Steam was not found (registry path must exist and contain steam.exe).";
+                    }
+
                     FormMessageBoxHelper.ShowIfAlive(this, message, "Error",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
@@ -1169,8 +1179,24 @@ namespace SmartGoldbergEmu.Forms
 
         private void cmbSaveLocation_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (_isLoading)
+            if (_isLoading || _suppressSaveLocationSelectedIndexChanged)
                 return;
+
+            if (cmbSaveLocation.SelectedIndex == SaveLocationSteamUserdata && !_steamUserdataSaveLocationAvailable)
+            {
+                _suppressSaveLocationSelectedIndexChanged = true;
+                try
+                {
+                    cmbSaveLocation.SelectedIndex = _previousSaveLocationIndex >= 0
+                        ? _previousSaveLocationIndex
+                        : SaveLocationDefault;
+                }
+                finally
+                {
+                    _suppressSaveLocationSelectedIndexChanged = false;
+                }
+                return;
+            }
 
             int previousIndex = _previousSaveLocationIndex;
             _previousSaveLocationIndex = cmbSaveLocation.SelectedIndex;
@@ -1194,18 +1220,108 @@ namespace SmartGoldbergEmu.Forms
             cmbSaveLocation.Items.Add(
                 string.Format("Default (%appdata%\\{0}\\)", ApplicationConstants.DefaultSavesFolderName));
             cmbSaveLocation.Items.Add("Portable");
-            cmbSaveLocation.Items.Add("Steam userdata (Steam client)");
+            cmbSaveLocation.Items.Add(SaveLocationSteamUserdataLabel);
             cmbSaveLocation.Items.Add("Custom Path");
+
+            if (cmbSaveLocation.DrawMode != DrawMode.OwnerDrawFixed)
+            {
+                cmbSaveLocation.DrawMode = DrawMode.OwnerDrawFixed;
+                cmbSaveLocation.DrawItem += CmbSaveLocation_DrawItem;
+            }
+
+            RefreshSteamUserdataSaveLocationOption();
+        }
+
+        private void RefreshSteamUserdataSaveLocationOption()
+        {
+            if (cmbSaveLocation == null || cmbSaveLocation.Items.Count <= SaveLocationSteamUserdata)
+                return;
+
+            _steamUserdataSaveLocationAvailable =
+                SteamInstallationPathHelper.TryResolveExistingSteamInstallationRoot(out _);
+
+            cmbSaveLocation.Items[SaveLocationSteamUserdata] = _steamUserdataSaveLocationAvailable
+                ? SaveLocationSteamUserdataLabel
+                : SaveLocationSteamUserdataLabel + SaveLocationSteamUserdataUnavailableTag;
+
+            if (!_steamUserdataSaveLocationAvailable && cmbSaveLocation.SelectedIndex == SaveLocationSteamUserdata)
+            {
+                _suppressSaveLocationSelectedIndexChanged = true;
+                try
+                {
+                    cmbSaveLocation.SelectedIndex = SaveLocationDefault;
+                    _previousSaveLocationIndex = SaveLocationDefault;
+                }
+                finally
+                {
+                    _suppressSaveLocationSelectedIndexChanged = false;
+                }
+
+                if (!_isLoading)
+                    UpdateSaveLocationControls(-1);
+            }
+
+            cmbSaveLocation.Invalidate();
+        }
+
+        private void CmbSaveLocation_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= cmbSaveLocation.Items.Count)
+                return;
+
+            bool itemEnabled = e.Index != SaveLocationSteamUserdata || _steamUserdataSaveLocationAvailable;
+            string text = cmbSaveLocation.Items[e.Index].ToString();
+
+            Color backColor;
+            Color foreColor;
+            if (!itemEnabled)
+            {
+                backColor = e.BackColor;
+                if ((e.State & DrawItemState.Selected) != 0)
+                    backColor = cmbSaveLocation.DroppedDown ? cmbSaveLocation.BackColor : SystemColors.Highlight;
+                foreColor = SystemColors.GrayText;
+            }
+            else if ((e.State & DrawItemState.Selected) != 0)
+            {
+                backColor = SystemColors.Highlight;
+                foreColor = SystemColors.HighlightText;
+            }
+            else
+            {
+                backColor = e.BackColor;
+                foreColor = e.ForeColor;
+            }
+
+            using (var backgroundBrush = new SolidBrush(backColor))
+                e.Graphics.FillRectangle(backgroundBrush, e.Bounds);
+
+            TextRenderer.DrawText(
+                e.Graphics,
+                text,
+                e.Font,
+                e.Bounds,
+                foreColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
+            if (itemEnabled)
+                e.DrawFocusRectangle();
         }
 
         private void InitializeSaveLocationComboBox(string localSavePath, string accountSteamId)
         {
-            if (GoldbergSavePathHelper.UsesSteamUserdataLayout(localSavePath, accountSteamId))
+            RefreshSteamUserdataSaveLocationOption();
+
+            if (_steamUserdataSaveLocationAvailable
+                && GoldbergSavePathHelper.UsesSteamUserdataLayout(localSavePath, accountSteamId))
                 cmbSaveLocation.SelectedIndex = SaveLocationSteamUserdata;
             else if (string.IsNullOrEmpty(localSavePath))
                 cmbSaveLocation.SelectedIndex = SaveLocationDefault;
             else if (IsPortablePath(localSavePath))
                 cmbSaveLocation.SelectedIndex = SaveLocationPortable;
+            else if (!_steamUserdataSaveLocationAvailable
+                && !string.IsNullOrEmpty(localSavePath)
+                && LooksLikeSteamUserdataPath(localSavePath))
+                cmbSaveLocation.SelectedIndex = SaveLocationDefault;
             else
             {
                 cmbSaveLocation.SelectedIndex = SaveLocationCustom;
@@ -1213,6 +1329,17 @@ namespace SmartGoldbergEmu.Forms
             }
 
             UpdateSaveLocationControls(-1);
+        }
+
+        // When Steam is missing, UsesSteamUserdataLayout cannot match; avoid treating a former Steam path as Custom.
+        private static bool LooksLikeSteamUserdataPath(string localSavePath)
+        {
+            if (string.IsNullOrWhiteSpace(localSavePath))
+                return false;
+
+            string normalized = localSavePath.Replace('/', '\\').TrimEnd('\\');
+            return normalized.IndexOf("\\userdata\\", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.EndsWith("\\userdata", StringComparison.OrdinalIgnoreCase);
         }
 
         private string GetCustomBasePathFromIni(string localSavePath, string accountSteamId)
@@ -1735,6 +1862,9 @@ namespace SmartGoldbergEmu.Forms
 
         private bool IsSaveManagementValidForSave()
         {
+            if (cmbSaveLocation.SelectedIndex == SaveLocationSteamUserdata && !_steamUserdataSaveLocationAvailable)
+                return false;
+
             if (cmbSaveLocation.SelectedIndex == SaveLocationCustom)
             {
                 return GoldbergSavePathHelper.ValidateCustomLocalSavePath(
@@ -2115,16 +2245,11 @@ namespace SmartGoldbergEmu.Forms
 
                 if (cmbSaveLocation.SelectedIndex == SaveLocationSteamUserdata)
                 {
-                    if (!SteamIdHelper.TryGetSteam3AccountId(txtSteamID != null ? txtSteamID.Text.Trim() : string.Empty, out _))
+                    if (!GoldbergSavePathHelper.TryEnsureSteamUserdataAccountDirectory(
+                            txtSteamID != null ? txtSteamID.Text.Trim() : string.Empty,
+                            out string steamUserdataError))
                     {
-                        return Models.SaveResult.Failure(
-                            "Steam userdata requires a valid Steam64 ID on the User tab (converted to Steam3AccountID for userdata folders).");
-                    }
-
-                    if (!GoldbergSavePathHelper.TryEnsureSteamUserdataAccountDirectory(txtSteamID.Text.Trim()))
-                    {
-                        return Models.SaveResult.Failure(
-                            "Steam userdata save location requires a detected Steam installation and a valid Steam64 ID.");
+                        return Models.SaveResult.Failure(steamUserdataError);
                     }
                 }
 

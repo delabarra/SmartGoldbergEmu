@@ -16,18 +16,34 @@ namespace SmartGoldbergEmu.Helpers
             return string.Format(ApplicationConstants.SteamUserdataPathDisplayFormat, steam3AccountId, appSegment);
         }
 
-        public static bool TryEnsureSteamUserdataAccountDirectory(string accountSteamId)
+        public static bool TryEnsureSteamUserdataAccountDirectory(string accountSteamId, out string errorMessage)
         {
+            errorMessage = null;
             if (!TryResolveSteamUserdataAccountDirectory(accountSteamId, out string accountDirectoryPath))
+            {
+                if (!SteamIdHelper.TryGetSteam3AccountId(accountSteamId, out _))
+                {
+                    errorMessage =
+                        "Steam userdata requires a valid Steam64 ID on the User tab (converted to Steam3AccountID for userdata folders).";
+                }
+                else
+                {
+                    errorMessage =
+                        "Steam installation folder was not found. Registry SteamPath/InstallPath must point to a folder that still contains steam.exe.";
+                }
+
                 return false;
+            }
 
             try
             {
                 Directory.CreateDirectory(accountDirectoryPath);
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                errorMessage =
+                    "Could not create the Steam userdata account folder under the Steam installation: " + ex.Message;
                 return false;
             }
         }
