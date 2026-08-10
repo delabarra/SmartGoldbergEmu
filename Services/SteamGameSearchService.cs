@@ -112,7 +112,7 @@ namespace SmartGoldbergEmu.Services
                     return (exactMatch, startsWith, wordMatch, position);
                 }).Take(maxResults).ToList();
 
-                feedbackService?.SetMessage($"Found {sortedResults.Count} matching games");
+                feedbackService?.SetMessageWithAutoClear($"Found {sortedResults.Count} matching games");
                 return sortedResults;
             }
             catch (Exception ex)

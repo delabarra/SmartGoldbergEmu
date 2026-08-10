@@ -1,6 +1,5 @@
 using System;
 using System.Windows.Forms;
-using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
@@ -9,21 +8,6 @@ namespace SmartGoldbergEmu.Services
     public static class StubKitFeedback
     {
         public const string DialogTitle = "SteamStub";
-
-        public static string Progress(string gameName)
-        {
-            return "SteamStub: " + FormatGameName(gameName) + "...";
-        }
-
-        public static string CheckingProgress(string gameName)
-        {
-            return "Checking SteamStub: " + FormatGameName(gameName) + "...";
-        }
-
-        public static string RestoreProgress(string gameName)
-        {
-            return "SteamStub restore: " + FormatGameName(gameName) + "...";
-        }
 
         public static string OfferRemoveQuestion(string gameName, string executableFileName)
         {
@@ -90,22 +74,6 @@ namespace SmartGoldbergEmu.Services
                     return MessageBoxIcon.Warning;
                 default:
                     return MessageBoxIcon.Error;
-            }
-        }
-
-        public static TaskReportKind StatusKindForOutcome(StubKitApplyOutcome outcome)
-        {
-            switch (outcome)
-            {
-                case StubKitApplyOutcome.Success:
-                case StubKitApplyOutcome.Restored:
-                    return TaskReportKind.Info;
-                case StubKitApplyOutcome.ExecutablePathInvalid:
-                case StubKitApplyOutcome.NoStubFound:
-                case StubKitApplyOutcome.BackupMissing:
-                    return TaskReportKind.Warning;
-                default:
-                    return TaskReportKind.Error;
             }
         }
 

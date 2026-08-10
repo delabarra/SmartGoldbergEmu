@@ -193,6 +193,7 @@
     <Compile Include="Constants\SteamStaticCdnConstants.cs" />
     <Compile Include="Constants\SteamPicsKeyNames.cs" />
     <Compile Include="Abstractions\ITaskReportService.cs" />
+    <Compile Include="Abstractions\TaskReportDefaults.cs" />
     <Compile Include="Abstractions\IHttpService.cs" />
     <Compile Include="Abstractions\ILogService.cs" />
     <Compile Include="Abstractions\IRegistryService.cs" />

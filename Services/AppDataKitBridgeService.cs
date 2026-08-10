@@ -367,7 +367,7 @@ namespace SmartGoldbergEmu.Services
                 }
             }
 
-            feedback?.SetMessage(AddGameStatusMessages.LookingUpData(appId));
+            feedback?.SetMessage(AddGameStatusMessages.FetchingMetadata(appId));
             AppInfoKeyValue appInfo;
             using (var picsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
@@ -382,6 +382,8 @@ namespace SmartGoldbergEmu.Services
                 feedback?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
                 return new AppCatalogSnapshot { AppId = (uint)appId, Failure = AppMetadataFetchFailure.Unavailable };
             }
+
+            feedback?.SetMessage(string.Empty);
 
             Dictionary<long, string> dlc = resolveDlcNames
                 ? await ResolveDlcNamesForRootAsync(kit, appInfo, cancellationToken).ConfigureAwait(false)

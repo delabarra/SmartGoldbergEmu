@@ -426,7 +426,7 @@ namespace SmartGoldbergEmu.Services
                 var settingsFile = Path.Combine(_globalSettingsPath, PathConstants.GoldbergGlobalUserJsonFileName);
                 var json = JsonConvert.SerializeObject(settings, JsonFormatting.Indented);
                 File.WriteAllText(settingsFile, json);
-                Feedback?.SetMessage("Global settings saved successfully");
+                Feedback?.SetMessageWithAutoClear("Global settings saved successfully");
 
                 return ValidationResult.Success();
             }

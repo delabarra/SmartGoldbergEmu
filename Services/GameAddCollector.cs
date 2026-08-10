@@ -4,7 +4,6 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Abstractions;
-using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
@@ -58,10 +57,6 @@ namespace SmartGoldbergEmu.Services
                 };
             }
 
-            string displayName = !string.IsNullOrEmpty(setupResult.Metadata?.Name)
-                ? setupResult.Metadata.Name
-                : setupResult.GameName;
-
             GameConfig game = await _gameSetupService
                 .CreateGameConfigAsync(executablePath, setupResult, feedbackService: null, fetchDlc: false)
                 .ConfigureAwait(false);
@@ -94,7 +89,6 @@ namespace SmartGoldbergEmu.Services
                 }
             }
 
-            taskReport?.SetMessage(AddGameStatusMessages.WaitingToPreview(displayName));
             taskReport?.SetProgress(0, 0);
 
             return new GameAddCollectResult { Bundle = bundle };

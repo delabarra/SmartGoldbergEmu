@@ -1041,7 +1041,7 @@ namespace SmartGoldbergEmu.Forms
                     ClearPendingAddListEntry();
                     // Metadata fetch errors are already on the strip from GameSetupService.
                     if (!collectResult.MetadataFetchFailed)
-                        _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                        _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
                     return;
                 }
 
@@ -1064,7 +1064,7 @@ namespace SmartGoldbergEmu.Forms
                 _taskReportService.SetProgress(0, 0);
                 if (!await OpenGameSettingsFormAsync(gameConfig, metadata, collectResult.Bundle).ConfigureAwait(true))
                 {
-                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
                     return;
                 }
 
@@ -1116,7 +1116,7 @@ namespace SmartGoldbergEmu.Forms
                     if (dialogResult == DialogResult.Retry && gameSettingsForm.EditExistingGameGuid != Guid.Empty)
                     {
                         ClearPendingAddListEntry();
-                        _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                        _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.");
                         EditGame(gameSettingsForm.EditExistingGameGuid);
                         return true;
                     }
@@ -1476,7 +1476,7 @@ namespace SmartGoldbergEmu.Forms
             if (games.All(g => _pendingAddGameListService.IsPendingGame(g)))
             {
                 ClearPendingAddListEntry();
-                _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
                 return;
             }
 
@@ -1508,8 +1508,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 RefreshGames();
                 _taskReportService.SetMessageWithAutoClear(
-                    removed == 1 ? $"{games[0].AppName} removed." : $"{removed} games removed.",
-                    TaskReportKind.Info);
+                    removed == 1 ? $"{games[0].AppName} removed." : $"{removed} games removed.");
             }
 
             if (removed < games.Count && !string.IsNullOrWhiteSpace(lastError))
@@ -1855,10 +1854,7 @@ namespace SmartGoldbergEmu.Forms
             if (!string.Equals(extension, ".exe", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            string name = !string.IsNullOrWhiteSpace(gameName) ? gameName.Trim() : "game";
             DetectResult detect;
-            // Detect is a quick PE check — status text only (no progress bar).
-            _taskReportService.SetMessage(StubKitFeedback.CheckingProgress(name));
             try
             {
                 detect = await Task.Run(() => StubKitService.DetectExecutable(executablePath))
@@ -1867,18 +1863,13 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("StubKit: failed to check executable for SteamStub.", ex);
-                if (!IsDisposed && !Disposing)
-                    _taskReportService.SetMessage(string.Empty);
                 return;
             }
 
             if (IsDisposed || Disposing)
                 return;
             if (detect == null || !detect.CanRemove)
-            {
-                _taskReportService.SetMessage(string.Empty);
                 return;
-            }
 
             DialogResult answer = FormMessageBoxHelper.ShowDialogIfAlive(
                 this,
@@ -1887,10 +1878,7 @@ namespace SmartGoldbergEmu.Forms
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
             if (answer != DialogResult.Yes)
-            {
-                _taskReportService.SetMessage(string.Empty);
                 return;
-            }
 
             await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
         }
@@ -1939,8 +1927,6 @@ namespace SmartGoldbergEmu.Forms
             }
 
             Program.LogService?.LogMessage($"Removing SteamStub on {name}: {executablePath}");
-            _taskReportService.StartProgress(StubKitFeedback.Progress(name));
-            prgFeedback.Style = ProgressBarStyle.Marquee;
 
             try
             {
@@ -1961,11 +1947,6 @@ namespace SmartGoldbergEmu.Forms
                     LogDetail = ex.Message
                 });
             }
-            finally
-            {
-                if (!IsDisposed && !Disposing)
-                    prgFeedback.Style = ProgressBarStyle.Blocks;
-            }
         }
 
         private async Task RestoreStubKitExecutableAsync(string executablePath)
@@ -1984,8 +1965,6 @@ namespace SmartGoldbergEmu.Forms
             }
 
             Program.LogService?.LogMessage($"Restoring SteamStub backup for {name}: {executablePath}");
-            _taskReportService.StartProgress(StubKitFeedback.RestoreProgress(name));
-            prgFeedback.Style = ProgressBarStyle.Marquee;
 
             try
             {
@@ -2004,11 +1983,6 @@ namespace SmartGoldbergEmu.Forms
                     LogDetail = ex.Message
                 });
             }
-            finally
-            {
-                if (!IsDisposed && !Disposing)
-                    prgFeedback.Style = ProgressBarStyle.Blocks;
-            }
         }
 
         private void ShowStubKitApplyFeedback(string gameName, StubKitApplyResult result)
@@ -2019,30 +1993,20 @@ namespace SmartGoldbergEmu.Forms
             if (!string.IsNullOrWhiteSpace(result.LogDetail))
                 Program.LogService?.LogMessage("StubKit detail: " + result.LogDetail);
 
-            string message = StubKitFeedback.ResultMessage(result.Outcome, gameName);
-
-            // Success/restore: status bar only (avoids a modal while large PE buffers are collected).
+            // Success/restore: log only (no status strip / modal while large PE buffers are collected).
             if (result.Outcome == StubKitApplyOutcome.Success ||
                 result.Outcome == StubKitApplyOutcome.Restored)
             {
-                _taskReportService.SetMessageWithAutoClear(
-                    message,
-                    StubKitFeedback.StatusKindForOutcome(result.Outcome),
-                    6000);
+                Program.LogService?.LogMessage(StubKitFeedback.ResultMessage(result.Outcome, gameName));
                 return;
             }
 
             FormMessageBoxHelper.ShowIfAlive(
                 this,
-                message,
+                StubKitFeedback.ResultMessage(result.Outcome, gameName),
                 StubKitFeedback.DialogTitle,
                 MessageBoxButtons.OK,
                 StubKitFeedback.IconForOutcome(result.Outcome));
-
-            _taskReportService.SetMessageWithAutoClear(
-                message,
-                StubKitFeedback.StatusKindForOutcome(result.Outcome),
-                8000);
         }
 
         private static Image TryExtractStubMenuIcon(string executablePath)
@@ -2411,7 +2375,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 if (_pendingAddGameListService.IsPendingGame(game))
                 {
-                    _taskReportService.SetMessageWithAutoClear("Save the game before launching it.", delayMs: 6000);
+                    _taskReportService.SetMessageWithAutoClear("Save the game before launching it.");
                     return;
                 }
 
@@ -2612,7 +2576,7 @@ namespace SmartGoldbergEmu.Forms
                 else
                 {
                     Program.LogService?.LogDebug("Launch completed successfully from MainForm perspective");
-                    _taskReportService.SetMessageWithAutoClear($"{game.AppName} launched.", TaskReportKind.Info);
+                    _taskReportService.SetMessageWithAutoClear($"{game.AppName} launched.");
                 }
             }
             catch (Exception ex)

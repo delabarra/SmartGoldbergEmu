@@ -157,10 +157,7 @@ namespace SmartGoldbergEmu.Generators
 
         private void ReportFinishedStatus(string message, TaskReportKind kind = TaskReportKind.Info)
         {
-            _taskReportService?.SetMessageWithAutoClear(
-                message,
-                kind,
-                AddGameStatusMessages.StatusAutoClearDelayMs);
+            _taskReportService?.SetMessageWithAutoClear(message, kind);
         }
 
         private static bool TryBuildItemDefinitionMap(string archiveJson, out JsonObject map, out string errorDetail)

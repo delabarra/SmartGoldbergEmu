@@ -414,7 +414,7 @@ namespace SmartGoldbergEmu.Services
             if (result.IsValid)
             {
                 Program.LogService?.LogMessage("Import: migrated Steam Web API key to registry.");
-                report?.SetMessage("Steam Web API key imported from previous configuration.");
+                report?.SetMessageWithAutoClear("Steam Web API key imported from previous configuration.");
                 return true;
             }
 

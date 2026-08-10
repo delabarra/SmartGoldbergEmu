@@ -19,8 +19,6 @@ namespace SmartGoldbergEmu.Services
 {
     public class AchievementService
     {
-        private const int FeedbackDisplayDelayMs = 1500;
-
         private enum SteamAchievementFetchStatus
         {
             InvalidApiKey,
@@ -251,18 +249,16 @@ namespace SmartGoldbergEmu.Services
             _language = language ?? "english";
         }
 
-        private async Task ShowFeedbackAndClearAsync(string message, bool showProgress, TaskReportKind? type = null)
+        private void ShowFeedbackAndClear(string message, bool showProgress, TaskReportKind? type = null)
         {
             if (!showProgress || _taskReportService == null)
                 return;
 
             if (type.HasValue)
-                _taskReportService.SetMessage(message, type.Value);
+                _taskReportService.SetMessageWithAutoClear(message, type.Value);
             else
-                _taskReportService.SetMessage(message);
+                _taskReportService.SetMessageWithAutoClear(message);
             _taskReportService.SetProgress(0, 0);
-            await Task.Delay(FeedbackDisplayDelayMs);
-            ClearAddSaveAchievementProgress();
         }
 
         private void ClearAddSaveAchievementProgress()
@@ -402,7 +398,7 @@ namespace SmartGoldbergEmu.Services
                 return created;
             }
 
-            await ShowFeedbackAndClearAsync(
+            ShowFeedbackAndClear(
                 created ? successMessage : failureMessage,
                 active,
                 created ? (TaskReportKind?)null : TaskReportKind.Error);
@@ -808,7 +804,7 @@ namespace SmartGoldbergEmu.Services
                 catch (Exception)
                 {
                     if (ProgressIsMenu(progressMode))
-                        _taskReportService?.SetMessage("Warning: Could not clean up old files");
+                        _taskReportService?.SetMessage("Could not clean up old files.", TaskReportKind.Warning);
                 }
 
                 EnsureSteamSettingsFolder(app);
@@ -822,9 +818,9 @@ namespace SmartGoldbergEmu.Services
                     if (ProgressIsMenu(progressMode))
                     {
                         if (fetch.Failure is RequestTimeoutException)
-                            _taskReportService?.SetMessage("Error: Request timed out");
+                            _taskReportService?.SetMessage("Request timed out.", TaskReportKind.Error);
                         else
-                            _taskReportService?.SetMessage(fetch.Failure.Message);
+                            _taskReportService?.SetMessage(fetch.Failure.Message, TaskReportKind.Error);
                     }
 
                     throw fetch.Failure;
@@ -866,10 +862,7 @@ namespace SmartGoldbergEmu.Services
 
                 if (success && ProgressIsMenu(progressMode) && _taskReportService != null)
                 {
-                    _taskReportService.SetMessage("Achievement generation successful");
-                    _taskReportService.SetProgress(100, 100);
-                    await Task.Delay(FeedbackDisplayDelayMs);
-                    _taskReportService.SetMessage("");
+                    _taskReportService.SetMessageWithAutoClear("Achievement generation successful");
                     _taskReportService.SetProgress(0, 0);
                 }
 

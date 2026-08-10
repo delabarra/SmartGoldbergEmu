@@ -81,9 +81,7 @@ namespace SmartGoldbergEmu.Services
                 taskReport?.SetProgress(0, 0);
             }
 
-            taskReport?.SetMessageWithAutoClear(
-                AddGameStatusMessages.AddedToLibrary(displayName),
-                delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+            taskReport?.SetMessageWithAutoClear(AddGameStatusMessages.AddedToLibrary(displayName));
 
             if (request.CredentialsTouched)
                 PersistCredentialsFromForm(formRequest, gameConfig.AppId);

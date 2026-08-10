@@ -159,8 +159,7 @@ namespace SmartGoldbergEmu.Services
             AppCatalogSnapshot catalog = null;
             if (appId > 0)
             {
-                feedbackService?.SetMessage(AddGameStatusMessages.LookingUpData(appId));
-                feedbackService?.SetProgress(0, 2);
+                feedbackService?.SetMessage(AddGameStatusMessages.FetchingMetadata(appId, gameName));
                 // Add-collect: suppress intermediate chatter; full catalog captures metadata, DLC, assets, achievements, stats, and items in one pass.
                 ITaskReportService metadataFeedback = restrictStatusToAddGameCollect ? null : feedbackService;
                 catalog = await _appDataKitBridge
@@ -185,6 +184,9 @@ namespace SmartGoldbergEmu.Services
 
                     return new GameSetupResult { Cancelled = true, MetadataFetchFailed = true };
                 }
+
+                // Drop the busy "Fetching metadata…" text as soon as the catalog is in hand.
+                feedbackService?.SetMessage(string.Empty);
 
                 if (!string.IsNullOrEmpty(metadata.Name))
                 {

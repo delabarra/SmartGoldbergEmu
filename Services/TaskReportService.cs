@@ -59,17 +59,22 @@ namespace SmartGoldbergEmu.Services
             if (ShouldSkipUpdate())
                 return;
 
+            StopAutoClearTimer();
+
             if (string.IsNullOrEmpty(message))
             {
                 _statusLabel.Text = string.Empty;
                 _progressBar.Visible = false;
                 _progressBar.Value = 0;
+                return;
             }
-            else
-            {
-                string prefix = GetPrefixForKind(kind);
-                _statusLabel.Text = string.IsNullOrEmpty(prefix) ? message : prefix + message;
-            }
+
+            string prefix = GetPrefixForKind(kind);
+            _statusLabel.Text = string.IsNullOrEmpty(prefix) ? message : prefix + message;
+
+            // Terminal warning/error text always uses the shared display timer.
+            if (kind == TaskReportKind.Warning || kind == TaskReportKind.Error)
+                StartAutoClearTimer(TaskReportDefaults.AutoClearDelayMs);
         }
 
         private static string GetPrefixForKind(TaskReportKind kind)
@@ -82,7 +87,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public void SetMessageWithAutoClear(string message, TaskReportKind kind = TaskReportKind.Info, int delayMs = 3000)
+        public void SetMessageWithAutoClear(string message, TaskReportKind kind = TaskReportKind.Info, int delayMs = TaskReportDefaults.AutoClearDelayMs)
         {
             if (_control.InvokeRequired)
             {
@@ -94,16 +99,23 @@ namespace SmartGoldbergEmu.Services
             if (ShouldSkipUpdate())
                 return;
 
+            if (delayMs <= 0)
+                delayMs = TaskReportDefaults.AutoClearDelayMs;
+
             StopAutoClearTimer();
 
             _progressBar.Visible = false;
             _progressBar.Value = 0;
-            SetMessage(message, kind);
 
-            _autoClearTimer = new Timer();
-            _autoClearTimer.Interval = delayMs;
-            _autoClearTimer.Tick += AutoClearTimer_Tick;
-            _autoClearTimer.Start();
+            if (string.IsNullOrEmpty(message))
+            {
+                _statusLabel.Text = string.Empty;
+                return;
+            }
+
+            string prefix = GetPrefixForKind(kind);
+            _statusLabel.Text = string.IsNullOrEmpty(prefix) ? message : prefix + message;
+            StartAutoClearTimer(delayMs);
         }
 
         private void AutoClearTimer_Tick(object sender, EventArgs e)
@@ -111,7 +123,18 @@ namespace SmartGoldbergEmu.Services
             StopAutoClearTimer();
             if (ShouldSkipUpdate())
                 return;
-            SetMessage(string.Empty);
+            _statusLabel.Text = string.Empty;
+            _progressBar.Visible = false;
+            _progressBar.Value = 0;
+        }
+
+        private void StartAutoClearTimer(int delayMs)
+        {
+            StopAutoClearTimer();
+            _autoClearTimer = new Timer();
+            _autoClearTimer.Interval = delayMs;
+            _autoClearTimer.Tick += AutoClearTimer_Tick;
+            _autoClearTimer.Start();
         }
 
         private void StopAutoClearTimer()
@@ -137,8 +160,10 @@ namespace SmartGoldbergEmu.Services
             if (ShouldSkipUpdate())
                 return;
 
+            // Active progress keeps the busy message; do not let a prior terminal timer wipe it.
             if (total > 0)
             {
+                StopAutoClearTimer();
                 int percentage = Math.Max(0, Math.Min(100, (current * 100) / total));
                 _progressBar.Value = percentage;
                 _progressBar.Visible = true;
@@ -147,6 +172,11 @@ namespace SmartGoldbergEmu.Services
                 {
                     _statusLabel.Text = $"Progress: {current}/{total}";
                 }
+            }
+            else
+            {
+                _progressBar.Visible = false;
+                _progressBar.Value = 0;
             }
         }
 
@@ -162,6 +192,7 @@ namespace SmartGoldbergEmu.Services
             if (ShouldSkipUpdate())
                 return;
 
+            StopAutoClearTimer();
             _statusLabel.Text = message ?? string.Empty;
 
             if (percentage > 0)
@@ -188,6 +219,7 @@ namespace SmartGoldbergEmu.Services
             if (ShouldSkipUpdate())
                 return;
 
+            StopAutoClearTimer();
             if (!string.IsNullOrEmpty(message))
             {
                 _statusLabel.Text = message;
@@ -208,19 +240,17 @@ namespace SmartGoldbergEmu.Services
             if (ShouldSkipUpdate())
                 return;
 
-            _progressBar.Value = 100;
-
             if (message != null)
             {
-                _statusLabel.Text = message;
+                SetMessageWithAutoClear(message);
             }
             else
             {
+                StopAutoClearTimer();
                 _statusLabel.Text = string.Empty;
+                _progressBar.Visible = false;
+                _progressBar.Value = 0;
             }
-
-            _progressBar.Visible = false;
-            _progressBar.Value = 0;
         }
 
         public void Clear()

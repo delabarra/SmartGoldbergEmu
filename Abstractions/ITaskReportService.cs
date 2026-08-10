@@ -6,7 +6,7 @@ namespace SmartGoldbergEmu.Abstractions
         void SetMessage(string message);
         void SetMessage(string message, TaskReportKind kind);
         void SetProgress(int current, int total);
-        void SetMessageWithAutoClear(string message, TaskReportKind kind = TaskReportKind.Info, int delayMs = 3000);
+        void SetMessageWithAutoClear(string message, TaskReportKind kind = TaskReportKind.Info, int delayMs = TaskReportDefaults.AutoClearDelayMs);
     }
 
     public enum TaskReportKind

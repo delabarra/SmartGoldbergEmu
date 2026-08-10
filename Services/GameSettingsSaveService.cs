@@ -103,9 +103,7 @@ namespace SmartGoldbergEmu.Services
                 await RunAddGameAchievementsGenerationAsync(request.GameConfig, taskReport).ConfigureAwait(false);
 
                 taskReport?.SetProgress(0, 0);
-                taskReport?.SetMessageWithAutoClear(
-                    AddGameStatusMessages.AddedToLibrary(displayName),
-                    delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                taskReport?.SetMessageWithAutoClear(AddGameStatusMessages.AddedToLibrary(displayName));
             }
             catch (Exception ex)
             {
@@ -339,7 +337,7 @@ namespace SmartGoldbergEmu.Services
                 taskReport?.SetMessage("Exporting game assets...");
                 bool exported = _steamProductInfoService.ExportAppPicsToValveTextFile(appIdText, picsData);
                 if (exported)
-                    taskReport?.SetMessage("Game assets exported.");
+                    taskReport?.SetMessageWithAutoClear("Game assets exported.");
                 else
                 {
                     taskReport?.SetMessage("Game assets export skipped.", TaskReportKind.Warning);

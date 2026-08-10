@@ -268,8 +268,7 @@ namespace SmartGoldbergEmu.Services
 
             if (essentialsOk)
             {
-                Feedback?.SetMessage("Game images downloaded successfully");
-                Feedback?.SetProgress(totalDownloads, totalDownloads);
+                Feedback?.SetMessageWithAutoClear("Game images downloaded successfully");
                 return true;
             }
 
@@ -283,7 +282,6 @@ namespace SmartGoldbergEmu.Services
             Program.LogService?.LogWarning(
                 $"Game image download finished with missing files under resources: {string.Join(", ", missing)}");
             Feedback?.SetMessage("Some game images could not be downloaded.", TaskReportKind.Warning);
-            Feedback?.SetProgress(totalDownloads, totalDownloads);
             return false;
         }
 
