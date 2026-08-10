@@ -33,20 +33,34 @@ namespace SmartGoldbergEmu.Services
             _steamApiKeyService = steamApiKeyService ?? throw new ArgumentNullException(nameof(steamApiKeyService));
         }
 
+        public ulong ResolveAppIdForCollect(string executablePath)
+        {
+            if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
+                return 0;
+
+            ulong? detected = _gameSetupService.DetectAppIdFromExecutable(executablePath);
+            if (detected.HasValue)
+                return detected.Value;
+
+            ulong? prompted = _gameSetupService.PromptForAppId();
+            return prompted ?? 0;
+        }
+
         public async Task<GameAddCollectResult> CollectFromExecutableAsync(
             string executablePath,
             IWin32Window owner,
-            ITaskReportService taskReport)
+            ITaskReportService taskReport,
+            ulong resolvedAppId,
+            GameConfig updateExisting = null)
         {
             if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
                 return new GameAddCollectResult { Cancelled = true };
 
-            ulong appId = ResolveAppIdForCollect(executablePath);
-            if (appId == 0)
+            if (resolvedAppId == 0)
                 return new GameAddCollectResult { Cancelled = true };
 
             GameSetupResult setupResult = await _gameSetupService
-                .SetupGameFromExecutable(executablePath, appId, owner, taskReport, restrictStatusToAddGameCollect: true)
+                .SetupGameFromExecutable(executablePath, resolvedAppId, owner, taskReport, restrictStatusToAddGameCollect: true)
                 .ConfigureAwait(false);
             if (setupResult.Cancelled)
             {
@@ -61,12 +75,19 @@ namespace SmartGoldbergEmu.Services
                 .CreateGameConfigAsync(executablePath, setupResult, feedbackService: null, fetchDlc: false)
                 .ConfigureAwait(false);
 
+            bool isUpdate = updateExisting != null && updateExisting.GameGuid != Guid.Empty;
+            if (isUpdate)
+                ApplyExistingIdentityForUpdate(game, updateExisting);
+
             var bundle = new GameAddBundle
             {
                 Game = game,
                 Metadata = setupResult.Metadata,
                 Catalog = setupResult.Catalog,
-                FormDefaults = _emulatorConfigService.LoadGameSettingsSnapshot(game.AppId, mergePerGameSteamSettings: false)
+                IsUpdateOfExisting = isUpdate,
+                FormDefaults = _emulatorConfigService.LoadGameSettingsSnapshot(
+                    game.AppId,
+                    mergePerGameSteamSettings: isUpdate)
             };
 
             if (game.AppId > 0)
@@ -94,14 +115,17 @@ namespace SmartGoldbergEmu.Services
             return new GameAddCollectResult { Bundle = bundle };
         }
 
-        private ulong ResolveAppIdForCollect(string executablePath)
+        // Keep library GUID and player launch identity; refreshed path/name/AppId come from collect.
+        private static void ApplyExistingIdentityForUpdate(GameConfig collected, GameConfig existing)
         {
-            ulong? detected = _gameSetupService.DetectAppIdFromExecutable(executablePath);
-            if (detected.HasValue)
-                return detected.Value;
+            if (collected == null || existing == null)
+                return;
 
-            ulong? prompted = _gameSetupService.PromptForAppId();
-            return prompted ?? 0;
+            collected.GameGuid = existing.GameGuid;
+            collected.Parameters = existing.Parameters ?? string.Empty;
+            collected.WorkingDirectory = existing.WorkingDirectory ?? string.Empty;
+            collected.CustomIcon = existing.CustomIcon ?? string.Empty;
+            collected.LaunchMode = existing.LaunchMode;
         }
     }
 }

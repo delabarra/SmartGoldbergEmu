@@ -209,7 +209,7 @@
     <Compile Include="Helpers\FormMessageBoxHelper.cs" />
     <Compile Include="Helpers\IniParseHelper.cs" />
     <Compile Include="Helpers\DirectoryJunctionHelper.cs" />
-    <Compile Include="Helpers\DuplicateExecutableDialogHelper.cs" />
+    <Compile Include="Helpers\DuplicateGameDialogHelper.cs" />
     <Compile Include="Helpers\LoadDllsArchFilter.cs" />
     <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />

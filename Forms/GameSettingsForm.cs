@@ -28,7 +28,7 @@ namespace SmartGoldbergEmu.Forms
         private readonly GameEditBundle _editBundle;
         private bool _editSidecarsApplied;
         public PendingAddGameSave PendingAddSave { get; private set; }
-        public Guid EditExistingGameGuid { get; private set; }
+        private readonly bool _isUpdateOfExisting;
         private string _initialCredentialTicket = string.Empty;
         private string _initialCredentialAlt = string.Empty;
         private OnlineAppData _metadata;
@@ -77,6 +77,7 @@ namespace SmartGoldbergEmu.Forms
             _isEditMode = isEditMode;
             _addBundle = addBundle;
             _editBundle = editBundle;
+            _isUpdateOfExisting = !isEditMode && addBundle != null && addBundle.IsUpdateOfExisting;
             _metadata = metadata;
             _gameDataService = gameDataService ?? ServiceLocator.GameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
             _emulatorConfigService = emulatorConfigService ?? ServiceLocator.EmulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
@@ -97,7 +98,11 @@ namespace SmartGoldbergEmu.Forms
             WireModsSummaryListEvents();
             WireInventoryListEvents();
 
-            Text = isEditMode ? $"Edit Game - {game?.AppName ?? "Unknown"}" : $"Add Game - {game?.AppName ?? "Unknown"}";
+            Text = isEditMode
+                ? $"Edit Game - {game?.AppName ?? "Unknown"}"
+                : _isUpdateOfExisting
+                    ? $"Update Game - {game?.AppName ?? "Unknown"}"
+                    : $"Add Game - {game?.AppName ?? "Unknown"}";
 
             ApplyTheme();
             _themeService.ThemeChanged += ThemeService_ThemeChanged;
@@ -194,7 +199,7 @@ namespace SmartGoldbergEmu.Forms
                 if (txtAppID != null)
                 {
                     SetTextBoxText(txtAppID, _gameConfig.AppId.ToString());
-                    if (_isEditMode)
+                    if (_isEditMode || _isUpdateOfExisting)
                     {
                         txtAppID.ReadOnly = true;
                         txtAppID.TabStop = false;
@@ -4201,13 +4206,6 @@ namespace SmartGoldbergEmu.Forms
                     return;
                 }
 
-                if (!TryConfirmNoDuplicateNewEntry())
-                {
-                    if (EditExistingGameGuid != Guid.Empty)
-                        restoreSaveButtonState = false;
-                    return;
-                }
-
                 PendingAddSave = BuildPendingAddSave();
                 HideFormForSaveIfVisible(ref formHiddenForSave);
                 restoreSaveButtonState = false;
@@ -4253,47 +4251,6 @@ namespace SmartGoldbergEmu.Forms
             this.Close();
         }
 
-        private bool TryConfirmNoDuplicateNewEntry()
-        {
-            if (string.IsNullOrWhiteSpace(_gameConfig?.Path))
-                return true;
-
-            GameConfig duplicatePath = _gameDataService.FindDuplicateByExecutable(_gameConfig);
-            if (duplicatePath != null)
-                return HandleDuplicatePrompt(DuplicateExecutableDialogHelper.Show(this, duplicatePath), duplicatePath.GameGuid);
-
-            if (_gameConfig.AppId > 0)
-            {
-                GameConfig duplicateAppId = _gameDataService.GetGameByAppIdAndPath(_gameConfig.AppId, _gameConfig.Path);
-                if (duplicateAppId != null)
-                    return HandleDuplicatePrompt(ShowDuplicateAppIdDialog(duplicateAppId, _gameConfig.AppId), duplicateAppId.GameGuid);
-            }
-
-            return true;
-        }
-
-        private bool HandleDuplicatePrompt(DialogResult result, Guid gameGuid)
-        {
-            if (result == DialogResult.Yes)
-            {
-                EditExistingGameGuid = gameGuid;
-                DialogResult = DialogResult.Retry;
-                Close();
-            }
-
-            return false;
-        }
-
-        private DialogResult ShowDuplicateAppIdDialog(GameConfig duplicateGame, ulong appId)
-        {
-            return FormMessageBoxHelper.ShowDialogIfAlive(
-                this,
-                $"A game with App ID {appId} already exists:\n\n{duplicateGame.AppName}\n\nWould you like to edit the existing game instead?",
-                "Duplicate App ID",
-                MessageBoxButtons.YesNoCancel,
-                MessageBoxIcon.Warning);
-        }
-
         private PendingAddGameSave BuildPendingAddSave()
         {
             GameSettingsSnapshot snapshot = GetSettingsFromForm();
@@ -4312,6 +4269,7 @@ namespace SmartGoldbergEmu.Forms
                 SettingsSnapshot = snapshot,
                 CustomStatsRawJson = _customStatsRawJson ?? string.Empty,
                 CredentialsTouched = HaveCredentialsChanged(),
+                IsUpdateOfExisting = _isUpdateOfExisting,
                 AdditionalFilesSaveRequest = BuildAdditionalFilesSaveRequest(),
                 SaveDlcAndPaths = () =>
                 {

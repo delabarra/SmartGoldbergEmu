@@ -403,7 +403,8 @@ namespace SmartGoldbergEmu.Forms
                     tileImageList ?? _largeImageList,
                     tileImageList ?? _smallImageList,
                     GetImportPendingPredicate(),
-                    GetAddPendingPredicate());
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
             }
             catch (Exception ex)
             {
@@ -456,7 +457,10 @@ namespace SmartGoldbergEmu.Forms
                     if (game == null)
                         continue;
 
-                    string imageKey = GameDisplayService.GetMosaicImageKey(game);
+                    string imageKey = GameDisplayService.GetMosaicImageKey(
+                        game,
+                        GetAddPendingPredicate(),
+                        GetUpdatePendingPredicate());
 
                     if (addedAppIds.Contains(imageKey))
                         continue;
@@ -517,7 +521,10 @@ namespace SmartGoldbergEmu.Forms
                 if (ownedImages == null)
                     return;
 
-                string imageKey = GameDisplayService.GetMosaicImageKey(game);
+                string imageKey = GameDisplayService.GetMosaicImageKey(
+                    game,
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
                 if (string.IsNullOrEmpty(imageKey))
                     return;
 
@@ -1025,13 +1032,48 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing || string.IsNullOrWhiteSpace(executablePath))
                     return;
 
-                _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateDraftFromExecutable(executablePath));
-                ShowPendingAddInList();
-
                 _taskReportService.SetProgress(0, 0);
 
+                ulong appId = ServiceLocator.GameAddCollector.ResolveAppIdForCollect(executablePath);
+                if (appId == 0)
+                {
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
+                    return;
+                }
+
+                if (IsDisposed || Disposing)
+                    return;
+
+                GameConfig updateExisting = null;
+                GameConfig duplicate = _gameDataService.FindDuplicateForAdd(executablePath, appId, out bool matchedByExecutable);
+                if (duplicate != null)
+                {
+                    DuplicateGameAction action = DuplicateGameDialogHelper.Show(this, duplicate, matchedByExecutable);
+                    if (action == DuplicateGameAction.Cancel)
+                    {
+                        _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
+                        return;
+                    }
+
+                    if (action == DuplicateGameAction.Edit)
+                    {
+                        _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.");
+                        EditGame(duplicate.GameGuid);
+                        return;
+                    }
+
+                    updateExisting = duplicate;
+                    _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateUpdateDraft(duplicate), isUpdate: true);
+                }
+                else
+                {
+                    _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateDraftFromExecutable(executablePath));
+                }
+
+                ShowPendingAddInList();
+
                 GameAddCollectResult collectResult = await ServiceLocator.GameAddCollector
-                    .CollectFromExecutableAsync(executablePath, this, _taskReportService)
+                    .CollectFromExecutableAsync(executablePath, this, _taskReportService, appId, updateExisting)
                     .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
@@ -1064,14 +1106,15 @@ namespace SmartGoldbergEmu.Forms
                 _taskReportService.SetProgress(0, 0);
                 if (!await OpenGameSettingsFormAsync(gameConfig, metadata, collectResult.Bundle).ConfigureAwait(true))
                 {
-                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
+                    _taskReportService.SetMessageWithAutoClear(
+                        updateExisting != null ? "Updating game cancelled." : "Adding game cancelled.");
                     return;
                 }
 
                 if (IsDisposed || Disposing)
                     return;
 
-                // Stub check after the game is in the library (skip Retry→edit-existing).
+                // Stub check after the game is in the library.
                 if (_gameDataService.GetGame(gameConfig.GameGuid) != null)
                 {
                     string stubExe = executablePath;
@@ -1113,14 +1156,6 @@ namespace SmartGoldbergEmu.Forms
                     bool existsAfterDialog = _gameDataService.GetGame(gameConfig.GameGuid) != null;
                     bool gameWasAdded = !existedBeforeDialog && existsAfterDialog;
 
-                    if (dialogResult == DialogResult.Retry && gameSettingsForm.EditExistingGameGuid != Guid.Empty)
-                    {
-                        ClearPendingAddListEntry();
-                        _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.");
-                        EditGame(gameSettingsForm.EditExistingGameGuid);
-                        return true;
-                    }
-
                     if (dialogResult == DialogResult.OK || gameWasAdded)
                     {
                         if (pendingAddSave != null)
@@ -1157,6 +1192,7 @@ namespace SmartGoldbergEmu.Forms
 
             GameConfig draftToRestore = pending.GameConfig;
             Guid savedGameGuid = draftToRestore.GameGuid;
+            bool isUpdate = pending.IsUpdateOfExisting;
             _pendingAddGameListService.Clear();
 
             GameSettingsSnapshot snapshot = pending.SettingsSnapshot ?? new GameSettingsSnapshot { AppId = pending.GameConfig.AppId };
@@ -1193,14 +1229,15 @@ namespace SmartGoldbergEmu.Forms
                     TaskReportService = _taskReportService,
                     OnAssetsDownloaded = formSaveRequest.OnAssetsDownloaded,
                     OnSuccessfulSaveCompleted = formSaveRequest.OnSuccessfulSaveCompleted,
-                    CredentialsTouched = pending.CredentialsTouched
+                    CredentialsTouched = pending.CredentialsTouched,
+                    IsUpdateOfExisting = isUpdate
                 }).ConfigureAwait(true);
 
                 if (!saveResult.IsSuccess)
                 {
-                    if (_gameDataService.GetGame(draftToRestore.GameGuid) == null)
+                    if (_gameDataService.GetGame(draftToRestore.GameGuid) == null || isUpdate)
                     {
-                        _pendingAddGameListService.SetDraft(draftToRestore);
+                        _pendingAddGameListService.SetDraft(draftToRestore, isUpdate: isUpdate);
                         ShowPendingAddInList();
                     }
 
@@ -1228,9 +1265,9 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                if (_gameDataService.GetGame(draftToRestore.GameGuid) == null)
+                if (_gameDataService.GetGame(draftToRestore.GameGuid) == null || isUpdate)
                 {
-                    _pendingAddGameListService.SetDraft(draftToRestore);
+                    _pendingAddGameListService.SetDraft(draftToRestore, isUpdate: isUpdate);
                     ShowPendingAddInList();
                 }
 
@@ -1247,11 +1284,50 @@ namespace SmartGoldbergEmu.Forms
 
             Guid gameGuid = _pendingAddGameListService.GetDraft().GameGuid;
             string mosaicKey = _pendingAddMosaicImageKey;
+            bool wasUpdate = _pendingAddGameListService.IsUpdateDraft;
             GameConfig draft = _pendingAddGameListService.GetDraft();
             _pendingAddGameListService.Clear();
             _pendingAddMosaicImageKey = null;
             draft?.ReleaseHeavyRuntimeData();
+
+            if (wasUpdate && _gameDataService.GetGame(gameGuid) != null)
+            {
+                RestoreLibraryGameInList(gameGuid);
+                // Update drafts share the AppId mosaic key with the library tile — do not remove it.
+                if (!string.IsNullOrEmpty(mosaicKey)
+                    && mosaicKey.StartsWith("pending-", StringComparison.OrdinalIgnoreCase))
+                    RemoveMosaicImageKey(mosaicKey);
+                return;
+            }
+
             RemovePendingAddFromListView(gameGuid, mosaicKey);
+        }
+
+        private void RestoreLibraryGameInList(Guid gameGuid)
+        {
+            GameConfig game = _gameDataService.GetGame(gameGuid);
+            if (game == null)
+                return;
+
+            var viewMode = _appDataService.GetViewMode();
+            var tileImageList = GetTileImageListForViewMode(viewMode);
+            var item = GameDisplayService.FindListItemByGameGuid(lstGames, gameGuid);
+            if (item != null)
+            {
+                _gameDisplayService.UpdateListViewItem(
+                    item,
+                    game,
+                    viewMode,
+                    tileImageList ?? _largeImageList,
+                    tileImageList ?? _smallImageList,
+                    GetImportPendingPredicate(),
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
+                lstGames.Invalidate();
+                return;
+            }
+
+            ScheduleRefreshGames(reloadTiles: true);
         }
 
         private void ShowPendingAddInList()
@@ -1269,9 +1345,13 @@ namespace SmartGoldbergEmu.Forms
                 tileImageList ?? _largeImageList,
                 tileImageList ?? _smallImageList,
                 GetImportPendingPredicate(),
-                GetAddPendingPredicate());
+                GetAddPendingPredicate(),
+                GetUpdatePendingPredicate());
 
-            _pendingAddMosaicImageKey = GameDisplayService.GetMosaicImageKey(draft);
+            _pendingAddMosaicImageKey = GameDisplayService.GetMosaicImageKey(
+                draft,
+                GetAddPendingPredicate(),
+                GetUpdatePendingPredicate());
             EnsurePendingAddItemVisible();
 
             if (IsMosaicViewMode(viewMode))
@@ -1285,7 +1365,10 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             string priorMosaicKey = _pendingAddMosaicImageKey;
-            string newMosaicKey = GameDisplayService.GetMosaicImageKey(draft);
+            string newMosaicKey = GameDisplayService.GetMosaicImageKey(
+                draft,
+                GetAddPendingPredicate(),
+                GetUpdatePendingPredicate());
             var viewMode = _appDataService.GetViewMode();
             var tileImageList = GetTileImageListForViewMode(viewMode);
             var item = GameDisplayService.FindListItemByGameGuid(lstGames, draft.GameGuid);
@@ -1298,7 +1381,8 @@ namespace SmartGoldbergEmu.Forms
                     tileImageList ?? _largeImageList,
                     tileImageList ?? _smallImageList,
                     GetImportPendingPredicate(),
-                    GetAddPendingPredicate());
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
             }
             else
             {
@@ -1310,7 +1394,8 @@ namespace SmartGoldbergEmu.Forms
             if (IsMosaicViewMode(viewMode)
                 && !string.Equals(priorMosaicKey, newMosaicKey, StringComparison.Ordinal))
             {
-                if (!string.IsNullOrEmpty(priorMosaicKey))
+                if (!string.IsNullOrEmpty(priorMosaicKey)
+                    && priorMosaicKey.StartsWith("pending-", StringComparison.OrdinalIgnoreCase))
                     RemoveMosaicImageKey(priorMosaicKey);
                 _ = UpsertMosaicTileForGameAsync(draft, viewMode).ForgetFaults(Program.LogService, nameof(UpsertMosaicTileForGameAsync));
             }
@@ -1345,6 +1430,11 @@ namespace SmartGoldbergEmu.Forms
         private Func<GameConfig, bool> GetAddPendingPredicate()
         {
             return _pendingAddGameListService.IsPendingGame;
+        }
+
+        private Func<GameConfig, bool> GetUpdatePendingPredicate()
+        {
+            return _pendingAddGameListService.IsPendingUpdate;
         }
 
         private static void SaveAdditionalFilesFromPending(PendingAddGameSave pending)
@@ -2834,11 +2924,13 @@ namespace SmartGoldbergEmu.Forms
                     tileImageList ?? _largeImageList,
                     tileImageList ?? _smallImageList,
                     GetImportPendingPredicate(),
-                    GetAddPendingPredicate());
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
 
                 if (IsMosaicViewMode(viewMode))
                 {
                     if (!string.IsNullOrEmpty(priorMosaicKey)
+                        && priorMosaicKey.StartsWith("pending-", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(priorMosaicKey, GameDisplayService.GetMosaicImageKey(game), StringComparison.Ordinal))
                     {
                         RemoveMosaicImageKey(priorMosaicKey);
@@ -2875,7 +2967,8 @@ namespace SmartGoldbergEmu.Forms
                     GetImportPendingPredicate(),
                     GetAddPendingPredicate(),
                     GetGamesForListDisplay(),
-                    applySort);
+                    applySort,
+                    GetUpdatePendingPredicate());
             }
             finally
             {

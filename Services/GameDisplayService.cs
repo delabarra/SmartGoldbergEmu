@@ -33,7 +33,8 @@ namespace SmartGoldbergEmu.Services
             ImageList largeImageList = null,
             ImageList smallImageList = null,
             Func<ulong, bool> isImportPending = null,
-            Func<GameConfig, bool> isAddPending = null)
+            Func<GameConfig, bool> isAddPending = null,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (listView == null)
                 return;
@@ -68,7 +69,7 @@ namespace SmartGoldbergEmu.Services
                             imageIndex = LoadIconIntoImageList(iconPath, smallImageList, false);
                     }
 
-                    listView.Items.Add(CreateListViewItem(game, imageIndex, viewMode, isImportPending, isAddPending));
+                    listView.Items.Add(CreateListViewItem(game, imageIndex, viewMode, isImportPending, isAddPending, isUpdatePending));
                 }
             }
             finally
@@ -82,13 +83,14 @@ namespace SmartGoldbergEmu.Services
             int imageIndex = -1,
             string viewMode = null,
             Func<ulong, bool> isImportPending = null,
-            Func<GameConfig, bool> isAddPending = null)
+            Func<GameConfig, bool> isAddPending = null,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (game == null)
                 return null;
 
             var mosaic = IsMosaicView(viewMode);
-            var itemText = mosaic ? string.Empty : FormatGameListDisplayName(game, isImportPending, isAddPending);
+            var itemText = mosaic ? string.Empty : FormatGameListDisplayName(game, isImportPending, isAddPending, isUpdatePending);
             var item = new ListViewItem(itemText) { Tag = game };
 
             if (!mosaic)
@@ -98,18 +100,28 @@ namespace SmartGoldbergEmu.Services
             }
 
             if (mosaic)
-                item.ImageKey = GetMosaicImageKey(game);
+                item.ImageKey = GetMosaicImageKey(game, isAddPending, isUpdatePending);
             else if (imageIndex >= 0)
                 item.ImageIndex = imageIndex;
 
-            item.ToolTipText = BuildGameListItemToolTip(game, isImportPending, isAddPending);
+            item.ToolTipText = BuildGameListItemToolTip(game, isImportPending, isAddPending, isUpdatePending);
             return item;
         }
 
-        public static string GetMosaicImageKey(GameConfig game)
+        public static string GetMosaicImageKey(
+            GameConfig game,
+            Func<GameConfig, bool> isAddPending = null,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (game == null)
                 return string.Empty;
+
+            // New add drafts must not share the AppId mosaic key with an existing library tile.
+            bool pendingAdd = isAddPending != null && isAddPending(game);
+            bool pendingUpdate = isUpdatePending != null && isUpdatePending(game);
+            if (pendingAdd && !pendingUpdate && game.GameGuid != Guid.Empty)
+                return "pending-" + game.GameGuid.ToString("N");
+
             if (game.AppId > 0)
                 return game.AppId.ToString();
             if (game.GameGuid != Guid.Empty)
@@ -120,7 +132,8 @@ namespace SmartGoldbergEmu.Services
         private static string FormatGameListDisplayName(
             GameConfig game,
             Func<ulong, bool> isImportPending,
-            Func<GameConfig, bool> isAddPending)
+            Func<GameConfig, bool> isAddPending,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (game == null)
                 return string.Empty;
@@ -132,9 +145,12 @@ namespace SmartGoldbergEmu.Services
                     : name.Trim() + " (importing…)";
 
             if (isAddPending != null && isAddPending(game))
-                return string.IsNullOrWhiteSpace(name)
-                    ? "Adding…"
-                    : name.Trim() + " (adding…)";
+            {
+                bool updating = isUpdatePending != null && isUpdatePending(game);
+                if (string.IsNullOrWhiteSpace(name))
+                    return updating ? "Updating…" : "Adding…";
+                return name.Trim() + (updating ? " (updating…)" : " (adding…)");
+            }
 
             return name;
         }
@@ -142,7 +158,8 @@ namespace SmartGoldbergEmu.Services
         private static string BuildGameListItemToolTip(
             GameConfig game,
             Func<ulong, bool> isImportPending,
-            Func<GameConfig, bool> isAddPending)
+            Func<GameConfig, bool> isAddPending,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (game == null)
                 return string.Empty;
@@ -151,7 +168,12 @@ namespace SmartGoldbergEmu.Services
             if (isImportPending != null && isImportPending(game.AppId))
                 status = Environment.NewLine + "Status: Setting up emulator files…";
             else if (isAddPending != null && isAddPending(game))
-                status = Environment.NewLine + "Status: Finish preview and save to add to the library.";
+            {
+                bool updating = isUpdatePending != null && isUpdatePending(game);
+                status = Environment.NewLine + (updating
+                    ? "Status: Finish preview and save to update this library entry."
+                    : "Status: Finish preview and save to add to the library.");
+            }
 
             string appIdText = game.AppId > 0 ? game.AppId.ToString() : "—";
 
@@ -411,7 +433,8 @@ namespace SmartGoldbergEmu.Services
             Func<ulong, bool> isImportPending = null,
             Func<GameConfig, bool> isAddPending = null,
             IReadOnlyList<GameConfig> gamesOverride = null,
-            bool applySort = true)
+            bool applySort = true,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (listView == null || gameDataService == null || appDataService == null)
                 return;
@@ -421,7 +444,7 @@ namespace SmartGoldbergEmu.Services
                 ? new List<GameConfig>(gamesOverride)
                 : gameDataService.GetAllGames();
 
-            PopulateListView(listView, games, viewMode, largeImageList, smallImageList, isImportPending, isAddPending);
+            PopulateListView(listView, games, viewMode, largeImageList, smallImageList, isImportPending, isAddPending, isUpdatePending);
             SetViewMode(listView, viewMode, largeImageList, smallImageList, appDataService.GetDetailsColumnOrder(), appDataService.GetDetailsColumnWidths());
             if (applySort)
                 ApplySort(listView, appDataService.GetSortBy(), appDataService.GetSortDirection());
@@ -448,7 +471,8 @@ namespace SmartGoldbergEmu.Services
             ImageList largeImageList,
             ImageList smallImageList,
             Func<ulong, bool> isImportPending,
-            Func<GameConfig, bool> isAddPending)
+            Func<GameConfig, bool> isAddPending,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (item == null || game == null)
                 return;
@@ -456,7 +480,7 @@ namespace SmartGoldbergEmu.Services
             var mosaic = IsMosaicView(viewMode);
             item.Tag = game;
             if (!mosaic)
-                item.Text = FormatGameListDisplayName(game, isImportPending, isAddPending);
+                item.Text = FormatGameListDisplayName(game, isImportPending, isAddPending, isUpdatePending);
 
             if (!mosaic && item.SubItems.Count >= 3)
             {
@@ -465,7 +489,7 @@ namespace SmartGoldbergEmu.Services
             }
 
             if (mosaic)
-                item.ImageKey = GetMosaicImageKey(game);
+                item.ImageKey = GetMosaicImageKey(game, isAddPending, isUpdatePending);
             else
             {
                 int imageIndex = -1;
@@ -482,7 +506,7 @@ namespace SmartGoldbergEmu.Services
                     item.ImageIndex = imageIndex;
             }
 
-            item.ToolTipText = BuildGameListItemToolTip(game, isImportPending, isAddPending);
+            item.ToolTipText = BuildGameListItemToolTip(game, isImportPending, isAddPending, isUpdatePending);
         }
 
         // Call before disposing MainForm icon ImageLists so this map does not double-Dispose.
@@ -499,7 +523,8 @@ namespace SmartGoldbergEmu.Services
             ImageList largeImageList,
             ImageList smallImageList,
             Func<ulong, bool> isImportPending,
-            Func<GameConfig, bool> isAddPending)
+            Func<GameConfig, bool> isAddPending,
+            Func<GameConfig, bool> isUpdatePending = null)
         {
             if (listView == null || draft == null || draft.GameGuid == Guid.Empty)
                 return PendingListSyncResult.NoOp;
@@ -510,7 +535,7 @@ namespace SmartGoldbergEmu.Services
             {
                 if (existing != null)
                 {
-                    UpdateListViewItem(existing, draft, viewMode, largeImageList, smallImageList, isImportPending, isAddPending);
+                    UpdateListViewItem(existing, draft, viewMode, largeImageList, smallImageList, isImportPending, isAddPending, isUpdatePending);
                     return PendingListSyncResult.Updated;
                 }
 
@@ -524,7 +549,7 @@ namespace SmartGoldbergEmu.Services
                         imageIndex = LoadIconIntoImageList(iconPath, smallImageList, false);
                 }
 
-                listView.Items.Add(CreateListViewItem(draft, imageIndex, viewMode, isImportPending, isAddPending));
+                listView.Items.Add(CreateListViewItem(draft, imageIndex, viewMode, isImportPending, isAddPending, isUpdatePending));
                 return PendingListSyncResult.Added;
             }
             finally

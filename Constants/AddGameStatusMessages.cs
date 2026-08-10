@@ -23,6 +23,9 @@ namespace SmartGoldbergEmu.Constants
         public static string AddedToLibrary(string gameName) =>
             $"{gameName} added to the library.";
 
+        public static string UpdatedInLibrary(string gameName) =>
+            $"{gameName} updated in the library.";
+
         public static string MetadataFetchFailed =>
             "Could not fetch app data from Steam.";
 

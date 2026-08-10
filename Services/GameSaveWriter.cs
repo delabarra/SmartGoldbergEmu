@@ -51,9 +51,19 @@ namespace SmartGoldbergEmu.Services
             ITaskReportService taskReport = formRequest.TaskReportService ?? ServiceLocator.TaskReportService;
             string displayName = GetLibraryGameDisplayName(gameConfig);
 
-            ValidationResult addResult = _gameDataService.AddGame(gameConfig);
-            if (!addResult.IsValid)
-                return GameSettingsSaveResult.Failure(addResult.ErrorMessage);
+            ValidationResult libraryResult;
+            if (request.IsUpdateOfExisting)
+            {
+                libraryResult = _gameDataService.UpdateGame(gameConfig);
+                if (!libraryResult.IsValid)
+                    return GameSettingsSaveResult.Failure(libraryResult.ErrorMessage);
+            }
+            else
+            {
+                libraryResult = _gameDataService.AddGame(gameConfig);
+                if (!libraryResult.IsValid)
+                    return GameSettingsSaveResult.Failure(libraryResult.ErrorMessage);
+            }
 
             // Promote the in-memory list row as soon as games.ini is committed (UI thread via MainForm).
             TryRunCallback(request.OnSuccessfulSaveCompleted);
@@ -81,7 +91,10 @@ namespace SmartGoldbergEmu.Services
                 taskReport?.SetProgress(0, 0);
             }
 
-            taskReport?.SetMessageWithAutoClear(AddGameStatusMessages.AddedToLibrary(displayName));
+            taskReport?.SetMessageWithAutoClear(
+                request.IsUpdateOfExisting
+                    ? AddGameStatusMessages.UpdatedInLibrary(displayName)
+                    : AddGameStatusMessages.AddedToLibrary(displayName));
 
             if (request.CredentialsTouched)
                 PersistCredentialsFromForm(formRequest, gameConfig.AppId);
