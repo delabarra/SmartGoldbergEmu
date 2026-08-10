@@ -15,9 +15,7 @@ namespace SmartGoldbergEmu.Constants
         public const string NoApiKeyAchievementDescription = "To generate achievements, you need to configure a Steam WebAPI key. Get one from: " + ApplicationConstants.SteamWebApiKeyRegistrationUrl;
         public const string NoAchievementsAchievementDescription = "This game doesn't have any achievements defined on Steam.";
 
-        public const int HttpRequestLongTimeout = 30;
-
-        // Cap parallel icon GETs; unbounded WhenAll + per-call HttpClient spikes LOH/working set on large games.
-        public const int MaxConcurrentIconDownloads = 8;
+        // Per-icon GET; keep modest so failed CDN candidates fail over quickly.
+        public const int HttpRequestLongTimeout = 15;
     }
 }

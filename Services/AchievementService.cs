@@ -1061,35 +1061,26 @@ namespace SmartGoldbergEmu.Services
             if (!Directory.Exists(imagesFolder))
                 Directory.CreateDirectory(imagesFolder);
 
-            // Cap concurrency and reuse one HttpService; unbounded WhenAll + per-icon HttpClient spikes working set.
+            // One shared HttpService; all achievements (color + gray) download in parallel.
             using (IHttpService http = HttpServiceFactory.Create(TimeSpan.FromSeconds(AchievementConstants.HttpRequestLongTimeout)))
             {
-                await HttpHelpers.ForEachBoundedAsync(
-                    achievements,
-                    AchievementConstants.MaxConcurrentIconDownloads,
-                    async achievement =>
-                    {
-                        int imagesForThisAchievement = await DownloadAchievementImagesAsync(achievement, imagesFolder, http)
-                            .ConfigureAwait(false);
-                        int newImagesDownloaded = Interlocked.Add(ref imagesDownloaded, imagesForThisAchievement);
-                        int newAchievementsCompleted = Interlocked.Increment(ref achievementsCompleted);
-                        if (!ProgressActive(progressMode))
-                            return;
+                var downloadTasks = new Task[achievementCount];
+                for (int i = 0; i < achievementCount; i++)
+                {
+                    CAchievement achievement = achievements[i];
+                    downloadTasks[i] = DownloadAchievementIconsWithProgressAsync(
+                        achievement,
+                        imagesFolder,
+                        http,
+                        app,
+                        progressMode,
+                        achievementCount,
+                        totalImages,
+                        () => Interlocked.Increment(ref achievementsCompleted),
+                        imagesForAchievement => Interlocked.Add(ref imagesDownloaded, imagesForAchievement));
+                }
 
-                        if (ProgressIsAddSave(progressMode))
-                        {
-                            _taskReportService?.SetProgress(newAchievementsCompleted, achievementCount);
-                            if (progressMode == AchievementProgressMode.AddSaveVerbose)
-                                _taskReportService?.SetMessage($"Generating achievements {newAchievementsCompleted}/{achievementCount}");
-                            else if (ProgressBarOnly(progressMode))
-                                ReportAddSaveDownloadingIconsProgress(app, progressMode, newAchievementsCompleted, achievementCount);
-                        }
-                        else
-                        {
-                            _taskReportService?.SetProgress(newImagesDownloaded, totalImages);
-                            _taskReportService?.SetMessage($"{newAchievementsCompleted}/{achievementCount} achievements generated... Please wait.");
-                        }
-                    }).ConfigureAwait(false);
+                await Task.WhenAll(downloadTasks).ConfigureAwait(false);
             }
 
             File.WriteAllText(achievementsFile, JsonConvert.SerializeObject(achievements, JsonFormatting.Indented), Encoding.UTF8);
@@ -1104,6 +1095,39 @@ namespace SmartGoldbergEmu.Services
             }
 
             return true;
+        }
+
+        private async Task DownloadAchievementIconsWithProgressAsync(
+            CAchievement achievement,
+            string imagesFolder,
+            IHttpService http,
+            GameConfig app,
+            AchievementProgressMode progressMode,
+            int achievementCount,
+            int totalImages,
+            Func<int> onAchievementCompleted,
+            Func<int, int> onImagesDownloaded)
+        {
+            int imagesForThisAchievement = await DownloadAchievementImagesAsync(achievement, imagesFolder, http)
+                .ConfigureAwait(false);
+            int newImagesDownloaded = onImagesDownloaded(imagesForThisAchievement);
+            int newAchievementsCompleted = onAchievementCompleted();
+            if (!ProgressActive(progressMode))
+                return;
+
+            if (ProgressIsAddSave(progressMode))
+            {
+                _taskReportService?.SetProgress(newAchievementsCompleted, achievementCount);
+                if (progressMode == AchievementProgressMode.AddSaveVerbose)
+                    _taskReportService?.SetMessage($"Generating achievements {newAchievementsCompleted}/{achievementCount}");
+                else if (ProgressBarOnly(progressMode))
+                    ReportAddSaveDownloadingIconsProgress(app, progressMode, newAchievementsCompleted, achievementCount);
+            }
+            else
+            {
+                _taskReportService?.SetProgress(newImagesDownloaded, totalImages);
+                _taskReportService?.SetMessage($"{newAchievementsCompleted}/{achievementCount} achievements generated... Please wait.");
+            }
         }
 
         private async Task<bool> EnsureAchievementImageAsync(string url, string localPath, IHttpService http)
@@ -1142,18 +1166,21 @@ namespace SmartGoldbergEmu.Services
         {
             string iconPath = Path.Combine(imagesFolder, achievement.name + ".jpg");
             string iconGrayPath = Path.Combine(imagesFolder, achievement.name + "_gray.jpg");
-            int imagesProcessed = 0;
 
-            if (await EnsureAchievementImageAsync(achievement.icon, iconPath, http).ConfigureAwait(false))
-                imagesProcessed++;
-            if (await EnsureAchievementImageAsync(achievement.icongray, iconGrayPath, http).ConfigureAwait(false))
-                imagesProcessed++;
+            bool[] downloaded = await Task.WhenAll(
+                EnsureAchievementImageAsync(achievement.icon, iconPath, http),
+                EnsureAchievementImageAsync(achievement.icongray, iconGrayPath, http)).ConfigureAwait(false);
 
             // Replace Steam CDN URLs with steam_settings-relative paths written into achievements.json.
             achievement.icon = GetAchievementImageRelativePath(achievement.name, false);
             achievement.icongray = GetAchievementImageRelativePath(achievement.name, true);
             achievement.icon_gray = achievement.icongray;
 
+            int imagesProcessed = 0;
+            if (downloaded[0])
+                imagesProcessed++;
+            if (downloaded[1])
+                imagesProcessed++;
             return imagesProcessed;
         }
 

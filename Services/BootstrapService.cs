@@ -30,6 +30,8 @@ namespace SmartGoldbergEmu.Services
                 LogService.LogMessage("SmartGoldbergEmu application starting...");
 
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                // .NET Framework defaults to 2 connections per host; achievement/CDN downloads need far more.
+                ServicePointManager.DefaultConnectionLimit = 64;
 
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
