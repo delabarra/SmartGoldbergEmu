@@ -161,10 +161,17 @@ namespace SmartGoldbergEmu.Forms
             {
                 dialog.Description = "Select Steam game stats reports folder";
                 dialog.ShowNewFolderButton = true;
-                if (!string.IsNullOrEmpty(txtSteamGameStatsReportsDir.Text))
-                    dialog.SelectedPath = txtSteamGameStatsReportsDir.Text;
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    dialog,
+                    FileDialogBrowseHelper.Purpose.StatsReports,
+                    txtSteamGameStatsReportsDir.Text);
                 if (dialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    FileDialogBrowseHelper.RememberDirectory(
+                        FileDialogBrowseHelper.Purpose.StatsReports,
+                        dialog.SelectedPath);
                     txtSteamGameStatsReportsDir.Text = dialog.SelectedPath;
+                }
             }
         }
 

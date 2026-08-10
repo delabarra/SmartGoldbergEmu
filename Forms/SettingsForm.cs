@@ -641,15 +641,16 @@ namespace SmartGoldbergEmu.Forms
             {
                 folderDialog.Description = "Select custom save folder location";
                 folderDialog.ShowNewFolderButton = true;
-                
-                string browseStart = txtLocalSavePath.Text.Trim();
-                if (!string.IsNullOrEmpty(browseStart) && Directory.Exists(browseStart))
-                {
-                    folderDialog.SelectedPath = browseStart;
-                }
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    folderDialog,
+                    FileDialogBrowseHelper.Purpose.SavePath,
+                    txtLocalSavePath.Text.Trim());
 
                 if (folderDialog.ShowDialog() == DialogResult.OK)
                 {
+                    FileDialogBrowseHelper.RememberDirectory(
+                        FileDialogBrowseHelper.Purpose.SavePath,
+                        folderDialog.SelectedPath);
                     txtLocalSavePath.Text = folderDialog.SelectedPath;
                 }
             }
@@ -759,11 +760,18 @@ namespace SmartGoldbergEmu.Forms
                 openFileDialog.Filter = "Font Files (*.ttf;*.otf;*.woff;*.woff2)|*.ttf;*.otf;*.woff;*.woff2|All Files (*.*)|*.*";
                 openFileDialog.Title = "Select Font File";
                 openFileDialog.FilterIndex = 1;
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.Font,
+                    PathConstants.GlobalFontsPath);
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     try
                     {
+                        FileDialogBrowseHelper.RememberFile(
+                            FileDialogBrowseHelper.Purpose.Font,
+                            openFileDialog.FileName);
                         var fontsPath = PathConstants.GlobalFontsPath;
                         Directory.CreateDirectory(fontsPath);
 
@@ -905,11 +913,18 @@ namespace SmartGoldbergEmu.Forms
                 openFileDialog.Filter = "Sound Files (*.wav;*.mp3;*.ogg)|*.wav;*.mp3;*.ogg|All Files (*.*)|*.*";
                 openFileDialog.Title = "Select Sound File";
                 openFileDialog.FilterIndex = 1;
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.Sound,
+                    PathConstants.GlobalSoundsPath);
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     try
                     {
+                        FileDialogBrowseHelper.RememberFile(
+                            FileDialogBrowseHelper.Purpose.Sound,
+                            openFileDialog.FileName);
                         var soundsPath = PathConstants.GlobalSoundsPath;
                         Directory.CreateDirectory(soundsPath);
 
@@ -1380,12 +1395,23 @@ namespace SmartGoldbergEmu.Forms
                 openFileDialog.Filter = "Image Files (*.jpg;*.jpeg;*.png;*.bmp;*.gif)|*.jpg;*.jpeg;*.png;*.bmp;*.gif|All Files (*.*)|*.*";
                 openFileDialog.Title = "Select Avatar Image";
                 openFileDialog.FilterIndex = 1;
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.Avatar,
+                    !string.IsNullOrEmpty(_pendingAvatarSourcePath)
+                        ? Path.GetDirectoryName(_pendingAvatarSourcePath)
+                        : null,
+                    Path.GetDirectoryName(_avatarPath),
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyPictures));
 
                 if (openFileDialog.ShowDialog() != DialogResult.OK)
                     return;
 
                 try
                 {
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.Avatar,
+                        openFileDialog.FileName);
                     _pendingAvatarChange = PendingAvatarChange.ReplaceFromFile;
                     _pendingAvatarSourcePath = openFileDialog.FileName;
                     LoadAvatarPreview(_pendingAvatarSourcePath);

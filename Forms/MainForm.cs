@@ -1449,11 +1449,16 @@ namespace SmartGoldbergEmu.Forms
             {
                 openFileDialog.Filter = ApplicationConstants.ExecutableFileFilter;
                 openFileDialog.FilterIndex = 1;
-                openFileDialog.RestoreDirectory = true;
                 openFileDialog.Title = "Select Game Executable";
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.GameExecutable);
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.GameExecutable,
+                        openFileDialog.FileName);
                     return openFileDialog.FileName;
                 }
             }
@@ -2375,9 +2380,16 @@ namespace SmartGoldbergEmu.Forms
                     string sanitizedName = ShortcutService.SanitizeFileName(game.AppName);
                     saveFileDialog.FileName = $"{sanitizedName}.url";
                     saveFileDialog.Title = "Create Shortcut";
-                    
+                    FileDialogBrowseHelper.ApplyInitialDirectory(
+                        saveFileDialog,
+                        FileDialogBrowseHelper.Purpose.Shortcut,
+                        Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+
                     if (saveFileDialog.ShowDialog() == DialogResult.OK)
                     {
+                        FileDialogBrowseHelper.RememberFile(
+                            FileDialogBrowseHelper.Purpose.Shortcut,
+                            saveFileDialog.FileName);
                         GameFolderPathHelper.TryResolveIconSourcePath(game, out string iconPath);
                         if (string.IsNullOrEmpty(iconPath))
                             iconPath = null;

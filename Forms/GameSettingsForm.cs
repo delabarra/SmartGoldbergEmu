@@ -791,14 +791,19 @@ namespace SmartGoldbergEmu.Forms
             {
                 folderDialog.Description = "Select Game Folder";
                 folderDialog.ShowNewFolderButton = false;
-                
-                if (!string.IsNullOrEmpty(txtGameFolder?.Text))
-                {
-                    folderDialog.SelectedPath = txtGameFolder.Text;
-                }
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    folderDialog,
+                    FileDialogBrowseHelper.Purpose.GameFolder,
+                    txtGameFolder?.Text);
 
                 if (folderDialog.ShowDialog() == DialogResult.OK)
                 {
+                    FileDialogBrowseHelper.RememberDirectory(
+                        FileDialogBrowseHelper.Purpose.GameFolder,
+                        folderDialog.SelectedPath);
+                    FileDialogBrowseHelper.RememberDirectory(
+                        FileDialogBrowseHelper.Purpose.GameExecutable,
+                        folderDialog.SelectedPath);
                     if (txtGameFolder != null)
                         SetTextBoxText(txtGameFolder, folderDialog.SelectedPath);
                     // Validate Steam API DLLs after folder selection
@@ -857,25 +862,34 @@ namespace SmartGoldbergEmu.Forms
             {
                 openFileDialog.Filter = "Executable Files (*.exe;*.bat)|*.exe;*.bat|All Files (*.*)|*.*";
                 openFileDialog.FilterIndex = 1;
-                openFileDialog.RestoreDirectory = true;
                 openFileDialog.Title = "Select Game Executable";
 
-                if (!string.IsNullOrEmpty(txtGameExecutable?.Text))
+                string seedDirectory = null;
+                string seedFileName = null;
+                if (GameFolderPathHelper.TryResolveExecutableDialogSeed(
+                    txtGameFolder?.Text,
+                    txtGameExecutable?.Text,
+                    out string initialDirectory,
+                    out string fileName))
                 {
-                    if (GameFolderPathHelper.TryResolveExecutableDialogSeed(
-                        txtGameFolder?.Text,
-                        txtGameExecutable.Text,
-                        out string initialDirectory,
-                        out string fileName))
-                    {
-                        openFileDialog.InitialDirectory = initialDirectory;
-                        openFileDialog.FileName = fileName;
-                    }
+                    seedDirectory = initialDirectory;
+                    seedFileName = fileName;
                 }
+
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.GameExecutable,
+                    seedDirectory,
+                    txtGameFolder?.Text);
+                if (!string.IsNullOrEmpty(seedFileName))
+                    openFileDialog.FileName = seedFileName;
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     string selected = Path.GetFullPath(openFileDialog.FileName);
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.GameExecutable,
+                        selected);
 
                     string installDirFolder = GetSteamInstallDirFolderNameForForm();
                     if (!string.IsNullOrEmpty(installDirFolder) &&
@@ -933,10 +947,11 @@ namespace SmartGoldbergEmu.Forms
                 folderDialog.ShowNewFolderButton = false;
 
                 string initial = PathValidationHelper.TryResolveWorkingDirectoryTextToFullPath(txtWorkingDirectory?.Text, gameBase);
-                if (!string.IsNullOrEmpty(initial) && Directory.Exists(initial))
-                    folderDialog.SelectedPath = initial;
-                else
-                    folderDialog.SelectedPath = gameBase;
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    folderDialog,
+                    FileDialogBrowseHelper.Purpose.WorkingDirectory,
+                    initial,
+                    gameBase);
 
                 if (folderDialog.ShowDialog(this) != DialogResult.OK || txtWorkingDirectory == null)
                     return;
@@ -944,6 +959,10 @@ namespace SmartGoldbergEmu.Forms
                 string selected = folderDialog.SelectedPath;
                 if (string.IsNullOrEmpty(selected))
                     return;
+
+                FileDialogBrowseHelper.RememberDirectory(
+                    FileDialogBrowseHelper.Purpose.WorkingDirectory,
+                    selected);
 
                 if (!PathValidationHelper.TryMakePathRelativeToDirectory(gameBase, selected, out string relativeWorkingDir))
                 {
@@ -991,17 +1010,35 @@ namespace SmartGoldbergEmu.Forms
             {
                 openFileDialog.Filter = "Icon Files (*.exe;*.bat;*.ico)|*.exe;*.bat;*.ico|Executable Files (*.exe;*.bat)|*.exe;*.bat|Icon Files (*.ico)|*.ico|All Files (*.*)|*.*";
                 openFileDialog.FilterIndex = 1;
-                openFileDialog.RestoreDirectory = true;
                 openFileDialog.Title = "Select Custom Icon";
 
+                string iconDirectory = null;
+                string iconFileName = null;
                 if (!string.IsNullOrEmpty(txtCustomIcon?.Text))
                 {
-                    openFileDialog.InitialDirectory = System.IO.Path.GetDirectoryName(txtCustomIcon.Text);
-                    openFileDialog.FileName = System.IO.Path.GetFileName(txtCustomIcon.Text);
+                    try
+                    {
+                        iconDirectory = Path.GetDirectoryName(txtCustomIcon.Text);
+                        iconFileName = Path.GetFileName(txtCustomIcon.Text);
+                    }
+                    catch
+                    {
+                    }
                 }
+
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.CustomIcon,
+                    iconDirectory,
+                    txtGameFolder?.Text);
+                if (!string.IsNullOrEmpty(iconFileName))
+                    openFileDialog.FileName = iconFileName;
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.CustomIcon,
+                        openFileDialog.FileName);
                     if (txtCustomIcon != null)
                         SetTextBoxText(txtCustomIcon, openFileDialog.FileName);
                 }
@@ -1095,24 +1132,6 @@ namespace SmartGoldbergEmu.Forms
                 {
                     btnFindDLCs.Enabled = true;
                     btnFindDLCs.Text = "Find DLCs";
-                }
-            }
-        }
-
-        private void BrowseFolderIntoTextBox(TextBox targetTextBox, string description, bool showNewFolderButton)
-        {
-            using (var folderDialog = new FolderBrowserDialog())
-            {
-                folderDialog.Description = description;
-                folderDialog.ShowNewFolderButton = showNewFolderButton;
-                if (!string.IsNullOrEmpty(targetTextBox?.Text))
-                {
-                    folderDialog.SelectedPath = targetTextBox.Text;
-                }
-                if (folderDialog.ShowDialog() == DialogResult.OK)
-                {
-                    if (targetTextBox != null)
-                        targetTextBox.Text = folderDialog.SelectedPath;
                 }
             }
         }
@@ -3342,8 +3361,17 @@ namespace SmartGoldbergEmu.Forms
             {
                 ofd.Multiselect = true;
                 ofd.Title = "Copy files into mods folder";
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    ofd,
+                    FileDialogBrowseHelper.Purpose.ModsCopyFiles,
+                    modsDir,
+                    txtGameFolder?.Text);
                 if (ofd.ShowDialog(this) != DialogResult.OK)
                     return;
+                if (ofd.FileNames != null && ofd.FileNames.Length > 0)
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.ModsCopyFiles,
+                        ofd.FileNames[0]);
                 try
                 {
                     var result = ServiceLocator.GoldbergFilesService.CopyFilesToMods(_gameConfig.AppId, ofd.FileNames);
@@ -3366,11 +3394,19 @@ namespace SmartGoldbergEmu.Forms
             using (var fbd = new FolderBrowserDialog())
             {
                 fbd.Description = "Select a folder to copy into mods. A subfolder with the same name will be created under mods.";
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    fbd,
+                    FileDialogBrowseHelper.Purpose.ModsCopyFolder,
+                    modsDir,
+                    txtGameFolder?.Text);
                 if (fbd.ShowDialog(this) != DialogResult.OK)
                     return;
                 string srcRoot = fbd.SelectedPath;
                 if (string.IsNullOrEmpty(srcRoot))
                     return;
+                FileDialogBrowseHelper.RememberDirectory(
+                    FileDialogBrowseHelper.Purpose.ModsCopyFolder,
+                    srcRoot);
                 string folderName = Path.GetFileName(srcRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 if (string.IsNullOrEmpty(folderName))
                 {

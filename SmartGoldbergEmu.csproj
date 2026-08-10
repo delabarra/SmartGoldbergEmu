@@ -208,6 +208,7 @@
     <Compile Include="Helpers\ErrorDisplayHelper.cs" />
     <Compile Include="Helpers\ControlInvokeAsyncHelper.cs" />
     <Compile Include="Helpers\FormMessageBoxHelper.cs" />
+    <Compile Include="Helpers\FileDialogBrowseHelper.cs" />
     <Compile Include="Helpers\IniParseHelper.cs" />
     <Compile Include="Helpers\DirectoryJunctionHelper.cs" />
     <Compile Include="Helpers\DuplicateGameDialogHelper.cs" />
