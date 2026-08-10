@@ -23,6 +23,33 @@ namespace SmartGoldbergEmu.Helpers
             return FormatDisplayVersion(major, minor, patch, build, previewLabel);
         }
 
+        // Same as GetDisplayVersion, with a leading "v" to match GitHub release tags in comparisons.
+        public static string GetTaggedDisplayVersion()
+        {
+            return EnsureReleaseTagPrefix(GetDisplayVersion());
+        }
+
+        public static string EnsureReleaseTagPrefix(string version)
+        {
+            if (string.IsNullOrWhiteSpace(version))
+                return version;
+
+            version = version.Trim();
+            if (version.Equals("unknown", StringComparison.OrdinalIgnoreCase)
+                || version.Equals("latest", StringComparison.OrdinalIgnoreCase))
+                return version;
+
+            if (version.Length > 1
+                && (version[0] == 'v' || version[0] == 'V')
+                && char.IsDigit(version[1]))
+                return version;
+
+            if (char.IsDigit(version[0]))
+                return "v" + version;
+
+            return version;
+        }
+
         // Full MAJOR.MINOR.PATCH for release tags and update comparison (patch always present).
         public static string GetVersionForComparison()
         {

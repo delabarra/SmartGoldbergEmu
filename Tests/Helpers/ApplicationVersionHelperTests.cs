@@ -26,6 +26,19 @@ namespace SmartGoldbergEmu.Tests.Helpers
             Assert.Equal(expected, ApplicationVersionHelper.FormatDisplayVersion(major, minor, patch, build, previewLabel));
         }
 
+        [Theory]
+        [InlineData("2.4.1", "v2.4.1")]
+        [InlineData("2.4", "v2.4")]
+        [InlineData("2.4.1 (build 16, preview)", "v2.4.1 (build 16, preview)")]
+        [InlineData("v2.4.1", "v2.4.1")]
+        [InlineData("V2.4.1", "V2.4.1")]
+        [InlineData("unknown", "unknown")]
+        [InlineData("latest", "latest")]
+        public void EnsureReleaseTagPrefix_matches_github_tag_style(string input, string expected)
+        {
+            Assert.Equal(expected, ApplicationVersionHelper.EnsureReleaseTagPrefix(input));
+        }
+
         [Fact]
         public void GetWindowTitle_includes_base_title_and_version_segment()
         {

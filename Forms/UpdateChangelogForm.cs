@@ -107,9 +107,24 @@ namespace SmartGoldbergEmu.Forms
                 tlpFooter.RowStyles[0] = new RowStyle(SizeType.AutoSize);
             }
 
-            lblProceedQuestion.Text = string.IsNullOrWhiteSpace(_content.ProceedQuestion)
-                ? "Do you want to proceed?"
-                : _content.ProceedQuestion;
+            if (_content.ProceedQuestion != null && string.IsNullOrWhiteSpace(_content.ProceedQuestion))
+            {
+                lblProceedQuestion.Text = string.Empty;
+                lblProceedQuestion.Visible = false;
+                tlpFooter.RowStyles[1] = new RowStyle(SizeType.Absolute, 0F);
+            }
+            else
+            {
+                lblProceedQuestion.Text = string.IsNullOrWhiteSpace(_content.ProceedQuestion)
+                    ? "Do you want to proceed?"
+                    : _content.ProceedQuestion;
+                lblProceedQuestion.Visible = true;
+                tlpFooter.RowStyles[1] = new RowStyle(SizeType.AutoSize);
+            }
+
+            btnOk.Text = string.IsNullOrWhiteSpace(_content.OkButtonText) ? "OK" : _content.OkButtonText.Trim();
+            btnCancel.Visible = _content.ShowCancelButton;
+            CancelButton = _content.ShowCancelButton ? btnCancel : btnOk;
 
             BindManualDownloadLinks(_content.ManualDownloadLinks);
             ApplyTextWrapWidths();

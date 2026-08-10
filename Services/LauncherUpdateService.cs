@@ -419,25 +419,14 @@ namespace SmartGoldbergEmu.Services
             Control uiOwner,
             bool isStartup = false)
         {
-            if (logger == null)
-                throw new ArgumentNullException(nameof(logger));
-            if (uiOwner == null)
-                throw new ArgumentNullException(nameof(uiOwner));
-
-            void RunSyncOnUi(Action action)
-            {
-                if (uiOwner.IsDisposed || uiOwner.Disposing)
-                    return;
-                if (uiOwner.InvokeRequired)
-                    uiOwner.Invoke(action);
-                else
-                    action();
-            }
-
-            try
-            {
-                var result = await Task.Run(() => CheckForUpdatesAsync(isStartup)).ConfigureAwait(false);
-                await ControlInvokeAsyncHelper.InvokeAsync(uiOwner, async () =>
+            await FetchLatestAndPresentOnUiAsync(
+                logger,
+                uiOwner,
+                isStartup,
+                "Launcher update check failed",
+                "Update Check Error",
+                "Error checking for launcher updates",
+                async result =>
                 {
                     await PresentUpdateCheckResultCoreAsync(
                         logger,
@@ -446,20 +435,118 @@ namespace SmartGoldbergEmu.Services
                         uiOwner,
                         () => RunDownloadAndApplyWithProgressFormAsync(logger)).ConfigureAwait(true);
                 }).ConfigureAwait(false);
+        }
+
+        // Confirm via changelog, then download latest release and apply even when already on that version.
+        public static async Task ReinstallWithUIAsync(ILogService logger, Control uiOwner)
+        {
+            await FetchLatestAndPresentOnUiAsync(
+                logger,
+                uiOwner,
+                isStartup: false,
+                "Launcher reinstall failed",
+                "Reinstall Error",
+                "Error preparing launcher reinstall",
+                async result =>
+                {
+                    if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Reinstall Failed"))
+                        return;
+
+                    var dialogResult = UpdateChangelogForm.ShowDialogIfAlive(
+                        uiOwner,
+                        BuildReinstallChangelogContent(result));
+                    if (dialogResult != DialogResult.OK)
+                    {
+                        logger?.LogMessage("User cancelled launcher reinstall");
+                        return;
+                    }
+
+                    logger?.LogMessage("User confirmed launcher reinstall");
+                    await RunDownloadAndApplyWithProgressFormAsync(logger).ConfigureAwait(true);
+                }).ConfigureAwait(false);
+        }
+
+        public static async Task ShowLatestChangelogWithUIAsync(ILogService logger, Control uiOwner)
+        {
+            await FetchLatestAndPresentOnUiAsync(
+                logger,
+                uiOwner,
+                isStartup: false,
+                "Failed to load launcher changelog",
+                "Changelog Error",
+                "Error loading changelog",
+                result =>
+                {
+                    if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Changelog Unavailable"))
+                        return Task.CompletedTask;
+
+                    UpdateChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
+                    return Task.CompletedTask;
+                }).ConfigureAwait(false);
+        }
+
+        private static async Task FetchLatestAndPresentOnUiAsync(
+            ILogService logger,
+            Control uiOwner,
+            bool isStartup,
+            string catchLogMessage,
+            string catchCaption,
+            string catchMessagePrefix,
+            Func<UpdateCheckResult, Task> presentOnUiAsync)
+        {
+            if (logger == null)
+                throw new ArgumentNullException(nameof(logger));
+            if (uiOwner == null)
+                throw new ArgumentNullException(nameof(uiOwner));
+            if (presentOnUiAsync == null)
+                throw new ArgumentNullException(nameof(presentOnUiAsync));
+
+            try
+            {
+                var result = await Task.Run(() => CheckForUpdatesAsync(isStartup)).ConfigureAwait(false);
+                await ControlInvokeAsyncHelper.InvokeAsync(uiOwner, () => presentOnUiAsync(result))
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                logger?.LogError("Launcher update check failed", ex);
-                RunSyncOnUi(() =>
+                logger.LogError(catchLogMessage, ex);
+                RunOnUiIfAlive(uiOwner, () =>
                 {
                     FormMessageBoxHelper.ShowIfAlive(
                         uiOwner,
-                        $"Error checking for launcher updates: {ex.Message}",
-                        "Update Check Error",
+                        catchMessagePrefix + ": " + ex.Message,
+                        catchCaption,
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error);
                 });
             }
+        }
+
+        private static bool EnsureReleaseCheckSucceeded(
+            IWin32Window owner,
+            UpdateCheckResult result,
+            string failureCaption)
+        {
+            if (result != null && result.Success)
+                return true;
+
+            FormMessageBoxHelper.ShowIfAlive(
+                owner,
+                BuildUpdateCheckFailedUserMessage(result),
+                failureCaption,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private static void RunOnUiIfAlive(Control uiOwner, Action action)
+        {
+            if (action == null || uiOwner == null || uiOwner.IsDisposed || uiOwner.Disposing)
+                return;
+            if (uiOwner.InvokeRequired)
+                uiOwner.Invoke(action);
+            else
+                action();
         }
 
         private static async Task PresentUpdateCheckResultCoreAsync(
@@ -512,7 +599,7 @@ namespace SmartGoldbergEmu.Services
                         FormMessageBoxHelper.ShowIfAlive(
                             owner,
                             $"You are running the latest version of SmartGoldbergEmu.\n\n" +
-                            $"Current version: {ApplicationVersionHelper.GetDisplayVersion()}\n" +
+                            $"Current version: {ApplicationVersionHelper.GetTaggedDisplayVersion()}\n" +
                             $"Latest version: {result.LatestVersion}",
                             "No Updates Available",
                             MessageBoxButtons.OK,
@@ -547,47 +634,83 @@ namespace SmartGoldbergEmu.Services
                 "Manually check for the latest release on SmartGoldbergEmu's GitHub releases page.";
         }
 
+        private const string PreserveUserDataInfo =
+            "Your games folder, Goldberg files, and settings will be preserved.";
+
         private static UpdateChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
         {
-            var content = new UpdateChangelogDialogContent
+            return CreateChangelogContent(
+                result,
+                "A new version of SmartGoldbergEmu is available.",
+                "The application will close and restart to apply the update.\r\n" + PreserveUserDataInfo,
+                "Do you want to proceed?");
+        }
+
+        private static UpdateChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)
+        {
+            string versionLabel = FormatLatestVersionLabel(result, "latest");
+            return CreateChangelogContent(
+                result,
+                "Reinstall SmartGoldbergEmu (" + versionLabel + ").",
+                "This will download the latest SmartGoldbergEmu release and reinstall it.\r\n" +
+                "The application will close and restart. " + PreserveUserDataInfo,
+                "Do you want to proceed?");
+        }
+
+        private static UpdateChangelogDialogContent BuildViewChangelogContent(UpdateCheckResult result)
+        {
+            string latestLabel = FormatLatestVersionLabel(result, "unknown");
+            return CreateChangelogContent(
+                result,
+                "SmartGoldbergEmu release notes (" + latestLabel + ").",
+                "Current version: " + ApplicationVersionHelper.GetTaggedDisplayVersion() + "\r\n" +
+                "Latest version: " + latestLabel,
+                proceedQuestion: string.Empty,
+                okButtonText: "Close",
+                showCancelButton: false);
+        }
+
+        private static UpdateChangelogDialogContent CreateChangelogContent(
+            UpdateCheckResult result,
+            string headline,
+            string additionalInfo,
+            string proceedQuestion,
+            string okButtonText = null,
+            bool showCancelButton = true)
+        {
+            return new UpdateChangelogDialogContent
             {
                 FormTitle = ApplicationConstants.WindowTitle,
-                Headline = "A new version of SmartGoldbergEmu is available.",
-                ReleaseNotes = result.ReleaseNotes,
-                AdditionalInfo =
-                    "The application will close and restart to apply the update.\r\n" +
-                    "Your games folder, Goldberg files, and settings will be preserved.",
-                ProceedQuestion = "Do you want to proceed?",
-                ManualDownloadLinks = new List<UpdateManualDownloadLink>()
+                Headline = headline,
+                ReleaseNotes = result?.ReleaseNotes,
+                AdditionalInfo = additionalInfo,
+                ProceedQuestion = proceedQuestion,
+                OkButtonText = okButtonText,
+                ShowCancelButton = showCancelButton,
+                ManualDownloadLinks = BuildManualDownloadLinks()
             };
+        }
 
+        private static string FormatLatestVersionLabel(UpdateCheckResult result, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(result?.LatestVersion)
+                ? fallback
+                : result.LatestVersion.Trim();
+        }
+
+        private static List<UpdateManualDownloadLink> BuildManualDownloadLinks()
+        {
+            var links = new List<UpdateManualDownloadLink>();
             if (LauncherReleaseConstants.TryGetReleasesWebUrl(out string releasesWebUrl))
             {
-                content.ManualDownloadLinks.Add(new UpdateManualDownloadLink
+                links.Add(new UpdateManualDownloadLink
                 {
                     Label = "GitHub releases",
                     Url = releasesWebUrl
                 });
             }
 
-            return content;
-        }
-
-        // Download latest release and apply even when already on that version (File → Launcher → Reinstall).
-        public static Task DownloadAndApplyWithUIAsync(ILogService logger, Control uiRoot)
-        {
-            if (logger == null)
-                throw new ArgumentNullException(nameof(logger));
-            if (uiRoot == null)
-                throw new ArgumentNullException(nameof(uiRoot));
-
-            // Re-resolve the latest release so reinstall works after a prior "up to date" check.
-            _downloadUrl = null;
-
-            return ControlInvokeAsyncHelper.InvokeAsync(uiRoot, async () =>
-            {
-                await RunDownloadAndApplyWithProgressFormAsync(logger).ConfigureAwait(true);
-            });
+            return links;
         }
 
         private static async Task RunDownloadAndApplyWithProgressFormAsync(ILogService logger)

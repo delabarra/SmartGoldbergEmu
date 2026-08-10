@@ -1886,23 +1886,12 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            var dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                "This will download the latest SmartGoldbergEmu release and reinstall it.\n\n" +
-                "The application will close and restart. Your games folder, Goldberg files, and settings will be preserved.\n\n" +
-                "Proceed?",
-                "Reinstall",
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Question);
-
-            if (dialogResult != DialogResult.OK)
-                return;
-
             Program.LogService?.LogMessage("Manual launcher reinstall triggered by user");
-            _taskReportService.SetMessage("Reinstalling launcher...");
+            _taskReportService.SetMessage("Preparing launcher reinstall...");
 
             try
             {
-                await LauncherUpdateService.DownloadAndApplyWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                await LauncherUpdateService.ReinstallWithUIAsync(Program.LogService, this).ConfigureAwait(true);
                 if (IsDisposed || Disposing)
                     return;
             }
@@ -1910,6 +1899,36 @@ namespace SmartGoldbergEmu.Forms
             {
                 Program.LogService?.LogError($"Launcher reinstall failed: {ex.Message}", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher reinstall", ex), TaskReportKind.Error);
+            }
+            finally
+            {
+                _taskReportService.SetMessage(string.Empty);
+            }
+        }
+
+        private void OnViewLauncherChangelog_Click(object sender, EventArgs e)
+        {
+            _ = OnViewLauncherChangelogAsync().ForgetFaults(Program.LogService, nameof(OnViewLauncherChangelogAsync));
+        }
+
+        private async Task OnViewLauncherChangelogAsync()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            Program.LogService?.LogMessage("View launcher changelog triggered by user");
+            _taskReportService.SetMessage("Loading changelog...");
+
+            try
+            {
+                await LauncherUpdateService.ShowLatestChangelogWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Launcher changelog failed: {ex.Message}", ex);
+                _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher changelog", ex), TaskReportKind.Error);
             }
             finally
             {
