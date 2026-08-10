@@ -484,8 +484,6 @@ namespace SmartGoldbergEmu.Forms
             BindNum(numIconsPerIteration, v => main.PaginatedAchievementsIcons = v);
             BindCheck(chkRecordPlaytime, v => main.RecordPlaytime = v);
             BindCheck(chkAchievementsBypass, v => main.AchievementsBypass = v);
-            if (txtSteamGameStatsReportsDir != null)
-                main.SteamGameStatsReportsDir = txtSteamGameStatsReportsDir.Text.Trim();
         }
 
         private void LoadStatsAchievementsMainToForm(MainSettings main)
@@ -508,7 +506,6 @@ namespace SmartGoldbergEmu.Forms
             }
             LoadCheck(chkRecordPlaytime, main.RecordPlaytime);
             LoadCheck(chkAchievementsBypass, main.AchievementsBypass);
-            LoadText(txtSteamGameStatsReportsDir, main.SteamGameStatsReportsDir);
         }
 
         private void LoadSettingsToForm(GameSettingsSnapshot snapshot, bool loadPerGamePersistedGoldbergFiles = true)
@@ -1102,11 +1099,6 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void OnBrowseSteamGameStatsReportsDir_Click(object sender, EventArgs e)
-        {
-            BrowseFolderIntoTextBox(txtSteamGameStatsReportsDir, "Select Steam Game Stats Reports Directory", true);
-        }
-
         private void BrowseFolderIntoTextBox(TextBox targetTextBox, string description, bool showNewFolderButton)
         {
             using (var folderDialog = new FolderBrowserDialog())
@@ -1368,8 +1360,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 txtAppID, txtGameName, txtGameFolder, txtGameExecutable, txtLaunchParameters, txtWorkingDirectory, txtCustomIcon,
                 txtForceAccountName, txtForceSteamId, txtUserTicket, txtAltSteamId, txtForceIpCountry,
-                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw,
-                txtSteamGameStatsReportsDir
+                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw
             })
                 WireTextChanged(tb);
 
