@@ -27,7 +27,7 @@ namespace SmartGoldbergEmu.Services
                 if (!EnsureLoggingInitialized())
                     return false;
 
-                LogService.LogMessage("SmartGoldbergEmu application starting...");
+                LogService.LogMessage("SmartGoldbergEmu starting");
 
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                 // .NET Framework defaults to 2 connections per host; achievement/CDN downloads need far more.
@@ -41,7 +41,7 @@ namespace SmartGoldbergEmu.Services
                 InitializeThemeFromSettings();
                 EnsureUriProtocolRegistered();
 
-                LogService.LogMessage("Bootstrap completed successfully");
+                LogService.LogMessage("Bootstrap complete");
                 return true;
             }
             catch (Exception ex)
@@ -80,13 +80,13 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
-                LogService?.LogWarning($"Failed to initialize theme during bootstrap: {ex.Message}");
+                LogService?.LogWarning($"Failed to initialize theme during bootstrap: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
         public static void LogShutdown()
         {
-            LogService?.LogMessage("SmartGoldbergEmu application shutting down...");
+            LogService?.LogMessage("SmartGoldbergEmu shutting down");
         }
 
         private static bool InitializeLogging()
@@ -94,7 +94,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 LogService = new LogService(LoggingConfiguration.CreateDefault());
-                LogService.LogMessage("Logging service initialized successfully");
+                LogService.LogDebug("Logging service initialized");
                 return true;
             }
             catch (Exception ex)

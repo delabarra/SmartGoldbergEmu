@@ -207,7 +207,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to initialize theme: {ex.Message}");
+                Program.LogService?.LogError("Failed to initialize theme", ex);
             }
         }
 
@@ -368,7 +368,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to initialize game display: {ex.Message}");
+                Program.LogService?.LogError("Failed to initialize game display", ex);
             }
         }
 
@@ -419,7 +419,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to load games: {ex.Message}");
+                Program.LogService?.LogError("Failed to load games", ex);
             }
         }
 
@@ -507,7 +507,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to load tile images: {ex.Message}");
+                Program.LogService?.LogError("Failed to load tile images", ex);
             }
         }
 
@@ -584,7 +584,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to update tile for {game?.AppName}: {ex.Message}");
+                Program.LogService?.LogError($"Failed to update tile for {game?.AppName} (AppId {game?.AppId})", ex);
             }
         }
 
@@ -1300,7 +1300,7 @@ namespace SmartGoldbergEmu.Forms
             using (var f = new ForkSelectForm())
             {
                 if (f.ShowDialog(this) == DialogResult.OK)
-                    Program.LogService?.LogMessage("Fork selection saved");
+                    Program.LogService?.LogDebug("Fork selection saved");
             }
         }
 
@@ -1313,7 +1313,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (IsDisposed || Disposing)
                 return;
-            Program.LogService?.LogMessage("Manual update check triggered by user");
+            Program.LogService?.LogDebug("Manual Goldberg update check");
             _taskReportService.SetMessage("Checking for updates...");
             try
             {
@@ -1328,7 +1328,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Update check UI flow failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Goldberg update check UI flow failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Update check", ex), TaskReportKind.Error);
             }
             finally
@@ -1347,7 +1347,7 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            Program.LogService?.LogMessage("Manual reinstall triggered by user");
+            Program.LogService?.LogDebug("Manual Goldberg reinstall");
             _taskReportService.SetMessage("Preparing emulator reinstall...");
 
             try
@@ -1358,7 +1358,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Reinstall failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Goldberg reinstall failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Reinstall", ex), TaskReportKind.Error);
             }
             finally
@@ -1377,7 +1377,7 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            Program.LogService?.LogMessage("View emulator changelog triggered by user");
+            Program.LogService?.LogDebug("View emulator changelog");
             _taskReportService.SetMessage("Loading changelog...");
 
             try
@@ -1388,7 +1388,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Emulator changelog failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Emulator changelog failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Emulator changelog", ex), TaskReportKind.Error);
             }
             finally
@@ -1409,7 +1409,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Error adding game: {ex.Message}", ex);
+                Program.LogService?.LogError("Error adding game", ex);
                 if (!IsDisposed && !Disposing)
                     _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
             }
@@ -1522,7 +1522,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 ClearPendingAddListEntry();
-                Program.LogService?.LogError($"Error adding game: {ex.Message}", ex);
+                Program.LogService?.LogError("Error adding game", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
             }
         }
@@ -1665,7 +1665,7 @@ namespace SmartGoldbergEmu.Forms
                     ShowPendingAddInList();
                 }
 
-                Program.LogService?.LogError($"Error saving game: {ex.Message}", ex);
+                Program.LogService?.LogError("Error saving game", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Saving game", ex), TaskReportKind.Error);
                 return false;
             }
@@ -1877,7 +1877,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (IsDisposed || Disposing)
                 return;
-            Program.LogService?.LogMessage("Manual launcher update check triggered by user");
+            Program.LogService?.LogDebug("Manual launcher update check");
             _taskReportService.SetMessage("Checking for launcher updates...");
             try
             {
@@ -1888,7 +1888,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Launcher update check UI flow failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Launcher update check UI flow failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher update check", ex), TaskReportKind.Error);
             }
             finally
@@ -1907,7 +1907,7 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            Program.LogService?.LogMessage("Manual launcher reinstall triggered by user");
+            Program.LogService?.LogDebug("Manual launcher reinstall");
             _taskReportService.SetMessage("Preparing launcher reinstall...");
 
             try
@@ -1918,7 +1918,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Launcher reinstall failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Launcher reinstall failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher reinstall", ex), TaskReportKind.Error);
             }
             finally
@@ -1937,7 +1937,7 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            Program.LogService?.LogMessage("View launcher changelog triggered by user");
+            Program.LogService?.LogDebug("View launcher changelog");
             _taskReportService.SetMessage("Loading changelog...");
 
             try
@@ -1948,7 +1948,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Launcher changelog failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Launcher changelog failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher changelog", ex), TaskReportKind.Error);
             }
             finally
@@ -2009,7 +2009,8 @@ namespace SmartGoldbergEmu.Forms
                 else
                 {
                     lastError = removeResult.ErrorMessage;
-                    Program.LogService?.LogError($"Failed to remove game {game.AppName}: {removeResult.ErrorMessage}");
+                    Program.LogService?.LogError(
+                        $"Failed to remove game {game.AppName} (AppId {game.AppId}): {removeResult.ErrorMessage}");
                 }
             }
 
@@ -2036,7 +2037,8 @@ namespace SmartGoldbergEmu.Forms
             if (!TryGetSelectedGameWithAppId(out GameConfig selectedGame))
                 return;
 
-            Program.LogService?.LogMessage($"Starting catalog and asset refresh for game: {selectedGame.AppName} (App ID: {selectedGame.AppId})");
+            Program.LogService?.LogDebug(
+                $"Catalog and asset refresh: {selectedGame.AppName} (AppId {selectedGame.AppId})");
 
             try
             {
@@ -2049,11 +2051,14 @@ namespace SmartGoldbergEmu.Forms
                     return;
 
                 NotifyAddSaveListChanged(selectedGame.GameGuid, reloadMosaic: true);
-                Program.LogService?.LogMessage("Catalog and asset refresh completed successfully");
+                Program.LogService?.LogMessage(
+                    $"Catalog for AppId {selectedGame.AppId} retrieved.");
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to refresh game data and assets: {ex.Message}", ex);
+                Program.LogService?.LogError(
+                    $"Catalog for AppId {selectedGame.AppId} failed: {selectedGame.AppName}",
+                    ex);
                 FormMessageBoxHelper.ShowIfAlive(this, "Failed to refresh game data and assets. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -2065,7 +2070,8 @@ namespace SmartGoldbergEmu.Forms
             if (!TryGetSelectedGameWithAppId(out GameConfig selectedGame))
                 return;
 
-            Program.LogService?.LogMessage($"Starting achievement generation for game: {selectedGame.AppName} (App ID: {selectedGame.AppId})");
+            Program.LogService?.LogDebug(
+                $"Achievement generation: {selectedGame.AppName} (AppId {selectedGame.AppId})");
 
             try
             {
@@ -2076,11 +2082,14 @@ namespace SmartGoldbergEmu.Forms
 
                 if (IsDisposed || Disposing)
                     return;
-                Program.LogService?.LogMessage("Achievement generation completed successfully");
+                Program.LogService?.LogMessage(
+                    $"Emulator files for AppId {selectedGame.AppId} generated.");
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to generate achievements: {ex.Message}", ex);
+                Program.LogService?.LogError(
+                    $"Emulator files for AppId {selectedGame.AppId} failed (achievements): {selectedGame.AppName}",
+                    ex);
                 FormMessageBoxHelper.ShowIfAlive(this, "Failed to generate achievements. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -2435,7 +2444,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
-            Program.LogService?.LogMessage($"Removing SteamStub on {name}: {executablePath}");
+            Program.LogService?.LogDebug($"Removing SteamStub on {name}: {executablePath}");
 
             try
             {
@@ -2473,7 +2482,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
-            Program.LogService?.LogMessage($"Restoring SteamStub backup for {name}: {executablePath}");
+            Program.LogService?.LogDebug($"Restoring SteamStub backup for {name}: {executablePath}");
 
             try
             {
@@ -2545,7 +2554,8 @@ namespace SmartGoldbergEmu.Forms
             if (!TryGetSelectedGameWithAppId(out GameConfig selectedGame))
                 return;
 
-            Program.LogService?.LogMessage($"Starting {PathConstants.GoldbergItemsJsonFileName} generation for game: {selectedGame.AppName} (App ID: {selectedGame.AppId})");
+            Program.LogService?.LogDebug(
+                $"{PathConstants.GoldbergItemsJsonFileName} generation: {selectedGame.AppName} (AppId {selectedGame.AppId})");
 
             try
             {
@@ -2557,15 +2567,30 @@ namespace SmartGoldbergEmu.Forms
                     return;
                 if (!result.Success)
                 {
+                    if (!string.Equals(result.ErrorMessage, "No items found.", StringComparison.Ordinal)
+                        && !string.Equals(result.ErrorMessage, "Skipped.", StringComparison.Ordinal))
+                    {
+                        Program.LogService?.LogWarning(
+                            $"Emulator files for AppId {selectedGame.AppId} incomplete (items): {result.ErrorMessage}");
+                    }
+                    else
+                    {
+                        Program.LogService?.LogDebug(
+                            $"Emulator files for AppId {selectedGame.AppId}: items skipped ({result.ErrorMessage})");
+                    }
+
                     FormMessageBoxHelper.ShowIfAlive(this, result.ErrorMessage, "Generate Items", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
-                Program.LogService?.LogMessage($"{PathConstants.GoldbergItemsJsonFileName} generation completed successfully");
+                Program.LogService?.LogMessage(
+                    $"Emulator files for AppId {selectedGame.AppId} generated.");
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to generate {PathConstants.GoldbergItemsJsonFileName}: {ex.Message}", ex);
+                Program.LogService?.LogError(
+                    $"Emulator files for AppId {selectedGame.AppId} failed (items): {selectedGame.AppName}",
+                    ex);
                 FormMessageBoxHelper.ShowIfAlive(this, $"Failed to generate {PathConstants.GoldbergItemsJsonFileName}. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -2597,7 +2622,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to open Valve data file: {ex.Message}", ex);
+                Program.LogService?.LogError("Failed to open Valve data file", ex);
                 FormMessageBoxHelper.ShowIfAlive(this, "Failed to open Valve data file.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -2632,7 +2657,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to open {pageName}: {ex.Message}", ex);
+                Program.LogService?.LogError($"Failed to open {pageName}", ex);
                 FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open {pageName}.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -2827,7 +2852,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to create shortcut: {ex.Message}", ex);
+                Program.LogService?.LogError("Failed to create shortcut", ex);
                 FormMessageBoxHelper.ShowIfAlive(this,
                     "Failed to create shortcut. Please check the file path and permissions.",
                     "Error",
@@ -2986,7 +3011,7 @@ namespace SmartGoldbergEmu.Forms
                 MessageBoxDefaultButton.Button2);
             if (validationResult == DialogResult.Cancel)
             {
-                Program.LogService?.LogMessage("User cancelled launch due to Steam API validation");
+                Program.LogService?.LogDebug("User cancelled launch due to Steam API validation");
                 return false;
             }
             if (validationResult == DialogResult.Yes)
@@ -2998,7 +3023,7 @@ namespace SmartGoldbergEmu.Forms
                         "Steam API Validation",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
-                    Program.LogService?.LogMessage("User chose restore but no clean backup was found; continuing launch");
+                    Program.LogService?.LogDebug("User chose restore but no clean backup was found; continuing launch");
                 }
                 else
                 {
@@ -3016,7 +3041,7 @@ namespace SmartGoldbergEmu.Forms
                 }
             }
             else
-                Program.LogService?.LogMessage("User chose to launch without restoring Steam API DLLs");
+                Program.LogService?.LogDebug("User chose to launch without restoring Steam API DLLs");
 
             return true;
         }
@@ -3084,7 +3109,7 @@ namespace SmartGoldbergEmu.Forms
                 var launchResult = await _launchOptionService.ShowLaunchOptionsAsync(game, this).ConfigureAwait(true);
                 if (launchResult.Cancelled)
                 {
-                    Program.LogService?.LogMessage("User cancelled launch options dialog");
+                    Program.LogService?.LogDebug("User cancelled launch options dialog");
                     return;
                 }
 
@@ -3101,18 +3126,19 @@ namespace SmartGoldbergEmu.Forms
 
                 if (!launchGameResult.IsValid)
                 {
-                    Program.LogService?.LogError($"Launch failed: {launchGameResult.ErrorMessage}");
+                    Program.LogService?.LogError(
+                        $"Launch failed: AppId={game.AppId}, name={game.AppName}, mode={game.LaunchMode}, emu={useEmulator}: {launchGameResult.ErrorMessage}");
                     ShowLaunchErrorMessage(launchGameResult.ErrorMessage);
                 }
                 else
                 {
-                    Program.LogService?.LogDebug("Launch completed successfully from MainForm perspective");
+                    Program.LogService?.LogDebug("Launch completed from MainForm perspective");
                     _taskReportService.SetMessageWithAutoClear($"{game.AppName} launched.");
                 }
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError("Error during game launch", ex);
+                Program.LogService?.LogError($"Error during game launch: AppId={game?.AppId}, name={game?.AppName}", ex);
                 ShowLaunchErrorMessage(ex.Message);
             }
         }
@@ -3603,7 +3629,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to load form state: {ex.Message}");
+                Program.LogService?.LogError("Failed to load form state", ex);
             }
         }
 
@@ -3616,7 +3642,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to save window state: {ex.Message}");
+                Program.LogService?.LogError("Failed to save window state", ex);
             }
         }
 
@@ -3655,7 +3681,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to handle first run: {ex.Message}");
+                Program.LogService?.LogError("Failed to handle first run", ex);
                 _appDataService.CompleteFirstRun();
             }
         }

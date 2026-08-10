@@ -555,7 +555,7 @@ namespace SmartGoldbergEmu.Services
             }
 
             var options = ExtractLaunchOptionsFromAppInfo(appInfo);
-            ServiceLocator.LogService.LogMessage(
+            ServiceLocator.LogService.LogDebug(
                 $"ExtractLaunchOptions: app {game.AppId} ({game.AppName}) -> {options.Count} Windows launch option(s)");
             return options;
         }

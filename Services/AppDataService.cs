@@ -758,6 +758,8 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
+                int prepared = 0;
+
                 if (!SteamInstallationPathHelper.TryEnsureSteamDllFromSteamClient(
                         PathConstants.GoldbergSteamOldDirectory, out string steamDllError)
                     && !SteamInstallationPathHelper.IsSteamDllPresentInGoldbergFolder())
@@ -768,25 +770,33 @@ namespace SmartGoldbergEmu.Services
                     if (!cdnDll.IsValid)
                     {
                         ServiceLocator.LogService?.LogWarning(
-                            "Steam.dll self-heal: " + (steamDllError ?? "missing")
+                            "Steam lineage assets incomplete (Steam.dll): " + (steamDllError ?? "missing")
                             + "; CDN fallback: " + (cdnDll.ErrorMessage ?? "failed")
                             + " (Steam.dll mode unavailable until fixed).");
                     }
                     else
                     {
-                        ServiceLocator.LogService?.LogMessage(
-                            "Steam.dll self-heal: copied from Steam CDN bins_win32 package.");
+                        ServiceLocator.LogService?.LogDebug("Steam.dll ready (source: Steam CDN).");
+                        prepared++;
                     }
                 }
 
-                ValidationResult sounds = await EnsureSoundFilesExistAsync().ConfigureAwait(false);
-                if (!sounds.IsValid)
-                    ServiceLocator.LogService?.LogWarning("Overlay WAV self-heal soft-fail: " + sounds.ErrorMessage);
-
-                ValidationResult hashedImage = await EnsureSteamClientUiHashedImageExistsAsync().ConfigureAwait(false);
-                if (!hashedImage.IsValid)
+                var soundsOutcome = await EnsureSoundFilesExistAsync().ConfigureAwait(false);
+                if (!soundsOutcome.Result.IsValid)
                     ServiceLocator.LogService?.LogWarning(
-                        "Steam clientui image self-heal soft-fail: " + hashedImage.ErrorMessage);
+                        "Steam lineage assets incomplete (overlay sounds): " + soundsOutcome.Result.ErrorMessage);
+                else if (soundsOutcome.Prepared)
+                    prepared++;
+
+                var imageOutcome = await EnsureSteamClientUiHashedImageExistsAsync().ConfigureAwait(false);
+                if (!imageOutcome.Result.IsValid)
+                    ServiceLocator.LogService?.LogWarning(
+                        "Steam lineage assets incomplete (clientui image): " + imageOutcome.Result.ErrorMessage);
+                else if (imageOutcome.Prepared)
+                    prepared++;
+
+                if (prepared > 0)
+                    ServiceLocator.LogService?.LogMessage("Steam lineage assets ready.");
             }
             catch (Exception ex)
             {
@@ -846,7 +856,7 @@ ip_country=US
             File.WriteAllText(filePath, defaultContent);
         }
 
-        private async Task<ValidationResult> EnsureSoundFilesExistAsync()
+        private async Task<(ValidationResult Result, bool Prepared)> EnsureSoundFilesExistAsync()
         {
             try
             {
@@ -859,15 +869,15 @@ ip_country=US
                 if (File.Exists(achievementSoundPath) && File.Exists(friendSoundPath))
                 {
                     OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
-                    return ValidationResult.Success();
+                    return (ValidationResult.Success(), false);
                 }
 
                 if (TryCopyFromSteam(soundsPath).IsValid)
                 {
                     OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
-                    ServiceLocator.LogService?.LogMessage(
+                    ServiceLocator.LogService?.LogDebug(
                         "Overlay notification sounds ready (source: Steam steamui\\sounds).");
-                    return ValidationResult.Success();
+                    return (ValidationResult.Success(), true);
                 }
 
                 ValidationResult cdnResult = await ServiceLocator.AssetDownloadService
@@ -876,15 +886,16 @@ ip_country=US
                 if (cdnResult.IsValid)
                 {
                     OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
-                    ServiceLocator.LogService?.LogMessage(
+                    ServiceLocator.LogService?.LogDebug(
                         "Overlay notification sounds ready (source: Steam CDN).");
+                    return (cdnResult, true);
                 }
 
-                return cdnResult;
+                return (cdnResult, false);
             }
             catch (Exception ex)
             {
-                return ValidationResult.Failure($"Failed to ensure sound files exist: {ex.Message}");
+                return (ValidationResult.Failure($"Failed to ensure sound files exist: {ex.Message}"), false);
             }
         }
 
@@ -904,19 +915,19 @@ ip_country=US
             }
         }
 
-        private async Task<ValidationResult> EnsureSteamClientUiHashedImageExistsAsync()
+        private async Task<(ValidationResult Result, bool Prepared)> EnsureSteamClientUiHashedImageExistsAsync()
         {
             try
             {
                 string destPath = PathConstants.LocalAppDataSteamClientUiHashedImagePath;
                 if (File.Exists(destPath))
-                    return ValidationResult.Success();
+                    return (ValidationResult.Success(), false);
 
                 if (SteamInstallationPathHelper.TryCopySteamClientUiHashedImageFromSteam(destPath))
                 {
-                    ServiceLocator.LogService?.LogMessage(
+                    ServiceLocator.LogService?.LogDebug(
                         "Steam clientui image ready (source: Steam clientui\\images).");
-                    return ValidationResult.Success();
+                    return (ValidationResult.Success(), true);
                 }
 
                 ValidationResult cdnResult = await ServiceLocator.AssetDownloadService
@@ -924,15 +935,16 @@ ip_country=US
                     .ConfigureAwait(false);
                 if (cdnResult.IsValid)
                 {
-                    ServiceLocator.LogService?.LogMessage(
-                        "Steam clientui image ready (source: Steam CDN resources_all).");
+                    ServiceLocator.LogService?.LogDebug(
+                        "Steam clientui image ready (source: Steam CDN).");
+                    return (cdnResult, true);
                 }
 
-                return cdnResult;
+                return (cdnResult, false);
             }
             catch (Exception ex)
             {
-                return ValidationResult.Failure("Failed to ensure Steam clientui image exists: " + ex.Message);
+                return (ValidationResult.Failure("Failed to ensure Steam clientui image exists: " + ex.Message), false);
             }
         }
 

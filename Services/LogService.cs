@@ -10,11 +10,14 @@ namespace SmartGoldbergEmu.Services
 {
     // File log (ApplicationConstants.ApplicationLogFileName): diagnostics and full errors; redacted via LogRedactionHelper.
     // User-facing status/progress uses ITaskReportService (status strip), not this file.
+    // Line prefix: time always; yyyy-MM-dd only on the first log line of each local calendar day.
     public class LogService : ILogService
     {
         private readonly object _lockObject = new object();
         private readonly LoggingConfiguration _configuration;
         private readonly string _logFilePath;
+        private DateTime _lastLoggedLocalDate = DateTime.MinValue.Date;
+        private Func<DateTime> _clock;
 
         public LogService(string logFilePath = null, bool enableConsoleLogging = false, bool enableFileLogging = true)
             : this(new LoggingConfiguration
@@ -39,6 +42,25 @@ namespace SmartGoldbergEmu.Services
                 EnsureLogDirectoryExists();
                 InitializeLogFile();
             }
+        }
+
+        // Test seam: override local clock for date-rollover assertions.
+        // Re-seeds the day marker so post-construct clock injection matches session-banner behavior.
+        internal void SetClockForTests(Func<DateTime> clock)
+        {
+            lock (_lockObject)
+            {
+                _clock = clock;
+                if (_configuration.EnableFileLogging && _clock != null)
+                    _lastLoggedLocalDate = GetNow().Date;
+            }
+        }
+
+        // Test seam: pretend no line has been written today (full date on next write).
+        internal void ClearLastLoggedDateForTests()
+        {
+            lock (_lockObject)
+                _lastLoggedLocalDate = DateTime.MinValue.Date;
         }
 
         public void LogDebug(string message)
@@ -70,6 +92,11 @@ namespace SmartGoldbergEmu.Services
             WriteLog(LogLevel.Error, "ERROR", fullMessage);
         }
 
+        private DateTime GetNow()
+        {
+            return _clock != null ? _clock() : DateTime.Now;
+        }
+
         private void WriteLog(LogLevel logLevel, string level, string message)
         {
             if (string.IsNullOrEmpty(message))
@@ -83,16 +110,32 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             message = LogRedactionHelper.RedactForLog(message);
-            string logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}";
 
             lock (_lockObject)
             {
+                DateTime now = GetNow();
+                string timestamp = FormatTimestamp(now);
+                string logEntry = $"[{timestamp}] [{level}] {message}";
+
                 if (_configuration.EnableConsoleLogging)
                     WriteToConsole(level, logEntry);
 
                 if (_configuration.EnableFileLogging)
                     WriteToFile(logEntry);
             }
+        }
+
+        // Caller must hold _lockObject.
+        private string FormatTimestamp(DateTime now)
+        {
+            DateTime today = now.Date;
+            if (today != _lastLoggedLocalDate)
+            {
+                _lastLoggedLocalDate = today;
+                return now.ToString("yyyy-MM-dd HH:mm:ss");
+            }
+
+            return now.ToString("HH:mm:ss");
         }
 
         private static string FormatException(Exception exception)
@@ -200,8 +243,11 @@ namespace SmartGoldbergEmu.Services
                 if (File.Exists(rotatedPath))
                     File.Delete(rotatedPath);
 
-                string header = "---------- session " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ----------" + Environment.NewLine;
+                DateTime now = GetNow();
+                string header = "---------- session " + now.ToString("yyyy-MM-dd HH:mm:ss") + " ----------" + Environment.NewLine;
                 File.WriteAllText(_logFilePath, header);
+                // Session banner already carries today's date; first INFO uses time-only until midnight.
+                _lastLoggedLocalDate = now.Date;
             }
             catch (Exception ex)
             {

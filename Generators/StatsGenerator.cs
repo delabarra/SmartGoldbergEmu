@@ -41,7 +41,7 @@ namespace SmartGoldbergEmu.Generators
                 return false;
 
             File.WriteAllText(statsPath, FormatStatsJsonIndented(goldbergStatsJson));
-            ServiceLocator.LogService.LogMessage($"Generated {PathConstants.GoldbergStatsJsonFileName} for app {appId}");
+            ServiceLocator.LogService.LogDebug($"Generated {PathConstants.GoldbergStatsJsonFileName} for app {appId}");
             return true;
         }
 

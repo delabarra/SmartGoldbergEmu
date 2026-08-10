@@ -139,7 +139,7 @@ namespace SmartGoldbergEmu.Generators
                     ReportFinishedStatus("Items generated successfully.");
                 }
 
-                Program.LogService?.LogMessage(string.Format("ItemGenerator: wrote {0} item(s) for {1} ({2})", map.Count, game.AppName, game.AppId));
+                Program.LogService?.LogDebug(string.Format("ItemGenerator: wrote {0} item(s) for {1} ({2})", map.Count, game.AppName, game.AppId));
                 return ItemGeneratorResult.Ok(map.Count);
             }
             catch (OperationCanceledException)
@@ -305,7 +305,7 @@ namespace SmartGoldbergEmu.Generators
                 return false;
 
             File.WriteAllText(path, defaultMap.ToJsonString(JsonFormatting.Indented), Encoding.UTF8);
-            ServiceLocator.LogService.LogMessage(
+            ServiceLocator.LogService.LogDebug(
                 $"Generated {PathConstants.GoldbergDefaultItemsJsonFileName} with {defaultMap.Count} starting item(s) for app {appId}");
             return true;
         }

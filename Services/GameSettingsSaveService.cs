@@ -193,10 +193,14 @@ namespace SmartGoldbergEmu.Services
                 await Task.Yield();
                 await _emulatorConfigService.GenerateMetadataFilesAsync(request.GameConfig, request.Metadata).ConfigureAwait(false);
                 TryEnsureSteamAppIdBesideExecutable(request.GameConfig);
+                Program.LogService?.LogMessage(
+                    $"Emulator files for AppId {request.GameConfig?.AppId} generated.");
             }
             catch (Exception ex)
             {
-                LogWarningWithExceptionMessage("Failed to generate metadata files", ex);
+                Program.LogService?.LogError(
+                    $"Emulator files for AppId {request.GameConfig?.AppId} failed: {ex.Message}",
+                    ex);
             }
         }
 
@@ -232,8 +236,14 @@ namespace SmartGoldbergEmu.Services
                         friendlyProgressMessages: true)
                     .ConfigureAwait(false);
                 if (!itemGenResult.Success && itemGenResult.ErrorMessage != "Skipped.")
-                    Program.LogService?.LogMessage("Item definitions not created for new game: " + itemGenResult.ErrorMessage);
-
+                {
+                    // No inventory definitions is common; keep detail for real failures.
+                    if (string.Equals(itemGenResult.ErrorMessage, "No items found.", StringComparison.Ordinal))
+                        Program.LogService?.LogDebug("Item definitions not created for new game: No items found.");
+                    else
+                        Program.LogService?.LogWarning(
+                            "Item definitions not created for new game: " + itemGenResult.ErrorMessage);
+                }
                 // Archive JSON is on disk in the catalog file / items.json; drop the in-memory copy.
                 if (request.GameConfig?.Catalog?.Items != null)
                     request.GameConfig.Catalog.Items.ArchiveJson = null;

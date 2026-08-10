@@ -124,9 +124,12 @@ namespace SmartGoldbergEmu.Services
                 }
 
                 if (_disposed)
-                    return ApplyDownloadOutcomeFeedback(gamePath, totalDownloads, displayName, appId, reportFeedback: false);
+                    return ApplyDownloadOutcomeFeedback(
+                        gamePath, totalDownloads, displayName, appId, reportFeedback: false, downloadedCount: 0, failedFiles: null);
 
                 var completed = 0;
+                var downloadedCount = 0;
+                var failedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var lockObj = new object();
 
                 await HttpHelpers.ForEachBoundedAsync(
@@ -134,11 +137,18 @@ namespace SmartGoldbergEmu.Services
                     HttpHelpers.DefaultMaxConcurrentDownloads,
                     async request =>
                     {
-                        await DownloadImageAsync(
+                        int outcome = await DownloadImageAsync(
                             remoteAppId,
                             gamePath,
                             request.FileName,
                             request.CandidateUrls).ConfigureAwait(false);
+                        if (outcome > 0)
+                            System.Threading.Interlocked.Increment(ref downloadedCount);
+                        else if (outcome < 0)
+                        {
+                            lock (lockObj)
+                                failedFiles.Add(request.FileName);
+                        }
 
                         if (_disposed || !reportFeedback)
                             return;
@@ -153,11 +163,20 @@ namespace SmartGoldbergEmu.Services
                         }
                     }).ConfigureAwait(false);
 
-                return ApplyDownloadOutcomeFeedback(gamePath, totalDownloads, displayName, appId, reportFeedback && !_disposed);
+                return ApplyDownloadOutcomeFeedback(
+                    gamePath,
+                    totalDownloads,
+                    displayName,
+                    appId,
+                    reportFeedback && !_disposed,
+                    downloadedCount,
+                    failedFiles);
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Error downloading game images (folder {appId}, Steam {remoteAppId}): {ex.Message}", ex);
+                Program.LogService?.LogError(
+                    $"Assets for AppId {appId} failed (Steam AppId {remoteAppId}): {ex.Message}",
+                    ex);
                 if (reportFeedback && !_disposed)
                     Feedback?.SetMessage("Could not download game images.", TaskReportKind.Error);
                 if (appId > 0)
@@ -408,7 +427,9 @@ namespace SmartGoldbergEmu.Services
             int totalDownloads,
             string gameDisplayName,
             ulong appId,
-            bool reportFeedback)
+            bool reportFeedback,
+            int downloadedCount,
+            HashSet<string> failedFiles)
         {
             UpdateMissingAssetsNote(resourcesDirectory, gameDisplayName, appId);
 
@@ -418,6 +439,32 @@ namespace SmartGoldbergEmu.Services
             bool hasCapsule = !string.IsNullOrEmpty(
                 ResolvePreferredImagePath(resourcesDirectory, BuildLibraryCoverPreferredFileNames(appId, resourcesDirectory)));
             bool essentialsOk = hasHeader && hasIcon && hasCapsule;
+
+            if (downloadedCount > 0 && essentialsOk)
+            {
+                Program.LogService?.LogMessage($"Assets for AppId {appId} downloaded.");
+            }
+            else if (!essentialsOk)
+            {
+                var missing = new List<string>(4);
+                if (!hasHeader)
+                    missing.Add("store banner (header.jpg)");
+                if (!hasCapsule)
+                    missing.Add("library cover (library_600x900_2x.jpg, library_600x900.jpg, or library_capsule.jpg)");
+                if (!hasIcon)
+                    missing.Add("client icon (.ico)");
+
+                string failedDetail = string.Empty;
+                if (failedFiles != null && failedFiles.Count > 0)
+                {
+                    var names = new List<string>(failedFiles);
+                    names.Sort(StringComparer.OrdinalIgnoreCase);
+                    failedDetail = "; download failed: " + string.Join(", ", names);
+                }
+
+                Program.LogService?.LogWarning(
+                    $"Assets for AppId {appId} incomplete: missing {string.Join(", ", missing)}{failedDetail}");
+            }
 
             if (!reportFeedback)
                 return essentialsOk;
@@ -431,15 +478,6 @@ namespace SmartGoldbergEmu.Services
                 return true;
             }
 
-            var missing = new List<string>(4);
-            if (!hasHeader)
-                missing.Add("store banner (header.jpg)");
-            if (!hasCapsule)
-                missing.Add("library cover (library_600x900_2x.jpg, library_600x900.jpg, or library_capsule.jpg)");
-            if (!hasIcon)
-                missing.Add("client icon (.ico)");
-            Program.LogService?.LogWarning(
-                $"Game image download finished with missing files under resources: {string.Join(", ", missing)}");
             Feedback?.SetMessage("Some game images could not be downloaded.", TaskReportKind.Warning);
             return false;
         }
@@ -568,29 +606,32 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private async Task DownloadImageAsync(
+        // 1 = newly downloaded, 0 = skipped (exists / no URLs), -1 = attempted and failed.
+        private async Task<int> DownloadImageAsync(
             ulong appId,
             string gamePath,
             string fileName,
             params string[] candidateUrls)
         {
             if (_disposed)
-                return;
+                return 0;
 
             var imagePath = Path.Combine(gamePath, fileName);
             if (File.Exists(imagePath))
-                return;
+                return 0;
 
             if (candidateUrls == null || candidateUrls.Length == 0)
-                return;
+                return 0;
 
             foreach (var url in candidateUrls)
             {
                 if (!await TryDownloadImageFromUrlAsync(url, imagePath))
                     continue;
-                Program.LogService?.LogMessage($"Downloaded {fileName} for App ID {appId}");
-                return;
+                Program.LogService?.LogDebug($"Downloaded {fileName} for App ID {appId}");
+                return 1;
             }
+
+            return -1;
         }
 
         private static List<AssetDownloadRequest> BuildAssetDownloadRequests(

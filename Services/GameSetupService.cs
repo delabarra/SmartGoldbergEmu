@@ -191,12 +191,14 @@ namespace SmartGoldbergEmu.Services
                 if (!string.IsNullOrEmpty(metadata.Name))
                 {
                     gameName = metadata.Name;
-                    Program.LogService?.LogMessage($"Using fetched game name: {gameName}");
+                    Program.LogService?.LogDebug($"Using fetched game name: {gameName}");
                 }
                 else
                 {
                     Program.LogService?.LogWarning($"Metadata has no name for App ID {appId}, using filename: {gameName}");
                 }
+
+                Program.LogService?.LogMessage($"Catalog for AppId {appId} retrieved.");
             }
 
             return new GameSetupResult
@@ -251,7 +253,7 @@ namespace SmartGoldbergEmu.Services
                 : setupResult.GameName;
 
             if (!string.IsNullOrEmpty(setupResult.Metadata?.Name))
-                Program.LogService?.LogMessage($"CreateGameConfig: Using metadata name: {gameName}");
+                Program.LogService?.LogDebug($"CreateGameConfig: Using metadata name: {gameName}");
             else
                 Program.LogService?.LogWarning($"CreateGameConfig: No metadata name available, using: {gameName}");
 

@@ -199,7 +199,7 @@ namespace SmartGoldbergEmu.Services
                 return false;
 
             ApplyResolvedRelease(resolved, result);
-            ServiceLocator.LogService?.LogMessage(
+            ServiceLocator.LogService?.LogDebug(
                 $"Using upstream Goldberg fork release as download source ({GoldbergForkConstants.GetForkDisplayName(fork)}).");
             return true;
         }
@@ -222,7 +222,7 @@ namespace SmartGoldbergEmu.Services
                     && GoldbergReleaseResolveHelper.TryParseRepackRelease(repackJson, configuredFork, repackResolved))
                 {
                     ApplyResolvedRelease(repackResolved, result);
-                    ServiceLocator.LogService?.LogMessage("Using Goldberg repack release as download source.");
+                    ServiceLocator.LogService?.LogDebug("Using Goldberg repack release as download source.");
                     return true;
                 }
                 errors.Add("Repack: no asset for " + forkName);
@@ -643,7 +643,7 @@ namespace SmartGoldbergEmu.Services
             }
 
             string forkName = GoldbergForkConstants.GetForkDisplayName(forkSource);
-            ServiceLocator.LogService?.LogMessage("Repack download failed; trying " + forkName + " upstream release.");
+            ServiceLocator.LogService?.LogDebug("Repack download failed; trying " + forkName + " upstream release.");
             progressCallback?.Invoke("Repack download failed — trying " + forkName + " upstream...", 18);
 
             using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
@@ -787,7 +787,7 @@ namespace SmartGoldbergEmu.Services
             if (!SteamInstallationPathHelper.TryCopyOverlayNotificationSoundsFromSteam(targetSoundsPath))
                 return false;
 
-            ServiceLocator.LogService?.LogMessage(
+            ServiceLocator.LogService?.LogDebug(
                 "Overlay notification sounds ready (source: Steam steamui\\sounds).");
             return true;
         }
@@ -1278,9 +1278,9 @@ namespace SmartGoldbergEmu.Services
                 return false;
 
             if (cancelledOrForkSkipped)
-                logger?.LogMessage("Download was cancelled or fork not chosen - allowing app to continue without files");
+                logger?.LogDebug("Download was cancelled or fork not chosen - allowing app to continue without files");
             else
-                logger?.LogMessage("Goldberg download failed at startup - allowing app to continue without files");
+                logger?.LogWarning("Goldberg download failed at startup - allowing app to continue without files");
             return true;
         }
 
@@ -1301,19 +1301,19 @@ namespace SmartGoldbergEmu.Services
 
             if (dialogResult == DialogResult.OK)
             {
-                logger?.LogMessage("User chose to download Goldberg files");
+                logger?.LogDebug("User chose to download Goldberg files");
                 bool success = await DownloadAndInstallWithUIAsync(logger, uiOwner).ConfigureAwait(true);
                 return ResolveMissingGoldbergDownloadOutcome(logger, context, success);
             }
 
             if (context == GoldbergMissingInstallContext.StartupSessionCheck)
             {
-                logger?.LogMessage("User chose to skip Goldberg files download");
+                logger?.LogDebug("User chose to skip Goldberg files download");
                 _wasCancelledForMissingFiles = true;
                 return true;
             }
 
-            logger?.LogMessage("User declined Goldberg emulator download from game launch");
+            logger?.LogDebug("User declined Goldberg emulator download from game launch");
             return false;
         }
 
@@ -1338,7 +1338,7 @@ namespace SmartGoldbergEmu.Services
 
             if (dialogResult == DialogResult.OK)
             {
-                logger?.LogMessage("User chose to download Goldberg files");
+                logger?.LogDebug("User chose to download Goldberg files");
                 bool success = false;
                 try
                 {
@@ -1364,12 +1364,12 @@ namespace SmartGoldbergEmu.Services
 
             if (context == GoldbergMissingInstallContext.StartupSessionCheck)
             {
-                logger?.LogMessage("User chose to skip Goldberg files download");
+                logger?.LogDebug("User chose to skip Goldberg files download");
                 _wasCancelledForMissingFiles = true;
                 return true;
             }
 
-            logger?.LogMessage("User declined Goldberg emulator download from game launch");
+            logger?.LogDebug("User declined Goldberg emulator download from game launch");
             return false;
         }
 
@@ -1388,7 +1388,9 @@ namespace SmartGoldbergEmu.Services
                     return false;
                 if (GoldbergFilesCheckSync())
                 {
-                    logger?.LogError("Goldberg emulator files still missing after download attempt (game launch)");
+                    logger?.LogError(
+                        "Goldberg emulator files still missing after download attempt (game launch). "
+                        + "Check goldberg\\steamclient_experimental and retry Goldberg Update.");
                     return false;
                 }
                 return true;
@@ -1406,25 +1408,25 @@ namespace SmartGoldbergEmu.Services
             {
                 if (_wasCancelledForMissingFiles)
                 {
-                    logger?.LogMessage("User previously cancelled missing files download, skipping check but allowing app to continue");
+                    logger?.LogDebug("User previously cancelled missing files download, skipping check but allowing app to continue");
                     return true;
                 }
 
                 if (GoldbergFilesCheckSync())
                     return PromptAndInstallMissingGoldbergFiles(logger, invokeOnUIThread, GoldbergMissingInstallContext.StartupSessionCheck);
 
-                logger?.LogMessage("Goldberg emulator files are present");
+                logger?.LogDebug("Goldberg emulator files are present");
 
                 var appDataService = ServiceLocator.AppDataService;
                 string currentVersion = appDataService.GetGoldbergVersion();
                 if (string.IsNullOrEmpty(currentVersion))
                 {
-                    logger?.LogMessage("No version found in cfg, setting to pre-existent");
+                    logger?.LogDebug("No version found in cfg, setting to pre-existent");
                     appDataService.SetGoldbergVersion("pre-existent");
                 }
                 else
                 {
-                    logger?.LogMessage($"Current emulator version: {currentVersion}");
+                    logger?.LogDebug($"Current emulator version: {currentVersion}");
                 }
 
                 return true;
@@ -1505,31 +1507,31 @@ namespace SmartGoldbergEmu.Services
                 {
                     if (isStartup && _lastCancelledUpdateVersion == result.LatestVersion)
                     {
-                        logger?.LogMessage($"Update {result.LatestVersion} available but user previously declined, skipping prompt");
+                        logger?.LogDebug($"Update {result.LatestVersion} available but user previously declined, skipping prompt");
                         return;
                     }
 
                     if (!isStartup)
                         _lastCancelledUpdateVersion = null;
 
-                    logger?.LogMessage($"Update available: {result.LatestVersion} (current: {result.CurrentVersion ?? "unknown"})");
+                    logger?.LogMessage($"Goldberg emulator update available: {result.LatestVersion} (current: {result.CurrentVersion ?? "unknown"})");
 
                     var dialogResult = ShowUpdateAvailableQuestion();
                     if (dialogResult == DialogResult.OK)
                     {
-                        logger?.LogMessage("User chose to download and install update");
+                        logger?.LogDebug("User chose to download and install update");
                         _lastCancelledUpdateVersion = null;
                         await installWhenUserAcceptedOkAsync().ConfigureAwait(true);
                     }
                     else
                     {
-                        logger?.LogMessage("User chose to skip update");
+                        logger?.LogDebug("User chose to skip update");
                         _lastCancelledUpdateVersion = result.LatestVersion;
                     }
                 }
                 else
                 {
-                    logger?.LogMessage($"No updates available (current: {result.CurrentVersion ?? "unknown"}, latest: {result.LatestVersion})");
+                    logger?.LogMessage("Goldberg emulator up to date.");
 
                     if (!isStartup)
                         ShowNoUpdatesInfo();
@@ -1597,7 +1599,7 @@ namespace SmartGoldbergEmu.Services
                         () => progressForm.IsCancelled,
                         () => progressForm.DisableCancel()).ConfigureAwait(true);
 
-                    logger?.LogMessage("Goldberg emulator update completed successfully");
+                    logger?.LogMessage("Goldberg emulator updated.");
                     progressForm.ShowSuccessAndClose("Installation complete");
                     await WaitForProgressFormCloseAsync(progressForm).ConfigureAwait(true);
                     return true;
@@ -1647,11 +1649,11 @@ namespace SmartGoldbergEmu.Services
                         BuildReinstallChangelogContent(result));
                     if (dialogResult != DialogResult.OK)
                     {
-                        logger?.LogMessage("User cancelled emulator reinstall");
+                        logger?.LogDebug("User cancelled emulator reinstall");
                         return;
                     }
 
-                    logger?.LogMessage("User confirmed emulator reinstall");
+                    logger?.LogDebug("User confirmed emulator reinstall");
                     await RunDownloadAndInstallWithProgressFormAsync(logger).ConfigureAwait(true);
                 }).ConfigureAwait(false);
         }
@@ -1856,7 +1858,7 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                logger?.LogMessage("Checking for Goldberg emulator updates...");
+                logger?.LogDebug("Checking for Goldberg emulator updates...");
 
                 // Run off the UI sync context so WinForms cannot deadlock if this is invoked from a form thread.
                 var checkTask = Task.Run(() => CheckForUpdatesAsync(isStartup: isStartup));

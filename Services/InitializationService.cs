@@ -14,13 +14,13 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                logger.LogMessage("Performing startup checks...");
+                logger.LogDebug("Performing startup checks...");
                 bool success = EmulatorUpdateService.CheckAndInstallMissingFilesWithUI(
                     logger,
                     action => action());
                 logger.LogMessage(success
-                    ? "Startup checks completed successfully"
-                    : "Startup checks completed with warnings");
+                    ? "Startup checks complete."
+                    : "Startup checks completed with warnings.");
                 return success;
             }
             catch (Exception ex)

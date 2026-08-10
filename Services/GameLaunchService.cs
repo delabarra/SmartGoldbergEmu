@@ -159,7 +159,8 @@ namespace SmartGoldbergEmu.Services
                 var validation = ValidateGameConfig(game);
                 if (!validation.IsValid)
                 {
-                    _logger?.LogError($"Validation failed: {validation.ErrorMessage}");
+                    _logger?.LogError(
+                        $"Launch validation failed: AppId={game?.AppId}, name={game?.AppName}, path={game?.Path}: {validation.ErrorMessage}");
                     return validation;
                 }
 
@@ -201,8 +202,8 @@ namespace SmartGoldbergEmu.Services
                 string launchOptionLabel = launchOption != null
                     ? launchOption.Description ?? launchOption.Executable ?? "selected"
                     : "default";
-                _logger?.LogMessage(
-                    $"Launch: {game?.AppName} (AppId {game?.AppId}), emulator={effectiveUseEmulator}, launchMode={game?.LaunchMode}, arch={(useX64 ? "x64" : "x86")}, option={launchOptionLabel}");
+                _logger?.LogDebug(
+                    $"Launch prep: {game?.AppName} (AppId {game?.AppId}), emulator={effectiveUseEmulator}, launchMode={game?.LaunchMode}, arch={(useX64 ? "x64" : "x86")}, option={launchOptionLabel}");
 
                 string sourceModInstallFolder = null;
                 if (effectiveUseEmulator)
@@ -242,7 +243,8 @@ namespace SmartGoldbergEmu.Services
                             game, useX64, gameRootFolder, exeDirectory, resolvedLaunch, win32DeployState);
                         if (!standardResult.IsValid)
                         {
-                            _logger?.LogError($"Standard Goldberg setup failed: {standardResult.ErrorMessage}");
+                            _logger?.LogError(
+                                $"Standard Goldberg setup failed: AppId={game.AppId}, arch={(useX64 ? "x64" : "x86")}, exe={resolvedLaunch}: {standardResult.ErrorMessage}");
                             return standardResult;
                         }
 
@@ -261,7 +263,8 @@ namespace SmartGoldbergEmu.Services
                         var registryResult = ConfigureActiveProcessGoldbergDlls(useX64, standardRegistryDllDirectory);
                         if (!registryResult.IsValid)
                         {
-                            _logger?.LogError($"Steam registry setup failed: {registryResult.ErrorMessage}");
+                            _logger?.LogError(
+                                $"Steam registry setup failed: AppId={game.AppId}, mode={launchMode}, dllDir={standardRegistryDllDirectory}: {registryResult.ErrorMessage}");
                             return registryResult;
                         }
 
@@ -278,14 +281,16 @@ namespace SmartGoldbergEmu.Services
                         var steamDllResult = EnsureSteamDllInGoldbergFolder();
                         if (!steamDllResult.IsValid)
                         {
-                            _logger?.LogError($"Steam.dll setup failed: {steamDllResult.ErrorMessage}");
+                            _logger?.LogError(
+                                $"Steam.dll setup failed: AppId={game.AppId}, exeDir={exeDirectory}: {steamDllResult.ErrorMessage}");
                             return steamDllResult;
                         }
 
                         var setupResult = DeployGoldbergClientDlls(useX64, exeDirectory, deploySteamDllOnly: true, win32DeployState: win32DeployState);
                         if (!setupResult.IsValid)
                         {
-                            _logger?.LogError($"Emulator DLL setup failed: {setupResult.ErrorMessage}");
+                            _logger?.LogError(
+                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={exeDirectory}, arch={(useX64 ? "x64" : "x86")}: {setupResult.ErrorMessage}");
                             return setupResult;
                         }
 
@@ -299,14 +304,16 @@ namespace SmartGoldbergEmu.Services
                         var setupResult = DeployGoldbergClientDlls(useX64, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
                         if (!setupResult.IsValid)
                         {
-                            _logger?.LogError($"Emulator DLL setup failed: {setupResult.ErrorMessage}");
+                            _logger?.LogError(
+                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch={(useX64 ? "x64" : "x86")}: {setupResult.ErrorMessage}");
                             return setupResult;
                         }
 
                         var registryResult = ConfigureActiveProcessGoldbergDlls(useX64, dllTargetDirectory);
                         if (!registryResult.IsValid)
                         {
-                            _logger?.LogError($"Steam registry setup failed: {registryResult.ErrorMessage}");
+                            _logger?.LogError(
+                                $"Steam registry setup failed: AppId={game.AppId}, mode={launchMode}, dllDir={dllTargetDirectory}: {registryResult.ErrorMessage}");
                             return registryResult;
                         }
 
@@ -384,13 +391,18 @@ namespace SmartGoldbergEmu.Services
                     launchHandedOffToSession = true;
                 }
                 else
-                    _logger?.LogError($"Game launch failed: {result.ErrorMessage}");
+                {
+                    _logger?.LogError(
+                        $"Game launch failed: AppId={game?.AppId}, name={game?.AppName}, mode={game?.LaunchMode}, emu={effectiveUseEmulator}: {result.ErrorMessage}");
+                }
 
                 return result;
             }
             catch (Exception ex)
             {
-                _logger?.LogError($"Failed to launch game: {ex.Message}", ex);
+                _logger?.LogError(
+                    $"Failed to launch game: AppId={game?.AppId}, name={game?.AppName}, mode={game?.LaunchMode}",
+                    ex);
                 return ValidationResult.Failure($"Failed to launch game: {ex.Message}");
             }
             finally
@@ -424,25 +436,26 @@ namespace SmartGoldbergEmu.Services
         {
             if (game == null)
             {
-                _logger?.LogError("Game configuration is null");
+                _logger?.LogError("Launch validation failed: game configuration is null");
                 return ValidationResult.Failure("Game configuration cannot be null");
             }
 
             if (game.AppId == 0)
             {
-                _logger?.LogError("Steam App ID is missing");
+                _logger?.LogError(
+                    $"Launch validation failed: Steam App ID is missing (name={game.AppName}, path={game.Path})");
                 return ValidationResult.Failure("Steam App ID is required to launch a game");
             }
 
             if (string.IsNullOrWhiteSpace(game.AppName))
             {
-                _logger?.LogError("App name is empty");
+                _logger?.LogError($"Launch validation failed: app name is empty (AppId={game.AppId}, path={game.Path})");
                 return ValidationResult.Failure("App name cannot be empty");
             }
 
             if (string.IsNullOrWhiteSpace(game.Path))
             {
-                _logger?.LogError("Game executable path is empty");
+                _logger?.LogError($"Launch validation failed: executable path is empty (AppId={game.AppId}, name={game.AppName})");
                 return ValidationResult.Failure("Game executable path cannot be empty");
             }
 
@@ -450,7 +463,8 @@ namespace SmartGoldbergEmu.Services
             _logger?.LogDebug($"Validate: AppId={game.AppId}, Path={game.Path}, Executable exists={exeOk}" + (exeOk ? $" ({resolvedExe})" : string.Empty));
             if (!exeOk)
             {
-                _logger?.LogError($"Game executable not found: {game.Path}");
+                _logger?.LogError(
+                    $"Launch validation failed: executable not found (AppId={game.AppId}, name={game.AppName}, path={game.Path})");
                 return ValidationResult.Failure($"Game executable not found: {game.Path}");
             }
 
@@ -464,7 +478,8 @@ namespace SmartGoldbergEmu.Services
                 if (IsSteamClientModeAvailable())
                     return ValidationResult.Success();
 
-                _logger?.LogError("Required Goldberg emulator files are missing");
+                _logger?.LogError(
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={game?.LaunchMode}, arch={(useX64 ? "x64" : "x86")}, need steamclient_experimental");
                 return ValidationResult.Failure(
                     "Goldberg emulator files are missing under goldberg\\steamclient_experimental. Install or update the emulator.");
             }
@@ -476,7 +491,8 @@ namespace SmartGoldbergEmu.Services
                 if (PathConstants.HasGoldbergExperimentalFiles(useX64))
                     return ValidationResult.Success();
 
-                _logger?.LogError("Experimental Goldberg DLLs are missing under goldberg\\experimental");
+                _logger?.LogError(
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, arch={(useX64 ? "x64" : "x86")}, need goldberg\\experimental");
                 return ValidationResult.Failure(
                     "Experimental Goldberg DLLs are missing under goldberg\\experimental. "
                     + "Run Goldberg Update or repair the emulator.");
@@ -487,7 +503,8 @@ namespace SmartGoldbergEmu.Services
                 if (IsSteamDllModeAvailable())
                     return ValidationResult.Success();
 
-                _logger?.LogError("Steam.dll is missing from goldberg\\steam_old");
+                _logger?.LogError(
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, need Steam.dll under goldberg\\steam_old");
                 return ValidationResult.Failure(
                     "Steam.dll is not in goldberg\\steam_old. Run Goldberg Update or install Steam, then try again.");
             }
@@ -495,7 +512,8 @@ namespace SmartGoldbergEmu.Services
             if (IsSteamClientModeAvailable())
                 return ValidationResult.Success();
 
-            _logger?.LogError("Required Goldberg Steam client DLLs are missing");
+            _logger?.LogError(
+                $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, arch={(useX64 ? "x64" : "x86")}, need steamclient_experimental");
             return ValidationResult.Failure(
                 "Goldberg Steam client files are missing under goldberg\\steamclient_experimental. Please download or update the emulator.");
         }
@@ -637,7 +655,7 @@ namespace SmartGoldbergEmu.Services
             if (IsSteamDllModeAvailable())
                 return ValidationResult.Success();
 
-            _logger?.LogError("Steam.dll is missing from goldberg\\steam_old");
+            _logger?.LogError("Steam.dll is missing from goldberg\\steam_old (Steam.dll launch mode)");
             return ValidationResult.Failure(
                 "Steam.dll is not in goldberg\\steam_old. Run Goldberg Update or install Steam, then try again.");
         }
@@ -1265,7 +1283,7 @@ namespace SmartGoldbergEmu.Services
             _logger?.LogDebug($"ActiveProcess pid placeholder = {launcherPid} (launcher, before game start)");
 
             string directoryFull = Path.GetFullPath(dllDirectory);
-            _logger?.LogMessage(
+            _logger?.LogDebug(
                 "ActiveProcess registry updated (32- and 64-bit views) to Goldberg steamclient under "
                 + directoryFull);
             return ValidationResult.Success();
@@ -1274,7 +1292,7 @@ namespace SmartGoldbergEmu.Services
         private void SetActiveProcessPid(int processId)
         {
             SteamActiveProcessRegistryHelper.SetActiveProcessPid(processId);
-            _logger?.LogMessage($"Set ActiveProcess pid = {processId}");
+            _logger?.LogDebug($"Set ActiveProcess pid = {processId}");
         }
 
         private void MarkActiveProcessRegistryForProcess(int processId)
@@ -1615,7 +1633,8 @@ namespace SmartGoldbergEmu.Services
 
                 if (!started || process == null)
                 {
-                    _logger?.LogError("Process.Start returned null");
+                    _logger?.LogError(
+                        $"Process.Start returned null: AppId={game.AppId}, name={game.AppName}, mode={game.LaunchMode}, exe={executablePath}, wd={workingDirectory}");
                     // LaunchGame finally restores deploy/registry when launchHandedOffToSession stays false.
                     return ValidationResult.Failure("Failed to start game process");
                 }
@@ -1717,13 +1736,15 @@ namespace SmartGoldbergEmu.Services
                 if (process.HasExited)
                     Process_Exited(process, EventArgs.Empty);
 
-                _logger?.LogMessage($"Game launched successfully: {game.AppName} (PID: {processId})");
+                _logger?.LogMessage($"Launch OK: {game.AppName} (AppId {game.AppId}, PID {processId})");
                 return ValidationResult.Success();
             }
             catch (Exception ex)
             {
                 // LaunchGame finally restores deploy/registry when launchHandedOffToSession stays false.
-                _logger?.LogError($"Failed to launch process: {ex.Message}", ex);
+                _logger?.LogError(
+                    $"Failed to launch process: AppId={game?.AppId}, name={game?.AppName}, mode={game?.LaunchMode}",
+                    ex);
                 return ValidationResult.Failure($"Failed to launch process: {ex.Message}");
             }
         }
@@ -1848,7 +1869,7 @@ namespace SmartGoldbergEmu.Services
             if (superseded.SourceModRestore != null)
                 session.SourceModRestore = superseded.SourceModRestore;
 
-            _logger?.LogMessage(
+            _logger?.LogDebug(
                 $"Cleaning superseded launch session for AppId {superseded.AppId} (replaced process PID {supersededProcessId}).");
 
             _launchSessionCleanup.TryExecuteCleanup(null, session);

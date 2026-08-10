@@ -222,7 +222,7 @@ namespace SmartGoldbergEmu.Services
 
                 Directory.CreateDirectory(steamSettingsPath);
                 File.WriteAllLines(targetPath, interfaces);
-                _logger?.LogMessage(
+                _logger?.LogDebug(
                     $"Wrote {PathConstants.GoldbergSteamInterfacesFileName} ({interfaces.Count} entries) from {steamApiPath}");
                 return true;
             }
@@ -269,7 +269,7 @@ namespace SmartGoldbergEmu.Services
             if (!string.IsNullOrEmpty(sourcePath) && TryCopySourceFileToSteamSettings(steamSettingsPath, sourcePath))
             {
                 anyFileGenerated = true;
-                _logger?.LogMessage($"Generated {PathConstants.GoldbergSteamInterfacesFileName} from source file for app {gameConfig.AppId}");
+                _logger?.LogDebug($"Generated {PathConstants.GoldbergSteamInterfacesFileName} from source file for app {gameConfig.AppId}");
                 return true;
             }
 
@@ -344,7 +344,7 @@ namespace SmartGoldbergEmu.Services
             {
                 if (!TryResolvePreferredSteamApiSource(gameConfig, preferredExePath, out string sourceDllPath))
                 {
-                    _logger?.LogMessage(
+                    _logger?.LogDebug(
                         $"Skipped {PathConstants.GoldbergSteamInterfacesFileName} for app {gameConfig.AppId}: no valid steam_api DLL beside the game executable.");
                     return false;
                 }

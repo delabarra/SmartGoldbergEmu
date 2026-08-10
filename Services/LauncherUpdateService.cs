@@ -292,7 +292,7 @@ namespace SmartGoldbergEmu.Services
                 string payloadRoot = LauncherUpdatePayloadHelper.ResolvePayloadRoot(extractRoot, launcherExeName);
                 if (!string.Equals(payloadRoot, extractRoot, StringComparison.OrdinalIgnoreCase))
                 {
-                    ServiceLocator.LogService?.LogMessage(
+                    ServiceLocator.LogService?.LogDebug(
                         "Launcher update: using nested release folder " + Path.GetFileName(payloadRoot));
                 }
 
@@ -384,7 +384,7 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                logger?.LogMessage("Checking for launcher updates...");
+                logger?.LogDebug("Checking for launcher updates...");
 
                 var checkTask = Task.Run(() => CheckForUpdatesAsync(isStartup: isStartup));
                 bool completed = isStartup
@@ -514,11 +514,11 @@ namespace SmartGoldbergEmu.Services
                         BuildReinstallChangelogContent(result));
                     if (dialogResult != DialogResult.OK)
                     {
-                        logger?.LogMessage("User cancelled launcher reinstall");
+                        logger?.LogDebug("User cancelled launcher reinstall");
                         return;
                     }
 
-                    logger?.LogMessage("User confirmed launcher reinstall");
+                    logger?.LogDebug("User confirmed launcher reinstall");
                     await RunDownloadAndApplyWithProgressFormAsync(logger).ConfigureAwait(true);
                 }).ConfigureAwait(false);
         }
@@ -626,7 +626,7 @@ namespace SmartGoldbergEmu.Services
                 {
                     if (isStartup && _lastCancelledUpdateVersion == result.LatestVersion)
                     {
-                        logger?.LogMessage(
+                        logger?.LogDebug(
                             $"Launcher update {result.LatestVersion} available but user previously declined, skipping prompt");
                         return;
                     }
@@ -641,20 +641,19 @@ namespace SmartGoldbergEmu.Services
 
                     if (dialogResult == DialogResult.OK)
                     {
-                        logger?.LogMessage("User chose to download and install launcher update");
+                        logger?.LogDebug("User chose to download and install launcher update");
                         _lastCancelledUpdateVersion = null;
                         await installWhenUserAcceptedOkAsync().ConfigureAwait(true);
                     }
                     else
                     {
-                        logger?.LogMessage("User chose to skip launcher update");
+                        logger?.LogDebug("User chose to skip launcher update");
                         _lastCancelledUpdateVersion = result.LatestVersion;
                     }
                 }
                 else
                 {
-                    logger?.LogMessage(
-                        $"Launcher is up to date (current: {result.CurrentVersion ?? "unknown"}, latest: {result.LatestVersion})");
+                    logger?.LogMessage("Launcher up to date.");
                     if (!isStartup)
                     {
                         FormMessageBoxHelper.ShowIfAlive(
@@ -832,7 +831,7 @@ namespace SmartGoldbergEmu.Services
                         () => progressForm.IsCancelled).ConfigureAwait(true);
 
                     progressForm.Hide();
-                    logger?.LogMessage("Launcher update staged; exiting to apply");
+                    logger?.LogMessage("Launcher update staged; exiting to apply.");
                     Application.Exit();
                 }
                 catch (Exception ex)
