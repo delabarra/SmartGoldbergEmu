@@ -477,20 +477,23 @@ namespace SmartGoldbergEmu.Services
             if (TryGetEmptyListIfInvalidGame(game, out List<LaunchOption> early))
                 return early;
 
-            try
+            using (_steamProductInfo.HoldSession())
             {
-                AppInfoKeyValue appInfo = ResolveExistingAppInfo(game)
-                    ?? await _steamProductInfo.WarmGameConfigAppInfoAsync(game, cancellationToken).ConfigureAwait(false);
-                return FinishExtractLaunchOptions(game, appInfo);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService.LogError($"Failed to extract launch options for app {game.AppId}: {ex.Message}", ex);
-                return new List<LaunchOption>();
+                try
+                {
+                    AppInfoKeyValue appInfo = ResolveExistingAppInfo(game)
+                        ?? await _steamProductInfo.WarmGameConfigAppInfoAsync(game, cancellationToken).ConfigureAwait(false);
+                    return FinishExtractLaunchOptions(game, appInfo);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    ServiceLocator.LogService.LogError($"Failed to extract launch options for app {game.AppId}: {ex.Message}", ex);
+                    return new List<LaunchOption>();
+                }
             }
         }
 

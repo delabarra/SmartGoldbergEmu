@@ -352,43 +352,46 @@ namespace SmartGoldbergEmu.Services
             CancellationToken cancellationToken,
             bool resolveDlcNames)
         {
-            feedback?.SetMessage(AddGameStatusMessages.ConnectingToSteam);
-            using (var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            using (_steamProductInfo.HoldSession())
             {
-                sessionCts.CancelAfter(PicsSessionEnsureTimeout);
-                bool sessionReady = await _steamProductInfo.TryEnsureSessionAsync(sessionCts.Token).ConfigureAwait(false);
-                if (!sessionReady)
+                feedback?.SetMessage(AddGameStatusMessages.ConnectingToSteam);
+                using (var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
                 {
-                    Program.LogService?.LogWarning(
-                        "Steam session not ready for app " + appId + " after "
-                        + (int)PicsSessionEnsureTimeout.TotalSeconds + "s.");
-                    feedback?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
-                    return new AppCatalogSnapshot { AppId = (uint)appId, Failure = AppMetadataFetchFailure.TimedOut };
+                    sessionCts.CancelAfter(PicsSessionEnsureTimeout);
+                    bool sessionReady = await _steamProductInfo.TryEnsureSessionAsync(sessionCts.Token).ConfigureAwait(false);
+                    if (!sessionReady)
+                    {
+                        Program.LogService?.LogWarning(
+                            "Steam session not ready for app " + appId + " after "
+                            + (int)PicsSessionEnsureTimeout.TotalSeconds + "s.");
+                        feedback?.SetMessage(AddGameStatusMessages.MetadataFetchTimedOut, TaskReportKind.Error);
+                        return new AppCatalogSnapshot { AppId = (uint)appId, Failure = AppMetadataFetchFailure.TimedOut };
+                    }
                 }
+
+                feedback?.SetMessage(AddGameStatusMessages.FetchingMetadata(appId));
+                AppInfoKeyValue appInfo;
+                using (var picsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    picsCts.CancelAfter(PicsProductInfoTimeout);
+                    var holder = new GameConfig { AppId = appId };
+                    appInfo = await _steamProductInfo.WarmGameConfigAppInfoAsync(holder, picsCts.Token)
+                        .ConfigureAwait(false);
+                }
+
+                if (appInfo == null)
+                {
+                    feedback?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
+                    return new AppCatalogSnapshot { AppId = (uint)appId, Failure = AppMetadataFetchFailure.Unavailable };
+                }
+
+                feedback?.SetMessage(string.Empty);
+
+                Dictionary<long, string> dlc = resolveDlcNames
+                    ? await ResolveDlcNamesForRootAsync(kit, appInfo, cancellationToken).ConfigureAwait(false)
+                    : CollectDlcIdsOnly(appInfo);
+                return SnapshotFromAppInfo((uint)appId, appInfo, dlc, fromAppDataKit: false);
             }
-
-            feedback?.SetMessage(AddGameStatusMessages.FetchingMetadata(appId));
-            AppInfoKeyValue appInfo;
-            using (var picsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
-            {
-                picsCts.CancelAfter(PicsProductInfoTimeout);
-                var holder = new GameConfig { AppId = appId };
-                appInfo = await _steamProductInfo.WarmGameConfigAppInfoAsync(holder, picsCts.Token)
-                    .ConfigureAwait(false);
-            }
-
-            if (appInfo == null)
-            {
-                feedback?.SetMessage(AddGameStatusMessages.MetadataFetchFailed, TaskReportKind.Error);
-                return new AppCatalogSnapshot { AppId = (uint)appId, Failure = AppMetadataFetchFailure.Unavailable };
-            }
-
-            feedback?.SetMessage(string.Empty);
-
-            Dictionary<long, string> dlc = resolveDlcNames
-                ? await ResolveDlcNamesForRootAsync(kit, appInfo, cancellationToken).ConfigureAwait(false)
-                : CollectDlcIdsOnly(appInfo);
-            return SnapshotFromAppInfo((uint)appId, appInfo, dlc, fromAppDataKit: false);
         }
 
         private static AppCatalogSnapshot SnapshotFromAppInfo(
@@ -507,34 +510,37 @@ namespace SmartGoldbergEmu.Services
             if (pending.Count == 0)
                 return;
 
-            bool sessionReady = await _steamProductInfo.TryEnsureSessionAsync(cancellationToken).ConfigureAwait(false);
-            if (!sessionReady)
+            using (_steamProductInfo.HoldSession())
             {
-                Program.LogService?.LogWarning(
-                    "PICS DLC name fallback skipped: Steam session not ready ("
-                    + pending.Count + " unresolved).");
-                return;
-            }
-
-            foreach (uint id in pending)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    KeyValue kv = await _steamProductInfo
-                        .GetAppKeyValueAsync(id.ToString(), cancellationToken)
-                        .ConfigureAwait(false);
-                    if (kv != null
-                        && SteamPicsKeyValueHelper.TryGetAppDisplayInfo(kv, out string name, out _)
-                        && !string.IsNullOrWhiteSpace(name))
-                    {
-                        result[id] = name.Trim();
-                    }
-                }
-                catch (Exception ex)
+                bool sessionReady = await _steamProductInfo.TryEnsureSessionAsync(cancellationToken).ConfigureAwait(false);
+                if (!sessionReady)
                 {
                     Program.LogService?.LogWarning(
-                        "PICS DLC name resolve failed for " + id + ": " + ex.Message);
+                        "PICS DLC name fallback skipped: Steam session not ready ("
+                        + pending.Count + " unresolved).");
+                    return;
+                }
+
+                foreach (uint id in pending)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        KeyValue kv = await _steamProductInfo
+                            .GetAppKeyValueAsync(id.ToString(), cancellationToken)
+                            .ConfigureAwait(false);
+                        if (kv != null
+                            && SteamPicsKeyValueHelper.TryGetAppDisplayInfo(kv, out string name, out _)
+                            && !string.IsNullOrWhiteSpace(name))
+                        {
+                            result[id] = name.Trim();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Program.LogService?.LogWarning(
+                            "PICS DLC name resolve failed for " + id + ": " + ex.Message);
+                    }
                 }
             }
         }

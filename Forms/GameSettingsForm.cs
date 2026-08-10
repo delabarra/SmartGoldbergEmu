@@ -4088,38 +4088,41 @@ namespace SmartGoldbergEmu.Forms
                         OnSuccessfulSaveCompleted = _onSaveCompleted
                     };
 
-                    var editPostSaveResult = await _gameSaveWriter.SaveEditAsync(new GameSaveEditRequest
+                    using (ServiceLocator.SteamProductInfoService.HoldSession())
                     {
-                        GameConfig = _gameConfig,
-                        InitialGameConfig = _initialGameConfig,
-                        FormSaveRequest = editFormSaveRequest,
-                        CredentialsTouched = HaveCredentialsChanged(),
-                        OnSuccessfulSaveCompleted = _onSaveCompleted
-                    }).ConfigureAwait(true);
-
-                    if (IsDisposed || Disposing)
-                        return;
-
-                    if (!editPostSaveResult.IsSuccess)
-                    {
-                        if (editPostSaveResult.HasCustomStatsJsonError)
+                        var editPostSaveResult = await _gameSaveWriter.SaveEditAsync(new GameSaveEditRequest
                         {
-                            FormMessageBoxHelper.ShowIfAlive(this, "Custom stats contain invalid JSON. Please fix the format before saving.", "Invalid JSON", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        }
-                        else if (!string.IsNullOrWhiteSpace(editPostSaveResult.ErrorMessage))
+                            GameConfig = _gameConfig,
+                            InitialGameConfig = _initialGameConfig,
+                            FormSaveRequest = editFormSaveRequest,
+                            CredentialsTouched = HaveCredentialsChanged(),
+                            OnSuccessfulSaveCompleted = _onSaveCompleted
+                        }).ConfigureAwait(true);
+
+                        if (IsDisposed || Disposing)
+                            return;
+
+                        if (!editPostSaveResult.IsSuccess)
                         {
-                            FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save game: {editPostSaveResult.ErrorMessage}", "Save Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            if (editPostSaveResult.HasCustomStatsJsonError)
+                            {
+                                FormMessageBoxHelper.ShowIfAlive(this, "Custom stats contain invalid JSON. Please fix the format before saving.", "Invalid JSON", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(editPostSaveResult.ErrorMessage))
+                            {
+                                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save game: {editPostSaveResult.ErrorMessage}", "Save Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            }
+                            return;
                         }
+
+                        (_taskReportService as TaskReportService)?.Clear();
+                        StoreInitialState();
+                        btnSave.Enabled = false;
+                        restoreSaveButtonState = false;
+                        this.DialogResult = DialogResult.OK;
+                        this.Close();
                         return;
                     }
-
-                    (_taskReportService as TaskReportService)?.Clear();
-                    StoreInitialState();
-                    btnSave.Enabled = false;
-                    restoreSaveButtonState = false;
-                    this.DialogResult = DialogResult.OK;
-                    this.Close();
-                    return;
                 }
 
                 PendingAddSave = BuildPendingAddSave();

@@ -1399,19 +1399,23 @@ namespace SmartGoldbergEmu.Forms
 
         private async void OnAddGame_Click(object sender, EventArgs e)
         {
-            try
+            // Pre-warm Steam while the user picks an exe / AppId; drop the session when add finishes or is cancelled.
+            using (ServiceLocator.SteamProductInfoService.HoldSession(preWarm: true))
             {
-                string executablePath = SelectGameExecutable();
-                if (string.IsNullOrEmpty(executablePath))
-                    return;
+                try
+                {
+                    string executablePath = SelectGameExecutable();
+                    if (string.IsNullOrEmpty(executablePath))
+                        return;
 
-                await AddGameFromExecutable(executablePath);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError("Error adding game", ex);
-                if (!IsDisposed && !Disposing)
-                    _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
+                    await AddGameFromExecutable(executablePath);
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogError("Error adding game", ex);
+                    if (!IsDisposed && !Disposing)
+                        _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
+                }
             }
         }
 
@@ -2040,26 +2044,29 @@ namespace SmartGoldbergEmu.Forms
             Program.LogService?.LogDebug(
                 $"Catalog and asset refresh: {selectedGame.AppName} (AppId {selectedGame.AppId})");
 
-            try
+            using (ServiceLocator.SteamProductInfoService.HoldSession())
             {
-                var feedbackService = GetLocatorTaskReportOrNull();
-                await ServiceLocator.GoldbergArtifactService
-                    .RefreshGameCatalogAndAssetsAsync(selectedGame, feedbackService)
-                    .ConfigureAwait(true);
+                try
+                {
+                    var feedbackService = GetLocatorTaskReportOrNull();
+                    await ServiceLocator.GoldbergArtifactService
+                        .RefreshGameCatalogAndAssetsAsync(selectedGame, feedbackService)
+                        .ConfigureAwait(true);
 
-                if (IsDisposed || Disposing)
-                    return;
+                    if (IsDisposed || Disposing)
+                        return;
 
-                NotifyAddSaveListChanged(selectedGame.GameGuid, reloadMosaic: true);
-                Program.LogService?.LogMessage(
-                    $"Catalog for AppId {selectedGame.AppId} retrieved.");
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError(
-                    $"Catalog for AppId {selectedGame.AppId} failed: {selectedGame.AppName}",
-                    ex);
-                FormMessageBoxHelper.ShowIfAlive(this, "Failed to refresh game data and assets. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    NotifyAddSaveListChanged(selectedGame.GameGuid, reloadMosaic: true);
+                    Program.LogService?.LogMessage(
+                        $"Catalog for AppId {selectedGame.AppId} retrieved.");
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogError(
+                        $"Catalog for AppId {selectedGame.AppId} failed: {selectedGame.AppName}",
+                        ex);
+                    FormMessageBoxHelper.ShowIfAlive(this, "Failed to refresh game data and assets. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 
@@ -3241,23 +3248,26 @@ namespace SmartGoldbergEmu.Forms
 
         private async void lstGames_DragDrop(object sender, DragEventArgs e)
         {
-            try
+            using (ServiceLocator.SteamProductInfoService.HoldSession(preWarm: true))
             {
-                string[] files = (string[])e.Data?.GetData(DataFormats.FileDrop);
-                if (files != null && files.Length > 0)
+                try
                 {
-                    string executablePath = files[0];
-                    string ext = System.IO.Path.GetExtension(executablePath).ToLower();
-                    if (ext != ".exe" && ext != ".bat")
-                        return;
-                    await AddGameFromExecutable(executablePath);
+                    string[] files = (string[])e.Data?.GetData(DataFormats.FileDrop);
+                    if (files != null && files.Length > 0)
+                    {
+                        string executablePath = files[0];
+                        string ext = System.IO.Path.GetExtension(executablePath).ToLower();
+                        if (ext != ".exe" && ext != ".bat")
+                            return;
+                        await AddGameFromExecutable(executablePath);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Error in drag-drop add game: {ex.Message}", ex);
-                if (!IsDisposed && !Disposing)
-                    _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogError($"Error in drag-drop add game: {ex.Message}", ex);
+                    if (!IsDisposed && !Disposing)
+                        _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
+                }
             }
         }
 
@@ -3602,10 +3612,6 @@ namespace SmartGoldbergEmu.Forms
                         Program.LogService?.LogError($"Deferred config setup failed: {ex.Message}", ex);
                     }
                 }).ForgetFaults(Program.LogService, "DeferredEnsureGlobalConfigFiles");
-
-                // Warm anonymous Steam session in the background so add-game PICS is often already connected.
-                _ = ServiceLocator.SteamProductInfoService.PreWarmSessionAsync()
-                    .ForgetFaults(Program.LogService, "IdleSteamSessionPreWarm");
 
                 if (_appDataService.IsFirstRun())
                 {
