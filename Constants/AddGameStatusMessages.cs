@@ -14,6 +14,12 @@ namespace SmartGoldbergEmu.Constants
         public static string ConnectingToSteam =>
             "Connecting to Steam…";
 
+        public static string AddingToLibrary(string gameName) =>
+            $"Adding {gameName} to the library.";
+
+        public static string UpdatingInLibrary(string gameName) =>
+            $"Updating {gameName} in the library.";
+
         public static string GeneratingGoldbergFiles(string gameName) =>
             $"Generating {gameName} files for Goldberg";
 

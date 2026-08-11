@@ -2465,7 +2465,7 @@ namespace SmartGoldbergEmu.Forms
                     Buttons = new List<AppTaskDialogButton>
                     {
                         new AppTaskDialogButton(idAccept, "Accept") { IsDefault = true },
-                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Skip") { IsCancel = true }
                     }
                 });
             if (answer.ButtonId != idAccept)
@@ -2530,6 +2530,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             Program.LogService?.LogDebug($"Removing SteamStub on {name}: {executablePath}");
+            _taskReportService.SetMessage(StubKitFeedback.PatchingInProgress(name));
 
             try
             {
@@ -2568,6 +2569,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             Program.LogService?.LogDebug($"Restoring SteamStub backup for {name}: {executablePath}");
+            _taskReportService.SetMessage(StubKitFeedback.RestoringInProgress(name));
 
             try
             {
@@ -2596,17 +2598,21 @@ namespace SmartGoldbergEmu.Forms
             if (!string.IsNullOrWhiteSpace(result.LogDetail))
                 Program.LogService?.LogMessage("StubKit detail: " + result.LogDetail);
 
-            // Success/restore: log only (no status strip / modal while large PE buffers are collected).
+            string message = StubKitFeedback.ResultMessage(result.Outcome, gameName);
+            TaskReportKind kind = StubKitFeedback.KindForOutcome(result.Outcome);
+            Program.LogService?.LogMessage(message);
+
             if (result.Outcome == StubKitApplyOutcome.Success ||
                 result.Outcome == StubKitApplyOutcome.Restored)
             {
-                Program.LogService?.LogMessage(StubKitFeedback.ResultMessage(result.Outcome, gameName));
+                _taskReportService.SetMessageWithAutoClear(message, kind);
                 return;
             }
 
+            _taskReportService.SetMessage(message, kind);
             FormMessageBoxHelper.ShowIfAlive(
                 this,
-                StubKitFeedback.ResultMessage(result.Outcome, gameName),
+                message,
                 StubKitFeedback.DialogTitle,
                 MessageBoxButtons.OK,
                 StubKitFeedback.IconForOutcome(result.Outcome));
@@ -2802,6 +2808,9 @@ namespace SmartGoldbergEmu.Forms
 
         private void OnOpenGoldbergFolder_Click(object sender, EventArgs e) =>
             ShellFolderHelper.OpenFolderForOwner(this, PathConstants.GoldbergDirectory, createIfMissing: true, "Folder Not Found", "Could Not Open Goldberg Folder");
+
+        private void OnOpenLauncherFolder_Click(object sender, EventArgs e) =>
+            ShellFolderHelper.OpenFolderForOwner(this, PathConstants.AppBaseDirectory, createIfMissing: false, "Folder Not Found", "Could Not Open Launcher Folder");
 
         private void OnOpenExtraDllsFolder_Click(object sender, EventArgs e)
         {

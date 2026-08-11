@@ -10,29 +10,29 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class UpdateChangelogForm : Form
+    public partial class ChangelogForm : Form
     {
         private const int ContentTextWidth = 556;
 
         private ThemeService _themeService;
-        private UpdateChangelogDialogContent _content;
+        private ChangelogDialogContent _content;
         private string _releaseNotesMarkdown;
         private bool _releaseNotesRendered;
         private readonly List<LinkLabel> _manualDownloadLinks = new List<LinkLabel>();
         private readonly List<ReleaseNoteHyperlink> _releaseNoteLinks = new List<ReleaseNoteHyperlink>();
 
-        public UpdateChangelogForm()
+        public ChangelogForm()
         {
             InitializeComponent();
             ConfigureReleaseNotesView();
         }
 
-        public UpdateChangelogForm(UpdateChangelogDialogContent content)
+        public ChangelogForm(ChangelogDialogContent content)
             : this(content, ServiceLocator.ThemeService)
         {
         }
 
-        public UpdateChangelogForm(UpdateChangelogDialogContent content, ThemeService themeService)
+        public ChangelogForm(ChangelogDialogContent content, ThemeService themeService)
             : this()
         {
             _content = content ?? throw new ArgumentNullException(nameof(content));
@@ -46,12 +46,12 @@ namespace SmartGoldbergEmu.Forms
 
         [Browsable(false)]
         [EditorBrowsable(EditorBrowsableState.Never)]
-        public static DialogResult ShowDialogIfAlive(IWin32Window owner, UpdateChangelogDialogContent content)
+        public static DialogResult ShowDialogIfAlive(IWin32Window owner, ChangelogDialogContent content)
         {
             if (owner is Control control && (control.IsDisposed || control.Disposing))
                 return DialogResult.Cancel;
 
-            using (var form = new UpdateChangelogForm(content))
+            using (var form = new ChangelogForm(content))
             {
                 form.EnsureDisplayReady();
                 return form.ShowDialog(owner);
@@ -126,7 +126,7 @@ namespace SmartGoldbergEmu.Forms
             btnCancel.Visible = _content.ShowCancelButton;
             CancelButton = _content.ShowCancelButton ? btnCancel : btnOk;
 
-            BindManualDownloadLinks(_content.ManualDownloadLinks);
+            BindManualDownloadLinks(_content.ManualDownloadLinks, _content.ShowManualDownloadCaption);
             ApplyTextWrapWidths();
         }
 
@@ -150,46 +150,48 @@ namespace SmartGoldbergEmu.Forms
             _releaseNoteLinks.AddRange(links);
         }
 
-        private void BindManualDownloadLinks(IList<UpdateManualDownloadLink> links)
+        private void BindManualDownloadLinks(IList<UpdateManualDownloadLink> links, bool showCaption)
         {
             flpManualLinks.Controls.Clear();
             _manualDownloadLinks.Clear();
 
-            bool hasLinks = links != null && links.Count > 0;
-            lblManualDownloadCaption.Visible = hasLinks;
-            flpManualLinks.Visible = hasLinks;
-            if (!hasLinks)
-                return;
-
-            foreach (var link in links)
+            if (links != null)
             {
-                if (link == null || string.IsNullOrWhiteSpace(link.Url))
-                    continue;
-
-                string url = link.Url.Trim();
-                string prefix = string.IsNullOrWhiteSpace(link.Label) ? string.Empty : link.Label.Trim() + ": ";
-                string displayText = prefix + url;
-
-                var linkLabel = new LinkLabel
+                foreach (var link in links)
                 {
-                    AutoSize = true,
-                    Text = displayText,
-                    Tag = url,
-                    Margin = new Padding(0, 0, 0, 2),
-                    TabStop = true,
-                    MaximumSize = new Size(ContentTextWidth, 0)
-                };
-                linkLabel.LinkArea = new LinkArea(prefix.Length, url.Length);
-                linkLabel.LinkClicked += OnManualDownloadLink_LinkClicked;
-                flpManualLinks.Controls.Add(linkLabel);
-                _manualDownloadLinks.Add(linkLabel);
+                    if (link == null || string.IsNullOrWhiteSpace(link.Url))
+                        continue;
+
+                    string url = link.Url.Trim();
+                    string prefix = string.IsNullOrWhiteSpace(link.Label) ? string.Empty : link.Label.Trim() + ": ";
+                    string displayText = prefix + url;
+
+                    var linkLabel = new LinkLabel
+                    {
+                        AutoSize = true,
+                        Text = displayText,
+                        Tag = url,
+                        Margin = new Padding(0, 0, 0, 2),
+                        TabStop = true,
+                        MaximumSize = new Size(ContentTextWidth, 0)
+                    };
+                    linkLabel.LinkArea = new LinkArea(prefix.Length, url.Length);
+                    linkLabel.LinkClicked += OnManualDownloadLink_LinkClicked;
+                    flpManualLinks.Controls.Add(linkLabel);
+                    _manualDownloadLinks.Add(linkLabel);
+                }
             }
 
-            if (flpManualLinks.Controls.Count == 0)
-            {
-                lblManualDownloadCaption.Visible = false;
-                flpManualLinks.Visible = false;
-            }
+            bool hasLinks = flpManualLinks.Controls.Count > 0;
+            bool showCaptionRow = hasLinks && showCaption;
+            lblManualDownloadCaption.Visible = showCaptionRow;
+            flpManualLinks.Visible = hasLinks;
+            tlpFooter.RowStyles[2] = showCaptionRow
+                ? new RowStyle(SizeType.AutoSize)
+                : new RowStyle(SizeType.Absolute, 0F);
+            tlpFooter.RowStyles[3] = hasLinks
+                ? new RowStyle(SizeType.AutoSize)
+                : new RowStyle(SizeType.Absolute, 0F);
         }
 
         private void RtbReleaseNotes_MouseClick(object sender, MouseEventArgs e)

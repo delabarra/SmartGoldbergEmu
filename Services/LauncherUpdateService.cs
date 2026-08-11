@@ -509,7 +509,7 @@ namespace SmartGoldbergEmu.Services
                     if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Reinstall Failed"))
                         return;
 
-                    var dialogResult = UpdateChangelogForm.ShowDialogIfAlive(
+                    var dialogResult = ChangelogForm.ShowDialogIfAlive(
                         uiOwner,
                         BuildReinstallChangelogContent(result));
                     if (dialogResult != DialogResult.OK)
@@ -537,7 +537,7 @@ namespace SmartGoldbergEmu.Services
                     if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Changelog Unavailable"))
                         return Task.CompletedTask;
 
-                    UpdateChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
+                    ChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
                     return Task.CompletedTask;
                 },
                 requireDownloadAsset: false).ConfigureAwait(false);
@@ -637,7 +637,7 @@ namespace SmartGoldbergEmu.Services
                     logger?.LogMessage(
                         $"Launcher update available: {result.LatestVersion} (current: {result.CurrentVersion ?? "unknown"})");
 
-                    var dialogResult = UpdateChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result));
+                    var dialogResult = ChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result));
 
                     if (dialogResult == DialogResult.OK)
                     {
@@ -735,51 +735,59 @@ namespace SmartGoldbergEmu.Services
             return "Failed to check for launcher updates.\n\n" + manualHint;
         }
 
-        private const string PreserveUserDataInfo =
-            "Your games folder, Goldberg files, and settings will be preserved.";
+        private const string ManualDownloadCaptionLabel = "You can also manually download and setup from";
+        private const string ViewMoreChangelogsOnlineLabel = "View more changelogs online";
 
-        private static UpdateChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
         {
             return CreateChangelogContent(
                 result,
                 "A new version of SmartGoldbergEmu is available.",
-                "The application will close and restart to apply the update.\r\n" + PreserveUserDataInfo,
-                "Do you want to proceed?");
+                additionalInfo: null,
+                proceedQuestion: string.Empty,
+                okButtonText: "Install",
+                manualDownloadLinks: BuildManualDownloadLinks(),
+                showManualDownloadCaption: false);
         }
 
-        private static UpdateChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)
         {
             string versionLabel = FormatLatestVersionLabel(result, "latest");
             return CreateChangelogContent(
                 result,
                 "Reinstall SmartGoldbergEmu (" + versionLabel + ").",
-                "This will download the latest SmartGoldbergEmu release and reinstall it.\r\n" +
-                "The application will close and restart. " + PreserveUserDataInfo,
-                "Do you want to proceed?");
+                additionalInfo: null,
+                proceedQuestion: string.Empty,
+                okButtonText: "Reinstall",
+                manualDownloadLinks: BuildManualDownloadLinks(),
+                showManualDownloadCaption: false);
         }
 
-        private static UpdateChangelogDialogContent BuildViewChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildViewChangelogContent(UpdateCheckResult result)
         {
             string latestLabel = FormatLatestVersionLabel(result, "unknown");
             return CreateChangelogContent(
                 result,
                 "SmartGoldbergEmu release notes (" + latestLabel + ").",
-                "Current version: " + ApplicationVersionHelper.GetTaggedDisplayVersion() + "\r\n" +
-                "Latest version: " + latestLabel,
+                additionalInfo: null,
                 proceedQuestion: string.Empty,
                 okButtonText: "Close",
-                showCancelButton: false);
+                showCancelButton: false,
+                manualDownloadLinks: BuildViewMoreChangelogsOnlineLinks(),
+                showManualDownloadCaption: false);
         }
 
-        private static UpdateChangelogDialogContent CreateChangelogContent(
+        private static ChangelogDialogContent CreateChangelogContent(
             UpdateCheckResult result,
             string headline,
             string additionalInfo,
             string proceedQuestion,
             string okButtonText = null,
-            bool showCancelButton = true)
+            bool showCancelButton = true,
+            IList<UpdateManualDownloadLink> manualDownloadLinks = null,
+            bool showManualDownloadCaption = false)
         {
-            return new UpdateChangelogDialogContent
+            return new ChangelogDialogContent
             {
                 FormTitle = ApplicationConstants.WindowTitle,
                 Headline = headline,
@@ -788,7 +796,8 @@ namespace SmartGoldbergEmu.Services
                 ProceedQuestion = proceedQuestion,
                 OkButtonText = okButtonText,
                 ShowCancelButton = showCancelButton,
-                ManualDownloadLinks = BuildManualDownloadLinks()
+                ShowManualDownloadCaption = showManualDownloadCaption,
+                ManualDownloadLinks = manualDownloadLinks
             };
         }
 
@@ -806,7 +815,22 @@ namespace SmartGoldbergEmu.Services
             {
                 links.Add(new UpdateManualDownloadLink
                 {
-                    Label = "GitHub releases",
+                    Label = ManualDownloadCaptionLabel,
+                    Url = releasesWebUrl
+                });
+            }
+
+            return links;
+        }
+
+        private static List<UpdateManualDownloadLink> BuildViewMoreChangelogsOnlineLinks()
+        {
+            var links = new List<UpdateManualDownloadLink>();
+            if (LauncherReleaseConstants.TryGetReleasesWebUrl(out string releasesWebUrl))
+            {
+                links.Add(new UpdateManualDownloadLink
+                {
+                    Label = ViewMoreChangelogsOnlineLabel,
                     Url = releasesWebUrl
                 });
             }

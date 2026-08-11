@@ -1540,7 +1540,7 @@ namespace SmartGoldbergEmu.Services
 
             DialogResult ShowUpdateAvailableQuestion()
             {
-                return UpdateChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result));
+                return ChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result));
             }
 
             void ShowNoUpdatesInfo()
@@ -1700,7 +1700,7 @@ namespace SmartGoldbergEmu.Services
                     if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Reinstall Failed"))
                         return;
 
-                    var dialogResult = UpdateChangelogForm.ShowDialogIfAlive(
+                    var dialogResult = ChangelogForm.ShowDialogIfAlive(
                         uiOwner,
                         BuildReinstallChangelogContent(result));
                     if (dialogResult != DialogResult.OK)
@@ -1727,7 +1727,7 @@ namespace SmartGoldbergEmu.Services
                     if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Changelog Unavailable"))
                         return Task.CompletedTask;
 
-                    UpdateChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
+                    ChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
                     return Task.CompletedTask;
                 }).ConfigureAwait(false);
         }
@@ -1972,52 +1972,56 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static UpdateChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
         {
             return CreateChangelogContent(
                 result,
                 "A new version of Goldberg Emulator is available.",
-                "Emulator binaries will be downloaded and installed.\r\n"
-                + "Steam.dll / overlay WAVs from the fork archive are skipped (local Steam / CDN / EXAMPLE assets apply).",
-                "Do you want to proceed with the installation?");
+                additionalInfo: null,
+                proceedQuestion: string.Empty,
+                okButtonText: "Install",
+                manualDownloadLinks: GetSelectedGoldbergManualDownloadLinks(),
+                showManualDownloadCaption: true);
         }
 
-        private static UpdateChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)
         {
             string versionLabel = FormatLatestVersionLabel(result, "latest");
             return CreateChangelogContent(
                 result,
                 "Reinstall Goldberg Emulator (" + versionLabel + ").",
-                "This will download the latest Goldberg Emulator release and reinstall it.\r\n"
-                + "Steam.dll / overlay WAVs from the fork archive are skipped (local Steam / CDN / EXAMPLE assets apply).",
-                "Do you want to proceed?");
+                additionalInfo: null,
+                proceedQuestion: string.Empty,
+                okButtonText: "Reinstall",
+                manualDownloadLinks: GetSelectedGoldbergManualDownloadLinks(),
+                showManualDownloadCaption: true);
         }
 
-        private static UpdateChangelogDialogContent BuildViewChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildViewChangelogContent(UpdateCheckResult result)
         {
             string latestLabel = FormatLatestVersionLabel(result, "unknown");
-            string currentLabel = string.IsNullOrWhiteSpace(result?.CurrentVersion)
-                ? "unknown"
-                : result.CurrentVersion.Trim();
             return CreateChangelogContent(
                 result,
                 "Goldberg Emulator release notes (" + latestLabel + ").",
-                "Current version: " + currentLabel + "\r\n" +
-                "Latest version: " + latestLabel,
+                additionalInfo: null,
                 proceedQuestion: string.Empty,
                 okButtonText: "Close",
-                showCancelButton: false);
+                showCancelButton: false,
+                manualDownloadLinks: GetViewMoreChangelogsOnlineLinks(),
+                showManualDownloadCaption: false);
         }
 
-        private static UpdateChangelogDialogContent CreateChangelogContent(
+        private static ChangelogDialogContent CreateChangelogContent(
             UpdateCheckResult result,
             string headline,
             string additionalInfo,
             string proceedQuestion,
             string okButtonText = null,
-            bool showCancelButton = true)
+            bool showCancelButton = true,
+            IList<UpdateManualDownloadLink> manualDownloadLinks = null,
+            bool showManualDownloadCaption = false)
         {
-            return new UpdateChangelogDialogContent
+            return new ChangelogDialogContent
             {
                 FormTitle = ApplicationConstants.WindowTitle,
                 Headline = headline,
@@ -2026,7 +2030,34 @@ namespace SmartGoldbergEmu.Services
                 ProceedQuestion = proceedQuestion,
                 OkButtonText = okButtonText,
                 ShowCancelButton = showCancelButton,
-                ManualDownloadLinks = GetGoldbergManualDownloadLinks()
+                ShowManualDownloadCaption = showManualDownloadCaption,
+                ManualDownloadLinks = manualDownloadLinks
+            };
+        }
+
+        private static IList<UpdateManualDownloadLink> GetSelectedGoldbergManualDownloadLinks()
+        {
+            GoldbergForkSource fork = GetConfiguredGoldbergForkSource();
+            return new[]
+            {
+                new UpdateManualDownloadLink
+                {
+                    Label = GoldbergForkConstants.GetForkDisplayName(fork),
+                    Url = GoldbergForkConstants.GetRepositoryWebUrl(fork)
+                }
+            };
+        }
+
+        private static IList<UpdateManualDownloadLink> GetViewMoreChangelogsOnlineLinks()
+        {
+            GoldbergForkSource fork = GetConfiguredGoldbergForkSource();
+            return new[]
+            {
+                new UpdateManualDownloadLink
+                {
+                    Label = "View more changelogs online",
+                    Url = GoldbergForkConstants.GetReleasesWebUrl(fork)
+                }
             };
         }
 

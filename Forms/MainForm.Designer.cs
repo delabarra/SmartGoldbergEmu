@@ -53,6 +53,7 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileLauncherReinstall = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileLauncherViewChangelog = new System.Windows.Forms.ToolStripMenuItem();
+            this.miMnuFileOpenLauncherFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.sepMnuFileBeforeExit = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileExit = new System.Windows.Forms.ToolStripMenuItem();
@@ -241,7 +242,8 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileLauncherCheckUpdates,
             this.miMnuFileLauncherReinstall,
             this.toolStripSeparator3,
-            this.miMnuFileLauncherViewChangelog});
+            this.miMnuFileLauncherViewChangelog,
+            this.miMnuFileOpenLauncherFolder});
             this.miMnuFileCheckLauncherUpdates.Name = "miMnuFileCheckLauncherUpdates";
             this.miMnuFileCheckLauncherUpdates.Size = new System.Drawing.Size(180, 22);
             this.miMnuFileCheckLauncherUpdates.Text = "🚀  Launcher";
@@ -271,6 +273,13 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileLauncherViewChangelog.Size = new System.Drawing.Size(185, 22);
             this.miMnuFileLauncherViewChangelog.Text = "View Changelog";
             this.miMnuFileLauncherViewChangelog.Click += new System.EventHandler(this.OnViewLauncherChangelog_Click);
+            // 
+            // miMnuFileOpenLauncherFolder
+            // 
+            this.miMnuFileOpenLauncherFolder.Name = "miMnuFileOpenLauncherFolder";
+            this.miMnuFileOpenLauncherFolder.Size = new System.Drawing.Size(185, 22);
+            this.miMnuFileOpenLauncherFolder.Text = "Open launcher folder";
+            this.miMnuFileOpenLauncherFolder.Click += new System.EventHandler(this.OnOpenLauncherFolder_Click);
             // 
             // miMnuFileSettings
             // 
@@ -949,6 +958,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripMenuItem miMnuFileCheckLauncherUpdates;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileLauncherCheckUpdates;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileLauncherViewChangelog;
+        private System.Windows.Forms.ToolStripMenuItem miMnuFileOpenLauncherFolder;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileLauncherReinstall;
         private System.Windows.Forms.ToolStripSeparator sepMnuFileBeforeExit;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileGoldbergUpdate;

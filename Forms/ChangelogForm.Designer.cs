@@ -2,7 +2,7 @@ namespace SmartGoldbergEmu.Forms
 
 {
 
-    partial class UpdateChangelogForm
+    partial class ChangelogForm
 
     {
 
@@ -400,7 +400,7 @@ namespace SmartGoldbergEmu.Forms
 
             // 
 
-            // UpdateChangelogForm
+            // ChangelogForm
 
             // 
 
@@ -426,7 +426,7 @@ namespace SmartGoldbergEmu.Forms
 
             this.MinimizeBox = false;
 
-            this.Name = "UpdateChangelogForm";
+            this.Name = "ChangelogForm";
 
             this.ShowIcon = false;
 

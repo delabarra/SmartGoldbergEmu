@@ -4079,8 +4079,20 @@ namespace SmartGoldbergEmu.Forms
                     }
                 }
 
-                PendingAddSave = BuildPendingAddSave();
+                // Hide first so MainForm's status strip is visible, then show immediate add feedback
+                // before BuildPendingAddSave (snapshot capture) which can take a noticeable moment.
                 HideFormForSaveIfVisible(ref formHiddenForSave);
+                string addDisplayName = !string.IsNullOrWhiteSpace(_gameConfig.AppName)
+                    ? _gameConfig.AppName.Trim()
+                    : "Game";
+                _taskReportService?.SetMessage(
+                    _isUpdateOfExisting
+                        ? AddGameStatusMessages.UpdatingInLibrary(addDisplayName)
+                        : AddGameStatusMessages.AddingToLibrary(addDisplayName));
+                if (Owner != null && Owner.IsHandleCreated && !Owner.IsDisposed)
+                    Owner.Update();
+
+                PendingAddSave = BuildPendingAddSave();
                 restoreSaveButtonState = false;
                 this.DialogResult = DialogResult.OK;
                 this.Close();

@@ -51,6 +51,13 @@ namespace SmartGoldbergEmu.Services
             ITaskReportService taskReport = formRequest.TaskReportService ?? ServiceLocator.TaskReportService;
             string displayName = GetLibraryGameDisplayName(gameConfig);
 
+            // Immediate strip feedback before library write / silent asset download.
+            taskReport?.SetMessage(
+                request.IsUpdateOfExisting
+                    ? AddGameStatusMessages.UpdatingInLibrary(displayName)
+                    : AddGameStatusMessages.AddingToLibrary(displayName));
+            taskReport?.SetProgress(0, 0);
+
             ValidationResult libraryResult;
             if (request.IsUpdateOfExisting)
             {

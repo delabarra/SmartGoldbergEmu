@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace SmartGoldbergEmu.Models
 {
-    public class UpdateChangelogDialogContent
+    public class ChangelogDialogContent
     {
         public string FormTitle { get; set; }
 
@@ -18,6 +18,9 @@ namespace SmartGoldbergEmu.Models
         public string OkButtonText { get; set; }
 
         public bool ShowCancelButton { get; set; } = true;
+
+        // When false, link rows render without the "You can also…" caption (inline one-line style).
+        public bool ShowManualDownloadCaption { get; set; } = true;
 
         public IList<UpdateManualDownloadLink> ManualDownloadLinks { get; set; }
     }

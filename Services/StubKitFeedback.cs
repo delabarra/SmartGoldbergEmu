@@ -1,5 +1,6 @@
 using System;
 using System.Windows.Forms;
+using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
@@ -37,7 +38,7 @@ namespace SmartGoldbergEmu.Services
             switch (outcome)
             {
                 case StubKitApplyOutcome.Success:
-                    return "SteamStub removed for " + name + ".";
+                    return name + " patched.";
                 case StubKitApplyOutcome.Restored:
                     return "Original executable restored for " + name + ".";
                 case StubKitApplyOutcome.NoStubFound:
@@ -58,6 +59,28 @@ namespace SmartGoldbergEmu.Services
                     return "An unexpected error occurred while processing SteamStub on " + name + ".";
                 default:
                     return "SteamStub finished for " + name + ".";
+            }
+        }
+
+        public static string PatchingInProgress(string gameName) =>
+            "Patching " + FormatGameName(gameName) + "…";
+
+        public static string RestoringInProgress(string gameName) =>
+            "Restoring original executable for " + FormatGameName(gameName) + "…";
+
+        public static TaskReportKind KindForOutcome(StubKitApplyOutcome outcome)
+        {
+            switch (outcome)
+            {
+                case StubKitApplyOutcome.Success:
+                case StubKitApplyOutcome.Restored:
+                    return TaskReportKind.Info;
+                case StubKitApplyOutcome.NoStubFound:
+                case StubKitApplyOutcome.ExecutablePathInvalid:
+                case StubKitApplyOutcome.BackupMissing:
+                    return TaskReportKind.Warning;
+                default:
+                    return TaskReportKind.Error;
             }
         }
 
