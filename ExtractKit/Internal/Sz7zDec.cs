@@ -44,55 +44,63 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             if (reportStep < 1)
                 reportStep = 1;
 
-            while (true)
+            try
             {
-                byte[] inBuf;
-                int lookOffset;
-                int lookahead = 1 << 18;
-                if ((ulong)lookahead > inSize)
-                    lookahead = (int)inSize;
-                res = inStream.Look(out inBuf, out lookOffset, ref lookahead);
-                if (res != SzRes.Ok)
-                    break;
-
-                int inProcessed = lookahead;
-                int dicPos = state.DicPos;
-                ELzmaStatus status;
-                res = LzmaDec.DecodeToDic(state, outSize, inBuf, ref inProcessed, lookOffset,
-                    ELzmaFinishMode.LzmaFinishEnd, out status);
-                lookahead -= inProcessed;
-                inSize -= (ulong)inProcessed;
-                if (res != SzRes.Ok)
-                    break;
-
-                ReportDecodeProgress(decodeProgress, state.DicPos, outSize, ref lastReported, reportStep);
-
-                if (status == ELzmaStatus.LzmaStatusFinishedWithMark)
+                while (true)
                 {
-                    if (outSize != state.DicPos || inSize != 0)
+                    byte[] inBuf;
+                    int lookOffset;
+                    int lookahead = 1 << 18;
+                    if ((ulong)lookahead > inSize)
+                        lookahead = (int)inSize;
+                    res = inStream.Look(out inBuf, out lookOffset, ref lookahead);
+                    if (res != SzRes.Ok)
+                        break;
+
+                    int inProcessed = lookahead;
+                    int dicPos = state.DicPos;
+                    ELzmaStatus status;
+                    res = LzmaDec.DecodeToDic(state, outSize, inBuf, ref inProcessed, lookOffset,
+                        ELzmaFinishMode.LzmaFinishEnd, out status);
+                    lookahead -= inProcessed;
+                    inSize -= (ulong)inProcessed;
+                    if (res != SzRes.Ok)
+                        break;
+
+                    res = ReportDecodeProgress(decodeProgress, state.DicPos, outSize, ref lastReported, reportStep);
+                    if (res != SzRes.Ok)
+                        break;
+
+                    if (status == ELzmaStatus.LzmaStatusFinishedWithMark)
+                    {
+                        if (outSize != state.DicPos || inSize != 0)
+                            res = SzRes.ErrorData;
+                        break;
+                    }
+
+                    if (outSize == state.DicPos && inSize == 0 &&
+                        status == ELzmaStatus.LzmaStatusMaybeFinishedWithoutMark)
+                        break;
+
+                    if (inProcessed == 0 && dicPos == state.DicPos)
+                    {
                         res = SzRes.ErrorData;
-                    break;
+                        break;
+                    }
+
+                    res = inStream.Skip(inProcessed);
+                    if (res != SzRes.Ok)
+                        break;
                 }
 
-                if (outSize == state.DicPos && inSize == 0 &&
-                    status == ELzmaStatus.LzmaStatusMaybeFinishedWithoutMark)
-                    break;
-
-                if (inProcessed == 0 && dicPos == state.DicPos)
-                {
-                    res = SzRes.ErrorData;
-                    break;
-                }
-
-                res = inStream.Skip(inProcessed);
-                if (res != SzRes.Ok)
-                    break;
+                if (res == SzRes.Ok)
+                    res = ReportDecodeProgress(decodeProgress, outSize, outSize, ref lastReported, reportStep);
+            }
+            finally
+            {
+                LzmaDec.FreeProbs(state, allocMain);
             }
 
-            if (res == SzRes.Ok)
-                ReportDecodeProgress(decodeProgress, outSize, outSize, ref lastReported, reportStep);
-
-            LzmaDec.FreeProbs(state, allocMain);
             return res;
         }
 
@@ -124,55 +132,64 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             if (reportStep < 1)
                 reportStep = 1;
 
-            while (true)
+            try
             {
-                byte[] inBuf;
-                int lookOffset;
-                int lookahead = 1 << 18;
-                if ((ulong)lookahead > inSize)
-                    lookahead = (int)inSize;
-                res = inStream.Look(out inBuf, out lookOffset, ref lookahead);
-                if (res != SzRes.Ok)
-                    break;
-
-                int inProcessed = lookahead;
-                int dicPos = state.Decoder.DicPos;
-                ELzmaStatus status;
-                res = Lzma2Dec.DecodeToDic(state, outSize, inBuf, ref inProcessed, lookOffset,
-                    ELzmaFinishMode.LzmaFinishEnd, out status);
-                lookahead -= inProcessed;
-                inSize -= (ulong)inProcessed;
-                if (res != SzRes.Ok)
-                    break;
-
-                ReportDecodeProgress(decodeProgress, state.Decoder.DicPos, outSize, ref lastReported, reportStep);
-
-                if (status == ELzmaStatus.LzmaStatusFinishedWithMark)
+                while (true)
                 {
-                    if (outSize != state.Decoder.DicPos || inSize != 0)
+                    byte[] inBuf;
+                    int lookOffset;
+                    int lookahead = 1 << 18;
+                    if ((ulong)lookahead > inSize)
+                        lookahead = (int)inSize;
+                    res = inStream.Look(out inBuf, out lookOffset, ref lookahead);
+                    if (res != SzRes.Ok)
+                        break;
+
+                    int inProcessed = lookahead;
+                    int dicPos = state.Decoder.DicPos;
+                    ELzmaStatus status;
+                    res = Lzma2Dec.DecodeToDic(state, outSize, inBuf, ref inProcessed, lookOffset,
+                        ELzmaFinishMode.LzmaFinishEnd, out status);
+                    lookahead -= inProcessed;
+                    inSize -= (ulong)inProcessed;
+                    if (res != SzRes.Ok)
+                        break;
+
+                    res = ReportDecodeProgress(decodeProgress, state.Decoder.DicPos, outSize, ref lastReported, reportStep);
+                    if (res != SzRes.Ok)
+                        break;
+
+                    if (status == ELzmaStatus.LzmaStatusFinishedWithMark)
+                    {
+                        if (outSize != state.Decoder.DicPos || inSize != 0)
+                            res = SzRes.ErrorData;
+                        break;
+                    }
+
+                    if (inProcessed == 0 && dicPos == state.Decoder.DicPos)
+                    {
                         res = SzRes.ErrorData;
-                    break;
+                        break;
+                    }
+
+                    res = inStream.Skip(inProcessed);
+                    if (res != SzRes.Ok)
+                        break;
                 }
 
-                if (inProcessed == 0 && dicPos == state.Decoder.DicPos)
-                {
-                    res = SzRes.ErrorData;
-                    break;
-                }
-
-                res = inStream.Skip(inProcessed);
-                if (res != SzRes.Ok)
-                    break;
+                if (res == SzRes.Ok)
+                    res = ReportDecodeProgress(decodeProgress, outSize, outSize, ref lastReported, reportStep);
+            }
+            finally
+            {
+                Lzma2Dec.FreeProbs(state, allocMain);
             }
 
-            if (res == SzRes.Ok)
-                ReportDecodeProgress(decodeProgress, outSize, outSize, ref lastReported, reportStep);
-
-            Lzma2Dec.FreeProbs(state, allocMain);
             return res;
         }
 
-        private static void ReportDecodeProgress(
+        // decodeProgress may throw OperationCanceledException to abort; returns ErrorProgress in that case.
+        private static int ReportDecodeProgress(
             Action<long, long> decodeProgress,
             int decodedBytes,
             int totalBytes,
@@ -180,12 +197,20 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             int reportStep)
         {
             if (decodeProgress == null || totalBytes <= 0)
-                return;
+                return SzRes.Ok;
             if (decodedBytes < totalBytes && lastReported >= 0 && decodedBytes - lastReported < reportStep)
-                return;
+                return SzRes.Ok;
 
             lastReported = decodedBytes;
-            decodeProgress(decodedBytes, totalBytes);
+            try
+            {
+                decodeProgress(decodedBytes, totalBytes);
+                return SzRes.Ok;
+            }
+            catch (OperationCanceledException)
+            {
+                return SzRes.ErrorProgress;
+            }
         }
 
         private static int DecodeCopy(ulong inSize, ILookInStream inStream, byte[] outBuffer, int outOffset)
@@ -379,7 +404,16 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                             return SzRes.ErrorData;
                         res = DecodeCopy(packInSize, inStream, outBufCur, outOffsetCur);
                         if (res == SzRes.Ok && streamProgress != null)
-                            streamProgress(outSizeCur, outSize);
+                        {
+                            try
+                            {
+                                streamProgress(outSizeCur, outSize);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                return SzRes.ErrorProgress;
+                            }
+                        }
                     }
                     else if (coder.MethodId == KLzma)
                     {

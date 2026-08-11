@@ -121,12 +121,12 @@
     <value>17, 17</value>
   </metadata>
   <metadata name="ctxGamesItem.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-    <value>437, 17</value>
+    <value>358, 17</value>
   </metadata>
   <metadata name="stripMain.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-    <value>132, 17</value>
+    <value>123, 17</value>
   </metadata>
   <metadata name="ctxGamesView.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-    <value>247, 17</value>
+    <value>227, 17</value>
   </metadata>
 </root>

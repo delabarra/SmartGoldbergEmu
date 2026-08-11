@@ -48,7 +48,11 @@ namespace SmartGoldbergEmu.Forms
             else
                 _lastReportedPercentage = clamped;
 
-            lblStatus.Text = message ?? string.Empty;
+            // Keep "Cancelling..." visible while background work winds down.
+            if (IsCancelled)
+                lblStatus.Text = "Cancelling...";
+            else
+                lblStatus.Text = message ?? string.Empty;
             pbarProgress.Value = clamped;
             // Startup update path pumps with DoEvents; force a paint so download updates are visible.
             lblStatus.Update();
@@ -56,11 +60,6 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public bool IsCancelled => System.Threading.Volatile.Read(ref _cancelledFlag) != 0;
-
-        public void DisableCancel()
-        {
-            RunOnUiThread(() => { btnCancel.Enabled = false; });
-        }
 
         public void ShowCancellationAndClose(string message)
         {

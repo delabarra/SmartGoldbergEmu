@@ -14,17 +14,19 @@ namespace SmartGoldbergEmu.ExtractKit
         }
 
         // progressCallback(completedBytes, totalBytes, currentEntryFileName) — optional.
+        // cancellationCheck aborts between entries and during solid 7z decode (OperationCanceledException).
         public static void ExtractAll(
             string archivePath,
             string outputDirectory,
-            Action<long, long, string> progressCallback = null)
+            Action<long, long, string> progressCallback = null,
+            Func<bool> cancellationCheck = null)
         {
             string path = ArchivePath.RequireSupportedArchive(archivePath, nameof(archivePath));
             if (string.IsNullOrWhiteSpace(outputDirectory))
                 throw new ArgumentException("Output directory is required.", nameof(outputDirectory));
 
             Directory.CreateDirectory(outputDirectory);
-            ArchiveExtractor.ExtractAll(path, outputDirectory, progressCallback);
+            ArchiveExtractor.ExtractAll(path, outputDirectory, progressCallback, cancellationCheck);
         }
 
         public static byte[] DecompressVzip(byte[] vzipData)

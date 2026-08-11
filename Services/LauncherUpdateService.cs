@@ -29,6 +29,16 @@ namespace SmartGoldbergEmu.Services
             PathConstants.GoldbergDirectoryFolderName
         };
 
+        // Contiguous UI bands: download is usually longest; extract is byte-tracked.
+        private const int ProgressFetch = 3;
+        private const int ProgressDownloadStart = 5;
+        private const int ProgressDownloadEnd = 55;
+        private const int ProgressExtractStart = 55;
+        private const int ProgressExtractEnd = 92;
+        private const int ProgressPrepareRestart = 93;
+        private const int ProgressApplying = 96;
+        private const int ProgressComplete = 100;
+
         private static string _downloadUrl;
         private static string _latestVersion;
         private static string _lastCancelledUpdateVersion;
@@ -216,7 +226,7 @@ namespace SmartGoldbergEmu.Services
 
                 if (string.IsNullOrEmpty(_downloadUrl))
                 {
-                    progressCallback?.Invoke("Fetching latest release information...", 5);
+                    progressCallback?.Invoke("Fetching latest release information...", ProgressFetch);
                     var checkResult = await CheckForUpdatesAsync(isStartup: false).ConfigureAwait(false);
                     if (!checkResult.Success || string.IsNullOrEmpty(_downloadUrl))
                         throw new UpdateException("Could not get download URL");
@@ -226,15 +236,16 @@ namespace SmartGoldbergEmu.Services
                     Directory.Delete(workRoot, true);
                 Directory.CreateDirectory(workRoot);
 
-                progressCallback?.Invoke("Downloading launcher update...", 15);
+                progressCallback?.Invoke("Downloading launcher update...", ProgressDownloadStart);
                 await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
                 {
                     int percentage;
                     string sizeText;
+                    int span = ProgressDownloadEnd - ProgressDownloadStart;
                     if (total > 0)
                     {
                         double ratio = Math.Min(1.0, received / (double)total);
-                        percentage = 15 + (int)(ratio * 55);
+                        percentage = ProgressDownloadStart + (int)(ratio * span);
                         sizeText = HttpHelpers.FormatByteSizeRange(received, total);
                     }
                     else
@@ -242,12 +253,12 @@ namespace SmartGoldbergEmu.Services
                         double softRatio = 1.0 - (1.0 / (1.0 + received / (8.0 * 1024 * 1024)));
                         if (softRatio > 0.95)
                             softRatio = 0.95;
-                        percentage = 15 + (int)(softRatio * 55);
+                        percentage = ProgressDownloadStart + (int)(softRatio * span);
                         sizeText = HttpHelpers.FormatByteSize(received);
                     }
 
-                    if (percentage > 70)
-                        percentage = 70;
+                    if (percentage > ProgressDownloadEnd)
+                        percentage = ProgressDownloadEnd;
                     progressCallback?.Invoke("Downloading launcher update... " + sizeText, percentage);
                 }, cancellationCheck).ConfigureAwait(false);
 
@@ -255,35 +266,44 @@ namespace SmartGoldbergEmu.Services
                     throw new UpdateException("Download cancelled by user");
 
                 const string extractStatus = "Extracting launcher files...";
-                progressCallback?.Invoke(extractStatus, 75);
-                await Task.Run(() =>
+                progressCallback?.Invoke(extractStatus, ProgressExtractStart);
+                try
                 {
-                    global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractAll(
-                        archivePath,
-                        extractRoot,
-                        (completedBytes, totalBytes, fileName) =>
-                        {
-                            if (progressCallback == null || totalBytes <= 0)
-                                return;
-
-                            int percentage = ArchiveExtractProgress.MapToPercent(completedBytes, totalBytes, 75, 89);
-                            // File-count fallback uses tiny totals; only show sizes for real byte progress.
-                            if (totalBytes < 1024)
+                    await Task.Run(() =>
+                    {
+                        global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractAll(
+                            archivePath,
+                            extractRoot,
+                            (completedBytes, totalBytes, fileName) =>
                             {
-                                progressCallback(extractStatus, percentage);
-                                return;
-                            }
+                                if (progressCallback == null || totalBytes <= 0)
+                                    return;
 
-                            long shownCompleted = completedBytes;
-                            if (shownCompleted < 0)
-                                shownCompleted = 0;
-                            if (shownCompleted > totalBytes)
-                                shownCompleted = totalBytes;
+                                int percentage = ArchiveExtractProgress.MapToPercent(
+                                    completedBytes, totalBytes, ProgressExtractStart, ProgressExtractEnd);
+                                // File-count fallback uses tiny totals; only show sizes for real byte progress.
+                                if (totalBytes < 1024)
+                                {
+                                    progressCallback(extractStatus, percentage);
+                                    return;
+                                }
 
-                            string sizeText = HttpHelpers.FormatByteSizeRange(shownCompleted, totalBytes);
-                            progressCallback(extractStatus + " " + sizeText, percentage);
-                        });
-                }).ConfigureAwait(false);
+                                long shownCompleted = completedBytes;
+                                if (shownCompleted < 0)
+                                    shownCompleted = 0;
+                                if (shownCompleted > totalBytes)
+                                    shownCompleted = totalBytes;
+
+                                string sizeText = HttpHelpers.FormatByteSizeRange(shownCompleted, totalBytes);
+                                progressCallback(extractStatus + " " + sizeText, percentage);
+                            },
+                            cancellationCheck);
+                    }).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw new UpdateException("Download cancelled by user");
+                }
 
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
@@ -296,15 +316,15 @@ namespace SmartGoldbergEmu.Services
                         "Launcher update: using nested release folder " + Path.GetFileName(payloadRoot));
                 }
 
-                progressCallback?.Invoke("Preparing to restart...", 90);
+                progressCallback?.Invoke("Preparing to restart...", ProgressPrepareRestart);
                 string installRoot = PathConstants.LauncherInstallDirectory;
                 string exePath = Path.Combine(installRoot, launcherExeName);
 
-                progressCallback?.Invoke("Applying update after exit...", 95);
+                progressCallback?.Invoke("Applying update after exit...", ProgressApplying);
                 await Task.Run(() => StartEmbeddedUpdaterApply(workRoot, installRoot, payloadRoot, exePath))
                     .ConfigureAwait(false);
 
-                progressCallback?.Invoke("Restarting application...", 100);
+                progressCallback?.Invoke("Restarting application...", ProgressComplete);
             }
             catch (UpdateException)
             {

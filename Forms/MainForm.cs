@@ -460,6 +460,7 @@ namespace SmartGoldbergEmu.Forms
                 var addedAppIds = new HashSet<string>();
                 bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
                     && _appDataService.GetLogosViewDropShadow();
+                bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
 
                 foreach (ListViewItem item in lstGames.Items)
                 {
@@ -483,7 +484,8 @@ namespace SmartGoldbergEmu.Forms
                         viewMode,
                         gameImageService,
                         imageNormalizationService,
-                        logosDropShadow).ConfigureAwait(true);
+                        logosDropShadow,
+                        waitingDropShadow).ConfigureAwait(true);
 
                     if (imageCopy == null)
                         continue;
@@ -552,13 +554,15 @@ namespace SmartGoldbergEmu.Forms
 
                 bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
                     && _appDataService.GetLogosViewDropShadow();
+                bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
 
                 Bitmap imageCopy = await LoadMosaicDisplayBitmapForGameAsync(
                     game,
                     viewMode,
                     gameImageService,
                     imageNormalizationService,
-                    logosDropShadow).ConfigureAwait(true);
+                    logosDropShadow,
+                    waitingDropShadow).ConfigureAwait(true);
 
                 if (imageCopy == null)
                     return;
@@ -593,7 +597,8 @@ namespace SmartGoldbergEmu.Forms
             string viewMode,
             GameImageService gameImageService,
             ImageNormalizationService imageNormalizationService,
-            bool logosDropShadow)
+            bool logosDropShadow,
+            bool waitingDropShadow)
         {
             if (ShouldUseWaitingMosaicPlaceholder(game))
             {
@@ -601,7 +606,8 @@ namespace SmartGoldbergEmu.Forms
                     viewMode,
                     gameImageService,
                     imageNormalizationService,
-                    logosDropShadow);
+                    logosDropShadow,
+                    waitingDropShadow);
                 if (waitingDisplay != null)
                     return waitingDisplay;
             }
@@ -668,20 +674,33 @@ namespace SmartGoldbergEmu.Forms
             string viewMode,
             GameImageService gameImageService,
             ImageNormalizationService imageNormalizationService,
-            bool logosDropShadow)
+            bool logosDropShadow,
+            bool waitingDropShadow)
         {
             // Prefer Steam clientui hashed spinner; if missing, use FallbackTileArt.csv mosaic art.
             using (var rawWaiting = gameImageService.TryCloneWaitingMosaicPlaceholderBitmap())
             {
                 if (rawWaiting != null)
-                    return CreateMosaicDisplayBitmapFromSource(rawWaiting, viewMode, imageNormalizationService, logosDropShadow, waitingPlaceholder: true);
+                    return CreateMosaicDisplayBitmapFromSource(
+                        rawWaiting,
+                        viewMode,
+                        imageNormalizationService,
+                        logosDropShadow,
+                        waitingPlaceholder: true,
+                        waitingDropShadow);
             }
 
             using (var rawCsvFallback = gameImageService.TryCloneMosaicFallbackBitmap())
             {
                 if (rawCsvFallback == null)
                     return null;
-                return CreateMosaicDisplayBitmapFromSource(rawCsvFallback, viewMode, imageNormalizationService, logosDropShadow, waitingPlaceholder: true);
+                return CreateMosaicDisplayBitmapFromSource(
+                    rawCsvFallback,
+                    viewMode,
+                    imageNormalizationService,
+                    logosDropShadow,
+                    waitingPlaceholder: true,
+                    waitingDropShadow);
             }
         }
 
@@ -690,12 +709,18 @@ namespace SmartGoldbergEmu.Forms
             string viewMode,
             ImageNormalizationService imageNormalizationService,
             bool logosDropShadow,
-            bool waitingPlaceholder = false)
+            bool waitingPlaceholder = false,
+            bool waitingDropShadow = false)
         {
             if (source == null || imageNormalizationService == null)
                 return null;
 
-            return imageNormalizationService.CreateMosaicDisplayBitmap(source, viewMode, logosDropShadow, waitingPlaceholder);
+            return imageNormalizationService.CreateMosaicDisplayBitmap(
+                source,
+                viewMode,
+                logosDropShadow,
+                waitingPlaceholder,
+                waitingDropShadow);
         }
 
         // Seeds the AppId mosaic key with waiting art before the list drops the pending-* key (avoids a blank tile on Save).
@@ -713,12 +738,14 @@ namespace SmartGoldbergEmu.Forms
             var imageNormalizationService = ServiceLocator.ImageNormalizationService;
             bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
                 && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
 
             Bitmap waitingDisplay = TryCreateWaitingMosaicDisplayBitmap(
                 viewMode,
                 gameImageService,
                 imageNormalizationService,
-                logosDropShadow);
+                logosDropShadow,
+                waitingDropShadow);
             if (waitingDisplay == null)
                 return false;
 
@@ -837,22 +864,26 @@ namespace SmartGoldbergEmu.Forms
 
             Image frameSource = null;
             bool disposeFrameSource = false;
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
+            bool cachedDropShadow = GetWaitingMosaicDisplayFramesCacheDropShadow(viewMode, logosDropShadow, waitingDropShadow);
             if (_waitingMosaicDisplayFrames != null
                 && _waitingMosaicDisplayFrames.Length == sourceFrames.Length
-                && string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal))
+                && string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal)
+                && _waitingMosaicDisplayFramesDropShadow == cachedDropShadow)
             {
                 frameSource = _waitingMosaicDisplayFrames[_waitingMosaicAnimFrameIndex];
             }
             else
             {
-                bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
-                    && _appDataService.GetLogosViewDropShadow();
                 frameSource = CreateMosaicDisplayBitmapFromSource(
                     sourceFrames[_waitingMosaicAnimFrameIndex].Bitmap,
                     viewMode,
                     ServiceLocator.ImageNormalizationService,
                     logosDropShadow,
-                    waitingPlaceholder: true);
+                    waitingPlaceholder: true,
+                    waitingDropShadow);
                 disposeFrameSource = true;
             }
 
@@ -901,10 +932,12 @@ namespace SmartGoldbergEmu.Forms
 
             bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
                 && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
+            bool cachedDropShadow = GetWaitingMosaicDisplayFramesCacheDropShadow(viewMode, logosDropShadow, waitingDropShadow);
 
             if (_waitingMosaicDisplayFrames != null
                 && string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal)
-                && _waitingMosaicDisplayFramesDropShadow == logosDropShadow)
+                && _waitingMosaicDisplayFramesDropShadow == cachedDropShadow)
             {
                 return true;
             }
@@ -929,7 +962,8 @@ namespace SmartGoldbergEmu.Forms
                         viewMode,
                         imageNormalizationService,
                         logosDropShadow,
-                        waitingPlaceholder: true);
+                        waitingPlaceholder: true,
+                        waitingDropShadow);
                 }
             }
             catch
@@ -941,8 +975,25 @@ namespace SmartGoldbergEmu.Forms
 
             _waitingMosaicDisplayFrames = built;
             _waitingMosaicDisplayFramesViewMode = viewMode;
-            _waitingMosaicDisplayFramesDropShadow = logosDropShadow;
+            _waitingMosaicDisplayFramesDropShadow = cachedDropShadow;
             return true;
+        }
+
+        private bool ShouldApplyWaitingMosaicDropShadow()
+        {
+            return _themeService != null
+                && _themeService.EffectiveTheme == ThemeMode.Light;
+        }
+
+        private static bool GetWaitingMosaicDisplayFramesCacheDropShadow(
+            string viewMode,
+            bool logosDropShadow,
+            bool waitingDropShadow)
+        {
+            // Logos use the logos-shadow setting; store/library use light-mode waiting shadow.
+            return viewMode == ApplicationConstants.ViewModeLogos
+                ? logosDropShadow
+                : waitingDropShadow;
         }
 
         private int GetWaitingMosaicFrameDelayMs(int frameIndex)
@@ -3789,7 +3840,7 @@ namespace SmartGoldbergEmu.Forms
                             Buttons = new List<AppTaskDialogButton>
                             {
                                 new AppTaskDialogButton(idConfigure, "Configure") { IsDefault = true },
-                                new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Not now") { IsCancel = true }
+                                new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Skip") { IsCancel = true }
                             }
                         });
 

@@ -170,6 +170,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 int offset;
                 int outSize;
                 int res = _sevenZip.ExtractFile(index, _blockCache, out offset, out outSize, decodeProgress);
+                if (res == SzRes.ErrorProgress)
+                    throw new OperationCanceledException("Archive extraction was cancelled.");
                 if (res != SzRes.Ok)
                     throw new ExtractKitException("7z extraction failed (code " + res + ").");
 

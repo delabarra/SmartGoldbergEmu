@@ -6,21 +6,9 @@ using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Custom renderer for ToolStrip controls that applies theme colors including borders and check mark areas.
-    /// </summary>
+    // Theme borders/text via color table; dark-mode checks keep the stock glyph and only recolor it.
     internal class ThemedToolStripRenderer : ToolStripProfessionalRenderer
     {
-        // Invert RGB, keep alpha — stock check glyph stays the same shape, black becomes white.
-        private static readonly ColorMatrix InvertRgbColorMatrix = new ColorMatrix(new float[][]
-        {
-            new float[] { -1f, 0f, 0f, 0f, 0f },
-            new float[] { 0f, -1f, 0f, 0f, 0f },
-            new float[] { 0f, 0f, -1f, 0f, 0f },
-            new float[] { 0f, 0f, 0f, 1f, 0f },
-            new float[] { 1f, 1f, 1f, 0f, 1f }
-        });
-
         private readonly ThemeColors _colors;
         private readonly ThemeMode _themeMode;
 
@@ -32,20 +20,12 @@ namespace SmartGoldbergEmu.Helpers
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
-            // Use StatusStripForeground for StatusStrip items, MenuForeground for others
             if (e.ToolStrip is StatusStrip)
-            {
                 e.TextColor = _colors.StatusStripForeground;
-            }
             else
-            {
                 e.TextColor = _colors.MenuForeground;
-            }
             base.OnRenderItemText(e);
         }
-
-        // Don't override OnRenderSeparator - let the base ToolStripProfessionalRenderer handle it
-        // using SeparatorDark and SeparatorLight from ThemedColorTable
 
         protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
         {
@@ -53,7 +33,8 @@ namespace SmartGoldbergEmu.Helpers
             base.OnRenderArrow(e);
         }
 
-        // Keep the stock check glyph; invert its colors in dark mode so the tick stays visible.
+        // Keep the stock check bitmap; tint RGB to HighlightText and preserve alpha (shape/AA).
+        // Full invert was wrong when the OS glyph was already light (white became black).
         protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
         {
             if (_themeMode != ThemeMode.Dark)
@@ -86,18 +67,19 @@ namespace SmartGoldbergEmu.Helpers
                 disposeImage = true;
             }
 
+            Color tint = e.Item.Enabled ? _colors.HighlightText : _colors.DisabledForeground;
             try
             {
                 using (ImageAttributes attrs = new ImageAttributes())
                 {
-                    attrs.SetColorMatrix(InvertRgbColorMatrix);
+                    attrs.SetColorMatrix(CreateAlphaTintMatrix(tint));
                     e.Graphics.DrawImage(
                         image,
                         imageRect,
                         0,
                         0,
-                        imageRect.Width,
-                        imageRect.Height,
+                        image.Width,
+                        image.Height,
                         GraphicsUnit.Pixel,
                         attrs);
                 }
@@ -108,11 +90,24 @@ namespace SmartGoldbergEmu.Helpers
                     image.Dispose();
             }
         }
+
+        // Drop source RGB; keep alpha; fill with the target color (same shape, new color only).
+        private static ColorMatrix CreateAlphaTintMatrix(Color tint)
+        {
+            float r = tint.R / 255f;
+            float g = tint.G / 255f;
+            float b = tint.B / 255f;
+            return new ColorMatrix(new float[][]
+            {
+                new float[] { 0f, 0f, 0f, 0f, 0f },
+                new float[] { 0f, 0f, 0f, 0f, 0f },
+                new float[] { 0f, 0f, 0f, 0f, 0f },
+                new float[] { 0f, 0f, 0f, 1f, 0f },
+                new float[] { r, g, b, 0f, 1f }
+            });
+        }
     }
 
-    /// <summary>
-    /// Custom color table for Professional renderer that uses theme colors.
-    /// </summary>
     internal class ThemedColorTable : ProfessionalColorTable
     {
         private readonly ThemeMode _themeMode;
@@ -148,43 +143,21 @@ namespace SmartGoldbergEmu.Helpers
         public override Color CheckPressedBackground => _colors.Highlight;
         public override Color StatusStripGradientBegin => _colors.StatusStripBackground;
         public override Color StatusStripGradientEnd => _colors.StatusStripBackground;
-        
-        /// <summary>
-        /// Gets the dark separator color based on theme - matches deprecated project.
-        /// </summary>
+
         private Color GetSeparatorDarkColor()
         {
-            if (_themeMode == ThemeMode.Dark)
-            {
-                // Dark theme: use border color (60,60,60) - matches deprecated
-                return _colors.Border;
-            }
-            else
-            {
-                // Light theme: use border color (200,200,200) - matches deprecated SystemColors.ControlDark equivalent
-                return _colors.Border;
-            }
+            return _colors.Border;
         }
-        
-        /// <summary>
-        /// Gets the light separator color based on theme - matches deprecated project.
-        /// </summary>
+
         private Color GetSeparatorLightColor()
         {
             if (_themeMode == ThemeMode.Dark)
-            {
-                // Dark theme: use border color (60,60,60) - matches deprecated
                 return _colors.Border;
-            }
-            else
-            {
-                // Light theme: use a lighter shade - matches deprecated SystemColors.ControlLight equivalent
-                return Color.FromArgb(
-                    Math.Min(255, _colors.Border.R + 55),
-                    Math.Min(255, _colors.Border.G + 55),
-                    Math.Min(255, _colors.Border.B + 55));
-            }
+
+            return Color.FromArgb(
+                Math.Min(255, _colors.Border.R + 55),
+                Math.Min(255, _colors.Border.G + 55),
+                Math.Min(255, _colors.Border.B + 55));
         }
     }
 }
-

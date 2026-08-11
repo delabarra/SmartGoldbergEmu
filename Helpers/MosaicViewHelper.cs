@@ -17,9 +17,16 @@ namespace SmartGoldbergEmu.Helpers
         public const int TileViewImageWidth = 256;
         public const int TileViewImageHeight = 120;
 
-        // Waiting spinner only: 20px smaller than the cell, centered (does not affect game art spacing).
-        public const int TileViewWaitingArtworkWidth = TileViewImageWidth - 20;
-        public const int TileViewWaitingArtworkHeight = TileViewImageHeight - 20;
+        // Waiting mosaic spinner shadow (light mode): silhouette follows opaque pixels per frame.
+        public const int WaitingMosaicShadowOffsetX = 2;
+        public const int WaitingMosaicShadowOffsetY = 2;
+        private const float WaitingMosaicShadowAlpha = 0.38f;
+
+        // Waiting spinner only: narrower than the cell so FixWidthCropHeight keeps more of the square
+        // (still crops top/bottom). Centered in the cell — does not affect game art spacing.
+        // Height leaves room for the light-mode silhouette shadow offset.
+        public const int TileViewWaitingArtworkWidth = 200;
+        public const int TileViewWaitingArtworkHeight = TileViewImageHeight - WaitingMosaicShadowOffsetY;
 
         /// <summary>
         /// Library Cover ImageList cell / artwork: 171×256.
@@ -134,7 +141,7 @@ namespace SmartGoldbergEmu.Helpers
                             targetSize.Width,
                             targetSize.Height);
 
-                        using (var shadowAttributes = CreateLogoViewShadowImageAttributes())
+                        using (var shadowAttributes = CreateSilhouetteShadowImageAttributes(LogoViewShadowAlpha))
                         {
                             graphics.DrawImage(
                                 logoLayer,
@@ -148,7 +155,7 @@ namespace SmartGoldbergEmu.Helpers
                         }
 
                         // Logo pixels replace shadow (coverage AA must not pick up black underneath).
-                        CopyLogoPixelsOverShadow(output, logoLayer);
+                        CopyCoveragePixelsOverShadow(output, logoLayer);
                     }
                     else
                     {
@@ -166,6 +173,44 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
+        // Cell-sized waiting art: silhouette shadow follows opaque pixels (fits animated APNG frames).
+        public static Bitmap CompositeWaitingMosaicSilhouetteDropShadow(Bitmap content)
+        {
+            if (content == null)
+                throw new ArgumentNullException(nameof(content));
+
+            var output = new Bitmap(content.Width, content.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(output))
+            {
+                ConfigureLogoDrawGraphics(graphics);
+                graphics.Clear(Color.Transparent);
+
+                var shadowRect = new Rectangle(
+                    WaitingMosaicShadowOffsetX,
+                    WaitingMosaicShadowOffsetY,
+                    content.Width,
+                    content.Height);
+
+                using (var shadowAttributes = CreateSilhouetteShadowImageAttributes(WaitingMosaicShadowAlpha))
+                {
+                    graphics.DrawImage(
+                        content,
+                        shadowRect,
+                        0,
+                        0,
+                        content.Width,
+                        content.Height,
+                        GraphicsUnit.Pixel,
+                        shadowAttributes);
+                }
+
+                CopyCoveragePixelsOverShadow(output, content);
+            }
+
+            PremultiplyAlphaInPlace(output);
+            return output;
+        }
+
         private static void ConfigureLogoDrawGraphics(Graphics graphics)
         {
             graphics.CompositingQuality = CompositingQuality.HighQuality;
@@ -175,14 +220,14 @@ namespace SmartGoldbergEmu.Helpers
             graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
         }
 
-        private static ImageAttributes CreateLogoViewShadowImageAttributes()
+        private static ImageAttributes CreateSilhouetteShadowImageAttributes(float shadowAlpha)
         {
             var matrix = new ColorMatrix(new[]
             {
                 new float[] { 0, 0, 0, 0, 0 },
                 new float[] { 0, 0, 0, 0, 0 },
                 new float[] { 0, 0, 0, 0, 0 },
-                new float[] { 0, 0, 0, LogoViewShadowAlpha, 0 },
+                new float[] { 0, 0, 0, shadowAlpha, 0 },
                 new float[] { 0, 0, 0, 0, 1 }
             });
 
@@ -191,38 +236,38 @@ namespace SmartGoldbergEmu.Helpers
             return attributes;
         }
 
-        // Where the logo has coverage, keep the logo pixel as-is so colors match the file.
-        private static void CopyLogoPixelsOverShadow(Bitmap destination, Bitmap logoLayer)
+        // Where content has coverage, keep the content pixel as-is so colors match the file.
+        private static void CopyCoveragePixelsOverShadow(Bitmap destination, Bitmap contentLayer)
         {
             var bounds = new Rectangle(0, 0, destination.Width, destination.Height);
             var destData = destination.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
-            var logoData = logoLayer.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            var contentData = contentLayer.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
             try
             {
                 int height = bounds.Height;
                 int width = bounds.Width;
                 int destStride = destData.Stride;
-                int logoStride = logoData.Stride;
+                int contentStride = contentData.Stride;
                 var destBuffer = new byte[destStride * height];
-                var logoBuffer = new byte[logoStride * height];
+                var contentBuffer = new byte[contentStride * height];
                 Marshal.Copy(destData.Scan0, destBuffer, 0, destBuffer.Length);
-                Marshal.Copy(logoData.Scan0, logoBuffer, 0, logoBuffer.Length);
+                Marshal.Copy(contentData.Scan0, contentBuffer, 0, contentBuffer.Length);
 
                 for (int y = 0; y < height; y++)
                 {
                     int destRow = y * destStride;
-                    int logoRow = y * logoStride;
+                    int contentRow = y * contentStride;
                     for (int x = 0; x < width; x++)
                     {
-                        int logoIndex = logoRow + (x * 4);
-                        byte alpha = logoBuffer[logoIndex + 3];
+                        int contentIndex = contentRow + (x * 4);
+                        byte alpha = contentBuffer[contentIndex + 3];
                         if (alpha == 0)
                             continue;
 
                         int destIndex = destRow + (x * 4);
-                        destBuffer[destIndex] = logoBuffer[logoIndex];
-                        destBuffer[destIndex + 1] = logoBuffer[logoIndex + 1];
-                        destBuffer[destIndex + 2] = logoBuffer[logoIndex + 2];
+                        destBuffer[destIndex] = contentBuffer[contentIndex];
+                        destBuffer[destIndex + 1] = contentBuffer[contentIndex + 1];
+                        destBuffer[destIndex + 2] = contentBuffer[contentIndex + 2];
                         destBuffer[destIndex + 3] = alpha;
                     }
                 }
@@ -232,7 +277,7 @@ namespace SmartGoldbergEmu.Helpers
             finally
             {
                 destination.UnlockBits(destData);
-                logoLayer.UnlockBits(logoData);
+                contentLayer.UnlockBits(contentData);
             }
         }
 

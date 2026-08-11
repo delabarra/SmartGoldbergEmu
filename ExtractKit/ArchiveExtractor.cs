@@ -7,10 +7,12 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
     {
         // progressCallback(completedBytes, totalBytes, currentEntryFileName) — before each file,
         // during solid 7z decode, and once at 100%.
+        // cancellationCheck may throw OperationCanceledException when true mid-decode.
         public static void ExtractAll(
             string archivePath,
             string destinationDirectory,
-            Action<long, long, string> progressCallback = null)
+            Action<long, long, string> progressCallback = null,
+            Func<bool> cancellationCheck = null)
         {
             if (string.IsNullOrEmpty(archivePath))
                 throw new ArgumentException("Archive path is required.", nameof(archivePath));
@@ -49,6 +51,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 long completedBytes = 0;
                 for (int i = 0; i < reader.Entries.Count; i++)
                 {
+                    ThrowIfCancelled(cancellationCheck);
+
                     ArchiveEntry entry = reader.Entries[i];
                     if (entry.IsDirectory)
                         continue;
@@ -60,10 +64,15 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                     progressCallback?.Invoke(baseCompleted, totalBytes, displayName);
 
                     Action<long, long> decodeProgress = null;
-                    if (progressCallback != null && entryWeight > 0 && totalBytes > 0)
+                    if ((progressCallback != null || cancellationCheck != null) && entryWeight > 0 && totalBytes > 0)
                     {
                         decodeProgress = (decoded, folderSize) =>
                         {
+                            ThrowIfCancelled(cancellationCheck);
+
+                            if (progressCallback == null)
+                                return;
+
                             long remaining = totalBytes - baseCompleted;
                             long weight = entryWeight;
                             if (folderSize > entryWeight && remaining > entryWeight)
@@ -78,6 +87,8 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                     completedBytes += entryWeight;
                     progressCallback?.Invoke(completedBytes, totalBytes, displayName);
                 }
+
+                ThrowIfCancelled(cancellationCheck);
 
                 if (totalBytes > 0)
                     progressCallback?.Invoke(totalBytes, totalBytes, null);
@@ -100,6 +111,12 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 
                 reader.ExtractEntry(entry, destinationDirectory, flatFileName: true);
             }
+        }
+
+        private static void ThrowIfCancelled(Func<bool> cancellationCheck)
+        {
+            if (cancellationCheck != null && cancellationCheck())
+                throw new OperationCanceledException("Archive extraction was cancelled.");
         }
 
         private static long ScaleBytes(long fileWeight, long decodedBytes, long folderUnpackBytes)

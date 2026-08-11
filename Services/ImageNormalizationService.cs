@@ -66,23 +66,31 @@ namespace SmartGoldbergEmu.Services
         // Single path for Store Banner / Library Cover / Logos mosaic ImageList bitmaps.
         public Bitmap CreateMosaicDisplayBitmap(Image source, string viewMode, bool logosDropShadow = false)
         {
-            return CreateMosaicDisplayBitmap(source, viewMode, logosDropShadow, waitingPlaceholder: false);
+            return CreateMosaicDisplayBitmap(source, viewMode, logosDropShadow, waitingPlaceholder: false, waitingDropShadow: false);
         }
 
-        public Bitmap CreateMosaicDisplayBitmap(Image source, string viewMode, bool logosDropShadow, bool waitingPlaceholder)
+        public Bitmap CreateMosaicDisplayBitmap(
+            Image source,
+            string viewMode,
+            bool logosDropShadow,
+            bool waitingPlaceholder,
+            bool waitingDropShadow = false)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
 
             if (viewMode == ApplicationConstants.ViewModeTile)
-                return CreateStoreBannerDisplayBitmap(source, waitingPlaceholder);
+                return CreateStoreBannerDisplayBitmap(source, waitingPlaceholder, waitingPlaceholder && waitingDropShadow);
             if (viewMode == ApplicationConstants.ViewModeLogos)
                 return MosaicViewHelper.CreateLogoViewDisplayBitmap(source, logosDropShadow);
-            return CreateLibraryCoverDisplayBitmap(source);
+            return CreateLibraryCoverDisplayBitmap(source, waitingPlaceholder && waitingDropShadow);
         }
 
-        // Store Banner: width-fixed / height-cropped. Normal art fills the cell; waiting art uses the inset size.
-        public Bitmap CreateStoreBannerDisplayBitmap(Image source, bool waitingPlaceholder = false)
+        // Store Banner: width-fixed / height-cropped. Waiting art uses a narrower rect (more of the square visible).
+        public Bitmap CreateStoreBannerDisplayBitmap(
+            Image source,
+            bool waitingPlaceholder = false,
+            bool dropShadow = false)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
@@ -95,11 +103,12 @@ namespace SmartGoldbergEmu.Services
                 source,
                 artworkSize,
                 MosaicViewHelper.TileViewImageSize,
-                ResizeStrategy.FixWidthCropHeight);
+                ResizeStrategy.FixWidthCropHeight,
+                dropShadow);
         }
 
         // Library Cover: height-fixed / width-cropped into the ImageList cell.
-        public Bitmap CreateLibraryCoverDisplayBitmap(Image source)
+        public Bitmap CreateLibraryCoverDisplayBitmap(Image source, bool dropShadow = false)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
@@ -108,7 +117,8 @@ namespace SmartGoldbergEmu.Services
                 source,
                 MosaicViewHelper.CompactTilesArtworkSize,
                 MosaicViewHelper.CompactTilesViewImageSize,
-                ResizeStrategy.FixHeightCropWidth);
+                ResizeStrategy.FixHeightCropWidth,
+                dropShadow);
         }
 
         public Bitmap CreateFallbackLogoDisplayBitmapForLogosView(Image source)
@@ -128,7 +138,8 @@ namespace SmartGoldbergEmu.Services
             Image source,
             Size artworkSize,
             Size cellSize,
-            ResizeStrategy resizeStrategy)
+            ResizeStrategy resizeStrategy,
+            bool dropShadow = false)
         {
             if (artworkSize.Width <= 0 || artworkSize.Height <= 0)
                 throw new ArgumentOutOfRangeException(nameof(artworkSize));
@@ -136,28 +147,50 @@ namespace SmartGoldbergEmu.Services
                 throw new ArgumentOutOfRangeException(nameof(cellSize));
 
             var artwork = CreateBitmapWithResizeStrategy(source, artworkSize, resizeStrategy);
-            if (artwork.Width == cellSize.Width && artwork.Height == cellSize.Height)
-                return artwork;
-
+            Bitmap cellBitmap = null;
             try
             {
-                var output = new Bitmap(cellSize.Width, cellSize.Height, PixelFormat.Format32bppArgb);
-                using (var graphics = Graphics.FromImage(output))
+                if (artwork.Width == cellSize.Width && artwork.Height == cellSize.Height)
                 {
-                    graphics.Clear(Color.Transparent);
-                    graphics.CompositingQuality = CompositingQuality.HighQuality;
-                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    graphics.SmoothingMode = SmoothingMode.HighQuality;
-                    graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                    int x = (cellSize.Width - artwork.Width) / 2;
-                    int y = (cellSize.Height - artwork.Height) / 2;
-                    graphics.DrawImageUnscaled(artwork, x, y);
+                    cellBitmap = artwork;
+                    artwork = null;
                 }
-                return output;
+                else
+                {
+                    cellBitmap = new Bitmap(cellSize.Width, cellSize.Height, PixelFormat.Format32bppArgb);
+                    using (var graphics = Graphics.FromImage(cellBitmap))
+                    {
+                        graphics.Clear(Color.Transparent);
+                        graphics.CompositingQuality = CompositingQuality.HighQuality;
+                        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        graphics.SmoothingMode = SmoothingMode.HighQuality;
+                        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        int x = (cellSize.Width - artwork.Width) / 2;
+                        int y = (cellSize.Height - artwork.Height) / 2;
+                        // Keep silhouette shadow inside the cell (offset is bottom-right).
+                        if (dropShadow)
+                        {
+                            x = Math.Max(0, Math.Min(x, cellSize.Width - artwork.Width - MosaicViewHelper.WaitingMosaicShadowOffsetX));
+                            y = Math.Max(0, Math.Min(y, cellSize.Height - artwork.Height - MosaicViewHelper.WaitingMosaicShadowOffsetY));
+                        }
+                        graphics.DrawImageUnscaled(artwork, x, y);
+                    }
+                }
+
+                if (!dropShadow)
+                {
+                    var result = cellBitmap;
+                    cellBitmap = null;
+                    return result;
+                }
+
+                Bitmap shadowed = MosaicViewHelper.CompositeWaitingMosaicSilhouetteDropShadow(cellBitmap);
+                return shadowed;
             }
             finally
             {
-                artwork.Dispose();
+                artwork?.Dispose();
+                cellBitmap?.Dispose();
             }
         }
 
