@@ -110,7 +110,6 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowRefreshCatalog = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowGenAchievements = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowGenItems = new System.Windows.Forms.ToolStripMenuItem();
-            this.miCtxRowCreateSteamAppIdFile = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowFilesFolders = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenExecutableFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenSettingsFolder = new System.Windows.Forms.ToolStripMenuItem();
@@ -118,6 +117,7 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenGameAssetsFolder = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenValveDataFile = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenExtraDllsFolder = new System.Windows.Forms.ToolStripMenuItem();
+            this.miCtxRowCreateSteamAppIdFile = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowRemoveSteamStub = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.miCtxRowGuid = new System.Windows.Forms.ToolStripMenuItem();
@@ -233,7 +233,7 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.miMnuFileOpenGoldbergFolder.Name = "miMnuFileOpenGoldbergFolder";
             this.miMnuFileOpenGoldbergFolder.Size = new System.Drawing.Size(188, 22);
-            this.miMnuFileOpenGoldbergFolder.Text = "Open goldberg folder";
+            this.miMnuFileOpenGoldbergFolder.Text = "Open emulator folder";
             this.miMnuFileOpenGoldbergFolder.Click += new System.EventHandler(this.OnOpenGoldbergFolder_Click);
             // 
             // miMnuFileCheckLauncherUpdates
@@ -251,33 +251,33 @@ namespace SmartGoldbergEmu.Forms
             // miMnuFileLauncherCheckUpdates
             // 
             this.miMnuFileLauncherCheckUpdates.Name = "miMnuFileLauncherCheckUpdates";
-            this.miMnuFileLauncherCheckUpdates.Size = new System.Drawing.Size(185, 22);
+            this.miMnuFileLauncherCheckUpdates.Size = new System.Drawing.Size(186, 22);
             this.miMnuFileLauncherCheckUpdates.Text = "🡇 Check for Updates";
             this.miMnuFileLauncherCheckUpdates.Click += new System.EventHandler(this.OnCheckLauncherUpdates_Click);
             // 
             // miMnuFileLauncherReinstall
             // 
             this.miMnuFileLauncherReinstall.Name = "miMnuFileLauncherReinstall";
-            this.miMnuFileLauncherReinstall.Size = new System.Drawing.Size(185, 22);
+            this.miMnuFileLauncherReinstall.Size = new System.Drawing.Size(186, 22);
             this.miMnuFileLauncherReinstall.Text = "♻️ Reinstall";
             this.miMnuFileLauncherReinstall.Click += new System.EventHandler(this.OnReinstallLauncher_Click);
             // 
             // toolStripSeparator3
             // 
             this.toolStripSeparator3.Name = "toolStripSeparator3";
-            this.toolStripSeparator3.Size = new System.Drawing.Size(182, 6);
+            this.toolStripSeparator3.Size = new System.Drawing.Size(183, 6);
             // 
             // miMnuFileLauncherViewChangelog
             // 
             this.miMnuFileLauncherViewChangelog.Name = "miMnuFileLauncherViewChangelog";
-            this.miMnuFileLauncherViewChangelog.Size = new System.Drawing.Size(185, 22);
+            this.miMnuFileLauncherViewChangelog.Size = new System.Drawing.Size(186, 22);
             this.miMnuFileLauncherViewChangelog.Text = "View Changelog";
             this.miMnuFileLauncherViewChangelog.Click += new System.EventHandler(this.OnViewLauncherChangelog_Click);
             // 
             // miMnuFileOpenLauncherFolder
             // 
             this.miMnuFileOpenLauncherFolder.Name = "miMnuFileOpenLauncherFolder";
-            this.miMnuFileOpenLauncherFolder.Size = new System.Drawing.Size(185, 22);
+            this.miMnuFileOpenLauncherFolder.Size = new System.Drawing.Size(186, 22);
             this.miMnuFileOpenLauncherFolder.Text = "Open launcher folder";
             this.miMnuFileOpenLauncherFolder.Click += new System.EventHandler(this.OnOpenLauncherFolder_Click);
             // 
@@ -599,7 +599,7 @@ namespace SmartGoldbergEmu.Forms
             this.sepCtxRowBeforeProps,
             this.miCtxRowProperties});
             this.ctxGamesItem.Name = "ctxGamesItem";
-            this.ctxGamesItem.Size = new System.Drawing.Size(204, 298);
+            this.ctxGamesItem.Size = new System.Drawing.Size(204, 276);
             // 
             // miCtxRowRun
             // 

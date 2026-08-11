@@ -72,7 +72,8 @@ namespace SmartGoldbergEmu.Forms
         private const int ButtonWidth = 88;
         private const int ButtonHeight = 26;
         private const int ButtonGap = 8;
-        private const int BandPadY = 12;
+        // Match native Task Dialog / MessageBox command-area padding (was 12 — too tall).
+        private const int BandPadY = 8;
         // Blank lines above the checkbox, owned by the checkbox slice (matches body TextRenderer line advance).
         private const int CheckStripBlankLines = 1;
 
@@ -103,8 +104,9 @@ namespace SmartGoldbergEmu.Forms
             Font = SystemFonts.MessageBoxFont;
 
             BuildLayout();
-            _themeService?.ApplyTheme(this);
-            ApplyTaskDialogChromeColors();
+            ApplyThemeFromService();
+            if (_themeService != null)
+                _themeService.ThemeChanged += ThemeService_ThemeChanged;
         }
 
         public static AppTaskDialogResult Show(IWin32Window owner, AppTaskDialogRequest request)
@@ -134,15 +136,48 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
+        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
+        {
+            if (IsDisposed || Disposing)
+                return;
+            if (InvokeRequired)
+                Invoke((Action)ApplyThemeFromService);
+            else
+                ApplyThemeFromService();
+        }
+
+        private void ApplyThemeFromService()
+        {
+            _themeService?.ApplyTheme(this);
+            ApplyTaskDialogChromeColors();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            UnsubscribeThemeChanged();
+            base.OnFormClosed(e);
+        }
+
         protected override void Dispose(bool disposing)
         {
-            if (disposing && _iconImage != null)
+            if (disposing)
             {
-                _iconImage.Dispose();
-                _iconImage = null;
+                UnsubscribeThemeChanged();
+                if (_iconImage != null)
+                {
+                    _iconImage.Dispose();
+                    _iconImage = null;
+                }
             }
 
             base.Dispose(disposing);
+        }
+
+        private void UnsubscribeThemeChanged()
+        {
+            if (_themeService == null)
+                return;
+            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
         }
 
         protected override bool ProcessDialogKey(Keys keyData)
