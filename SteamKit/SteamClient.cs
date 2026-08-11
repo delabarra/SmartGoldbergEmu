@@ -68,6 +68,7 @@ public class SteamClient
         if (_isConnected)
             return;
 
+        CancelAndDisposeConnectionCts();
         _cancellationTokenSource = new CancellationTokenSource();
         _ = ConnectAsync(_cancellationTokenSource.Token).ForgetFaults(Program.LogService, "SteamClient.ConnectAsync");
     }
@@ -77,12 +78,36 @@ public class SteamClient
         _isConnected = false;
         _channelEncrypted = false;
         _encryption = null;
-        _cancellationTokenSource?.Cancel();
+        CancelAndDisposeConnectionCts();
 
         _handshakeCompletion?.TrySetResult(false);
         CloseSocket();
 
         OnDisconnected?.Invoke();
+    }
+
+    private void CancelAndDisposeConnectionCts()
+    {
+        CancellationTokenSource cts = _cancellationTokenSource;
+        _cancellationTokenSource = null;
+        if (cts == null)
+            return;
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            cts.Dispose();
+        }
+        catch
+        {
+        }
     }
 
     private void CloseSocket()

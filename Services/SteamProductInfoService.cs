@@ -33,11 +33,15 @@ namespace SmartGoldbergEmu.Services
         };
 
         private readonly SemaphoreSlim _sessionLock = new SemaphoreSlim(1, 1);
+        private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
         private int _sessionHoldCount;
         private bool _disposed;
 
         private SteamClient _client;
         private bool _loggedOn;
+
+        // Upper bound for Dispose waiting on an in-flight PICS/connect that should already be cancelled.
+        private static readonly TimeSpan DisposeSessionLockWait = TimeSpan.FromSeconds(8);
 
         // Keeps the anonymous CM session up for a user task (Add Game, PICS fetch, etc.).
         // Dispose on finish or cancel; when the last hold is released the connection is dropped.
@@ -101,20 +105,39 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                _sessionLock.Wait();
-                try
-                {
-                    TeardownClient();
-                }
-                finally
+                _lifetimeCts.Cancel();
+            }
+            catch
+            {
+            }
+
+            // Drop the socket first so connect/PICS waiters release _sessionLock instead of blocking close.
+            InterruptClient();
+
+            try
+            {
+                if (_sessionLock.Wait(DisposeSessionLockWait))
                 {
                     try
                     {
-                        _sessionLock.Release();
+                        TeardownClient();
                     }
-                    catch
+                    finally
                     {
+                        try
+                        {
+                            _sessionLock.Release();
+                        }
+                        catch
+                        {
+                        }
                     }
+                }
+                else
+                {
+                    InterruptClient();
+                    ServiceLocator.LogService?.LogWarning(
+                        "SteamProductInfoService dispose: session lock wait timed out after cancel.");
                 }
             }
             catch (ObjectDisposedException)
@@ -123,6 +146,14 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 ServiceLocator.LogService?.LogWarning($"SteamProductInfoService dispose: {ex.Message}");
+            }
+
+            try
+            {
+                _lifetimeCts.Dispose();
+            }
+            catch
+            {
             }
 
             try
@@ -136,32 +167,41 @@ namespace SmartGoldbergEmu.Services
 
         public async Task<KeyValue> GetAppKeyValueAsync(string appId, CancellationToken ct = default)
         {
-            if (!uint.TryParse(appId, out uint id) || id == 0)
+            if (_disposed || !uint.TryParse(appId, out uint id) || id == 0)
                 return null;
 
-            using (HoldSession())
+            try
             {
-                await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
-                try
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
+                using (HoldSession())
                 {
-                    if (!await EnsureLoggedOnAsync(ct).ConfigureAwait(false))
-                        return null;
-
-                    PICSProductInfoResult pics = await _client.RequestProductInfo(id, 0, ct).ConfigureAwait(false);
-                    KeyValue kv = PicsAppResultToKeyValue(id, pics);
-                    // One retry for transient empty/timeout PICS responses on a live session.
-                    if (kv == null && _loggedOn && _client != null && _client.IsConnected && !ct.IsCancellationRequested)
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
                     {
-                        pics = await _client.RequestProductInfo(id, 0, ct).ConfigureAwait(false);
-                        kv = PicsAppResultToKeyValue(id, pics);
-                    }
+                        if (!await EnsureLoggedOnAsync(opCt).ConfigureAwait(false))
+                            return null;
 
-                    return kv;
+                        PICSProductInfoResult pics = await _client.RequestProductInfo(id, 0, opCt).ConfigureAwait(false);
+                        KeyValue kv = PicsAppResultToKeyValue(id, pics);
+                        // One retry for transient empty/timeout PICS responses on a live session.
+                        if (kv == null && _loggedOn && _client != null && _client.IsConnected && !opCt.IsCancellationRequested)
+                        {
+                            pics = await _client.RequestProductInfo(id, 0, opCt).ConfigureAwait(false);
+                            kv = PicsAppResultToKeyValue(id, pics);
+                        }
+
+                        return kv;
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
                 }
-                finally
-                {
-                    _sessionLock.Release();
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
             }
         }
 
@@ -237,14 +277,18 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
-                try
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
                 {
-                    return await EnsureLoggedOnAsync(ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    _sessionLock.Release();
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        return await EnsureLoggedOnAsync(opCt).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -265,19 +309,23 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
-                try
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
                 {
-                    if (!ct.IsCancellationRequested)
-                        await EnsureLoggedOnAsync(ct).ConfigureAwait(false);
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        if (!opCt.IsCancellationRequested)
+                            await EnsureLoggedOnAsync(opCt).ConfigureAwait(false);
 
-                    // Drop anything we just opened if the caller backed out mid-connect.
-                    if (ct.IsCancellationRequested)
-                        TeardownClient();
-                }
-                finally
-                {
-                    _sessionLock.Release();
+                        // Drop anything we just opened if the caller backed out mid-connect.
+                        if (opCt.IsCancellationRequested)
+                            TeardownClient();
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -293,24 +341,33 @@ namespace SmartGoldbergEmu.Services
 
         public async Task<KeyValue> GetPackageKeyValueAsync(string packageId, CancellationToken ct = default)
         {
-            if (!uint.TryParse(packageId, out uint pkgId) || pkgId == 0)
+            if (_disposed || !uint.TryParse(packageId, out uint pkgId) || pkgId == 0)
                 return null;
 
-            using (HoldSession())
+            try
             {
-                await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
-                try
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
+                using (HoldSession())
                 {
-                    if (!await EnsureLoggedOnAsync(ct).ConfigureAwait(false))
-                        return null;
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        if (!await EnsureLoggedOnAsync(opCt).ConfigureAwait(false))
+                            return null;
 
-                    PICSProductInfoResult pics = await _client.RequestProductInfo(0, pkgId, ct).ConfigureAwait(false);
-                    return PicsPackageResultToKeyValue(pkgId, pics);
+                        PICSProductInfoResult pics = await _client.RequestProductInfo(0, pkgId, opCt).ConfigureAwait(false);
+                        return PicsPackageResultToKeyValue(pkgId, pics);
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
                 }
-                finally
-                {
-                    _sessionLock.Release();
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
             }
         }
 
@@ -434,6 +491,28 @@ namespace SmartGoldbergEmu.Services
             if (code == SteamLogonWaitResult.LogonResponseParseFailed)
                 return "could not parse logon response";
             return $"Steam EResult {code}";
+        }
+
+        private CancellationTokenSource LinkWithLifetime(CancellationToken ct)
+        {
+            return CancellationTokenSource.CreateLinkedTokenSource(
+                ct,
+                _lifetimeCts.Token,
+                ServiceLocator.ApplicationLifetimeToken);
+        }
+
+        // Disconnect without taking _sessionLock so Dispose can unblock in-flight waiters.
+        private void InterruptClient()
+        {
+            _loggedOn = false;
+            SteamClient client = _client;
+            try
+            {
+                client?.Disconnect();
+            }
+            catch
+            {
+            }
         }
 
         private void TeardownClient()

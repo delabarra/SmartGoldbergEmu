@@ -213,7 +213,8 @@ namespace SmartGoldbergEmu.Services
 
         public static async Task DownloadAndApplyAsync(
             Action<string, int> progressCallback = null,
-            Func<bool> cancellationCheck = null)
+            Func<bool> cancellationCheck = null,
+            Action disallowCancellation = null)
         {
             string workRoot = PathConstants.LauncherUpdateWorkDirectory;
             string archivePath = Path.Combine(workRoot, PathConstants.LauncherUpdateArchiveFileName);
@@ -308,6 +309,9 @@ namespace SmartGoldbergEmu.Services
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
 
+                // Download/extract done; apply/restart must finish — do not accept cancel.
+                disallowCancellation?.Invoke();
+
                 string launcherExeName = Path.GetFileName(Application.ExecutablePath);
                 string payloadRoot = LauncherUpdatePayloadHelper.ResolvePayloadRoot(extractRoot, launcherExeName);
                 if (!string.Equals(payloadRoot, extractRoot, StringComparison.OrdinalIgnoreCase))
@@ -343,13 +347,14 @@ namespace SmartGoldbergEmu.Services
             Func<bool> cancellationCheck)
         {
             var effectiveTimeout = DownloadTimeout;
-            using (var cts = new CancellationTokenSource(effectiveTimeout))
+            using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ServiceLocator.ApplicationLifetimeToken))
             {
+                cts.CancelAfter(effectiveTimeout);
                 if (cancellationCheck != null)
                 {
                     var poll = new System.Threading.Timer(_ =>
                     {
-                        if (cancellationCheck())
+                        if (cancellationCheck() || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
                             cts.Cancel();
                     }, null, 0, 500);
                     try
@@ -870,7 +875,8 @@ namespace SmartGoldbergEmu.Services
 
                     await DownloadAndApplyAsync(
                         (message, progress) => { progressForm.UpdateProgress(message, progress); },
-                        () => progressForm.IsCancelled).ConfigureAwait(true);
+                        () => progressForm.IsCancelled,
+                        () => progressForm.DisableCancellation()).ConfigureAwait(true);
 
                     progressForm.Hide();
                     logger?.LogMessage("Launcher update staged; exiting to apply.");

@@ -134,6 +134,7 @@
     <Compile Include="Models\AppSearchResult.cs" />
     <Compile Include="Models\ApplicationSettings.cs" />
     <Compile Include="Models\GoldbergForkSource.cs" />
+    <Compile Include="Models\GoldbergReleaseChannel.cs" />
     <Compile Include="Models\GoldbergLaunchMode.cs" />
     <Compile Include="Models\CAchievement.cs" />
     <Compile Include="Models\GameConfig.cs" />

@@ -121,6 +121,7 @@ namespace SmartGoldbergEmu
                 Application.Run(mainForm);
 
                 TryRestoreSteamClientRegistryForLifecycle();
+                // Safety net if MainForm close path did not run (resources are disposed idempotently).
                 ServiceLocator.DisposeApplicationResources();
                 BootstrapService.LogShutdown();
             }

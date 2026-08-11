@@ -82,7 +82,9 @@ namespace SmartGoldbergEmu.Services
             return map;
         }
 
-        public static async Task<List<string>> GetLeaderboardsFromCommunityAsync(string appId)
+        public static async Task<List<string>> GetLeaderboardsFromCommunityAsync(
+            string appId,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var result = new List<string>();
             if (string.IsNullOrWhiteSpace(appId))
@@ -90,15 +92,17 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string url = string.Format(ApplicationConstants.SteamCommunityLeaderboardsXmlUrlFormat, Uri.EscapeDataString(appId));
                 using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
                 {
                     string xml;
-                    using (var response = await httpService.GetAsync(url).ConfigureAwait(false))
+                    using (var response = await httpService.GetAsync(url, cancellationToken).ConfigureAwait(false))
                     {
                         if (!response.IsSuccessStatusCode)
                             return result;
 
+                        cancellationToken.ThrowIfCancellationRequested();
                         xml = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
                     if (string.IsNullOrWhiteSpace(xml))
@@ -114,6 +118,10 @@ namespace SmartGoldbergEmu.Services
                     foreach (string name in names)
                         result.Add(name + "=0=0");
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch
             {

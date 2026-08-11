@@ -1148,17 +1148,9 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                return Directory.GetFiles(dir, "*.dll", SearchOption.AllDirectories)
-                    .Select(path =>
-                    {
-                        string fullDir = Path.GetFullPath(dir);
-                        if (!fullDir.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
-                            fullDir += Path.DirectorySeparatorChar;
-                        string fullPath = Path.GetFullPath(path);
-                        return fullPath.StartsWith(fullDir, StringComparison.OrdinalIgnoreCase)
-                            ? fullPath.Substring(fullDir.Length)
-                            : Path.GetFileName(path);
-                    })
+                // Top-level only: staging and Goldberg load_dlls are flat.
+                return Directory.GetFiles(dir, "*.dll", SearchOption.TopDirectoryOnly)
+                    .Select(path => Path.GetFileName(path))
                     .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }

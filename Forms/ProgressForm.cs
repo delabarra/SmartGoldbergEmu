@@ -61,6 +61,18 @@ namespace SmartGoldbergEmu.Forms
 
         public bool IsCancelled => System.Threading.Volatile.Read(ref _cancelledFlag) != 0;
 
+        // After download/extract/install work finishes, only cleanup remains — do not accept cancel.
+        public void DisableCancellation()
+        {
+            RunOnUiThread(() =>
+            {
+                if (IsDisposed || Disposing)
+                    return;
+                btnCancel.Enabled = false;
+                CancelButton = null;
+            });
+        }
+
         public void ShowCancellationAndClose(string message)
         {
             ShowTerminalStateAndClose(message, 2000);
@@ -109,6 +121,7 @@ namespace SmartGoldbergEmu.Forms
             _lastReportedPercentage = 0;
             StopAndDisposeAutoCloseTimer();
             btnCancel.Enabled = true;
+            CancelButton = btnCancel;
             lblStatus.Text = "Preparing download...";
             pbarProgress.Value = 0;
             btnCancel.Text = "Cancel";

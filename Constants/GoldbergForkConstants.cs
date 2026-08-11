@@ -8,6 +8,7 @@ namespace SmartGoldbergEmu.Constants
     {
         public const string IniSection = "emulator";
         public const string IniKeyFork = "goldberg_fork";
+        public const string IniKeyReleaseChannel = "goldberg_release_channel";
         public const string IniKeyVersion = "goldberg_version";
 
         public const string RepackReleasesApiUrl = "https://api.github.com/repos/delabarra/GoldbergEmu-Forks-Repacked/releases/latest";

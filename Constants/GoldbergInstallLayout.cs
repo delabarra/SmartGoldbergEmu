@@ -138,17 +138,15 @@ namespace SmartGoldbergEmu.Constants
         {
             return "Optional extra DLLs — the only way SmartGoldbergEmu loads DLLs besides emulator files and Steam.dll mode."
                 + "\r\n\r\n"
-                + "Place .dll files here (goldberg/steamclient_experimental/extra_dlls). At launch they are copied into each game's steam_settings/load_dlls folder; Goldberg loads them from there when the game starts. The per-game load_dlls folder is removed when the game exits. Do not use inject tools or put DLLs beside the game exe for extras."
+                + "Place .dll files here (goldberg/steamclient_experimental/extra_dlls), in this folder only (not in subfolders). At launch matching DLLs are copied into each game's steam_settings/load_dlls folder; Goldberg loads them from there when the game starts. The per-game load_dlls folder is removed when the game exits. Do not use inject tools or put DLLs beside the game exe for extras."
                 + "\r\n\r\n"
                 + "Architecture in the file name:"
                 + "\r\n\r\n"
-                + "32-bit only: name must contain x32 (example: steamclient_extra_x32.dll)"
+                + "32-bit only: name must contain x32 or x86 (example: plugin_x32.dll)"
                 + "\r\n"
-                + "64-bit only: name must contain x64 (example: steamclient_extra_x64.dll)"
+                + "64-bit only: name must contain x64 (example: plugin_x64.dll)"
                 + "\r\n"
-                + "Both 32-bit and 64-bit: name has neither x32 nor x64 (example: steamclient_extra.dll)"
-                + "\r\n\r\n"
-                + "Optional load_order.txt in this folder is copied when the game has none yet."
+                + "Both 32-bit and 64-bit: name has neither x32, x86, nor x64 (example: plugin.dll)"
                 + "\r\n\r\n"
                 + "Do not put these DLLs directly in steam_settings/load_dlls inside a game; use this folder instead.";
         }

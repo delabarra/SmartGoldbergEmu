@@ -259,13 +259,16 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
-                    await WarmUpAsync().ConfigureAwait(false);
+                    await WarmUpAsync(ServiceLocator.ApplicationLifetimeToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
                 }
                 catch
                 {
                     // Best-effort background probe; defaults remain usable.
                 }
-            });
+            }, ServiceLocator.ApplicationLifetimeToken);
         }
 
         private static SteamStaticCdnPreferences CreateDefaultPreferences()

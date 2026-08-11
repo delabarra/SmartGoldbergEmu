@@ -5,6 +5,7 @@ using SmartGoldbergEmu.Constants;
 namespace SmartGoldbergEmu.Helpers
 {
     // Copies goldberg/steamclient_experimental/extra_dlls into per-game steam_settings/load_dlls before launch.
+    // Flat top-level only: Goldberg load_dlls scans that folder non-recursively.
     public static class SteamClientExtraDllsStaging
     {
         public static bool TryStageIntoLoadDllsFolder(
@@ -21,35 +22,14 @@ namespace SmartGoldbergEmu.Helpers
 
             Directory.CreateDirectory(loadDllsDestinationDirectory);
 
-            string loadOrderSource = Path.Combine(extraDllsSourceDirectory, PathConstants.GoldbergLoadDllsLoadOrderFileName);
-            string loadOrderDest = Path.Combine(loadDllsDestinationDirectory, PathConstants.GoldbergLoadDllsLoadOrderFileName);
-            if (File.Exists(loadOrderSource) && !File.Exists(loadOrderDest))
-            {
-                File.Copy(loadOrderSource, loadOrderDest);
-                copiedFileCount++;
-            }
-
-            string sourceRoot = Path.GetFullPath(extraDllsSourceDirectory);
-            if (!sourceRoot.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
-                sourceRoot += Path.DirectorySeparatorChar;
-
             try
             {
-                foreach (string sourcePath in Directory.GetFiles(extraDllsSourceDirectory, "*.dll", SearchOption.AllDirectories))
+                foreach (string sourcePath in Directory.GetFiles(extraDllsSourceDirectory, "*.dll", SearchOption.TopDirectoryOnly))
                 {
                     if (!LoadDllsArchFilter.MatchesProcessArchitecture(sourcePath, useX64))
                         continue;
 
-                    string fullSource = Path.GetFullPath(sourcePath);
-                    if (!fullSource.StartsWith(sourceRoot, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string relative = fullSource.Substring(sourceRoot.Length);
-                    string destPath = Path.Combine(loadDllsDestinationDirectory, relative);
-                    string destDir = Path.GetDirectoryName(destPath);
-                    if (!string.IsNullOrEmpty(destDir))
-                        Directory.CreateDirectory(destDir);
-
+                    string destPath = Path.Combine(loadDllsDestinationDirectory, Path.GetFileName(sourcePath));
                     if (File.Exists(destPath))
                         continue;
 

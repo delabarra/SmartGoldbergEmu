@@ -1190,7 +1190,11 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
-                    var leaderboards = await SteamWebApiService.GetLeaderboardsFromCommunityAsync(gameConfig.AppId.ToString());
+                    CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
+                    ct.ThrowIfCancellationRequested();
+                    var leaderboards = await SteamWebApiService
+                        .GetLeaderboardsFromCommunityAsync(gameConfig.AppId.ToString(), ct)
+                        .ConfigureAwait(false);
                     if (leaderboards == null || leaderboards.Count == 0)
                         return;
                     if (File.Exists(leaderboardsPath))
@@ -1199,11 +1203,14 @@ namespace SmartGoldbergEmu.Services
                     File.WriteAllLines(leaderboardsPath, leaderboards);
                     ServiceLocator.LogService.LogDebug($"Generated {PathConstants.GoldbergLeaderboardsFileName} from community fallback with {leaderboards.Count} leaderboard(s) for app {gameConfig.AppId}");
                 }
+                catch (OperationCanceledException)
+                {
+                }
                 catch (Exception ex)
                 {
                     ServiceLocator.LogService.LogError($"Failed to fetch leaderboards fallback for app {gameConfig.AppId}", ex);
                 }
-            }).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchLeaderboardsOnlineIfMissing));
+            }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchLeaderboardsOnlineIfMissing));
         }
 
         private static void WriteSteamInterfacesIfSourceAvailable(string steamSettingsPath, GameConfig gameConfig, ref bool anyFileGenerated)
@@ -1298,9 +1305,11 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
+                    CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
+                    ct.ThrowIfCancellationRequested();
                     ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements from AppDataKit for app {gameConfig.AppId}");
                     AchievementsSection section = await ServiceLocator.AppDataKitBridgeService
-                        .FetchAchievementsAsync(gameConfig.AppId, language)
+                        .FetchAchievementsAsync(gameConfig.AppId, language, ct)
                         .ConfigureAwait(false);
                     if (section == null
                         || section.Status != SnapshotSectionStatus.Ok
@@ -1326,11 +1335,14 @@ namespace SmartGoldbergEmu.Services
                     File.WriteAllText(achievementsPath, JsonConvert.SerializeObject(achievementsList, JsonFormatting.Indented));
                     ServiceLocator.LogService.LogDebug($"Generated {AchievementConstants.AchievementsFileName} from AppDataKit with {achievementsList.Count} achievement(s) for app {gameConfig.AppId}");
                 }
+                catch (OperationCanceledException)
+                {
+                }
                 catch (Exception ex)
                 {
                     ServiceLocator.LogService.LogError($"Failed to fetch achievements from AppDataKit for app {gameConfig.AppId}", ex);
                 }
-            }).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchAchievementsOnlineIfMissing));
+            }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchAchievementsOnlineIfMissing));
         }
 
         // Schema writes expect the CDN file name (hash.jpg), not a full URL.

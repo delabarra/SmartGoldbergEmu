@@ -3,11 +3,12 @@ using System.IO;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // Filename rules for steam_settings/load_dlls (x64 / x32 / any).
+    // Filename rules for steam_settings/load_dlls (x64 / x32|x86 / any).
     public static class LoadDllsArchFilter
     {
         public const string ArchMarkerX64 = "x64";
         public const string ArchMarkerX32 = "x32";
+        public const string ArchMarkerX86 = "x86";
 
         public static bool MatchesProcessArchitecture(string dllFileName, bool useX64)
         {
@@ -19,7 +20,8 @@ namespace SmartGoldbergEmu.Helpers
                 return false;
 
             bool hasX64 = baseName.IndexOf(ArchMarkerX64, StringComparison.OrdinalIgnoreCase) >= 0;
-            bool hasX32 = baseName.IndexOf(ArchMarkerX32, StringComparison.OrdinalIgnoreCase) >= 0;
+            bool hasX32 = baseName.IndexOf(ArchMarkerX32, StringComparison.OrdinalIgnoreCase) >= 0
+                || baseName.IndexOf(ArchMarkerX86, StringComparison.OrdinalIgnoreCase) >= 0;
 
             if (hasX64 && !hasX32)
                 return useX64;

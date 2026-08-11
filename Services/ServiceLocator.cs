@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Threading;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Generators;
 using SmartGoldbergEmu.Models;
@@ -8,6 +9,9 @@ namespace SmartGoldbergEmu.Services
 {
     public static class ServiceLocator
     {
+        private static readonly object _applicationLifetimeGate = new object();
+        private static CancellationTokenSource _applicationLifetimeCts = new CancellationTokenSource();
+
         private sealed class DesignTimeLogService : ILogService
         {
             internal static readonly DesignTimeLogService Instance = new DesignTimeLogService();
@@ -84,6 +88,20 @@ namespace SmartGoldbergEmu.Services
 
         public static ILogService LogService => _logService.Value;
 
+        // Cancelled first during DisposeApplicationResources; link long-lived I/O to this token.
+        public static CancellationToken ApplicationLifetimeToken
+        {
+            get
+            {
+                lock (_applicationLifetimeGate)
+                {
+                    if (_applicationLifetimeCts == null)
+                        return new CancellationToken(canceled: true);
+                    return _applicationLifetimeCts.Token;
+                }
+            }
+        }
+
         public static AppDataService AppDataService => _appDataServiceOverride ?? _appDataService.Value;
 
         internal static void SetAppDataServiceForTests(AppDataService service)
@@ -131,6 +149,28 @@ namespace SmartGoldbergEmu.Services
             _taskReportService = service;
         }
 
+        internal static void ClearTaskReportService()
+        {
+            _taskReportService = null;
+        }
+
+        // Test-only: recreate lifetime CTS after DisposeApplicationResources in the same process.
+        internal static void ResetApplicationLifetimeForTests()
+        {
+            lock (_applicationLifetimeGate)
+            {
+                try
+                {
+                    _applicationLifetimeCts?.Dispose();
+                }
+                catch
+                {
+                }
+
+                _applicationLifetimeCts = new CancellationTokenSource();
+            }
+        }
+
         public static SteamApiKeyService SteamApiKeyService => _steamApiKeyService.Value;
 
         public static LaunchOptionService LaunchOptionService => _launchOptionService.Value;
@@ -164,9 +204,21 @@ namespace SmartGoldbergEmu.Services
 
         public static SteamInterfacesService SteamInterfacesService => _steamInterfacesService.Value;
 
-        // Call once after the UI message loop exits; tears down session-scoped singletons (Steam PICS, images, theme).
+        // Idempotent. Prefer calling from MainForm close (dispose-then-close); Program also calls after the message loop as a safety net.
+        // Order: cancel app lifetime → cancel delayed launch work → dispose Steam/images/theme → drop TaskReportService ref.
         internal static void DisposeApplicationResources()
         {
+            CancelApplicationLifetime();
+
+            try
+            {
+                if (_gameLaunchService.IsValueCreated)
+                    _gameLaunchService.Value.CancelPendingRegistryRestores();
+            }
+            catch
+            {
+            }
+
             try
             {
                 if (_steamProductInfoService.IsValueCreated)
@@ -190,6 +242,49 @@ namespace SmartGoldbergEmu.Services
             {
                 if (_themeService.IsValueCreated)
                     _themeService.Value.Dispose();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                TaskReportService report = _taskReportService;
+                if (report != null)
+                {
+                    report.Clear();
+                    ClearTaskReportService();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // Cancels app lifetime without disposing services (tests / early cancel).
+        internal static void CancelApplicationLifetime()
+        {
+            CancellationTokenSource cts;
+            lock (_applicationLifetimeGate)
+            {
+                cts = _applicationLifetimeCts;
+                _applicationLifetimeCts = null;
+            }
+
+            if (cts == null)
+                return;
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                cts.Dispose();
             }
             catch
             {

@@ -1276,6 +1276,31 @@ namespace SmartGoldbergEmu.Services
             _logger?.LogDebug("Restored ActiveProcess steamclient paths to the Steam installation.");
         }
 
+        // App shutdown: cancel all in-process registry-restore delays so they do not run after UI teardown.
+        // Dispose stays in each task's finally (avoid ObjectDisposedException racing Task.Delay).
+        internal void CancelPendingRegistryRestores()
+        {
+            List<CancellationTokenSource> pending;
+            lock (_registryRestoreTimerLock)
+            {
+                if (_registryRestoreCancellationByAppId.Count == 0)
+                    return;
+                pending = new List<CancellationTokenSource>(_registryRestoreCancellationByAppId.Values);
+                _registryRestoreCancellationByAppId.Clear();
+            }
+
+            foreach (CancellationTokenSource cts in pending)
+            {
+                try
+                {
+                    cts.Cancel();
+                }
+                catch
+                {
+                }
+            }
+        }
+
         private void CancelRegistryRestoreTimer(ulong appId)
         {
             if (appId == 0)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
@@ -16,7 +17,8 @@ namespace SmartGoldbergEmu.Services
         public static async Task<List<AppSearchResult>> SearchByNameAsync(
             string searchTerm,
             int maxResults = 10,
-            ITaskReportService feedbackService = null)
+            ITaskReportService feedbackService = null,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var allCandidates = new List<AppSearchResult>();
 
@@ -25,6 +27,7 @@ namespace SmartGoldbergEmu.Services
                 if (string.IsNullOrWhiteSpace(searchTerm))
                     return new List<AppSearchResult>();
 
+                cancellationToken.ThrowIfCancellationRequested();
                 feedbackService?.SetMessage("Searching for games...");
 
                 string searchLower = searchTerm.ToLowerInvariant();
@@ -35,9 +38,10 @@ namespace SmartGoldbergEmu.Services
                 using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
                 {
                     string responseContent;
-                    using (var response = await httpService.GetAsync(searchUrl).ConfigureAwait(false))
+                    using (var response = await httpService.GetAsync(searchUrl, cancellationToken).ConfigureAwait(false))
                     {
                         response.EnsureSuccessStatusCode();
+                        cancellationToken.ThrowIfCancellationRequested();
                         responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
 
@@ -49,6 +53,8 @@ namespace SmartGoldbergEmu.Services
 
                     foreach (JsonObject game in gamesArray)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
+
                         string appName = game["name"]?.ToString();
                         if (string.IsNullOrEmpty(appName))
                             continue;
@@ -114,6 +120,10 @@ namespace SmartGoldbergEmu.Services
 
                 feedbackService?.SetMessageWithAutoClear($"Found {sortedResults.Count} matching games");
                 return sortedResults;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

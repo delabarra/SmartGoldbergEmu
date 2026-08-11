@@ -137,6 +137,55 @@ namespace SmartGoldbergEmu.Tests.Services
             }
         }
 
+#if DEBUG
+        [Fact]
+        public async Task CheckForUpdatesAsync_uses_upstream_only_when_channel_is_upstream()
+        {
+            using (var appScope = new ServiceLocatorTestScope("sge-emu-update-upstream-only-"))
+            using (var httpScope = new HttpServiceTestScope())
+            {
+                appScope.WriteEmulatorConfig(
+                    GoldbergForkSource.Detanup,
+                    "2026_02_16",
+                    GoldbergReleaseChannel.Upstream);
+                httpScope.HttpService.SetJsonResponse(GoldbergForkConstants.RepackReleasesApiUrl, SampleRepackJson);
+                httpScope.HttpService.SetJsonResponse(
+                    GoldbergForkConstants.GetUpstreamReleasesApiUrl(GoldbergForkSource.Detanup),
+                    SampleUpstreamJson);
+
+                UpdateCheckResult result = await EmulatorUpdateService.CheckForUpdatesAsync();
+
+                Assert.True(result.Success);
+                Assert.True(result.UpdateAvailable);
+                Assert.Equal("2026_05_19", result.LatestVersion);
+                Assert.Equal("https://example/upstream.7z", result.DownloadUrl);
+                Assert.False(result.FromRepack);
+            }
+        }
+
+        [Fact]
+        public async Task CheckForUpdatesAsync_fails_when_repack_channel_lacks_fork_asset()
+        {
+            using (var appScope = new ServiceLocatorTestScope("sge-emu-update-repack-only-"))
+            using (var httpScope = new HttpServiceTestScope())
+            {
+                appScope.WriteEmulatorConfig(
+                    GoldbergForkSource.Detanup,
+                    "2026_02_16",
+                    GoldbergReleaseChannel.Repack);
+                httpScope.HttpService.SetJsonResponse(GoldbergForkConstants.RepackReleasesApiUrl, SampleRepackJsonAlexOnly);
+                httpScope.HttpService.SetJsonResponse(
+                    GoldbergForkConstants.GetUpstreamReleasesApiUrl(GoldbergForkSource.Detanup),
+                    SampleUpstreamJson);
+
+                UpdateCheckResult result = await EmulatorUpdateService.CheckForUpdatesAsync();
+
+                Assert.False(result.Success);
+                Assert.Contains("Repack", result.ErrorMessage, System.StringComparison.OrdinalIgnoreCase);
+            }
+        }
+#endif
+
         [Fact]
         public async Task CheckForUpdatesAsync_surfaces_github_rate_limit_without_upstream_fallback()
         {

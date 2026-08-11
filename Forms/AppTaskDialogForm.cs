@@ -65,7 +65,10 @@ namespace SmartGoldbergEmu.Forms
     // Task Dialog–style chrome: growing body, optional checkbox strip, button footer.
     public sealed class AppTaskDialogForm : Form
     {
-        private const int FormWidth = 480;
+        // Wrap long body text at this width; actual client width may be narrower when content is short.
+        // Includes mirrored side pads (icon column on the left, equal empty pad on the right).
+        private const int FormWidthMax = 526;
+        private const int FormWidthMin = 280;
         private const int LayoutMargin = 14;
         private const int IconSize = 32;
         private const int IconGap = 14;
@@ -85,6 +88,9 @@ namespace SmartGoldbergEmu.Forms
         private CheckBox _chkVerification;
         private int _clickedButtonId = TaskDialogHelper.IdCancel;
         private Image _iconImage;
+        private int _clientWidth = FormWidthMax;
+        // Left inset of the text block; mirrored on the right so side padding matches.
+        private int _contentLeft = LayoutMargin;
 
         private AppTaskDialogForm(AppTaskDialogRequest request, ThemeService themeService)
         {
@@ -274,17 +280,14 @@ namespace SmartGoldbergEmu.Forms
 
         private void BuildLayout()
         {
-            int textLeft = LayoutMargin + IconSize + IconGap;
-            int textWidth = FormWidth - textLeft - LayoutMargin;
             bool hasIcon = ResolveDialogIcon() != null;
-            if (!hasIcon)
-            {
-                textLeft = LayoutMargin;
-                textWidth = FormWidth - (LayoutMargin * 2);
-            }
+            _contentLeft = hasIcon ? LayoutMargin + IconSize + IconGap : LayoutMargin;
+            _clientWidth = MeasureClientWidth();
 
-            _pnlBody = BuildBodyBand(textLeft, textWidth, hasIcon);
-            _pnlCheckStrip = BuildCheckStrip(textLeft, textWidth);
+            int textWidth = _clientWidth - (_contentLeft * 2);
+
+            _pnlBody = BuildBodyBand(_contentLeft, textWidth, hasIcon);
+            _pnlCheckStrip = BuildCheckStrip(_contentLeft, textWidth);
             _pnlButtons = BuildButtonBand();
 
             int y = 0;
@@ -303,7 +306,78 @@ namespace SmartGoldbergEmu.Forms
 
             Controls.Add(_pnlBody);
             Controls.Add(_pnlButtons);
-            ClientSize = new Size(FormWidth, y);
+            ClientSize = new Size(_clientWidth, y);
+        }
+
+        // Prefer hugging short content; grow for wide button rows; wrap long prose at FormWidthMax.
+        // Right inset matches _contentLeft (same space as to the left of the text).
+        private int MeasureClientWidth()
+        {
+            int maxText = 0;
+            MaxUnwrappedLineWidth(_request.Content, ref maxText);
+            MaxUnwrappedLineWidth(_request.FooterText, ref maxText);
+            MaxUnwrappedLineWidth(_request.VerificationText, ref maxText);
+            if (_request.ContentLinks != null)
+            {
+                foreach (AppTaskDialogLink link in _request.ContentLinks)
+                {
+                    if (link == null || string.IsNullOrWhiteSpace(link.Url))
+                        continue;
+                    string display = FormatContentLinkDisplayText(link);
+                    MaxUnwrappedLineWidth(display, ref maxText);
+                }
+            }
+
+            int sidePads = _contentLeft * 2;
+            int contentWidth = sidePads + maxText;
+            if (contentWidth > FormWidthMax)
+                contentWidth = FormWidthMax;
+
+            // Buttons use the normal small LayoutMargin, not the text column inset.
+            int buttonsWidth = MeasurePreferredButtonRowWidth() + (LayoutMargin * 2);
+            int width = Math.Max(contentWidth, buttonsWidth);
+            if (width < FormWidthMin)
+                width = FormWidthMin;
+            return width;
+        }
+
+        private void MaxUnwrappedLineWidth(string text, ref int maxWidth)
+        {
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            string normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+            string[] lines = normalized.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (line.Length == 0)
+                    continue;
+                Size size = TextRenderer.MeasureText(
+                    line,
+                    Font,
+                    Size.Empty,
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                if (size.Width > maxWidth)
+                    maxWidth = size.Width;
+            }
+        }
+
+        private int MeasurePreferredButtonRowWidth()
+        {
+            var buttons = _request.Buttons;
+            if (buttons == null || buttons.Count == 0)
+                return MeasureButtonWidth("OK");
+
+            int total = 0;
+            for (int i = 0; i < buttons.Count; i++)
+            {
+                if (i > 0)
+                    total += ButtonGap;
+                string label = buttons[i] != null ? buttons[i].Text : string.Empty;
+                total += MeasureButtonWidth(label);
+            }
+            return total;
         }
 
         private Panel BuildBodyBand(int textLeft, int textWidth, bool hasIcon)
@@ -311,7 +385,7 @@ namespace SmartGoldbergEmu.Forms
             var panel = new Panel
             {
                 Name = "pnlBody",
-                Width = FormWidth,
+                Width = _clientWidth,
                 Location = new Point(0, 0)
             };
 
@@ -437,14 +511,14 @@ namespace SmartGoldbergEmu.Forms
             var panel = new Panel
             {
                 Name = "pnlCheckStrip",
-                Width = FormWidth
+                Width = _clientWidth
             };
 
             _chkVerification = new CheckBox
             {
                 Name = "chkVerification",
                 AutoSize = true,
-                MaximumSize = new Size(FormWidth - (LayoutMargin * 2), 0),
+                MaximumSize = new Size(textWidth, 0),
                 Text = _request.VerificationText.Trim(),
                 Checked = _request.VerificationChecked,
                 UseMnemonic = false,
@@ -453,7 +527,7 @@ namespace SmartGoldbergEmu.Forms
             };
             panel.Controls.Add(_chkVerification);
 
-            Size chkSize = _chkVerification.GetPreferredSize(new Size(FormWidth - (LayoutMargin * 2), 0));
+            Size chkSize = _chkVerification.GetPreferredSize(new Size(textWidth, 0));
             _chkVerification.Size = chkSize;
             panel.Height = topPad + chkSize.Height + BandPadY;
             return panel;
@@ -464,7 +538,7 @@ namespace SmartGoldbergEmu.Forms
             var panel = new Panel
             {
                 Name = "pnlButtons",
-                Width = FormWidth,
+                Width = _clientWidth,
                 Height = BandPadY + ButtonHeight + BandPadY
             };
 
@@ -478,18 +552,35 @@ namespace SmartGoldbergEmu.Forms
             }
 
             var widths = new int[buttons.Count];
-            int buttonRowWidth = 0;
+            int preferredTotal = 0;
             for (int i = 0; i < buttons.Count; i++)
             {
                 widths[i] = MeasureButtonWidth(buttons[i].Text);
-                buttonRowWidth += widths[i];
-                if (i > 0)
-                    buttonRowWidth += ButtonGap;
+                preferredTotal += widths[i];
             }
 
-            int buttonLeft = FormWidth - LayoutMargin - buttonRowWidth;
-            if (buttonLeft < LayoutMargin)
-                buttonLeft = LayoutMargin;
+            int gaps = ButtonGap * Math.Max(0, buttons.Count - 1);
+            // Shrink buttons when the row would overflow the client area.
+            int maxButtonsWidth = _clientWidth - (LayoutMargin * 2) - gaps;
+            if (preferredTotal > maxButtonsWidth && preferredTotal > 0 && buttons.Count > 0)
+            {
+                int used = 0;
+                for (int i = 0; i < buttons.Count; i++)
+                {
+                    if (i < buttons.Count - 1)
+                    {
+                        widths[i] = Math.Max(1, (widths[i] * maxButtonsWidth) / preferredTotal);
+                        used += widths[i];
+                    }
+                    else
+                        widths[i] = Math.Max(1, maxButtonsWidth - used);
+                }
+                preferredTotal = maxButtonsWidth;
+            }
+
+            // Normal command-area: right-align with a small margin (not the text column inset).
+            int buttonRowWidth = preferredTotal + gaps;
+            int buttonLeft = _clientWidth - LayoutMargin - buttonRowWidth;
 
             Button defaultButton = null;
             Button cancelButton = null;

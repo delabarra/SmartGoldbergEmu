@@ -14,8 +14,10 @@ using SmartGoldbergEmu.Services;
 using SmartGoldbergEmu.StubKit;
 using SmartGoldbergEmu.Validation;
 using SteamKit;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using Timer = System.Windows.Forms.Timer;
 
 namespace SmartGoldbergEmu.Forms
 {
@@ -48,6 +50,10 @@ namespace SmartGoldbergEmu.Forms
         private Timer _gameListRefreshTimer;
         private const int GameListRefreshDebounceMs = 80;
         private bool _gameListRefreshFullTiles;
+        // Dispose Steam/theme/image singletons before allowing Close so the process does not linger after the UI is gone.
+        private bool _closeDisposeStarted;
+        private bool _closeAfterDisposeReady;
+        private CancellationTokenSource _formLifetimeCts = new CancellationTokenSource();
         private int _tileImageLoadGeneration;
         private string _pendingAddMosaicImageKey;
         // After games.ini commit, draft is cleared but assets may still be downloading — keep waiting art on these rows.
@@ -241,6 +247,8 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            CancelFormLifetime();
+
             _taskReportService.Clear();
             _themeService.ThemeChanged -= ThemeService_ThemeChanged;
 
@@ -426,14 +434,47 @@ namespace SmartGoldbergEmu.Forms
         private void StartLoadTileImages(string viewMode)
         {
             int generation = ++_tileImageLoadGeneration;
-            _ = LoadTileImagesAsync(viewMode, generation).ForgetFaults(Program.LogService, nameof(LoadTileImagesAsync));
+            _ = LoadTileImagesAsync(viewMode, generation, FormLifetimeToken)
+                .ForgetFaults(Program.LogService, nameof(LoadTileImagesAsync));
         }
 
-        private async Task LoadTileImagesAsync(string viewMode, int generation)
+        private CancellationToken FormLifetimeToken
+        {
+            get
+            {
+                CancellationTokenSource cts = _formLifetimeCts;
+                if (cts == null)
+                    return new CancellationToken(canceled: true);
+                return cts.Token;
+            }
+        }
+
+        private void CancelFormLifetime()
+        {
+            CancellationTokenSource cts = Interlocked.Exchange(ref _formLifetimeCts, null);
+            if (cts == null)
+                return;
+            try
+            {
+                cts.Cancel();
+            }
+            catch
+            {
+            }
+            try
+            {
+                cts.Dispose();
+            }
+            catch
+            {
+            }
+        }
+
+        private async Task LoadTileImagesAsync(string viewMode, int generation, CancellationToken cancellationToken)
         {
             try
             {
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested)
                     return;
 
                 var gameImageService = ServiceLocator.GameImageService;
@@ -454,7 +495,7 @@ namespace SmartGoldbergEmu.Forms
                 _themeService.GetFallbackMosaicArtColors(effectiveTheme, out var mosaicBackground, out var mosaicForeground);
                 await gameImageService.EnsureMosaicFallbackForViewAsync(viewMode, effectiveTheme, mosaicBackground, mosaicForeground).ConfigureAwait(true);
 
-                if (IsDisposed || Disposing || generation != _tileImageLoadGeneration)
+                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                     return;
 
                 var addedAppIds = new HashSet<string>();
@@ -464,7 +505,7 @@ namespace SmartGoldbergEmu.Forms
 
                 foreach (ListViewItem item in lstGames.Items)
                 {
-                    if (IsDisposed || Disposing || generation != _tileImageLoadGeneration)
+                    if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                         return;
 
                     var game = item.Tag as GameConfig;
@@ -490,7 +531,7 @@ namespace SmartGoldbergEmu.Forms
                     if (imageCopy == null)
                         continue;
 
-                    if (generation != _tileImageLoadGeneration)
+                    if (cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                     {
                         imageCopy.Dispose();
                         continue;
@@ -502,10 +543,13 @@ namespace SmartGoldbergEmu.Forms
                         RegisterWaitingMosaicAnimation(imageKey, viewMode);
                 }
 
-                if (IsDisposed || Disposing || generation != _tileImageLoadGeneration)
+                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                     return;
 
                 lstGames.Invalidate();
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
@@ -1363,7 +1407,7 @@ namespace SmartGoldbergEmu.Forms
 
         private async Task OnCheckUpdatesAsync()
         {
-            if (IsDisposed || Disposing)
+            if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                 return;
             Program.LogService?.LogDebug("Manual Goldberg update check");
             _taskReportService.SetMessage("Checking for updates...");
@@ -1375,8 +1419,11 @@ namespace SmartGoldbergEmu.Forms
                     isStartup: false,
                     onCheckStart: null,
                     onCheckComplete: null).ConfigureAwait(true);
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
@@ -1385,7 +1432,8 @@ namespace SmartGoldbergEmu.Forms
             }
             finally
             {
-                _taskReportService.SetMessage(string.Empty);
+                if (!IsDisposed && !Disposing && !FormLifetimeToken.IsCancellationRequested)
+                    _taskReportService.SetMessage(string.Empty);
             }
         }
 
@@ -2459,16 +2507,17 @@ namespace SmartGoldbergEmu.Forms
                 await ApplyStubKitToExecutableAsync(target.FullPath).ConfigureAwait(true);
         }
 
-        private async Task OfferSteamStubRemovalIfNeededAsync(string executablePath, string gameName)
+        // Returns false when the user cancels (Cancel / window X); true to continue (Accept, Skip, or no prompt).
+        private async Task<bool> OfferSteamStubRemovalIfNeededAsync(string executablePath, string gameName)
         {
             if (IsDisposed || Disposing)
-                return;
+                return true;
             if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
-                return;
+                return true;
 
             string extension = Path.GetExtension(executablePath);
             if (!string.Equals(extension, ".exe", StringComparison.OrdinalIgnoreCase))
-                return;
+                return true;
 
             DetectResult detect;
             try
@@ -2479,13 +2528,13 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("StubKit: failed to check executable for SteamStub.", ex);
-                return;
+                return true;
             }
 
             if (IsDisposed || Disposing)
-                return;
+                return true;
             if (detect == null || !detect.CanRemove)
-                return;
+                return true;
 
             bool autoHandle = false;
             try
@@ -2501,10 +2550,11 @@ namespace SmartGoldbergEmu.Forms
             {
                 Program.LogService?.LogDebug("StubKit: auto-handling SteamStub on " + executablePath);
                 await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
-                return;
+                return true;
             }
 
             const int idAccept = 100;
+            const int idSkip = 101;
             AppTaskDialogResult answer = AppTaskDialogForm.Show(
                 this,
                 new AppTaskDialogRequest
@@ -2516,11 +2566,14 @@ namespace SmartGoldbergEmu.Forms
                     Buttons = new List<AppTaskDialogButton>
                     {
                         new AppTaskDialogButton(idAccept, "Accept") { IsDefault = true },
-                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Skip") { IsCancel = true }
+                        new AppTaskDialogButton(idSkip, "Skip"),
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
                     }
                 });
+            if (answer.ButtonId == TaskDialogHelper.IdCancel)
+                return false;
             if (answer.ButtonId != idAccept)
-                return;
+                return true;
 
             if (answer.VerificationChecked)
             {
@@ -2535,6 +2588,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
+            return true;
         }
 
         private string TryResolveLaunchExecutableForStubCheck(GameConfig game, LaunchOption launchOption)
@@ -3238,7 +3292,7 @@ namespace SmartGoldbergEmu.Forms
         {
             try
             {
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
                 Program.LogService?.LogDebug($"MainForm: LaunchGameInternalAsync called for {game?.AppName} (AppId: {game?.AppId}), useEmulator: {useEmulator}");
 
@@ -3253,15 +3307,17 @@ namespace SmartGoldbergEmu.Forms
                 if (!await TryEnsureEmulatorPrerequisiteForLaunch(game, useEmulator).ConfigureAwait(true))
                     return;
 
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
 
                 if (!TryValidateSteamApiBeforeLaunch(game, useEmulator))
                     return;
 
                 Program.LogService?.LogDebug("Checking for launch options...");
-                var launchResult = await _launchOptionService.ShowLaunchOptionsAsync(game, this).ConfigureAwait(true);
-                if (launchResult.Cancelled)
+                var launchResult = await _launchOptionService
+                    .ShowLaunchOptionsAsync(game, this, FormLifetimeToken)
+                    .ConfigureAwait(true);
+                if (launchResult.Cancelled || FormLifetimeToken.IsCancellationRequested)
                 {
                     Program.LogService?.LogDebug("User cancelled launch options dialog");
                     return;
@@ -3271,8 +3327,12 @@ namespace SmartGoldbergEmu.Forms
                 Program.LogService?.LogDebug($"Launch option selected: {(launchOption != null ? launchOption.Description ?? launchOption.Executable : "None (default)")}, SkipLauncher: {launchResult.SkipLauncher}");
 
                 string launchExecutablePath = TryResolveLaunchExecutableForStubCheck(game, launchOption);
-                await OfferSteamStubRemovalIfNeededAsync(launchExecutablePath, game.AppName).ConfigureAwait(true);
-                if (IsDisposed || Disposing)
+                if (!await OfferSteamStubRemovalIfNeededAsync(launchExecutablePath, game.AppName).ConfigureAwait(true))
+                {
+                    Program.LogService?.LogDebug("User cancelled SteamStub prompt; launch aborted");
+                    return;
+                }
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
 
                 Program.LogService?.LogDebug("Calling GameLaunchService.LaunchGame...");
@@ -3753,15 +3813,20 @@ namespace SmartGoldbergEmu.Forms
                 {
                     try
                     {
+                        CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
+                        ct.ThrowIfCancellationRequested();
                         var result = await _appDataService.EnsureGlobalConfigFilesExistAsync().ConfigureAwait(false);
                         if (!result.IsValid)
                             Program.LogService?.LogWarning($"Deferred config setup: {result.ErrorMessage}");
+                    }
+                    catch (OperationCanceledException)
+                    {
                     }
                     catch (Exception ex)
                     {
                         Program.LogService?.LogError($"Deferred config setup failed: {ex.Message}", ex);
                     }
-                }).ForgetFaults(Program.LogService, "DeferredEnsureGlobalConfigFiles");
+                }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(Program.LogService, "DeferredEnsureGlobalConfigFiles");
 
                 if (_appDataService.IsFirstRun())
                 {
@@ -3800,6 +3865,74 @@ namespace SmartGoldbergEmu.Forms
             {
                 Program.LogService?.LogError("Failed to save window state", ex);
             }
+
+            if (_closeAfterDisposeReady)
+                return;
+
+            CancelFormLifetime();
+
+            // Forced exits cannot cancel FormClosing; tear down synchronously (Steam dispose interrupts waiters).
+            if (e.CloseReason == CloseReason.WindowsShutDown
+                || e.CloseReason == CloseReason.TaskManagerClosing
+                || e.CloseReason == CloseReason.ApplicationExitCall)
+            {
+                if (!_closeDisposeStarted)
+                {
+                    _closeDisposeStarted = true;
+                    try
+                    {
+                        ServiceLocator.DisposeApplicationResources();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                _closeAfterDisposeReady = true;
+                return;
+            }
+
+            e.Cancel = true;
+            if (_closeDisposeStarted)
+                return;
+
+            _closeDisposeStarted = true;
+            Enabled = false;
+            UseWaitCursor = true;
+
+            _ = Task.Run(() =>
+            {
+                ServiceLocator.DisposeApplicationResources();
+            }).ContinueWith(_ =>
+            {
+                void FinishClose()
+                {
+                    _closeAfterDisposeReady = true;
+                    if (!IsDisposed && !Disposing)
+                        Close();
+                }
+
+                if (IsDisposed || Disposing)
+                    return;
+
+                try
+                {
+                    if (InvokeRequired)
+                    {
+                        if (IsHandleCreated)
+                            BeginInvoke(new Action(FinishClose));
+                        return;
+                    }
+
+                    FinishClose();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            }, TaskScheduler.Default).ForgetFaults(Program.LogService, "DisposeApplicationResourcesThenClose");
         }
 
         private void RestoreWindowState()

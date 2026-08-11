@@ -64,6 +64,22 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        private static GoldbergReleaseChannel GetConfiguredGoldbergReleaseChannel()
+        {
+#if !DEBUG
+            return GoldbergReleaseChannel.Auto;
+#else
+            try
+            {
+                return ServiceLocator.AppDataService.GetGoldbergReleaseChannel();
+            }
+            catch
+            {
+                return GoldbergReleaseChannel.Auto;
+            }
+#endif
+        }
+
         private static IList<UpdateManualDownloadLink> GetGoldbergManualDownloadLinks()
         {
             return new[]
@@ -269,7 +285,7 @@ namespace SmartGoldbergEmu.Services
             return true;
         }
 
-        // Resolution order: delabarra repack (configured fork asset), then that fork's upstream only.
+        // Resolution order depends on channel: Auto = repack then upstream; DEBUG may force one.
         private static async Task<bool> TryResolveDownloadReleaseAsync(
             IHttpService httpService,
             GoldbergForkSource configuredFork,
@@ -278,46 +294,55 @@ namespace SmartGoldbergEmu.Services
             var errors = new List<string>();
             string forkName = GoldbergForkConstants.GetForkDisplayName(configuredFork);
             _resolvedFork = configuredFork;
+            GoldbergReleaseChannel channel = GetConfiguredGoldbergReleaseChannel();
+            bool tryRepack = channel != GoldbergReleaseChannel.Upstream;
+            bool tryUpstream = channel != GoldbergReleaseChannel.Repack;
 
-            try
+            if (tryRepack)
             {
-                string repackJson = await FetchReleaseJsonAsync(httpService, GoldbergForkConstants.RepackReleasesApiUrl).ConfigureAwait(false);
-                var repackResolved = new GoldbergResolvedRelease();
-                if (!string.IsNullOrEmpty(repackJson)
-                    && GoldbergReleaseResolveHelper.TryParseRepackRelease(repackJson, configuredFork, repackResolved))
+                try
                 {
-                    ApplyResolvedRelease(repackResolved, result);
-                    ServiceLocator.LogService?.LogDebug("Using Goldberg repack release as download source.");
-                    return true;
+                    string repackJson = await FetchReleaseJsonAsync(httpService, GoldbergForkConstants.RepackReleasesApiUrl).ConfigureAwait(false);
+                    var repackResolved = new GoldbergResolvedRelease();
+                    if (!string.IsNullOrEmpty(repackJson)
+                        && GoldbergReleaseResolveHelper.TryParseRepackRelease(repackJson, configuredFork, repackResolved))
+                    {
+                        ApplyResolvedRelease(repackResolved, result);
+                        ServiceLocator.LogService?.LogDebug("Using Goldberg repack release as download source.");
+                        return true;
+                    }
+                    errors.Add("Repack: no asset for " + forkName);
                 }
-                errors.Add("Repack: no asset for " + forkName);
-            }
-            catch (Exception ex)
-            {
-                if (IsRateLimitMessage(ex.Message))
+                catch (Exception ex)
                 {
-                    result.ErrorMessage = ex.Message;
-                    return false;
+                    if (IsRateLimitMessage(ex.Message))
+                    {
+                        result.ErrorMessage = ex.Message;
+                        return false;
+                    }
+                    errors.Add("Repack: " + ex.Message);
+                    ServiceLocator.LogService?.LogWarning($"Goldberg repack release check failed: {ex.Message}");
                 }
-                errors.Add("Repack: " + ex.Message);
-                ServiceLocator.LogService?.LogWarning($"Goldberg repack release check failed: {ex.Message}");
             }
 
-            try
+            if (tryUpstream)
             {
-                if (await TryResolveUpstreamReleaseAsync(httpService, configuredFork, result).ConfigureAwait(false))
-                    return true;
-                errors.Add(forkName + " upstream: no Windows release asset");
-            }
-            catch (Exception ex)
-            {
-                if (IsRateLimitMessage(ex.Message))
+                try
                 {
-                    result.ErrorMessage = ex.Message;
-                    return false;
+                    if (await TryResolveUpstreamReleaseAsync(httpService, configuredFork, result).ConfigureAwait(false))
+                        return true;
+                    errors.Add(forkName + " upstream: no Windows release asset");
                 }
-                errors.Add(forkName + " upstream: " + ex.Message);
-                ServiceLocator.LogService?.LogWarning($"Goldberg upstream ({forkName}) release check failed: {ex.Message}");
+                catch (Exception ex)
+                {
+                    if (IsRateLimitMessage(ex.Message))
+                    {
+                        result.ErrorMessage = ex.Message;
+                        return false;
+                    }
+                    errors.Add(forkName + " upstream: " + ex.Message);
+                    ServiceLocator.LogService?.LogWarning($"Goldberg upstream ({forkName}) release check failed: {ex.Message}");
+                }
             }
 
             result.ErrorMessage = "Could not find a Goldberg download for " + forkName + ".\n" + string.Join("\n", errors);
@@ -473,7 +498,10 @@ namespace SmartGoldbergEmu.Services
             return result;
         }
 
-        public static async Task DownloadAndInstallAsync(Action<string, int> progressCallback = null, Func<bool> cancellationCheck = null)
+        public static async Task DownloadAndInstallAsync(
+            Action<string, int> progressCallback = null,
+            Func<bool> cancellationCheck = null,
+            Action disallowCancellation = null)
         {
             var uiMarshalingContext = SynchronizationContext.Current;
             string tempFolder = Path.Combine(PathConstants.AppBaseDirectory, PathConstants.LauncherUpdateTempFolderName);
@@ -603,6 +631,9 @@ namespace SmartGoldbergEmu.Services
                     throw new UpdateException($"File installation failed: {ex.Message}", ex);
                 }
 
+                // Install finished; cleanup must run — do not accept cancel for the rest of this flow.
+                disallowCancellation?.Invoke();
+
                 await Task.Run(() =>
                 {
                     if (!string.IsNullOrEmpty(_latestVersion))
@@ -626,6 +657,9 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
+                // Failure path is also cleanup-only; ignore further cancel clicks.
+                disallowCancellation?.Invoke();
+
                 await Task.Run(() =>
                 {
                     DeleteTempFolder(tempFolder);
@@ -696,7 +730,7 @@ namespace SmartGoldbergEmu.Services
                 }
             }
 
-            if (!_resolvedFromRepack)
+            if (!_resolvedFromRepack || GetConfiguredGoldbergReleaseChannel() == GoldbergReleaseChannel.Repack)
             {
                 if (primaryException != null)
                     throw new UpdateException($"Download failed: {primaryException.Message}", primaryException);
@@ -800,14 +834,15 @@ namespace SmartGoldbergEmu.Services
             Func<bool> cancellationCheck = null,
             TimeSpan? timeout = null)
         {
-            using (var cts = new CancellationTokenSource())
+            using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ServiceLocator.ApplicationLifetimeToken))
             {
                 var effectiveTimeout = timeout ?? DownloadTimeout;
                 long lastReportedBytes = -1L;
                 var progressLock = new object();
                 Action<long, long> wrappedProgress = (received, total) =>
                 {
-                    if (cancellationCheck?.Invoke() == true)
+                    if (cancellationCheck?.Invoke() == true
+                        || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
                         cts.Cancel();
                     lock (progressLock)
                     {
@@ -830,7 +865,7 @@ namespace SmartGoldbergEmu.Services
                 {
                     poll = new System.Threading.Timer(_ =>
                     {
-                        if (cancellationCheck())
+                        if (cancellationCheck() || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
                             cts.Cancel();
                     }, null, 0, 500);
                 }
@@ -1340,7 +1375,8 @@ namespace SmartGoldbergEmu.Services
 
         private static void ThrowIfUpdateCancelled(Func<bool> cancellationCheck)
         {
-            if (cancellationCheck != null && cancellationCheck())
+            if (ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested
+                || (cancellationCheck != null && cancellationCheck()))
                 throw new UpdateException("Download cancelled by user");
         }
 
@@ -1711,7 +1747,8 @@ namespace SmartGoldbergEmu.Services
 
                     await DownloadAndInstallAsync(
                         (message, progress) => { progressForm.UpdateProgress(message, progress); },
-                        () => progressForm.IsCancelled).ConfigureAwait(true);
+                        () => progressForm.IsCancelled,
+                        () => progressForm.DisableCancellation()).ConfigureAwait(true);
 
                     logger?.LogMessage("Goldberg emulator updated.");
                     progressForm.ShowSuccessAndClose("Installation complete");

@@ -141,7 +141,8 @@ namespace SmartGoldbergEmu.Forms
         private async Task PerformSearchAsync(string searchTerm)
         {
             CancelAndDispose(ref _searchCancellationTokenSource);
-            _searchCancellationTokenSource = new CancellationTokenSource();
+            _searchCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
+                ServiceLocator.ApplicationLifetimeToken);
             var cancellationToken = _searchCancellationTokenSource.Token;
 
             try
@@ -160,7 +161,7 @@ namespace SmartGoldbergEmu.Forms
 
                 Program.LogService?.LogDebug($"Starting search for: {searchTerm}");
 
-                var results = await FetchSearchResultsAsync(searchTerm).ConfigureAwait(false);
+                var results = await FetchSearchResultsAsync(searchTerm, cancellationToken).ConfigureAwait(false);
 
                 Program.LogService?.LogDebug($"Search returned {results?.Count ?? 0} results");
 
@@ -193,20 +194,28 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private async Task<List<AppSearchResult>> FetchSearchResultsAsync(string searchTerm)
+        private async Task<List<AppSearchResult>> FetchSearchResultsAsync(
+            string searchTerm,
+            CancellationToken cancellationToken)
         {
             if (IsDisposed || Disposing)
                 return new List<AppSearchResult>();
 
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!ulong.TryParse(searchTerm, out var appId))
-                return await SteamGameSearchService.SearchByNameAsync(searchTerm, maxResults: MaxSearchResults).ConfigureAwait(false);
+            {
+                return await SteamGameSearchService
+                    .SearchByNameAsync(searchTerm, maxResults: MaxSearchResults, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             UpdateStatus($"Looking up App ID {appId} in Steam Network...");
             var (appData, _) = await ServiceLocator.GameSetupService
-                .FetchMetadataWithRootAsync(appId.ToString())
+                .FetchMetadataWithRootAsync(appId.ToString(), cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            if (IsDisposed || Disposing)
+            if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested)
                 return new List<AppSearchResult>();
 
             if (appData != null && appData.Success && !string.IsNullOrEmpty(appData.Name))

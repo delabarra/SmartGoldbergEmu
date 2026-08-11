@@ -569,19 +569,59 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        public GoldbergReleaseChannel GetGoldbergReleaseChannel()
+        {
+            try
+            {
+                if (!File.Exists(_configFilePath))
+                    return GoldbergReleaseChannel.Auto;
+
+                var iniFile = _iniService.ParseFile(_configFilePath);
+                var raw = _iniService.GetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyReleaseChannel);
+                return GoldbergReleaseChannelIni.Parse(raw);
+            }
+            catch (Exception ex)
+            {
+                LogRedactionHelper.WriteDebug($"Failed to read Goldberg release channel: {ex.Message}");
+                return GoldbergReleaseChannel.Auto;
+            }
+        }
+
         public ValidationResult SetGoldbergForkSource(GoldbergForkSource source)
+        {
+            return SetGoldbergForkSource(source, GoldbergReleaseChannel.Auto);
+        }
+
+        public ValidationResult SetGoldbergForkSource(GoldbergForkSource source, GoldbergReleaseChannel channel)
         {
             try
             {
                 EnsureConfigDirectoryExists();
                 var iniFile = _iniService.ParseFile(_configFilePath);
-                var previousRaw = _iniService.GetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyFork);
-                var previous = GoldbergForkSourceIni.Parse(previousRaw);
-                bool forkChanged = !string.IsNullOrWhiteSpace(previousRaw)
-                    && previous != source;
+                var previousForkRaw = _iniService.GetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyFork);
+                var previousFork = GoldbergForkSourceIni.Parse(previousForkRaw);
+                var previousChannelRaw = _iniService.GetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyReleaseChannel);
+                var previousChannel = GoldbergReleaseChannelIni.Parse(previousChannelRaw);
+                bool selectionChanged = (!string.IsNullOrWhiteSpace(previousForkRaw) && previousFork != source)
+                    || !GoldbergReleaseChannelIni.AreEquivalent(previousChannel, channel);
 
-                _iniService.SetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyFork, GoldbergForkSourceIni.ToStorageValue(source));
-                if (forkChanged)
+                _iniService.SetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyFork,
+                    GoldbergForkSourceIni.ToStorageValue(source));
+                _iniService.SetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyReleaseChannel,
+                    GoldbergReleaseChannelIni.ToStorageValue(channel));
+                if (selectionChanged)
                     _iniService.SetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyVersion, string.Empty);
                 _iniService.WriteFile(iniFile, _configFilePath);
                 return ValidationResult.Success();

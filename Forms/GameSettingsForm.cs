@@ -677,16 +677,22 @@ namespace SmartGoldbergEmu.Forms
                     return;
 
                 AppCatalogSnapshot snapshot = await ServiceLocator.AppDataKitBridgeService
-                    .FetchMetadataSnapshotAsync(appIdNum, _gameConfig?.AppInfo)
+                    .FetchMetadataSnapshotAsync(
+                        appIdNum,
+                        _gameConfig?.AppInfo,
+                        cancellationToken: ServiceLocator.ApplicationLifetimeToken)
                     .ConfigureAwait(false);
 
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
                     return;
 
                 if (InvokeRequired)
                     Invoke(new Action(() => ApplyFetchedCatalogSnapshot(snapshot)));
                 else
                     ApplyFetchedCatalogSnapshot(snapshot);
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
@@ -2603,10 +2609,21 @@ namespace SmartGoldbergEmu.Forms
                 List<LaunchOption> all;
                 try
                 {
-                    all = await ServiceLocator.LaunchOptionService.ExtractLaunchOptionsIncludingUserIniAsync(launchConfig).ConfigureAwait(true);
+                    all = await ServiceLocator.LaunchOptionService
+                        .ExtractLaunchOptionsIncludingUserIniAsync(launchConfig, ServiceLocator.ApplicationLifetimeToken)
+                        .ConfigureAwait(true);
 
                     if (IsDisposed || Disposing || mySeq != Volatile.Read(ref _steamLaunchComboRefreshSeq))
                         return;
+                }
+                catch (OperationCanceledException)
+                {
+                    if (IsDisposed || Disposing || mySeq != Volatile.Read(ref _steamLaunchComboRefreshSeq))
+                        return;
+                    cmbSteamLaunchOptions.Items.Clear();
+                    cmbSteamLaunchOptions.Enabled = false;
+                    cmbSteamLaunchOptions.SelectedIndexChanged += CmbSteamLaunchOptions_SelectedIndexChanged;
+                    return;
                 }
                 catch (Exception ex)
                 {
@@ -3493,7 +3510,8 @@ namespace SmartGoldbergEmu.Forms
             if (string.IsNullOrEmpty(apiKey) || idsToResolve.Count == 0)
                 return;
 
-            _modsListResolveCts = new CancellationTokenSource();
+            _modsListResolveCts = CancellationTokenSource.CreateLinkedTokenSource(
+                ServiceLocator.ApplicationLifetimeToken);
             CancellationToken token = _modsListResolveCts.Token;
 
             _ = Task.Run(async () =>

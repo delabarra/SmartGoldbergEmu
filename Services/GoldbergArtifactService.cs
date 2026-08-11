@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
@@ -301,7 +302,12 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
+                    CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
+                    ct.ThrowIfCancellationRequested();
                     await GenerateItemsFromMenuAsync(gameConfig, null).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
                 }
                 catch (Exception ex)
                 {
@@ -309,7 +315,7 @@ namespace SmartGoldbergEmu.Services
                         $"Failed to auto-generate {PathConstants.GoldbergItemsJsonFileName} for app {gameConfig.AppId}",
                         ex);
                 }
-            }).ForgetFaults(ServiceLocator.LogService, nameof(TryGenerateItemsOnlineIfMissing));
+            }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(ServiceLocator.LogService, nameof(TryGenerateItemsOnlineIfMissing));
         }
 
         private AchievementService CreateAchievementService(ITaskReportService report, ulong appId)

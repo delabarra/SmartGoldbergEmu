@@ -28,11 +28,15 @@ namespace SmartGoldbergEmu.Tests.TestSupport
             File.WriteAllText(ConfigFilePath, content);
         }
 
-        public void WriteEmulatorConfig(GoldbergForkSource fork, string goldbergVersion = null)
+        public void WriteEmulatorConfig(
+            GoldbergForkSource fork,
+            string goldbergVersion = null,
+            GoldbergReleaseChannel channel = GoldbergReleaseChannel.Auto)
         {
             string ini =
                 "[emulator]\r\n" +
-                "goldberg_fork=" + GoldbergForkSourceIni.ToStorageValue(fork) + "\r\n";
+                "goldberg_fork=" + GoldbergForkSourceIni.ToStorageValue(fork) + "\r\n" +
+                "goldberg_release_channel=" + GoldbergReleaseChannelIni.ToStorageValue(channel) + "\r\n";
             if (goldbergVersion != null)
                 ini += "goldberg_version=" + goldbergVersion + "\r\n";
             WriteConfig(ini);
@@ -41,6 +45,7 @@ namespace SmartGoldbergEmu.Tests.TestSupport
         public void Dispose()
         {
             ServiceLocator.ClearAppDataServiceForTests();
+            ServiceLocator.ResetApplicationLifetimeForTests();
             try { Directory.Delete(DataDirectory, recursive: true); } catch { }
         }
     }

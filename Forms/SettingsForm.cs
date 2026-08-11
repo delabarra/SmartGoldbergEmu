@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Timer = System.Windows.Forms.Timer;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
@@ -1787,9 +1789,11 @@ namespace SmartGoldbergEmu.Forms
                 _isApiKeyValidationInProgress = true;
                 SetApiKeyValidationMessage("Validating API key...", fg);
 
-                var validationResult = await Task.Run(() => _apiKeyService.ValidateKey(apiKey));
+                var validationResult = await Task.Run(
+                    () => _apiKeyService.ValidateKey(apiKey),
+                    ServiceLocator.ApplicationLifetimeToken).ConfigureAwait(true);
 
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
                     return;
 
                 if (txtSteamWebApiKey.Text.Trim() != apiKey)
@@ -1802,6 +1806,9 @@ namespace SmartGoldbergEmu.Forms
                     SetApiKeyValidationMessage("API key is valid.", ok);
                 else
                     SetApiKeyValidationMessage($"Validation failed: {validationResult.ErrorMessage}", err);
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {

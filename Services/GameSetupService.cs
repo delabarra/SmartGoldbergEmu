@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using AppDataKit;
@@ -106,13 +107,14 @@ namespace SmartGoldbergEmu.Services
         public async Task<(OnlineAppData Metadata, AppInfoKeyValue AppInfo)> FetchMetadataWithRootAsync(
             string appId,
             AppInfoKeyValue existingAppInfo = null,
-            ITaskReportService feedback = null)
+            ITaskReportService feedback = null,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
                 return (null, existingAppInfo);
 
             AppCatalogSnapshot snapshot = await _appDataKitBridge
-                .FetchMetadataSnapshotAsync(appIdNum, existingAppInfo, feedback)
+                .FetchMetadataSnapshotAsync(appIdNum, existingAppInfo, feedback, cancellationToken)
                 .ConfigureAwait(false);
             if (snapshot == null || snapshot.Failure != AppMetadataFetchFailure.None || snapshot.Online == null)
                 return (null, snapshot?.AppInfo ?? existingAppInfo);

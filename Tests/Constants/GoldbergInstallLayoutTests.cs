@@ -96,9 +96,12 @@ namespace SmartGoldbergEmu.Tests.Constants
         {
             string text = GoldbergInstallLayout.BuildGoldbergReadmeText();
             Assert.Contains("x32", text);
+            Assert.Contains("x86", text);
             Assert.Contains("x64", text);
             Assert.Contains("load_dlls", text);
             Assert.Contains("steamclient_experimental/extra_dlls", text);
+            Assert.Contains("not in subfolders", text);
+            Assert.DoesNotContain("load_order", text);
         }
 
         [Fact]
