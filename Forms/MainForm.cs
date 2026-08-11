@@ -1035,6 +1035,7 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowCreateSteamAppIdFile.Click += OnCreateSteamAppIdFile_Click;
             miCtxRowRemoveSteamStub.DropDownOpening += OnRemoveSteamStub_DropDownOpening;
             ClearStubKitDropDownItems();
+            AddStubKitAutoHandleMenuHeader();
             miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripMenuItem("Loading…") { Enabled = false });
 
             lstGames.ItemActivate += lstGames_ItemActivate;
@@ -1438,17 +1439,10 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing)
                     return;
 
-                GameConfig updateExisting = null;
                 GameConfig duplicate = _gameDataService.FindDuplicateForAdd(executablePath, appId, out bool matchedByExecutable);
                 if (duplicate != null)
                 {
                     DuplicateGameAction action = DuplicateGameDialogHelper.Show(this, duplicate, matchedByExecutable);
-                    if (action == DuplicateGameAction.Cancel)
-                    {
-                        _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
-                        return;
-                    }
-
                     if (action == DuplicateGameAction.Edit)
                     {
                         _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.");
@@ -1456,18 +1450,16 @@ namespace SmartGoldbergEmu.Forms
                         return;
                     }
 
-                    updateExisting = duplicate;
-                    _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateUpdateDraft(duplicate), isUpdate: true);
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
+                    return;
                 }
-                else
-                {
-                    _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateDraftFromExecutable(executablePath));
-                }
+
+                _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateDraftFromExecutable(executablePath));
 
                 ShowPendingAddInList();
 
                 GameAddCollectResult collectResult = await ServiceLocator.GameAddCollector
-                    .CollectFromExecutableAsync(executablePath, this, _taskReportService, appId, updateExisting)
+                    .CollectFromExecutableAsync(executablePath, this, _taskReportService, appId)
                     .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
@@ -1500,8 +1492,7 @@ namespace SmartGoldbergEmu.Forms
                 _taskReportService.SetProgress(0, 0);
                 if (!await OpenGameSettingsFormAsync(gameConfig, metadata, collectResult.Bundle).ConfigureAwait(true))
                 {
-                    _taskReportService.SetMessageWithAutoClear(
-                        updateExisting != null ? "Updating game cancelled." : "Adding game cancelled.");
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
                     return;
                 }
 
@@ -1640,10 +1631,9 @@ namespace SmartGoldbergEmu.Forms
 
                     if (saveResult.HasCustomStatsJsonError)
                     {
-                        FormMessageBoxHelper.ShowIfAlive(this,
+                        AppTaskDialogHelper.ShowOk(
+                            this,
                             "Custom stats contain invalid JSON. Please fix the format before saving.",
-                            "Invalid JSON",
-                            MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
                     }
                     else if (!string.IsNullOrWhiteSpace(saveResult.ErrorMessage))
@@ -1997,7 +1987,7 @@ namespace SmartGoldbergEmu.Forms
             if (games.Count == 0)
                 return;
 
-            var (confirmed, deleteFiles) = RemovesGameForm.Show(games, this);
+            var (confirmed, deleteFiles) = RemoveGamesDialogHelper.Show(games, this);
             if (!confirmed)
                 return;
 
@@ -2030,7 +2020,7 @@ namespace SmartGoldbergEmu.Forms
                 string userMessage = "Failed to remove some games from library.";
                 if (!lastError.Contains("\\") && !lastError.Contains("/"))
                     userMessage = $"Failed to remove game: {lastError}";
-                FormMessageBoxHelper.ShowIfAlive(this, userMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, userMessage, "Remove Game", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2065,7 +2055,7 @@ namespace SmartGoldbergEmu.Forms
                     Program.LogService?.LogError(
                         $"Catalog for AppId {selectedGame.AppId} failed: {selectedGame.AppName}",
                         ex);
-                    FormMessageBoxHelper.ShowIfAlive(this, "Failed to refresh game data and assets. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    FormMessageBoxHelper.ShowIfAlive(this, "Failed to refresh game data and assets. Please check the SmartGoldbergEmu log for details.", "Refresh Game Data", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
@@ -2097,7 +2087,7 @@ namespace SmartGoldbergEmu.Forms
                 Program.LogService?.LogError(
                     $"Emulator files for AppId {selectedGame.AppId} failed (achievements): {selectedGame.AppName}",
                     ex);
-                FormMessageBoxHelper.ShowIfAlive(this, "Failed to generate achievements. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Failed to generate achievements. Please check the SmartGoldbergEmu log for details.", "Generate Achievements", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2118,6 +2108,7 @@ namespace SmartGoldbergEmu.Forms
             Point dropLocation = GetStubKitDropDownScreenLocation(miCtxRowRemoveSteamStub);
 
             ClearStubKitDropDownItems();
+            AddStubKitAutoHandleMenuHeader();
 
             var game = GetSelectedGame();
             if (game == null)
@@ -2141,6 +2132,7 @@ namespace SmartGoldbergEmu.Forms
 
                 Program.LogService?.LogError("StubKit: failed to resolve launch executables.", ex);
                 ClearStubKitDropDownItems();
+                AddStubKitAutoHandleMenuHeader();
                 AddStubKitPlaceholderMenuItem("Could not load executables");
                 ReopenStubKitDropDownAt(dropLocation);
                 return;
@@ -2150,6 +2142,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             ClearStubKitDropDownItems();
+            AddStubKitAutoHandleMenuHeader();
 
             if (targets == null || targets.Count == 0)
             {
@@ -2175,7 +2168,7 @@ namespace SmartGoldbergEmu.Forms
                 menuItems.Add(item);
             }
 
-            if (miCtxRowRemoveSteamStub.DropDownItems.Count == 0)
+            if (miCtxRowRemoveSteamStub.DropDownItems.Count <= 2)
             {
                 AddStubKitPlaceholderMenuItem("No executable found");
                 ReopenStubKitDropDownAt(dropLocation);
@@ -2347,6 +2340,53 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
+        // Checked toggle first, then a separator, then per-exe Patch/Restore items.
+        private void AddStubKitAutoHandleMenuHeader()
+        {
+            if (miCtxRowRemoveSteamStub == null)
+                return;
+
+            bool enabled = false;
+            try
+            {
+                enabled = _appDataService.GetAutoHandleSteamStubs();
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("StubKit: could not read Auto handle SteamStubs setting: " + ex.Message);
+            }
+
+            var autoItem = new ToolStripMenuItem("Auto handle SteamStubs")
+            {
+                Name = "miCtxStubAutoHandle",
+                CheckOnClick = true,
+                Checked = enabled,
+                ToolTipText = "When checked, removable SteamStub is unpacked automatically when adding or launching a game (no confirm dialog)."
+            };
+            autoItem.Click += OnStubKitAutoHandle_Click;
+            miCtxRowRemoveSteamStub.DropDownItems.Add(autoItem);
+            miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripSeparator());
+        }
+
+        private void OnStubKitAutoHandle_Click(object sender, EventArgs e)
+        {
+            var item = sender as ToolStripMenuItem;
+            if (item == null)
+                return;
+
+            var result = _appDataService.SetAutoHandleSteamStubs(item.Checked);
+            if (result.IsValid)
+                return;
+
+            item.Checked = !item.Checked;
+            FormMessageBoxHelper.ShowIfAlive(
+                this,
+                result.ErrorMessage ?? "Could not save Auto handle SteamStubs.",
+                StubKitFeedback.DialogTitle,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
         private void AddStubKitPlaceholderMenuItem(string text)
         {
             miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripMenuItem(text) { Enabled = false });
@@ -2396,14 +2436,52 @@ namespace SmartGoldbergEmu.Forms
             if (detect == null || !detect.CanRemove)
                 return;
 
-            DialogResult answer = FormMessageBoxHelper.ShowDialogIfAlive(
-                this,
-                StubKitFeedback.OfferRemoveQuestion(gameName, Path.GetFileName(executablePath)),
-                StubKitFeedback.DialogTitle,
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
-            if (answer != DialogResult.Yes)
+            bool autoHandle = false;
+            try
+            {
+                autoHandle = _appDataService != null && _appDataService.GetAutoHandleSteamStubs();
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("StubKit: could not read Auto handle SteamStubs setting: " + ex.Message);
+            }
+
+            if (autoHandle)
+            {
+                Program.LogService?.LogDebug("StubKit: auto-handling SteamStub on " + executablePath);
+                await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
                 return;
+            }
+
+            const int idAccept = 100;
+            AppTaskDialogResult answer = AppTaskDialogForm.Show(
+                this,
+                new AppTaskDialogRequest
+                {
+                    Content = StubKitFeedback.OfferRemoveQuestion(gameName, Path.GetFileName(executablePath)),
+                    Icon = MessageBoxIcon.Question,
+                    VerificationText = "Auto handle SteamStubs",
+                    VerificationChecked = false,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idAccept, "Accept") { IsDefault = true },
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                    }
+                });
+            if (answer.ButtonId != idAccept)
+                return;
+
+            if (answer.VerificationChecked)
+            {
+                var saveResult = _appDataService.SetAutoHandleSteamStubs(true);
+                if (!saveResult.IsValid)
+                {
+                    Program.LogService?.LogWarning(
+                        "StubKit: could not save Auto handle SteamStubs: " + (saveResult.ErrorMessage ?? "unknown error"));
+                }
+                else
+                    Program.LogService?.LogDebug("StubKit: Auto handle SteamStubs enabled from confirm dialog");
+            }
 
             await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
         }
@@ -2586,7 +2664,7 @@ namespace SmartGoldbergEmu.Forms
                             $"Emulator files for AppId {selectedGame.AppId}: items skipped ({result.ErrorMessage})");
                     }
 
-                    FormMessageBoxHelper.ShowIfAlive(this, result.ErrorMessage, "Generate Items", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    AppTaskDialogHelper.ShowOk(this, result.ErrorMessage, MessageBoxIcon.Information);
                     return;
                 }
 
@@ -2598,7 +2676,7 @@ namespace SmartGoldbergEmu.Forms
                 Program.LogService?.LogError(
                     $"Emulator files for AppId {selectedGame.AppId} failed (items): {selectedGame.AppName}",
                     ex);
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to generate {PathConstants.GoldbergItemsJsonFileName}. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to generate {PathConstants.GoldbergItemsJsonFileName}. Please check the SmartGoldbergEmu log for details.", "Generate Items", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2615,7 +2693,7 @@ namespace SmartGoldbergEmu.Forms
 
                 if (!PathValidationHelper.IsSafeFilePath(valveDataPath))
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, "Invalid Valve data file path detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    FormMessageBoxHelper.ShowIfAlive(this, "Invalid Valve data file path detected.", "Valve Data File", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
@@ -2630,7 +2708,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("Failed to open Valve data file", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open Valve data file.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open Valve data file.", "Valve Data File", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2654,7 +2732,7 @@ namespace SmartGoldbergEmu.Forms
             string url = string.Format(urlFormat, game.AppId);
             if (!PathValidationHelper.IsSafeUrl(url))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Invalid URL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -2665,7 +2743,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError($"Failed to open {pageName}", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open {pageName}.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open {pageName}.", "Could Not Open Link", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2680,13 +2758,16 @@ namespace SmartGoldbergEmu.Forms
             var game = GetSelectedGame();
             if (game == null || string.IsNullOrEmpty(game.Path))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid executable path.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "Please select a game with a valid executable path.",
+                    MessageBoxIcon.Information);
                 return;
             }
 
             if (!GameFolderPathHelper.TryGetExecutableDirectory(game, out string folderPath))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid folder path detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Invalid folder path detected.", "Invalid Folder Path", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -2705,7 +2786,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             string settingsPath = ServiceLocator.EmulatorConfigService.GetGameSteamSettingsPath(game.AppId);
-            ShellFolderHelper.OpenFolderForOwner(this, settingsPath, createIfMissing: true, "Error", "Failed to open settings folder");
+            ShellFolderHelper.OpenFolderForOwner(this, settingsPath, createIfMissing: true, "Folder Not Found", "Could Not Open Settings Folder");
         }
 
         private void OnOpenGameAssetsFolder_Click(object sender, EventArgs e)
@@ -2716,16 +2797,16 @@ namespace SmartGoldbergEmu.Forms
             string assetsPath = PathConstants.CombineGamesPerAppResourcesDirectory(
                 PathConstants.GamesDirectory,
                 game.AppId.ToString());
-            ShellFolderHelper.OpenFolderForOwner(this, assetsPath, createIfMissing: true, "Error", "Failed to open game assets folder");
+            ShellFolderHelper.OpenFolderForOwner(this, assetsPath, createIfMissing: true, "Folder Not Found", "Could Not Open Game Assets Folder");
         }
 
         private void OnOpenGoldbergFolder_Click(object sender, EventArgs e) =>
-            ShellFolderHelper.OpenFolderForOwner(this, PathConstants.GoldbergDirectory, createIfMissing: true, "Error", "Failed to open Goldberg folder");
+            ShellFolderHelper.OpenFolderForOwner(this, PathConstants.GoldbergDirectory, createIfMissing: true, "Folder Not Found", "Could Not Open Goldberg Folder");
 
         private void OnOpenExtraDllsFolder_Click(object sender, EventArgs e)
         {
             string extraDllsDir = ServiceLocator.GoldbergFilesService.EnsureSteamClientExtraDllsDirectory();
-            ShellFolderHelper.OpenFolderForOwner(this, extraDllsDir, createIfMissing: true, "Error", "Failed to open extra DLLs folder");
+            ShellFolderHelper.OpenFolderForOwner(this, extraDllsDir, createIfMissing: true, "Folder Not Found", "Could Not Open Extra DLLs Folder");
         }
 
         private void OnOpenInventoryFile_Click(object sender, EventArgs e)
@@ -2741,7 +2822,7 @@ namespace SmartGoldbergEmu.Forms
                 var icon = errorMessage != null && errorMessage.StartsWith("File does not exist", StringComparison.Ordinal)
                     ? MessageBoxIcon.Information
                     : MessageBoxIcon.Error;
-                string title = icon == MessageBoxIcon.Information ? "File Not Found" : "Error";
+                string title = icon == MessageBoxIcon.Information ? "File Not Found" : "Could Not Open Inventory";
                 string body = icon == MessageBoxIcon.Information
                     ? errorMessage + "\n\nYou may need to generate items first."
                     : errorMessage ?? "Failed to open inventory file.";
@@ -2754,17 +2835,19 @@ namespace SmartGoldbergEmu.Forms
             var game = GetSelectedGame();
             if (game == null || game.AppId == 0 || string.IsNullOrEmpty(game.Path))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid App ID and executable path.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "Please select a game with a valid App ID and executable path.",
+                    MessageBoxIcon.Information);
                 return;
             }
 
             ValidationResult result = ServiceLocator.EmulatorConfigService.TryEnsureSteamAppIdBesideExecutable(game);
             if (result.IsValid)
             {
-                FormMessageBoxHelper.ShowIfAlive(this,
-                    $"{PathConstants.SteamAppIdFileName} for appid {game.AppId} created successfully.",
-                    "File Created",
-                    MessageBoxButtons.OK,
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    PathConstants.SteamAppIdFileName + " for appid " + game.AppId + " created successfully.",
                     MessageBoxIcon.Information);
                 return;
             }
@@ -2773,7 +2856,7 @@ namespace SmartGoldbergEmu.Forms
             MessageBoxIcon icon = message.IndexOf("does not exist", StringComparison.OrdinalIgnoreCase) >= 0
                 ? MessageBoxIcon.Warning
                 : MessageBoxIcon.Error;
-            string title = icon == MessageBoxIcon.Warning ? "Folder Not Found" : "Error";
+            string title = icon == MessageBoxIcon.Warning ? "Folder Not Found" : "Create Steam App ID";
             FormMessageBoxHelper.ShowIfAlive(this, message, title, MessageBoxButtons.OK, icon);
         }
 
@@ -2788,12 +2871,12 @@ namespace SmartGoldbergEmu.Forms
                 }
                 catch (Exception ex)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy entry GUID: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy entry GUID: {ex.Message}", "Copy GUID", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Please select a game.", MessageBoxIcon.Information);
             }
         }
 
@@ -2802,17 +2885,17 @@ namespace SmartGoldbergEmu.Forms
             var game = GetSelectedGame();
             if (game == null)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Please select a game.", MessageBoxIcon.Information);
                 return;
             }
 
             if (!UriProtocolRegistryService.IsProtocolRegistered())
             {
-                FormMessageBoxHelper.ShowIfAlive(this,
-                    $"The {ApplicationConstants.UriProtocolAuthorityPrefix} protocol is not registered. Please restart the application to register it automatically.\n\n" +
-                    "If the problem persists, try running the application as administrator.",
-                    "Protocol Not Registered",
-                    MessageBoxButtons.OK,
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "The " + ApplicationConstants.UriProtocolAuthorityPrefix
+                    + " protocol is not registered. Please restart the application to register it automatically.\n\n"
+                    + "If the problem persists, try running the application as administrator.",
                     MessageBoxIcon.Warning);
                 return;
             }
@@ -2840,17 +2923,14 @@ namespace SmartGoldbergEmu.Forms
 
                         if (ShortcutService.Create(saveFileDialog.FileName, game.AppId, game.AppName, iconPath))
                         {
-                            FormMessageBoxHelper.ShowIfAlive(this,
-                                $"Shortcut created successfully:\n{saveFileDialog.FileName}",
-                                "Shortcut Created",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Information);
+                            Program.LogService?.LogMessage(
+                                "Shortcut created: " + saveFileDialog.FileName);
                         }
                         else
                         {
                             FormMessageBoxHelper.ShowIfAlive(this,
                                 "Failed to create shortcut. Please check the file path and permissions.",
-                                "Error",
+                                "Create Shortcut",
                                 MessageBoxButtons.OK,
                                 MessageBoxIcon.Error);
                         }
@@ -2862,7 +2942,7 @@ namespace SmartGoldbergEmu.Forms
                 Program.LogService?.LogError("Failed to create shortcut", ex);
                 FormMessageBoxHelper.ShowIfAlive(this,
                     "Failed to create shortcut. Please check the file path and permissions.",
-                    "Error",
+                    "Create Shortcut",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
@@ -3006,29 +3086,36 @@ namespace SmartGoldbergEmu.Forms
             string message =
                 "Modded Steam API DLLs found.\n\n" +
                 (hasBackups
-                    ? "A known-good file was found elsewhere in this folder (name contains \"steam_api\").\n\n"
-                    : "No known-good alternate file was found (searched recursively; skipped folders that could not be read).\n\n") +
-                "Yes — Restore and launch\n" +
-                "No — Launch without restoring";
-            var validationResult = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                message,
-                "Steam API Validation",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
-            if (validationResult == DialogResult.Cancel)
+                    ? "A known-good file was found elsewhere in this folder (name contains \"steam_api\")."
+                    : "No known-good alternate file was found (searched recursively; skipped folders that could not be read).");
+            const int idRestore = 100;
+            const int idLaunchAnyway = 101;
+            AppTaskDialogResult validationResult = AppTaskDialogForm.Show(
+                this,
+                new AppTaskDialogRequest
+                {
+                    Content = message,
+                    Icon = MessageBoxIcon.Warning,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idRestore, "Restore and launch"),
+                        new AppTaskDialogButton(idLaunchAnyway, "Launch without restoring") { IsDefault = true },
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                    }
+                });
+            int validationButton = validationResult.ButtonId;
+            if (validationButton == TaskDialogHelper.IdCancel)
             {
                 Program.LogService?.LogDebug("User cancelled launch due to Steam API validation");
                 return false;
             }
-            if (validationResult == DialogResult.Yes)
+            if (validationButton == idRestore)
             {
                 if (!hasBackups)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this,
+                    AppTaskDialogHelper.ShowOk(
+                        this,
                         "No known-good Steam API file was found in the game folder to restore from.",
-                        "Steam API Validation",
-                        MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                     Program.LogService?.LogDebug("User chose restore but no clean backup was found; continuing launch");
                 }
@@ -3224,7 +3311,10 @@ namespace SmartGoldbergEmu.Forms
             game = GetSelectedGame();
             if (game != null && game.AppId > 0)
                 return true;
-            FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid App ID.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            AppTaskDialogHelper.ShowOk(
+                this,
+                "Please select a game with a valid App ID.",
+                MessageBoxIcon.Information);
             return false;
         }
 
@@ -3668,18 +3758,33 @@ namespace SmartGoldbergEmu.Forms
             {
                 if (!_apiKeyService.HasApiKey())
                 {
-                    var result = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                        "Enhance your SmartGoldbergEmu experience with a Steam Web API key!\n\n" +
-                        "With an API key, you can:\n" +
-                        "• Automatically generate achievements from Steam\n" +
-                        "• Automatically generate inventory items from Steam\n\n" +
-                        "The API key is free and only requires a Steam account.\n\n" +
-                        "Would you like to configure an API key now?",
-                        "Steam Web API Key — Optional Feature",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Information);
+                    string registrationUrl = ApplicationConstants.SteamWebApiKeyRegistrationUrl;
+                    const int idConfigure = 100;
+                    AppTaskDialogResult result = AppTaskDialogForm.Show(
+                        this,
+                        new AppTaskDialogRequest
+                        {
+                            Content =
+                                "Enhance your SmartGoldbergEmu experience with a Steam Web API key!\n\n" +
+                                "With an API key, you can:\n" +
+                                "• Automatically generate achievements from Steam\n" +
+                                "• Automatically generate inventory items from Steam\n\n" +
+                                "The API key is free and only requires a Steam account.\n\n" +
+                                "Get a free Steam Web API key:",
+                            FooterText = "Would you like to configure an API key now?",
+                            Icon = MessageBoxIcon.Information,
+                            ContentLinks = new List<AppTaskDialogLink>
+                            {
+                                new AppTaskDialogLink(registrationUrl, registrationUrl)
+                            },
+                            Buttons = new List<AppTaskDialogButton>
+                            {
+                                new AppTaskDialogButton(idConfigure, "Configure") { IsDefault = true },
+                                new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Not now") { IsCancel = true }
+                            }
+                        });
 
-                    if (result == DialogResult.Yes)
+                    if (result.ButtonId == idConfigure)
                         OpenSettingsDialog(0);
                 }
 

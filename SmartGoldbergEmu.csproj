@@ -104,12 +104,6 @@
     <Compile Include="Forms\UpdateChangelogForm.Designer.cs">
       <DependentUpon>UpdateChangelogForm.cs</DependentUpon>
     </Compile>
-    <Compile Include="Forms\RemovesGameForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\RemovesGameForm.Designer.cs">
-      <DependentUpon>RemovesGameForm.cs</DependentUpon>
-    </Compile>
     <Compile Include="Forms\ProgressForm.Designer.cs">
       <DependentUpon>ProgressForm.cs</DependentUpon>
     </Compile>
@@ -131,6 +125,9 @@
     <Compile Include="Forms\LaunchOptionsForm.Designer.cs">
       <DependentUpon>LaunchOptionsForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\AppTaskDialogForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Models\AchievementExceptions.cs" />
     <Compile Include="Models\AchievementModels.cs" />
     <Compile Include="Models\ApiKeyStatus.cs" />
@@ -138,7 +135,6 @@
     <Compile Include="Models\ApplicationSettings.cs" />
     <Compile Include="Models\GoldbergForkSource.cs" />
     <Compile Include="Models\GoldbergLaunchMode.cs" />
-    <Compile Include="Models\GoldbergLaunchModeAvailability.cs" />
     <Compile Include="Models\CAchievement.cs" />
     <Compile Include="Models\GameConfig.cs" />
     <Compile Include="Models\AppCatalogSnapshot.cs" />
@@ -208,10 +204,13 @@
     <Compile Include="Helpers\ErrorDisplayHelper.cs" />
     <Compile Include="Helpers\ControlInvokeAsyncHelper.cs" />
     <Compile Include="Helpers\FormMessageBoxHelper.cs" />
+    <Compile Include="Helpers\AppTaskDialogHelper.cs" />
+    <Compile Include="Helpers\TaskDialogHelper.cs" />
     <Compile Include="Helpers\FileDialogBrowseHelper.cs" />
     <Compile Include="Helpers\IniParseHelper.cs" />
     <Compile Include="Helpers\DirectoryJunctionHelper.cs" />
     <Compile Include="Helpers\DuplicateGameDialogHelper.cs" />
+    <Compile Include="Helpers\RemoveGamesDialogHelper.cs" />
     <Compile Include="Helpers\LoadDllsArchFilter.cs" />
     <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
@@ -413,9 +412,6 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\ForkSelectForm.resx">
       <DependentUpon>ForkSelectForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\RemovesGameForm.resx">
-      <DependentUpon>RemovesGameForm.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\GameSettingsForm.resx">
       <DependentUpon>GameSettingsForm.cs</DependentUpon>

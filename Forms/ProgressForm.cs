@@ -120,11 +120,18 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            ReleaseUiSubscriptions();
+            base.OnFormClosed(e);
+        }
+
+        // Also runs from Dispose when Close was skipped (e.g. only Hide then using-dispose).
+        private void ReleaseUiSubscriptions()
+        {
             StopAndDisposeAutoCloseTimer();
             btnCancel.Click -= OnCancel_Click;
             btnCancel.Click -= OnClose_Click;
-            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            base.OnFormClosed(e);
+            if (_themeService != null)
+                _themeService.ThemeChanged -= ThemeService_ThemeChanged;
         }
 
         private void OnClose_Click(object sender, EventArgs e)

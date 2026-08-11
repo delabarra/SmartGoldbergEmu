@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -69,13 +70,45 @@ namespace SmartGoldbergEmu.Services
             };
         }
 
-        private static string GetGoldbergManualDownloadForkUrlsText()
+        private static List<AppTaskDialogLink> BuildGoldbergManualDownloadContentLinks()
         {
-            var links = GetGoldbergManualDownloadLinks();
-            var lines = new List<string>(links.Count);
-            foreach (var link in links)
-                lines.Add(link.Label + ": " + link.Url);
-            return string.Join("\n", lines);
+            var contentLinks = new List<AppTaskDialogLink>();
+            foreach (UpdateManualDownloadLink link in GetGoldbergManualDownloadLinks())
+            {
+                if (link == null || string.IsNullOrWhiteSpace(link.Url))
+                    continue;
+
+                string url = link.Url.Trim();
+                string label = string.IsNullOrWhiteSpace(link.Label) ? string.Empty : link.Label.Trim();
+                contentLinks.Add(new AppTaskDialogLink(
+                    string.IsNullOrEmpty(label) ? url : label,
+                    url));
+            }
+
+            return contentLinks;
+        }
+
+        private static void ShowUpdateFailedDialog(IWin32Window owner, Exception ex)
+        {
+            string detail = GetUpdateFailureDetail(ex);
+            AppTaskDialogForm.Show(
+                owner,
+                new AppTaskDialogRequest
+                {
+                    Content =
+                        "Update failed: " + detail + "\n\n" +
+                        "Please try again or download manually from:",
+                    Icon = MessageBoxIcon.Error,
+                    ContentLinks = BuildGoldbergManualDownloadContentLinks(),
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(TaskDialogHelper.IdOk, "OK")
+                        {
+                            IsDefault = true,
+                            IsCancel = true
+                        }
+                    }
+                });
         }
 
         private static void ApplyResolvedRelease(GoldbergResolvedRelease resolved, UpdateCheckResult result)
@@ -119,24 +152,40 @@ namespace SmartGoldbergEmu.Services
             if (uiContext == null)
                 return true;
 
-            DialogResult choice = DialogResult.OK;
+            bool continueDownload = true;
             uiContext.Send(_ =>
             {
-                choice = FormMessageBoxHelper.ShowDialogIfAlive(
+                GoldbergForkSource fork = GetConfiguredGoldbergForkSource();
+                string releasesUrl = GoldbergForkConstants.GetReleasesWebUrl(fork);
+                string forkName = GoldbergForkConstants.GetForkDisplayName(fork);
+                const int idContinue = 100;
+                AppTaskDialogResult result = AppTaskDialogForm.Show(
                     null,
-                    "Note:\n" +
-                    "ColdLoaderLauncher executables may be flagged by Windows Defender and can trigger false positives.\n\n" +
-                    "A temporary Windows Defender exclusion will be added during the download and installation process. " +
-                    "The downloaded files and the exclusion will be automatically removed once the installation is complete.\n\n" +
-                    "Exclusion target:\n" +
-                    "- " + GoldbergForkConstants.UpstreamWinReleaseAssetName + "\n\n" +
-                    "Do you want to continue?",
-                    ApplicationConstants.WindowTitle,
-                    MessageBoxButtons.OKCancel,
-                    MessageBoxIcon.Warning);
+                    new AppTaskDialogRequest
+                    {
+                        Content =
+                            "ColdLoaderLauncher executables may be flagged by Windows Defender and can trigger false positives.\n\n" +
+                            "A temporary Windows Defender exclusion will be added during the download and installation process. " +
+                            "The downloaded files and the exclusion will be automatically removed once the installation is complete.\n\n" +
+                            "Exclusion target file:\n" +
+                            "- " + GoldbergForkConstants.UpstreamWinReleaseAssetName + "\n\n" +
+                            "You can also manually download fork files from the " + forkName + " releases page:",
+                        FooterText = "Do you want to continue?",
+                        CustomIcon = SystemIcons.Shield,
+                        ContentLinks = new List<AppTaskDialogLink>
+                        {
+                            new AppTaskDialogLink(releasesUrl, releasesUrl)
+                        },
+                        Buttons = new List<AppTaskDialogButton>
+                        {
+                            new AppTaskDialogButton(idContinue, "Continue") { IsDefault = true },
+                            new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                        }
+                    });
+                continueDownload = result.ButtonId == idContinue;
             }, null);
 
-            return choice == DialogResult.OK;
+            return continueDownload;
         }
 
         private static string GetGoldbergDownloadArchiveFileName()
@@ -178,7 +227,7 @@ namespace SmartGoldbergEmu.Services
                     errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                 if (IsGitHubRateLimitResponse(response, errorContent))
-                    throw new InvalidOperationException("GitHub API rate limit exceeded. Try again later or use authenticated requests.");
+                    throw new InvalidOperationException("GitHub API rate limit exceeded.\nWait a few minutes and try again.");
 
                 response.EnsureSuccessStatusCode();
                 return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -1261,7 +1310,29 @@ namespace SmartGoldbergEmu.Services
         {
             return
                 "Goldberg Emulator files are missing.\n\n" +
-                "Do you want to proceed with the installation?";
+                "Do you want to download and install them now?";
+        }
+
+        private static bool PromptMissingGoldbergDownload(IWin32Window owner, GoldbergMissingInstallContext context)
+        {
+            const int idDownload = 100;
+            string cancelLabel = context == GoldbergMissingInstallContext.StartupSessionCheck
+                ? "Skip"
+                : "Cancel";
+
+            AppTaskDialogResult result = AppTaskDialogForm.Show(
+                owner,
+                new AppTaskDialogRequest
+                {
+                    Content = BuildMissingGoldbergInstallPromptMessage(),
+                    Icon = MessageBoxIcon.Question,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idDownload, "Download") { IsDefault = true },
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, cancelLabel) { IsCancel = true }
+                    }
+                });
+            return result.ButtonId == idDownload;
         }
 
         private static bool ResolveMissingGoldbergDownloadOutcome(
@@ -1292,14 +1363,7 @@ namespace SmartGoldbergEmu.Services
 
             logger?.LogWarning("Goldberg emulator files are missing");
 
-            var dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(
-                uiOwner,
-                BuildMissingGoldbergInstallPromptMessage(),
-                ApplicationConstants.WindowTitle,
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Question);
-
-            if (dialogResult == DialogResult.OK)
+            if (PromptMissingGoldbergDownload(uiOwner, context))
             {
                 logger?.LogDebug("User chose to download Goldberg files");
                 bool success = await DownloadAndInstallWithUIAsync(logger, uiOwner).ConfigureAwait(true);
@@ -1322,21 +1386,16 @@ namespace SmartGoldbergEmu.Services
         {
             logger?.LogWarning("Goldberg emulator files are missing");
 
-            DialogResult dialogResult = DialogResult.Cancel;
+            bool downloadChosen = false;
             if (invokeOnUIThread != null)
             {
                 invokeOnUIThread(() =>
                 {
-                    dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(
-                        null,
-                        BuildMissingGoldbergInstallPromptMessage(),
-                        ApplicationConstants.WindowTitle,
-                        MessageBoxButtons.OKCancel,
-                        MessageBoxIcon.Question);
+                    downloadChosen = PromptMissingGoldbergDownload(null, context);
                 });
             }
 
-            if (dialogResult == DialogResult.OK)
+            if (downloadChosen)
             {
                 logger?.LogDebug("User chose to download Goldberg files");
                 bool success = false;
@@ -1486,12 +1545,12 @@ namespace SmartGoldbergEmu.Services
 
             void ShowNoUpdatesInfo()
             {
-                const string caption = "No Updates Available";
-                string text =
-                    $"You are running the latest version of Goldberg Emulator.\n\n" +
-                    $"Current version: {result.CurrentVersion ?? "unknown"}\n" +
-                    $"Latest version: {result.LatestVersion}";
-                FormMessageBoxHelper.ShowIfAlive(owner, text, caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(
+                    owner,
+                    "You are running the latest version of Goldberg Emulator.\n\n"
+                    + "Current version: " + (result.CurrentVersion ?? "unknown") + "\n"
+                    + "Latest version: " + result.LatestVersion,
+                    MessageBoxIcon.Information);
             }
 
             void ShowCheckFailedWarning()
@@ -1616,13 +1675,10 @@ namespace SmartGoldbergEmu.Services
                     else
                     {
                         LogGoldbergUpdateFailure(logger, ex, "emulator download");
-                        FormMessageBoxHelper.ShowIfAlive(
-                            progressForm,
-                            $"Update failed: {ex.Message}\n\nPlease try again or download manually from:\n{GetGoldbergManualDownloadForkUrlsText()}",
-                            "Update Failed",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Error);
-                        progressForm.Hide();
+                        // Close (do not Hide): FormClosed unsubscribes ThemeChanged; a hidden open form can keep the process alive.
+                        progressForm.Close();
+                        await WaitForProgressFormCloseAsync(progressForm).ConfigureAwait(true);
+                        ShowUpdateFailedDialog(null, ex);
                     }
 
                     return false;

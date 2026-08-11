@@ -40,7 +40,7 @@ namespace SmartGoldbergEmu.Services
 
         private const string NoPublishedReleaseMessage = "No published latest release (HTTP 404).";
         private const string RateLimitMessage =
-            "GitHub API rate limit exceeded. Try again later or use authenticated requests.";
+            "GitHub API rate limit exceeded.\nWait a few minutes and try again.";
         private const string MissingReleaseZipMessage =
             "Could not find launcher release zip in the latest GitHub release";
         private const string RequestTimedOutMessage = "Request timed out";
@@ -656,13 +656,11 @@ namespace SmartGoldbergEmu.Services
                     logger?.LogMessage("Launcher up to date.");
                     if (!isStartup)
                     {
-                        FormMessageBoxHelper.ShowIfAlive(
+                        AppTaskDialogHelper.ShowOk(
                             owner,
-                            $"You are running the latest version of SmartGoldbergEmu.\n\n" +
-                            $"Current version: {ApplicationVersionHelper.GetTaggedDisplayVersion()}\n" +
-                            $"Latest version: {result.LatestVersion}",
-                            "No Updates Available",
-                            MessageBoxButtons.OK,
+                            "You are running the latest version of SmartGoldbergEmu.\n\n"
+                            + "Current version: " + ApplicationVersionHelper.GetTaggedDisplayVersion() + "\n"
+                            + "Latest version: " + result.LatestVersion,
                             MessageBoxIcon.Information);
                     }
                 }
@@ -854,7 +852,8 @@ namespace SmartGoldbergEmu.Services
                             "Update Failed",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Error);
-                        progressForm.Hide();
+                        // Close (do not Hide): FormClosed unsubscribes ThemeChanged; a hidden open form can keep the process alive.
+                        progressForm.Close();
                     }
                 }
             }

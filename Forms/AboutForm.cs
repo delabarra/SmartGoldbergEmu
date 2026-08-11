@@ -39,7 +39,7 @@ namespace SmartGoldbergEmu.Forms
 
             if (!PathValidationHelper.IsSafeUrl(url))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Invalid URL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -50,7 +50,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError($"Failed to open link: {ex.Message}", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open link.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open link.", "Could Not Open Link", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

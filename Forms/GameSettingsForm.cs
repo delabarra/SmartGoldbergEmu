@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -223,8 +223,6 @@ namespace SmartGoldbergEmu.Forms
 
                 SelectLaunchModeUi(_gameConfig.LaunchMode);
 
-                ApplyLaunchModeAvailability();
-
                 if (txtGameName != null)
                 {
                     string name = (_metadata != null && !string.IsNullOrEmpty(_metadata.Name)) ? _metadata.Name : _gameConfig.AppName;
@@ -305,7 +303,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 LogErrorWithExceptionMessage("Error loading game config", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, $"Error loading game configuration: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, $"Error loading game configuration: {ex.Message}", "Load Game Configuration", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -655,13 +653,13 @@ namespace SmartGoldbergEmu.Forms
         {
             if (txtAppID == null || string.IsNullOrEmpty(txtAppID.Text))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please enter an App ID first.", "App ID Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "Please enter an App ID first.", MessageBoxIcon.Warning);
                 return;
             }
 
             if (!ulong.TryParse(txtAppID.Text.Trim(), out ulong appId) || appId == 0)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please enter a valid App ID.", "Invalid App ID", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "Please enter a valid App ID.", MessageBoxIcon.Warning);
                 return;
             }
 
@@ -823,7 +821,7 @@ namespace SmartGoldbergEmu.Forms
 
             if (appId == 0)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid App ID.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Please select a game with a valid App ID.", MessageBoxIcon.Information);
                 return;
             }
 
@@ -841,7 +839,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (!PathValidationHelper.IsSafeUrl(url))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Invalid URL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -852,7 +850,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError(logErrorMessage + ": " + ex.Message, ex);
-                FormMessageBoxHelper.ShowIfAlive(this, userErrorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, userErrorMessage, "Could Not Open Link", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1054,7 +1052,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (!HasCurrentGameWithValidAppId())
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "App ID is required to find DLCs.", "App ID Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "App ID is required to find DLCs.", MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1171,7 +1169,7 @@ namespace SmartGoldbergEmu.Forms
         private void LogAndShowErrorWithExceptionMessage(string messagePrefix, Exception ex)
         {
             Program.LogService?.LogError(messagePrefix + ": " + ex.Message, ex);
-            FormMessageBoxHelper.ShowIfAlive(this, messagePrefix + ": " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            FormMessageBoxHelper.ShowIfAlive(this, messagePrefix + ": " + ex.Message, messagePrefix, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private void ApplyTheme()
@@ -2791,7 +2789,7 @@ namespace SmartGoldbergEmu.Forms
                     txtUserLaunchOptionName.Text != null ? txtUserLaunchOptionName.Text : string.Empty);
                 if (string.IsNullOrWhiteSpace(customName))
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, "Please enter a name for the custom launch option.", "Missing name", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(this, "Please enter a name for the custom launch option.", MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -3522,44 +3520,6 @@ namespace SmartGoldbergEmu.Forms
             }, token).ForgetFaults(Program.LogService, nameof(RefreshModsSummaryList));
         }
 
-        private const string LaunchExperimentalModeUnavailableToolTipText =
-            "Experimental steam_api DLLs are missing under goldberg\\experimental.\r\n\r\nRun Goldberg Update or repair the emulator, then reopen this dialog.";
-
-        private const string LaunchSteamClientUnavailableToolTipText =
-            "Goldberg Steam client files are missing under goldberg\\steamclient_experimental.\r\n\r\nRun Goldberg Update or repair the emulator.";
-
-        private const string LaunchSteamDllUnavailableToolTipText =
-            "Steam.dll is missing from goldberg\\steam_old.\r\n\r\nRun Goldberg Update or repair the emulator, then reopen this dialog.";
-
-        private void ApplyLaunchModeAvailability()
-        {
-            if (rdoLaunchSteamClient == null || rdoLaunchExperimentalMode == null || rdoLaunchSteamDll == null || rdoLaunchNoEmulation == null)
-                return;
-
-            GoldbergLaunchModeAvailability availability = _gameLaunchService.GetLaunchModeAvailability(_gameConfig);
-
-            rdoLaunchSteamClient.Enabled = availability.SteamClientAvailable;
-            if (!availability.SteamClientAvailable && toolTip != null)
-                toolTip.SetToolTip(rdoLaunchSteamClient, LaunchSteamClientUnavailableToolTipText);
-
-            rdoLaunchExperimentalMode.Enabled = availability.StandardSteamApiAvailable;
-            if (!availability.StandardSteamApiAvailable && toolTip != null)
-                toolTip.SetToolTip(rdoLaunchExperimentalMode, LaunchExperimentalModeUnavailableToolTipText);
-
-            rdoLaunchSteamDll.Enabled = availability.SteamDllBesideExeAvailable;
-            if (!availability.SteamDllBesideExeAvailable && toolTip != null)
-                toolTip.SetToolTip(rdoLaunchSteamDll, LaunchSteamDllUnavailableToolTipText);
-
-            GoldbergLaunchMode preferred = _gameConfig?.LaunchMode ?? GoldbergLaunchMode.SteamClient;
-            GoldbergLaunchMode resolved = availability.ResolveAvailable(preferred);
-            if (resolved != preferred)
-            {
-                SelectLaunchModeUi(resolved);
-                if (_gameConfig != null)
-                    _gameConfig.LaunchMode = resolved;
-            }
-        }
-
         private void SelectLaunchModeUi(GoldbergLaunchMode mode)
         {
             if (rdoLaunchSteamClient == null || rdoLaunchExperimentalMode == null || rdoLaunchSteamDll == null || rdoLaunchNoEmulation == null)
@@ -3675,13 +3635,13 @@ namespace SmartGoldbergEmu.Forms
             string groupId = txtSubscribedGroupIdEntry?.Text?.Trim();
             if (string.IsNullOrEmpty(groupId))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Enter a Steam group ID.", "Subscribed Groups", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Enter a Steam group ID.", MessageBoxIcon.Information);
                 return;
             }
 
             if (!IsValidSteamGroupId(groupId))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Group ID must be a numeric Steam group ID.", "Subscribed Groups", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "Group ID must be a numeric Steam group ID.", MessageBoxIcon.Warning);
                 return;
             }
 
@@ -3707,13 +3667,13 @@ namespace SmartGoldbergEmu.Forms
             string entry = txtSubscribedGroupClanEntry?.Text?.Trim();
             if (string.IsNullOrEmpty(entry))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Enter a clan line (group ID, name, and tag).", "Subscribed Clan Groups", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Enter a clan line (group ID, name, and tag).", MessageBoxIcon.Information);
                 return;
             }
 
             if (!TryFormatSubscribedGroupClanLine(entry, out string formattedLine, out string errorMessage))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, errorMessage, "Subscribed Clan Groups", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, errorMessage, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -3978,7 +3938,7 @@ namespace SmartGoldbergEmu.Forms
 
                 string invalidJsonMessage = GoldbergFilesService.GetInvalidJsonMessageForAdditionalFile(failure.Key);
                 if (!string.IsNullOrEmpty(invalidJsonMessage))
-                    FormMessageBoxHelper.ShowIfAlive(messageOwner, invalidJsonMessage, "Invalid JSON", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(messageOwner, invalidJsonMessage, MessageBoxIcon.Warning);
             }
 
             if (failures.Count > 0)
@@ -4005,7 +3965,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (_gameConfig == null)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "No game configuration loaded.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "No game configuration loaded.", "Save Game", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -4016,7 +3976,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 if (txtAppID == null || !ulong.TryParse(txtAppID.Text.Trim(), out ulong appId) || appId == 0)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, "Please enter a valid non-zero Steam App ID.", "Invalid App ID", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(this, "Please enter a valid non-zero Steam App ID.", MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -4037,22 +3997,13 @@ namespace SmartGoldbergEmu.Forms
                 _gameConfig.AppId = appId;
                 ApplyLaunchModeFromUiToGameConfig();
 
-                GoldbergLaunchModeAvailability launchModeAvailability = _gameLaunchService.GetLaunchModeAvailability(_gameConfig);
-                if (!launchModeAvailability.IsAvailable(_gameConfig.LaunchMode))
-                {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        "The selected Goldberg launch mode is not available. Run Goldberg Update or choose another mode.",
-                        "Launch Mode Unavailable",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-
                 var validation = _gameDataService.ValidateGameConfig(_gameConfig);
                 if (!validation.IsValid)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Validation failed: {validation.ErrorMessage}", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(
+                        this,
+                        "Validation failed: " + validation.ErrorMessage,
+                        MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -4106,11 +4057,14 @@ namespace SmartGoldbergEmu.Forms
                         {
                             if (editPostSaveResult.HasCustomStatsJsonError)
                             {
-                                FormMessageBoxHelper.ShowIfAlive(this, "Custom stats contain invalid JSON. Please fix the format before saving.", "Invalid JSON", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                AppTaskDialogHelper.ShowOk(
+                                    this,
+                                    "Custom stats contain invalid JSON. Please fix the format before saving.",
+                                    MessageBoxIcon.Warning);
                             }
                             else if (!string.IsNullOrWhiteSpace(editPostSaveResult.ErrorMessage))
                             {
-                                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save game: {editPostSaveResult.ErrorMessage}", "Save Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save game: {editPostSaveResult.ErrorMessage}", "Save Game", MessageBoxButtons.OK, MessageBoxIcon.Error);
                             }
                             return;
                         }

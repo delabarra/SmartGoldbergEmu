@@ -109,24 +109,6 @@ namespace SmartGoldbergEmu.Services
             return ValidateEmulatorBinariesForSteamAppId(game, useX64, requireLaunchModeBinaries);
         }
 
-        public GoldbergLaunchModeAvailability GetLaunchModeAvailability(GameConfig game)
-        {
-            bool standardAvailable = IsStandardSteamApiModeAvailable(game, out _);
-            return new GoldbergLaunchModeAvailability
-            {
-                SteamClientAvailable = IsSteamClientModeAvailable(),
-                StandardSteamApiAvailable = standardAvailable,
-                SteamDllBesideExeAvailable = IsSteamDllModeAvailable()
-            };
-        }
-
-        public GoldbergLaunchMode ResolveAvailableLaunchMode(GameConfig game)
-        {
-            GoldbergLaunchModeAvailability availability = GetLaunchModeAvailability(game);
-            GoldbergLaunchMode preferred = game?.LaunchMode ?? GoldbergLaunchMode.SteamClient;
-            return availability.ResolveAvailable(preferred);
-        }
-
         public bool IsGameRunning(ulong appId, GameConfig game)
         {
             if (appId == 0)
@@ -524,19 +506,6 @@ namespace SmartGoldbergEmu.Services
         {
             SteamInstallationPathHelper.TryRefreshSteamDllInGoldbergFolder();
             return SteamInstallationPathHelper.IsSteamDllPresentInGoldbergFolder();
-        }
-
-        private bool IsStandardSteamApiModeAvailable(GameConfig game, out bool useX64)
-        {
-            useX64 = true;
-            if (game != null && TryResolveLaunchUseX64(game, out bool resolvedUseX64))
-            {
-                useX64 = resolvedUseX64;
-                return PathConstants.HasGoldbergExperimentalFiles(useX64);
-            }
-
-            return PathConstants.HasGoldbergExperimentalFiles(false)
-                || PathConstants.HasGoldbergExperimentalFiles(true);
         }
 
         private bool TryResolveLaunchUseX64(GameConfig game, out bool useX64)

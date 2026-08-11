@@ -115,7 +115,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 btnRemoveSteamIdProfile.Text = "🗑";
                 toolTip?.SetToolTip(btnRemoveSteamIdProfile, "Remove selected Steam ID profile");
-                btnRemoveSteamIdProfile.Click += OnRemoveSteamIdProfile_Click;
+                // Designer already wires Click — do not subscribe again.
             }
 
             if (txtSteamID != null)
@@ -184,23 +184,59 @@ namespace SmartGoldbergEmu.Forms
             if (txtSteamID == null)
                 return;
 
+            if (_steamIdProfiles == null)
+                _steamIdProfiles = _appDataService.LoadSteamIdProfiles();
+
             var steamId = ResolveSteamIdFromCombo(txtSteamID);
             if (steamId.Length == 0)
+            {
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "Select or enter a Steam ID profile to remove.",
+                    MessageBoxIcon.Information);
                 return;
+            }
 
-            var confirm = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                $"Remove profile for SteamID '{steamId}'?",
-                "Remove Profile",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
+            bool profileExists = false;
+            foreach (string key in _steamIdProfiles.Keys)
+            {
+                if (string.Equals(key, steamId, StringComparison.Ordinal))
+                {
+                    profileExists = true;
+                    break;
+                }
+            }
 
-            if (confirm != DialogResult.Yes)
+            if (!profileExists)
+            {
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "No saved profile was found for SteamID '" + steamId + "'.",
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            const int idRemove = 100;
+            AppTaskDialogResult confirm = AppTaskDialogForm.Show(
+                this,
+                new AppTaskDialogRequest
+                {
+                    Content = "Remove profile for SteamID '" + steamId + "'?",
+                    Icon = MessageBoxIcon.Question,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idRemove, "Remove") { IsDefault = true },
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                    }
+                });
+
+            if (confirm.ButtonId != idRemove)
                 return;
 
             var result = _appDataService.RemoveSteamIdProfile(steamId);
             if (!result.IsValid)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, result.ErrorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, result.ErrorMessage, "Remove Profile", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -528,10 +564,9 @@ namespace SmartGoldbergEmu.Forms
             {
                 if (!string.IsNullOrEmpty(apiKeySkipReason))
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this,
-                        $"Settings were saved, but the API key was not updated.\nReason: {apiKeySkipReason}",
-                        "API Key Not Updated",
-                        MessageBoxButtons.OK,
+                    AppTaskDialogHelper.ShowOk(
+                        this,
+                        "Settings were saved, but the API key was not updated.\nReason: " + apiKeySkipReason,
                         MessageBoxIcon.Warning);
                 }
 
@@ -558,7 +593,7 @@ namespace SmartGoldbergEmu.Forms
                 if (!avatarResult.IsValid)
                     errorMessages.Add($"Avatar: {avatarResult.ErrorMessage}");
 
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save some settings:\n{string.Join("\n", errorMessages)}", "Error",
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save some settings:\n{string.Join("\n", errorMessages)}", "Save Settings",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -677,7 +712,7 @@ namespace SmartGoldbergEmu.Forms
                             : "Could not open the Steam userdata folder. Steam was not found (registry path must exist and contain steam.exe).";
                     }
 
-                    FormMessageBoxHelper.ShowIfAlive(this, message, "Error",
+                    FormMessageBoxHelper.ShowIfAlive(this, message, "Save Folder",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -690,7 +725,7 @@ namespace SmartGoldbergEmu.Forms
                     }
                     catch (Exception ex)
                     {
-                        FormMessageBoxHelper.ShowIfAlive(this, $"Failed to create folder: {ex.Message}", "Error",
+                        FormMessageBoxHelper.ShowIfAlive(this, $"Failed to create folder: {ex.Message}", "Save Folder",
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
@@ -700,13 +735,13 @@ namespace SmartGoldbergEmu.Forms
                     this,
                     folderPath,
                     createIfMissing: true,
-                    "Error",
-                    "Failed to open save folder",
+                    "Folder Not Found",
+                    "Could Not Open Save Folder",
                     restrictToAppInstallTree: false);
             }
             catch (Exception ex)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open save folder: {ex.Message}", "Error",
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open save folder: {ex.Message}", "Save Folder",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -797,7 +832,7 @@ namespace SmartGoldbergEmu.Forms
                     }
                     catch (Exception ex)
                     {
-                        FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy font: {ex.Message}", "Error", 
+                        FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy font: {ex.Message}", "Custom Font",
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
@@ -840,17 +875,17 @@ namespace SmartGoldbergEmu.Forms
             {
                 if (string.IsNullOrWhiteSpace(folderPath))
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Unable to determine {folderLabel} folder location.", "Error",
+                    FormMessageBoxHelper.ShowIfAlive(this, $"Unable to determine {folderLabel} folder location.", "Open Folder",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                ShellFolderHelper.OpenFolderForOwner(this, folderPath, createIfMissing: true, "Error",
-                    $"Failed to open {folderLabel} folder");
+                ShellFolderHelper.OpenFolderForOwner(this, folderPath, createIfMissing: true, "Folder Not Found",
+                    $"Could Not Open {folderLabel} Folder");
             }
             catch (Exception ex)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open {folderLabel} folder: {ex.Message}", "Error",
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open {folderLabel} folder: {ex.Message}", "Open Folder",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -955,7 +990,7 @@ namespace SmartGoldbergEmu.Forms
                     }
                     catch (Exception ex)
                     {
-                        FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy sound: {ex.Message}", "Error", 
+                        FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy sound: {ex.Message}", "Custom Sound",
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
@@ -985,14 +1020,18 @@ namespace SmartGoldbergEmu.Forms
             var overlayPath = Path.Combine(soundsPath, overlayFileName);
             if (File.Exists(overlayPath))
             {
-                FormMessageBoxHelper.ShowIfAlive(this,
-                    $"Default library sound '{libraryFileName}' is not in the list. The emulator overlay file is already present.",
-                    "File Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "Default library sound '" + libraryFileName
+                    + "' is not in the list. The emulator overlay file is already present.",
+                    MessageBoxIcon.Warning);
                 return;
             }
 
-            FormMessageBoxHelper.ShowIfAlive(this, $"Default sound file '{libraryFileName}' not found in the sounds folder.", "File Not Found",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            AppTaskDialogHelper.ShowOk(
+                this,
+                "Default sound file '" + libraryFileName + "' not found in the sounds folder.",
+                MessageBoxIcon.Warning);
         }
 
         private void OnSound1PlayStop_Click(object sender, EventArgs e)
@@ -1129,9 +1168,10 @@ namespace SmartGoldbergEmu.Forms
 
             if (!displayName.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
             {
-                FormMessageBoxHelper.ShowIfAlive(this,
+                AppTaskDialogHelper.ShowOk(
+                    this,
                     "Sound preview only supports .wav files. The selected sound format is not supported for preview.",
-                    "Format Not Supported", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBoxIcon.Information);
                 return false;
             }
 
@@ -1438,7 +1478,7 @@ namespace SmartGoldbergEmu.Forms
 
             if (!PathValidationHelper.IsSafeUrl(url))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Invalid URL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             
@@ -1449,17 +1489,26 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError($"Failed to open Steam API key page: {ex.Message}", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open Steam API key registration page.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open Steam API key registration page.", "Steam Web API Key", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void OnRemoveApiKey_Click(object sender, EventArgs e)
         {
-            if (FormMessageBoxHelper.ShowDialogIfAlive(this,
-                    "Are you sure you want to remove the Steam Web API key?",
-                    "Confirm Removal",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question) != DialogResult.Yes)
+            const int idRemove = 100;
+            AppTaskDialogResult confirm = AppTaskDialogForm.Show(
+                this,
+                new AppTaskDialogRequest
+                {
+                    Content = "Are you sure you want to remove the Steam Web API key?",
+                    Icon = MessageBoxIcon.Question,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idRemove, "Remove") { IsDefault = true },
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                    }
+                });
+            if (confirm.ButtonId != idRemove)
                 return;
 
             txtSteamWebApiKey.Text = string.Empty;
@@ -1469,12 +1518,14 @@ namespace SmartGoldbergEmu.Forms
 
             if (result.IsValid)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Steam Web API key has been removed.", "API Key Removed", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "Steam Web API key has been removed.",
+                    MessageBoxIcon.Information);
             }
             else
             {
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to remove API key: {result.ErrorMessage}", "Error", 
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to remove API key: {result.ErrorMessage}", "Remove API Key",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1544,7 +1595,7 @@ namespace SmartGoldbergEmu.Forms
                 }
                 catch (Exception ex)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Failed to preview avatar: {ex.Message}", "Error",
+                    FormMessageBoxHelper.ShowIfAlive(this, $"Failed to preview avatar: {ex.Message}", "Avatar Preview",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
@@ -2045,7 +2096,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 LogRedactionHelper.WriteDebug($"Failed to load Goldberg settings: {ex.Message}");
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to load settings: {ex.Message}", "Error",
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to load settings: {ex.Message}", "Load Settings",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }

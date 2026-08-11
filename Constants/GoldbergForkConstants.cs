@@ -59,6 +59,17 @@ namespace SmartGoldbergEmu.Constants
             return fork == GoldbergForkSource.Alex ? ReleasesApiUrlAlex : ReleasesApiUrlDetanup;
         }
 
+        public static string GetRepositoryWebUrl(GoldbergForkSource fork)
+        {
+            return fork == GoldbergForkSource.Alex ? RepositoryWebUrlAlex : RepositoryWebUrlDetanup;
+        }
+
+        // Browser page for emu-win-release.7z (and other release assets).
+        public static string GetReleasesWebUrl(GoldbergForkSource fork)
+        {
+            return GetRepositoryWebUrl(fork).TrimEnd('/') + "/releases";
+        }
+
         public static string GetReleasesApiUrl(GoldbergForkSource fork)
         {
             return GetUpstreamReleasesApiUrl(fork);

@@ -8,8 +8,12 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && components != null)
-                components.Dispose();
+            if (disposing)
+            {
+                ReleaseUiSubscriptions();
+                if (components != null)
+                    components.Dispose();
+            }
             base.Dispose(disposing);
         }
 

@@ -368,7 +368,7 @@ namespace SmartGoldbergEmu.Forms
             if (HasValidSelection)
                 AcceptSelection();
             else
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game from the list.", "No Selection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Please select a game from the list.", MessageBoxIcon.Information);
         }
 
         private void OnCancel_Click(object sender, EventArgs e)

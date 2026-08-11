@@ -1,6 +1,7 @@
-using System;
-using System.Drawing;
+using System.Collections.Generic;
+using System.Text;
 using System.Windows.Forms;
+using SmartGoldbergEmu.Forms;
 using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Helpers
@@ -8,13 +9,14 @@ namespace SmartGoldbergEmu.Helpers
     public enum DuplicateGameAction
     {
         Cancel,
-        Edit,
-        Update
+        Edit
     }
 
-    // Edit = open local entry; Update = re-collect Steam data then save over the same GUID; Cancel = abort.
+    // Edit = open local entry; Cancel = abort add. (Re-collect/update-same-GUID may return later.)
     public static class DuplicateGameDialogHelper
     {
+        private const int IdEdit = 100;
+
         public static DuplicateGameAction Show(IWin32Window owner, GameConfig duplicateGame, bool matchedByExecutable)
         {
             if (duplicateGame == null)
@@ -26,75 +28,31 @@ namespace SmartGoldbergEmu.Helpers
             string name = string.IsNullOrWhiteSpace(duplicateGame.AppName)
                 ? "Unknown"
                 : duplicateGame.AppName.Trim();
+            string gameLine = duplicateGame.AppId + " - " + name;
             string reason = matchedByExecutable
                 ? "A game with this executable path is already in your library"
-                : $"A game with App ID {duplicateGame.AppId} and this path is already in your library";
+                : "A game with App ID " + duplicateGame.AppId + " and this path is already in your library";
 
-            using (var dialog = new DuplicateGameChoiceForm(reason, name))
+            var body = new StringBuilder();
+            body.AppendLine(reason + ":");
+            body.AppendLine();
+            body.Append(gameLine);
+
+            var request = new AppTaskDialogRequest
             {
-                DialogResult result = owner != null
-                    ? dialog.ShowDialog(owner)
-                    : dialog.ShowDialog();
-
-                if (result == DialogResult.Yes)
-                    return DuplicateGameAction.Edit;
-                if (result == DialogResult.Retry)
-                    return DuplicateGameAction.Update;
-                return DuplicateGameAction.Cancel;
-            }
-        }
-
-        private sealed class DuplicateGameChoiceForm : Form
-        {
-            public DuplicateGameChoiceForm(string reason, string gameName)
-            {
-                Text = "Game Already in Library";
-                FormBorderStyle = FormBorderStyle.FixedDialog;
-                MaximizeBox = false;
-                MinimizeBox = false;
-                ShowInTaskbar = false;
-                StartPosition = FormStartPosition.CenterParent;
-                AutoScaleMode = AutoScaleMode.Font;
-                ClientSize = new Size(420, 168);
-
-                var lblMessage = new Label
+                Content = body.ToString(),
+                Icon = MessageBoxIcon.Warning,
+                Buttons = new List<AppTaskDialogButton>
                 {
-                    AutoSize = false,
-                    Location = new Point(14, 14),
-                    Size = new Size(392, 72),
-                    Text = $"{reason}:\r\n\r\n{gameName}\r\n\r\nEdit the existing entry, update it with fresh Steam data (keeps your custom launch options), or cancel."
-                };
+                    new AppTaskDialogButton(IdEdit, "Edit") { IsDefault = true },
+                    new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                }
+            };
 
-                var btnEdit = new Button
-                {
-                    Text = "Edit",
-                    DialogResult = DialogResult.Yes,
-                    Location = new Point(116, 112),
-                    Size = new Size(88, 28)
-                };
-                var btnUpdate = new Button
-                {
-                    Text = "Update",
-                    DialogResult = DialogResult.Retry,
-                    Location = new Point(210, 112),
-                    Size = new Size(88, 28)
-                };
-                var btnCancel = new Button
-                {
-                    Text = "Cancel",
-                    DialogResult = DialogResult.Cancel,
-                    Location = new Point(304, 112),
-                    Size = new Size(88, 28)
-                };
-
-                Controls.Add(lblMessage);
-                Controls.Add(btnEdit);
-                Controls.Add(btnUpdate);
-                Controls.Add(btnCancel);
-
-                AcceptButton = btnUpdate;
-                CancelButton = btnCancel;
-            }
+            AppTaskDialogResult result = AppTaskDialogForm.Show(owner, request);
+            if (result.ButtonId == IdEdit)
+                return DuplicateGameAction.Edit;
+            return DuplicateGameAction.Cancel;
         }
     }
 }

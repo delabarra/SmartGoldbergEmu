@@ -23,12 +23,12 @@ namespace SmartGoldbergEmu.Services
             return message
                 + Environment.NewLine
                 + Environment.NewLine
-                + "Would you like to remove it?"
-                + Environment.NewLine
-                + Environment.NewLine
                 + "NOTE:"
                 + Environment.NewLine
-                + "Solves \"Application load error #:0000065432\" errors.";
+                + "Solves \"Application load error #:0000065432\" errors."
+                + Environment.NewLine
+                + Environment.NewLine
+                + "Would you like to remove it?";
         }
 
         public static string ResultMessage(StubKitApplyOutcome outcome, string gameName)
