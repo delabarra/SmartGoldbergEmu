@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Reflection;
 using System.Windows.Forms;
@@ -16,12 +17,16 @@ namespace SmartGoldbergEmu.Services
         private const string SoundPreviewPlayStopButtonTag = "SoundPreviewPlayStop";
         internal const string LaunchDialogButtonTag = "LaunchDialogButton";
         private const string ThemedTextBoxTag = "ThemedTextBox";
+        private const string ThemedTabControlTag = "ThemedTabControl";
+        private static readonly PropertyInfo ControlDoubleBufferedProperty =
+            typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic);
 
         private ThemeMode _currentTheme;
         private bool _isSystemDarkMode;
         private RegistryKey _registryKey;
         private Timer _systemThemeWatcher;
         private bool _disposed;
+        private readonly List<TabControlChromeWindow> _tabChromeWindows = new List<TabControlChromeWindow>();
 
         public event EventHandler<ThemeChangedEventArgs> ThemeChanged;
 
@@ -76,42 +81,16 @@ namespace SmartGoldbergEmu.Services
 
             ThemeMode effectiveTheme = EffectiveTheme;
             ThemeColors colors = GetThemeColors(effectiveTheme);
+            EnsureFormDoubleBuffered(form);
             form.BackColor = colors.Background;
             form.ForeColor = colors.Foreground;
             ApplyThemeToControls(form.Controls, colors, effectiveTheme);
             ApplyThemeToMenus(form, colors, effectiveTheme);
-            ScheduleLinkColorRefreshOnLoad(form, colors);
         }
 
-        private void ScheduleLinkColorRefreshOnLoad(Form form, ThemeColors colors)
+        private static void EnsureFormDoubleBuffered(Form form)
         {
-            if (form.IsHandleCreated)
-                return;
-            EventHandler handler = null;
-            handler = (s, e) =>
-            {
-                var f = (Form)s;
-                f.Load -= handler;
-                if (_disposed || f.IsDisposed || f.Disposing)
-                    return;
-                ApplyLinkColorsRecursive(f.Controls, GetThemeColors(EffectiveTheme));
-            };
-            form.Load += handler;
-        }
-
-        private static void ApplyLinkColorsRecursive(Control.ControlCollection controls, ThemeColors colors)
-        {
-            foreach (Control c in controls)
-            {
-                if (c is LinkLabel link)
-                {
-                    link.LinkColor = colors.LinkColor;
-                    link.ActiveLinkColor = colors.LinkColor;
-                    link.VisitedLinkColor = colors.VisitedLinkColor;
-                }
-                if (c.HasChildren)
-                    ApplyLinkColorsRecursive(c.Controls, colors);
-            }
+            ControlDoubleBufferedProperty?.SetValue(form, true, null);
         }
 
         private static Color DarkenRgb(Color color, int delta)
@@ -276,6 +255,9 @@ namespace SmartGoldbergEmu.Services
                 }
                 _registryKey?.Dispose();
                 _registryKey = null;
+                for (int i = 0; i < _tabChromeWindows.Count; i++)
+                    _tabChromeWindows[i].Dispose();
+                _tabChromeWindows.Clear();
             }
             _disposed = true;
         }
@@ -347,6 +329,164 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        private void EnsureTabControlOwnerDraw(TabControl tabControl)
+        {
+            if (tabControl.Tag?.ToString() == ThemedTabControlTag)
+                return;
+            tabControl.Tag = ThemedTabControlTag;
+            tabControl.DrawMode = TabDrawMode.OwnerDrawFixed;
+            tabControl.SizeMode = TabSizeMode.Normal;
+            tabControl.DrawItem += TabControl_DrawItem;
+            _tabChromeWindows.Add(new TabControlChromeWindow(this, tabControl));
+        }
+
+        private void TabControl_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (_disposed)
+                return;
+            var tabControl = sender as TabControl;
+            if (tabControl == null || e.Index < 0 || e.Index >= tabControl.TabCount)
+                return;
+
+            ThemeColors colors = GetThemeColors(EffectiveTheme);
+            Graphics g = e.Graphics;
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            Color back = selected ? colors.Background : colors.ControlBackground;
+            Color fore = colors.Foreground;
+
+            Rectangle tabBounds = e.Bounds;
+            if (selected && tabControl.Alignment == TabAlignment.Top)
+                tabBounds = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width, e.Bounds.Height + 1);
+
+            using (var brush = new SolidBrush(back))
+                g.FillRectangle(brush, tabBounds);
+
+            using (var pen = new Pen(colors.Border))
+            {
+                int left = tabBounds.Left;
+                int top = tabBounds.Top;
+                int right = tabBounds.Right - 1;
+                int bottom = tabBounds.Bottom - 1;
+                g.DrawLine(pen, left, bottom, left, top);
+                g.DrawLine(pen, left, top, right, top);
+                g.DrawLine(pen, right, top, right, bottom);
+                if (!selected)
+                    g.DrawLine(pen, left, bottom, right, bottom);
+            }
+
+            string text = tabControl.TabPages[e.Index].Text;
+            TextRenderer.DrawText(
+                g,
+                text,
+                tabControl.Font,
+                e.Bounds,
+                fore,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        // Runs after native WM_PAINT so empty header strip and frame borders cover system chrome.
+        private void PaintTabControlChromeOverlay(TabControl tabControl)
+        {
+            if (_disposed || tabControl == null || tabControl.IsDisposed || !tabControl.IsHandleCreated)
+                return;
+
+            ThemeColors colors = GetThemeColors(EffectiveTheme);
+            Rectangle client = tabControl.ClientRectangle;
+            Rectangle page = tabControl.DisplayRectangle;
+
+            using (Graphics g = Graphics.FromHwnd(tabControl.Handle))
+            {
+                using (var brush = new SolidBrush(colors.ControlBackground))
+                {
+                    if (tabControl.Alignment == TabAlignment.Top)
+                    {
+                        int headerHeight = Math.Max(0, page.Top);
+                        if (tabControl.TabCount == 0)
+                        {
+                            g.FillRectangle(brush, 0, 0, client.Width, headerHeight);
+                        }
+                        else
+                        {
+                            Rectangle first = tabControl.GetTabRect(0);
+                            Rectangle last = tabControl.GetTabRect(tabControl.TabCount - 1);
+                            if (first.Left > 0)
+                                g.FillRectangle(brush, 0, 0, first.Left, headerHeight);
+                            if (last.Right < client.Width)
+                                g.FillRectangle(brush, last.Right, 0, client.Width - last.Right, headerHeight);
+                            if (last.Bottom < page.Top)
+                                g.FillRectangle(brush, 0, last.Bottom, client.Width, page.Top - last.Bottom);
+                        }
+                    }
+                    else if (tabControl.Alignment == TabAlignment.Bottom)
+                    {
+                        g.FillRectangle(brush, 0, page.Bottom, client.Width, Math.Max(0, client.Height - page.Bottom));
+                    }
+                    else if (tabControl.Alignment == TabAlignment.Left)
+                    {
+                        g.FillRectangle(brush, 0, 0, Math.Max(0, page.Left), client.Height);
+                    }
+                    else
+                    {
+                        g.FillRectangle(brush, page.Right, 0, Math.Max(0, client.Width - page.Right), client.Height);
+                    }
+                }
+
+                using (var pen = new Pen(colors.Border))
+                {
+                    g.DrawRectangle(pen, 0, 0, client.Width - 1, client.Height - 1);
+                    g.DrawRectangle(pen, page.X - 1, page.Y - 1, page.Width + 1, page.Height + 1);
+                }
+            }
+        }
+
+        private sealed class TabControlChromeWindow : NativeWindow, IDisposable
+        {
+            private const int WmPaint = 0x000F;
+            private readonly ThemeService _owner;
+            private readonly TabControl _tab;
+            private bool _disposed;
+
+            public TabControlChromeWindow(ThemeService owner, TabControl tab)
+            {
+                _owner = owner;
+                _tab = tab;
+                _tab.HandleCreated += OnHandleCreated;
+                _tab.HandleDestroyed += OnHandleDestroyed;
+                if (_tab.IsHandleCreated)
+                    AssignHandle(_tab.Handle);
+            }
+
+            private void OnHandleCreated(object sender, EventArgs e)
+            {
+                if (!_disposed && _tab.IsHandleCreated)
+                    AssignHandle(_tab.Handle);
+            }
+
+            private void OnHandleDestroyed(object sender, EventArgs e)
+            {
+                if (Handle != IntPtr.Zero)
+                    ReleaseHandle();
+            }
+
+            protected override void WndProc(ref Message m)
+            {
+                base.WndProc(ref m);
+                if (!_disposed && m.Msg == WmPaint)
+                    _owner.PaintTabControlChromeOverlay(_tab);
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                    return;
+                _disposed = true;
+                _tab.HandleCreated -= OnHandleCreated;
+                _tab.HandleDestroyed -= OnHandleDestroyed;
+                if (Handle != IntPtr.Zero)
+                    ReleaseHandle();
+            }
+        }
+
         private static void ApplyThemeToDataGridView(DataGridView dgv, ThemeColors colors)
         {
             if (dgv == null)
@@ -408,9 +548,11 @@ namespace SmartGoldbergEmu.Services
             {
                 tabControl.BackColor = colors.ControlBackground;
                 tabControl.ForeColor = colors.ControlForeground;
+                EnsureTabControlOwnerDraw(tabControl);
             }
             else if (control is TabPage tabPage)
             {
+                tabPage.UseVisualStyleBackColor = false;
                 tabPage.BackColor = colors.Background;
                 tabPage.ForeColor = colors.Foreground;
             }

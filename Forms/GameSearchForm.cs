@@ -10,7 +10,7 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class GameSearchForm : Form
+    public partial class GameSearchForm : ThemedForm
     {
         private const int SearchDebounceMs = 300;
         private const int MaxSearchResults = 20;
@@ -18,7 +18,6 @@ namespace SmartGoldbergEmu.Forms
 
         private List<AppSearchResult> _searchResults = new List<AppSearchResult>();
         private ulong? _selectedAppId;
-        private readonly ThemeService _themeService;
         private CancellationTokenSource _searchCancellationTokenSource;
         private CancellationTokenSource _debounceCancellationTokenSource;
         private bool _isSearching;
@@ -34,12 +33,10 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public GameSearchForm(ThemeService themeService)
+            : base(themeService)
         {
             InitializeComponent();
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             btnOK.Enabled = false;
-            ApplyTheme();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
         }
 
         protected override void OnShown(EventArgs e)
@@ -386,26 +383,12 @@ namespace SmartGoldbergEmu.Forms
             Close();
         }
 
-        private void ApplyTheme()
-        {
-            _themeService.ApplyTheme(this);
-        }
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            RunOnUiThread(ApplyTheme);
-        }
-
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
                 CancelAndDispose(ref _searchCancellationTokenSource);
                 CancelAndDispose(ref _debounceCancellationTokenSource);
-                if (_themeService != null)
-                    _themeService.ThemeChanged -= ThemeService_ThemeChanged;
                 components?.Dispose();
             }
             base.Dispose(disposing);

@@ -15,7 +15,7 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class SettingsForm : Form
+    public partial class SettingsForm : ThemedForm
     {
         private readonly string _avatarPath;
         private readonly AppDataService _appDataService;
@@ -84,13 +84,14 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public SettingsForm(AppDataService appDataService, GoldbergCfgService goldbergCfgService, ThemeService themeService, SteamApiKeyService apiKeyService)
+            : base(themeService ?? ServiceLocator.ThemeService)
         {
             InitializeComponent();
             InitializeSaveLocationComboItems();
 
             _appDataService = appDataService ?? throw new ArgumentNullException(nameof(appDataService));
             _goldbergCfgService = goldbergCfgService ?? throw new ArgumentNullException(nameof(goldbergCfgService));
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
+            _themeService = themeService ?? ServiceLocator.ThemeService ?? throw new ArgumentNullException(nameof(themeService));
             _apiKeyService = apiKeyService ?? ServiceLocator.SteamApiKeyService;
             _avatarPath = PathConstants.GlobalAccountAvatarPath;
             _apiKeyValidationClearTimer = new Timer { Interval = ApiKeyValidationMessageDisplayMs };
@@ -100,10 +101,6 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             WireEmulatorTab();
-
-            ApplyTheme();
-            ConfigureSoundPreviewPlayStopButtons();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
 
             InitializeTooltips();
 
@@ -1646,14 +1643,10 @@ namespace SmartGoldbergEmu.Forms
             LoadAvatarImage();
         }
 
-        private void ApplyTheme()
+        protected override void OnThemeApplied()
         {
-            if (_themeService != null)
-            {
-                _themeService.ApplyTheme(this);
-                ConfigureSoundPreviewPlayStopButtons();
-                RefreshApiKeyValidationColor();
-            }
+            ConfigureSoundPreviewPlayStopButtons();
+            RefreshApiKeyValidationColor();
         }
 
         private void ConfigureSoundPreviewPlayStopButtons()
@@ -1712,20 +1705,6 @@ namespace SmartGoldbergEmu.Forms
                 lblApiKeyValidation.ForeColor = colors.SuccessColor;
         }
 
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-            {
-                Invoke(new Action(ApplyTheme));
-            }
-            else
-            {
-                ApplyTheme();
-            }
-        }
-
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             CancelSound1Preview();
@@ -1741,10 +1720,6 @@ namespace SmartGoldbergEmu.Forms
                 _apiKeyValidationClearTimer.Dispose();
             }
 
-            if (_themeService != null)
-            {
-                _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            }
             base.OnFormClosed(e);
         }
 

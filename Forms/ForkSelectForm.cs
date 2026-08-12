@@ -6,9 +6,8 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class ForkSelectForm : Form
+    public partial class ForkSelectForm : ThemedForm
     {
-        private readonly ThemeService _themeService;
         private readonly bool _forceExplicitChoice;
         private readonly GoldbergForkSource _forkWhenOpened;
         private readonly GoldbergReleaseChannel _channelWhenOpened;
@@ -25,9 +24,9 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public ForkSelectForm(bool forceExplicitChoice, ThemeService themeService)
+            : base(themeService)
         {
             InitializeComponent();
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             _forceExplicitChoice = forceExplicitChoice;
             _forkWhenOpened = ServiceLocator.AppDataService.GetGoldbergForkSource();
             _channelWhenOpened = ServiceLocator.AppDataService.GetGoldbergReleaseChannel();
@@ -47,9 +46,6 @@ namespace SmartGoldbergEmu.Forms
                 WireForkRadioEvents(ForkChoice_CheckedChanged);
                 SyncUpdateFilesCheckboxForForkChange();
             }
-
-            ApplyTheme();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
         }
 
         private void ConfigureForkOptionsLayout()
@@ -177,24 +173,6 @@ namespace SmartGoldbergEmu.Forms
             fork = GoldbergForkSource.Detanup;
             channel = GoldbergReleaseChannel.Auto;
             return false;
-        }
-
-        private void ApplyTheme() => _themeService.ApplyTheme(this);
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-                Invoke((Action)ApplyTheme);
-            else
-                ApplyTheme();
-        }
-
-        protected override void OnFormClosed(FormClosedEventArgs e)
-        {
-            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            base.OnFormClosed(e);
         }
 
         private void RadioFork_CheckedChanged(object sender, EventArgs e)

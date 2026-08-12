@@ -6,7 +6,7 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class MainForm : Form
+    public partial class MainForm
     {
         private void SchedulePersistDetailsColumnWidths()
         {

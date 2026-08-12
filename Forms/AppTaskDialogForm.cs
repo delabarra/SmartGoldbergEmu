@@ -103,7 +103,7 @@ namespace SmartGoldbergEmu.Forms
     }
 
     // Task Dialog–style chrome: growing body, optional checkbox strip, button footer.
-    public sealed class AppTaskDialogForm : Form
+    public sealed class AppTaskDialogForm : ThemedForm
     {
         // Default max client width — typical Windows Task Dialog / MessageBox range (~450–550px).
         private const int FormWidthMax = 526;
@@ -126,7 +126,6 @@ namespace SmartGoldbergEmu.Forms
         private const int BodyTopBlankLines = 1;
 
         private readonly AppTaskDialogRequest _request;
-        private readonly ThemeService _themeService;
         private Panel _pnlBody;
         private Panel _pnlCheckStrip;
         private Panel _pnlPreButtonSpacer;
@@ -139,9 +138,9 @@ namespace SmartGoldbergEmu.Forms
         private int _contentLeft = LayoutMargin;
 
         private AppTaskDialogForm(AppTaskDialogRequest request, ThemeService themeService)
+            : base(themeService ?? ServiceLocator.ThemeService)
         {
             _request = request ?? throw new ArgumentNullException(nameof(request));
-            _themeService = themeService;
 
             Text = string.IsNullOrWhiteSpace(request.WindowTitle)
                 ? ApplicationConstants.WindowTitle
@@ -157,9 +156,6 @@ namespace SmartGoldbergEmu.Forms
             Font = SystemFonts.MessageBoxFont;
 
             BuildLayout();
-            ApplyThemeFromService();
-            if (_themeService != null)
-                _themeService.ThemeChanged += ThemeService_ThemeChanged;
         }
 
         public static AppTaskDialogResult Show(IWin32Window owner, AppTaskDialogRequest request)
@@ -188,33 +184,15 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
+        protected override void OnThemeApplied()
         {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-                Invoke((Action)ApplyThemeFromService);
-            else
-                ApplyThemeFromService();
-        }
-
-        private void ApplyThemeFromService()
-        {
-            _themeService?.ApplyTheme(this);
             ApplyTaskDialogChromeColors();
-        }
-
-        protected override void OnFormClosed(FormClosedEventArgs e)
-        {
-            UnsubscribeThemeChanged();
-            base.OnFormClosed(e);
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                UnsubscribeThemeChanged();
                 if (_iconImage != null)
                 {
                     _iconImage.Dispose();
@@ -223,13 +201,6 @@ namespace SmartGoldbergEmu.Forms
             }
 
             base.Dispose(disposing);
-        }
-
-        private void UnsubscribeThemeChanged()
-        {
-            if (_themeService == null)
-                return;
-            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
         }
 
         protected override bool ProcessDialogKey(Keys keyData)
@@ -917,10 +888,8 @@ namespace SmartGoldbergEmu.Forms
             if (_pnlBody == null || _pnlButtons == null)
                 return;
 
-            ThemeColors colors = _themeService != null
-                ? _themeService.GetThemeColors(_themeService.EffectiveTheme)
-                : null;
-            bool dark = colors != null && colors.Background.GetBrightness() < 0.5f;
+            ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
+            bool dark = colors.Background.GetBrightness() < 0.5f;
 
             Color bodyBack = dark ? colors.Background : SystemColors.Window;
             Color footerBack = dark ? colors.ControlBackground : SystemColors.Control;

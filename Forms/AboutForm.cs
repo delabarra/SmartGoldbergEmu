@@ -3,30 +3,24 @@ using System.Diagnostics;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
-using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class AboutForm : Form
+    public partial class AboutForm : ThemedForm
     {
-        private readonly ThemeService _themeService;
-
         public AboutForm() : this(ServiceLocator.ThemeService)
         {
         }
 
         public AboutForm(ThemeService themeService)
+            : base(themeService)
         {
             InitializeComponent();
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             lblVersion.Text = "Version " + ApplicationVersionHelper.GetDisplayVersion();
 
             linkRepository.Tag = LauncherReleaseConstants.GetRepositoryWebUrl();
             linkRepository.LinkClicked += OnAboutLink_LinkClicked;
-
-            ApplyTheme();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
         }
 
         private void OnAboutLink_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
@@ -52,24 +46,6 @@ namespace SmartGoldbergEmu.Forms
                 Program.LogService?.LogError($"Failed to open link: {ex.Message}", ex);
                 FormMessageBoxHelper.ShowIfAlive(this, "Failed to open link.", "Could Not Open Link", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }
-
-        private void ApplyTheme() => _themeService.ApplyTheme(this);
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-                Invoke((Action)ApplyTheme);
-            else
-                ApplyTheme();
-        }
-
-        protected override void OnFormClosed(FormClosedEventArgs e)
-        {
-            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            base.OnFormClosed(e);
         }
     }
 }

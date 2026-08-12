@@ -1,15 +1,13 @@
 using System;
 using System.Windows.Forms;
-using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class ProgressForm : Form
+    public partial class ProgressForm : ThemedForm
     {
         private int _cancelledFlag;
         private int _lastReportedPercentage;
-        private readonly ThemeService _themeService;
         private Timer _autoCloseTimer;
 
         public ProgressForm()
@@ -18,18 +16,10 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public ProgressForm(ThemeService themeService)
+            : base(themeService)
         {
             InitializeComponent();
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             btnCancel.Click += OnCancel_Click;
-            ApplyTheme();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
-        }
-
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
-            ApplyTheme();
         }
 
         public void UpdateProgress(string message, int percentage)
@@ -142,8 +132,6 @@ namespace SmartGoldbergEmu.Forms
             StopAndDisposeAutoCloseTimer();
             btnCancel.Click -= OnCancel_Click;
             btnCancel.Click -= OnClose_Click;
-            if (_themeService != null)
-                _themeService.ThemeChanged -= ThemeService_ThemeChanged;
         }
 
         private void OnClose_Click(object sender, EventArgs e)
@@ -156,18 +144,6 @@ namespace SmartGoldbergEmu.Forms
             System.Threading.Volatile.Write(ref _cancelledFlag, 1);
             btnCancel.Enabled = false;
             lblStatus.Text = "Cancelling...";
-        }
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            RunOnUiThread(ApplyTheme);
-        }
-
-        private void ApplyTheme()
-        {
-            _themeService.ApplyTheme(this);
         }
 
         private void RunOnUiThread(Action action)

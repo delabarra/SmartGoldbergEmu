@@ -20,7 +20,7 @@ using AppDataKit;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class GameSettingsForm : Form
+    public partial class GameSettingsForm : ThemedForm
     {
         private readonly GameConfig _gameConfig;
         private readonly bool _isEditMode;
@@ -70,6 +70,7 @@ namespace SmartGoldbergEmu.Forms
             GameSaveWriter gameSaveWriter = null,
             GameEditBundle editBundle = null,
             SteamApiKeyService steamApiKeyService = null)
+            : base(themeService ?? ServiceLocator.ThemeService)
         {
             InitializeComponent();
 
@@ -103,9 +104,6 @@ namespace SmartGoldbergEmu.Forms
                 : _isUpdateOfExisting
                     ? $"Update Game - {game?.AppName ?? "Unknown"}"
                     : $"Add Game - {game?.AppName ?? "Unknown"}";
-
-            ApplyTheme();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
 
             if (txtGameFolder != null)
                 txtGameFolder.TextChanged += TxtGameFolder_TextChanged;
@@ -1178,39 +1176,15 @@ namespace SmartGoldbergEmu.Forms
             FormMessageBoxHelper.ShowIfAlive(this, messagePrefix + ": " + ex.Message, messagePrefix, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
-        private void ApplyTheme()
+        protected override void OnThemeApplied()
         {
-            if (_themeService != null)
-            {
-                _themeService.ApplyTheme(this);
-                // Always apply DLC textbox theme (handles both enabled and disabled states)
-                ApplyDlcTextBoxTheme();
-                ApplyAchievementsPreviewTheme();
-                ApplyModsTabTheme();
-                ApplyInventoryTabTheme();
-                UpdateGameFolderInstallDirHintVisibility();
-            }
-        }
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-            {
-                Invoke(new Action(() => 
-                {
-                    ApplyTheme();
-                    UpdatePlaceholderTextColors();
-                    UpdateLanguageComboBoxPlaceholder();
-                }));
-            }
-            else
-            {
-                ApplyTheme();
-                UpdatePlaceholderTextColors();
-                UpdateLanguageComboBoxPlaceholder();
-            }
+            ApplyDlcTextBoxTheme();
+            ApplyAchievementsPreviewTheme();
+            ApplyModsTabTheme();
+            ApplyInventoryTabTheme();
+            UpdateGameFolderInstallDirHintVisibility();
+            UpdatePlaceholderTextColors();
+            UpdateLanguageComboBoxPlaceholder();
         }
 
         private void UpdatePlaceholderTextColors()
@@ -1223,10 +1197,6 @@ namespace SmartGoldbergEmu.Forms
             CancelModsListResolve();
             StopAndDisposeRestoreMessageHideTimer();
             ClearSteamApiFindingLabels();
-            if (_themeService != null)
-            {
-                _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            }
             // Designer ImageList.Dispose owns remaining Depth32Bit originals.
             _achievementPreviewOwnedImages.ReleaseOwnership();
             _achievementPreviewOwnedImages.Dispose();

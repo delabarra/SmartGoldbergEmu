@@ -21,7 +21,7 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class MainForm : Form
+    public partial class MainForm : ThemedForm
     {
         private readonly GameDataService _gameDataService;
         private readonly AppDataService _appDataService;
@@ -101,6 +101,7 @@ namespace SmartGoldbergEmu.Forms
             GameLaunchService gameLaunchService,
             GameSetupService gameSetupService,
             LaunchOptionService launchOptionService)
+            : base(themeService)
         {
             InitializeComponent();
 
@@ -133,8 +134,6 @@ namespace SmartGoldbergEmu.Forms
             SetupContextMenus();
             InitializeTheme();
             SetupListViewOwnerDraw();
-
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
 
             _uriFileWatcherHelper = new UriFileWatcherHelper(this, LaunchGameByAppId);
             _uriFileWatcherHelper.Setup();
@@ -217,24 +216,13 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
+        protected override void OnThemeApplied()
         {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-            {
-                Invoke(new Action(ApplyThemeFromService));
-                return;
-            }
-            ApplyThemeFromService();
-        }
-
-        private void ApplyThemeFromService()
-        {
-            _themeService.ApplyTheme(this);
             UpdateThemeIcon();
             UpdateThemeMenuCheckMarks();
-            ReloadMosaicTileImagesIfNeeded();
+            // Avoid mosaic reload during first handle create (before games load); match prior ThemeChanged-only behavior.
+            if (Visible)
+                ReloadMosaicTileImagesIfNeeded();
         }
 
         private void ReloadMosaicTileImagesIfNeeded()
@@ -250,7 +238,6 @@ namespace SmartGoldbergEmu.Forms
             CancelFormLifetime();
 
             _taskReportService.Clear();
-            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
 
             if (_detailsColumnWidthsSaveTimer != null)
             {

@@ -10,14 +10,12 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class ChangelogForm : Form
+    public partial class ChangelogForm : ThemedForm
     {
         private const int ContentTextWidth = 556;
 
-        private ThemeService _themeService;
         private ChangelogDialogContent _content;
         private string _releaseNotesMarkdown;
-        private bool _releaseNotesRendered;
         private readonly List<LinkLabel> _manualDownloadLinks = new List<LinkLabel>();
         private readonly List<ReleaseNoteHyperlink> _releaseNoteLinks = new List<ReleaseNoteHyperlink>();
 
@@ -33,15 +31,12 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public ChangelogForm(ChangelogDialogContent content, ThemeService themeService)
-            : this()
+            : base(themeService)
         {
+            InitializeComponent();
+            ConfigureReleaseNotesView();
             _content = content ?? throw new ArgumentNullException(nameof(content));
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             BindContent();
-            ApplyTheme();
-            RenderReleaseNotes();
-            _releaseNotesRendered = true;
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
         }
 
         [Browsable(false)]
@@ -139,12 +134,18 @@ namespace SmartGoldbergEmu.Forms
             lblManualDownloadCaption.MaximumSize = new Size(textWidth, 0);
         }
 
+        protected override void OnThemeApplied()
+        {
+            if (_content != null)
+                RenderReleaseNotes();
+        }
+
         private void RenderReleaseNotes()
         {
-            if (rtbReleaseNotes == null || _themeService == null)
+            if (rtbReleaseNotes == null)
                 return;
 
-            ThemeColors colors = _themeService.GetThemeColors(_themeService.EffectiveTheme);
+            ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
             _releaseNoteLinks.Clear();
             IList<ReleaseNoteHyperlink> links = MarkdownToRichTextHelper.Apply(rtbReleaseNotes, _releaseNotesMarkdown, colors);
             _releaseNoteLinks.AddRange(links);
@@ -261,26 +262,6 @@ namespace SmartGoldbergEmu.Forms
             OpenReleaseNoteUrl(url);
         }
 
-        private void ApplyTheme()
-        {
-            if (_themeService == null)
-                return;
-
-            _themeService.ApplyTheme(this);
-            if (_releaseNotesRendered)
-                RenderReleaseNotes();
-        }
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-                Invoke((Action)ApplyTheme);
-            else
-                ApplyTheme();
-        }
-
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
@@ -290,8 +271,6 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            if (_themeService != null)
-                _themeService.ThemeChanged -= ThemeService_ThemeChanged;
             rtbReleaseNotes.MouseClick -= RtbReleaseNotes_MouseClick;
             rtbReleaseNotes.MouseMove -= RtbReleaseNotes_MouseMove;
             foreach (var link in _manualDownloadLinks)
