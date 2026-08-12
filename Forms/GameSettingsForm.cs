@@ -4077,7 +4077,8 @@ namespace SmartGoldbergEmu.Forms
                             {
                                 AppTaskDialogHelper.ShowOk(
                                     this,
-                                    "Custom stats contain invalid JSON. Please fix the format before saving.",
+                                    "Custom stats contain invalid JSON.\n" +
+                                    "Please fix the format before saving.",
                                     MessageBoxIcon.Warning);
                             }
                             else if (!string.IsNullOrWhiteSpace(editPostSaveResult.ErrorMessage))

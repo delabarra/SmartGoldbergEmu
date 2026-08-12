@@ -44,10 +44,10 @@ namespace SmartGoldbergEmu.Helpers
         private static string BuildContent(List<GameConfig> games, int count)
         {
             var body = new StringBuilder();
-            body.AppendLine(count == 1
+            body.Append(count == 1
                 ? "Are you sure you want to remove the following game from your library?"
                 : "Are you sure you want to remove the following games from your library?");
-            body.AppendLine();
+            body.Append("\n\n");
 
             var lines = games.Take(MaxListItems)
                 .Select(g =>
@@ -60,9 +60,13 @@ namespace SmartGoldbergEmu.Helpers
                 lines.Add("and " + (count - MaxListItems) + " more game(s)");
 
             for (int i = 0; i < lines.Count; i++)
-                body.AppendLine(lines[i]);
+            {
+                if (i > 0)
+                    body.Append('\n');
+                body.Append(lines[i]);
+            }
 
-            return body.ToString().TrimEnd();
+            return body.ToString();
         }
     }
 }

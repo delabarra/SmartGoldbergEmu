@@ -58,13 +58,17 @@ namespace SmartGoldbergEmu.Services
         public static string GetInvalidJsonMessageForAdditionalFile(string key)
         {
             if (string.Equals(key, "branches", StringComparison.Ordinal))
-                return $"{PathConstants.GoldbergBranchesJsonFileName} contains invalid JSON. Please fix the format before saving.";
+                return PathConstants.GoldbergBranchesJsonFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             if (string.Equals(key, "achievements", StringComparison.Ordinal))
-                return $"{AchievementConstants.AchievementsFileName} contains invalid JSON. Please fix the format before saving.";
+                return AchievementConstants.AchievementsFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             if (string.Equals(key, "items", StringComparison.Ordinal))
-                return $"{PathConstants.GoldbergItemsJsonFileName} contains invalid JSON. Please fix the format before saving.";
+                return PathConstants.GoldbergItemsJsonFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             if (string.Equals(key, "default_items", StringComparison.Ordinal))
-                return $"{PathConstants.GoldbergDefaultItemsJsonFileName} contains invalid JSON. Please fix the format before saving.";
+                return PathConstants.GoldbergDefaultItemsJsonFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             return null;
         }
 

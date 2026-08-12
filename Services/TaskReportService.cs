@@ -64,13 +64,16 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrEmpty(message))
             {
                 _statusLabel.Text = string.Empty;
+                _statusLabel.ToolTipText = string.Empty;
                 _progressBar.Visible = false;
                 _progressBar.Value = 0;
                 return;
             }
 
             string prefix = GetPrefixForKind(kind);
-            _statusLabel.Text = string.IsNullOrEmpty(prefix) ? message : prefix + message;
+            string display = string.IsNullOrEmpty(prefix) ? message : prefix + message;
+            _statusLabel.Text = display;
+            _statusLabel.ToolTipText = display;
 
             // Terminal warning/error text always uses the shared display timer.
             if (kind == TaskReportKind.Warning || kind == TaskReportKind.Error)
@@ -110,11 +113,14 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrEmpty(message))
             {
                 _statusLabel.Text = string.Empty;
+                _statusLabel.ToolTipText = string.Empty;
                 return;
             }
 
             string prefix = GetPrefixForKind(kind);
-            _statusLabel.Text = string.IsNullOrEmpty(prefix) ? message : prefix + message;
+            string display = string.IsNullOrEmpty(prefix) ? message : prefix + message;
+            _statusLabel.Text = display;
+            _statusLabel.ToolTipText = display;
             StartAutoClearTimer(delayMs);
         }
 
@@ -124,6 +130,7 @@ namespace SmartGoldbergEmu.Services
             if (ShouldSkipUpdate())
                 return;
             _statusLabel.Text = string.Empty;
+            _statusLabel.ToolTipText = string.Empty;
             _progressBar.Visible = false;
             _progressBar.Value = 0;
         }
@@ -170,7 +177,9 @@ namespace SmartGoldbergEmu.Services
 
                 if (string.IsNullOrEmpty(_statusLabel.Text))
                 {
-                    _statusLabel.Text = $"Progress: {current}/{total}";
+                    string progressText = $"Progress: {current}/{total}";
+                    _statusLabel.Text = progressText;
+                    _statusLabel.ToolTipText = progressText;
                 }
             }
             else
@@ -194,6 +203,7 @@ namespace SmartGoldbergEmu.Services
 
             StopAutoClearTimer();
             _statusLabel.Text = message ?? string.Empty;
+            _statusLabel.ToolTipText = message ?? string.Empty;
 
             if (percentage > 0)
             {
@@ -223,6 +233,7 @@ namespace SmartGoldbergEmu.Services
             if (!string.IsNullOrEmpty(message))
             {
                 _statusLabel.Text = message;
+                _statusLabel.ToolTipText = message;
             }
             _progressBar.Visible = true;
             _progressBar.Value = 0;
@@ -248,6 +259,7 @@ namespace SmartGoldbergEmu.Services
             {
                 StopAutoClearTimer();
                 _statusLabel.Text = string.Empty;
+                _statusLabel.ToolTipText = string.Empty;
                 _progressBar.Visible = false;
                 _progressBar.Value = 0;
             }
@@ -267,6 +279,7 @@ namespace SmartGoldbergEmu.Services
 
             StopAutoClearTimer();
             _statusLabel.Text = string.Empty;
+            _statusLabel.ToolTipText = string.Empty;
             _progressBar.Visible = false;
             _progressBar.Value = 0;
         }

@@ -683,9 +683,9 @@ namespace SmartGoldbergEmu.Services
                     {
                         AppTaskDialogHelper.ShowOk(
                             owner,
-                            "You are running the latest version of SmartGoldbergEmu.\n\n"
-                            + "Current version: " + ApplicationVersionHelper.GetTaggedDisplayVersion() + "\n"
-                            + "Latest version: " + result.LatestVersion,
+                            "You are running the latest version of SmartGoldbergEmu.\n\n" +
+                            "Current version: " + ApplicationVersionHelper.GetTaggedDisplayVersion() + "\n" +
+                            "Latest version: " + result.LatestVersion,
                             MessageBoxIcon.Information);
                     }
                 }

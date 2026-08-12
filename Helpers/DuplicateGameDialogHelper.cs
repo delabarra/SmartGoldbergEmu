@@ -34,8 +34,8 @@ namespace SmartGoldbergEmu.Helpers
                 : "A game with App ID " + duplicateGame.AppId + " and this path is already in your library";
 
             var body = new StringBuilder();
-            body.AppendLine(reason + ":");
-            body.AppendLine();
+            body.Append(reason);
+            body.Append(":\n\n");
             body.Append(gameLine);
 
             var request = new AppTaskDialogRequest

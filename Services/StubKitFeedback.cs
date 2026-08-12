@@ -10,25 +10,20 @@ namespace SmartGoldbergEmu.Services
     {
         public const string DialogTitle = "SteamStub";
 
-        public static string OfferRemoveQuestion(string gameName, string executableFileName)
+        public static string OfferRemoveQuestion(ulong appId, string gameName, string executableFileName)
         {
             string name = FormatGameName(gameName);
             string fileName = string.IsNullOrWhiteSpace(executableFileName)
-                ? null
+                ? "(unknown)"
                 : executableFileName.Trim();
+            string appIdText = appId > 0 ? appId.ToString() : "(unknown)";
 
-            string message = "SteamStub was detected on " + name + ".";
-            if (!string.IsNullOrEmpty(fileName))
-                message += Environment.NewLine + "File: " + fileName;
-
-            return message
-                + Environment.NewLine
-                + Environment.NewLine
-                + "NOTE:"
-                + Environment.NewLine
-                + "Solves \"Application load error #:0000065432\" errors."
-                + Environment.NewLine
-                + Environment.NewLine
+            return "SteamStub was detected.\n\n"
+                + "AppID: " + appIdText + "\n"
+                + "Game: " + name + "\n"
+                + "File: " + fileName + "\n\n"
+                + "NOTE:\n"
+                + "Solves \"Application load error #:0000065432\" errors.\n\n"
                 + "Would you like to remove it?";
         }
 

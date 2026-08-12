@@ -218,12 +218,22 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
+            string profileName = null;
+            if (_steamIdProfiles.TryGetValue(steamId, out string savedName) && !string.IsNullOrWhiteSpace(savedName))
+                profileName = savedName.Trim();
+            else if (txtUsername != null && !string.IsNullOrWhiteSpace(txtUsername.Text))
+                profileName = txtUsername.Text.Trim();
+
+            string profileLabel = string.IsNullOrEmpty(profileName)
+                ? steamId
+                : steamId + " - " + profileName;
+
             const int idRemove = 100;
             AppTaskDialogResult confirm = AppTaskDialogForm.Show(
                 this,
                 new AppTaskDialogRequest
                 {
-                    Content = "Remove profile for SteamID '" + steamId + "'?",
+                    Content = "Remove profile for SteamID '" + profileLabel + "'?",
                     Icon = MessageBoxIcon.Question,
                     Buttons = new List<AppTaskDialogButton>
                     {
@@ -568,7 +578,8 @@ namespace SmartGoldbergEmu.Forms
                 {
                     AppTaskDialogHelper.ShowOk(
                         this,
-                        "Settings were saved, but the API key was not updated.\nReason: " + apiKeySkipReason,
+                        "Settings were saved, but the API key was not updated.\n\n" +
+                        "Reason: " + apiKeySkipReason,
                         MessageBoxIcon.Warning);
                 }
 
@@ -1024,8 +1035,8 @@ namespace SmartGoldbergEmu.Forms
             {
                 AppTaskDialogHelper.ShowOk(
                     this,
-                    "Default library sound '" + libraryFileName
-                    + "' is not in the list. The emulator overlay file is already present.",
+                    "Default library sound '" + libraryFileName + "' is not in the list.\n" +
+                    "The emulator overlay file is already present.",
                     MessageBoxIcon.Warning);
                 return;
             }
@@ -1172,7 +1183,8 @@ namespace SmartGoldbergEmu.Forms
             {
                 AppTaskDialogHelper.ShowOk(
                     this,
-                    "Sound preview only supports .wav files. The selected sound format is not supported for preview.",
+                    "Sound preview only supports .wav files.\n" +
+                    "The selected sound format is not supported for preview.",
                     MessageBoxIcon.Information);
                 return false;
             }

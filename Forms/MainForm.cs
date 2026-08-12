@@ -1602,13 +1602,14 @@ namespace SmartGoldbergEmu.Forms
                 if (_gameDataService.GetGame(gameConfig.GameGuid) != null)
                 {
                     string stubExe = executablePath;
+                    ulong stubAppId = gameConfig.AppId;
                     string stubName = gameConfig.AppName;
                     // Schedule after add returns so list/mosaic can paint; do not block save completion.
                     BeginInvoke(new MethodInvoker(() =>
                     {
                         if (IsDisposed || Disposing)
                             return;
-                        _ = OfferSteamStubRemovalIfNeededAsync(stubExe, stubName)
+                        _ = OfferSteamStubRemovalIfNeededAsync(stubExe, stubAppId, stubName)
                             .ForgetFaults(Program.LogService, nameof(OfferSteamStubRemovalIfNeededAsync));
                     }));
                 }
@@ -1732,7 +1733,8 @@ namespace SmartGoldbergEmu.Forms
                     {
                         AppTaskDialogHelper.ShowOk(
                             this,
-                            "Custom stats contain invalid JSON. Please fix the format before saving.",
+                            "Custom stats contain invalid JSON.\n" +
+                            "Please fix the format before saving.",
                             MessageBoxIcon.Warning);
                     }
                     else if (!string.IsNullOrWhiteSpace(saveResult.ErrorMessage))
@@ -2455,7 +2457,7 @@ namespace SmartGoldbergEmu.Forms
                 Program.LogService?.LogWarning("StubKit: could not read Auto handle SteamStubs setting: " + ex.Message);
             }
 
-            var autoItem = new ToolStripMenuItem("Auto handle SteamStubs")
+            var autoItem = new ToolStripMenuItem("Auto handle SteamStubs - (Auto patch)")
             {
                 Name = "miCtxStubAutoHandle",
                 CheckOnClick = true,
@@ -2508,7 +2510,7 @@ namespace SmartGoldbergEmu.Forms
         }
 
         // Returns false when the user cancels (Cancel / window X); true to continue (Accept, Skip, or no prompt).
-        private async Task<bool> OfferSteamStubRemovalIfNeededAsync(string executablePath, string gameName)
+        private async Task<bool> OfferSteamStubRemovalIfNeededAsync(string executablePath, ulong appId, string gameName)
         {
             if (IsDisposed || Disposing)
                 return true;
@@ -2559,9 +2561,11 @@ namespace SmartGoldbergEmu.Forms
                 this,
                 new AppTaskDialogRequest
                 {
-                    Content = StubKitFeedback.OfferRemoveQuestion(gameName, Path.GetFileName(executablePath)),
+                    Content = StubKitFeedback.OfferRemoveQuestion(appId, gameName, Path.GetFileName(executablePath)),
+                    // Wider than default so long Game: lines fit before wrapping.
+                    MaxClientWidth = 640,
                     Icon = MessageBoxIcon.Question,
-                    VerificationText = "Auto handle SteamStubs",
+                    VerificationText = "Auto handle SteamStubs - (Auto patch)",
                     VerificationChecked = false,
                     Buttons = new List<AppTaskDialogButton>
                     {
@@ -3008,8 +3012,9 @@ namespace SmartGoldbergEmu.Forms
                 AppTaskDialogHelper.ShowOk(
                     this,
                     "The " + ApplicationConstants.UriProtocolAuthorityPrefix
-                    + " protocol is not registered. Please restart the application to register it automatically.\n\n"
-                    + "If the problem persists, try running the application as administrator.",
+                    + " protocol is not registered.\n" +
+                    "Please restart the application to register it automatically.\n\n" +
+                    "If the problem persists, try running the application as administrator.",
                     MessageBoxIcon.Warning);
                 return;
             }
@@ -3201,7 +3206,8 @@ namespace SmartGoldbergEmu.Forms
                 "Modded Steam API DLLs found.\n\n" +
                 (hasBackups
                     ? "A known-good file was found elsewhere in this folder (name contains \"steam_api\")."
-                    : "No known-good alternate file was found (searched recursively; skipped folders that could not be read).");
+                    : "No known-good alternate file was found.\n" +
+                      "Searched recursively; skipped folders that could not be read.");
             const int idRestore = 100;
             const int idLaunchAnyway = 101;
             AppTaskDialogResult validationResult = AppTaskDialogForm.Show(
@@ -3327,7 +3333,7 @@ namespace SmartGoldbergEmu.Forms
                 Program.LogService?.LogDebug($"Launch option selected: {(launchOption != null ? launchOption.Description ?? launchOption.Executable : "None (default)")}, SkipLauncher: {launchResult.SkipLauncher}");
 
                 string launchExecutablePath = TryResolveLaunchExecutableForStubCheck(game, launchOption);
-                if (!await OfferSteamStubRemovalIfNeededAsync(launchExecutablePath, game.AppName).ConfigureAwait(true))
+                if (!await OfferSteamStubRemovalIfNeededAsync(launchExecutablePath, game.AppId, game.AppName).ConfigureAwait(true))
                 {
                     Program.LogService?.LogDebug("User cancelled SteamStub prompt; launch aborted");
                     return;
@@ -3962,7 +3968,7 @@ namespace SmartGoldbergEmu.Forms
                                 "With an API key, you can:\n" +
                                 "• Automatically generate achievements from Steam\n" +
                                 "• Automatically generate inventory items from Steam\n\n" +
-                                "The API key is free and only requires a Steam account.\n\n" +
+                                "The API key is free and only requires a Steam account.\n" +
                                 "Get a free Steam Web API key:",
                             FooterText = "Would you like to configure an API key now?",
                             Icon = MessageBoxIcon.Information,

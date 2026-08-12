@@ -80,67 +80,66 @@ namespace SmartGoldbergEmu.Services
 #endif
         }
 
-        private static IList<UpdateManualDownloadLink> GetGoldbergManualDownloadLinks()
+        // Single link for the fork currently selected in settings (releases page).
+        private static List<AppTaskDialogLink> BuildSelectedGoldbergReleaseContentLinks()
         {
-            return new[]
+            string url = GoldbergForkConstants.GetReleasesWebUrl(GetConfiguredGoldbergForkSource());
+            if (string.IsNullOrWhiteSpace(url))
+                return new List<AppTaskDialogLink>();
+
+            url = url.Trim();
+            return new List<AppTaskDialogLink>
             {
-                new UpdateManualDownloadLink
-                {
-                    Label = "Repack",
-                    Url = GoldbergForkConstants.RepackRepositoryWebUrl
-                },
-                new UpdateManualDownloadLink
-                {
-                    Label = GoldbergForkConstants.GetForkDisplayName(GoldbergForkSource.Detanup),
-                    Url = GoldbergForkConstants.RepositoryWebUrlDetanup
-                },
-                new UpdateManualDownloadLink
-                {
-                    Label = GoldbergForkConstants.GetForkDisplayName(GoldbergForkSource.Alex),
-                    Url = GoldbergForkConstants.RepositoryWebUrlAlex
-                }
+                new AppTaskDialogLink(url, url)
             };
-        }
-
-        private static List<AppTaskDialogLink> BuildGoldbergManualDownloadContentLinks()
-        {
-            var contentLinks = new List<AppTaskDialogLink>();
-            foreach (UpdateManualDownloadLink link in GetGoldbergManualDownloadLinks())
-            {
-                if (link == null || string.IsNullOrWhiteSpace(link.Url))
-                    continue;
-
-                string url = link.Url.Trim();
-                string label = string.IsNullOrWhiteSpace(link.Label) ? string.Empty : link.Label.Trim();
-                contentLinks.Add(new AppTaskDialogLink(
-                    string.IsNullOrEmpty(label) ? url : label,
-                    url));
-            }
-
-            return contentLinks;
         }
 
         private static void ShowUpdateFailedDialog(IWin32Window owner, Exception ex)
         {
-            string detail = GetUpdateFailureDetail(ex);
+            string detail = FlattenFailureDetailToOneLine(GetUpdateFailureDetail(ex));
+            string body;
+            if (IsRateLimitMessage(detail))
+            {
+                body =
+                    "Update failed: GitHub API rate limit exceeded.\n\n" +
+                    "Wait a few minutes and try again or manually download from:";
+            }
+            else
+            {
+                body =
+                    "Update failed:\n\n" +
+                    detail + "\n\n" +
+                    "Please try again or download manually from:";
+            }
+
             AppTaskDialogForm.Show(
                 owner,
                 new AppTaskDialogRequest
                 {
-                    Content =
-                        "Update failed: " + detail + "\n\n" +
-                        "Please try again or download manually from:",
+                    Content = body,
                     Icon = MessageBoxIcon.Error,
-                    ContentLinks = BuildGoldbergManualDownloadContentLinks(),
+                    ContentLinks = BuildSelectedGoldbergReleaseContentLinks(),
                     Buttons = new List<AppTaskDialogButton>
                     {
-                        new AppTaskDialogButton(TaskDialogHelper.IdOk, "OK")
+                        new AppTaskDialogButton(TaskDialogHelper.IdOk, "Skip")
                         {
                             IsDefault = true,
                             IsCancel = true
                         }
                     }
                 });
+        }
+
+        private static string FlattenFailureDetailToOneLine(string detail)
+        {
+            if (string.IsNullOrWhiteSpace(detail))
+                return "unknown error";
+
+            string normalized = detail.Trim().Replace("\r\n", "\n").Replace('\r', '\n');
+            string[] parts = normalized.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+                parts[i] = parts[i].Trim();
+            return string.Join(" ", parts);
         }
 
         private static void ApplyResolvedRelease(GoldbergResolvedRelease resolved, UpdateCheckResult result)
@@ -196,12 +195,14 @@ namespace SmartGoldbergEmu.Services
                     new AppTaskDialogRequest
                     {
                         Content =
-                            "ColdLoaderLauncher executables may be flagged by Windows Defender and can trigger false positives.\n\n" +
-                            "A temporary Windows Defender exclusion will be added during the download and installation process. " +
-                            "The downloaded files and the exclusion will be automatically removed once the installation is complete.\n\n" +
-                            "Exclusion target file:\n" +
+                            "ColdLoaderLauncher executables are flagged by Windows Defender and trigger false positives due to their injection-related behavior. They are not required by SmartGoldbergEmu.\n\n" +
+                            "Flagged files:\n" +
+                            "- steamclient_loader_x32.exe\n" +
+                            "- steamclient_loader_x64.exe\n\n" +
+                            "Note: A temporary Windows Defender exclusion is required to complete the installation. The downloaded archive and the exclusion will be automatically removed after extraction and installation are complete.\n\n" +
+                            "Exclusion target:\n" +
                             "- " + GoldbergForkConstants.UpstreamWinReleaseAssetName + "\n\n" +
-                            "You can also manually download fork files from the " + forkName + " releases page:",
+                            "Alternatively, you can manually download the fork files from the " + forkName + " releases page:",
                         FooterText = "Do you want to continue?",
                         CustomIcon = SystemIcons.Shield,
                         ContentLinks = new List<AppTaskDialogLink>
@@ -1401,7 +1402,7 @@ namespace SmartGoldbergEmu.Services
         private static string BuildMissingGoldbergInstallPromptMessage()
         {
             return
-                "Goldberg Emulator files are missing.\n\n" +
+                "Goldberg Emulator files are missing.\n" +
                 "Do you want to download and install them now?";
         }
 
@@ -1418,6 +1419,8 @@ namespace SmartGoldbergEmu.Services
                 {
                     Content = BuildMissingGoldbergInstallPromptMessage(),
                     Icon = MessageBoxIcon.Question,
+                    // Short two-line body: extra top pad so it doesn't look cramped under the title.
+                    TopBlankLines = 2,
                     Buttons = new List<AppTaskDialogButton>
                     {
                         new AppTaskDialogButton(idDownload, "Download") { IsDefault = true },
@@ -1639,9 +1642,9 @@ namespace SmartGoldbergEmu.Services
             {
                 AppTaskDialogHelper.ShowOk(
                     owner,
-                    "You are running the latest version of Goldberg Emulator.\n\n"
-                    + "Current version: " + (result.CurrentVersion ?? "unknown") + "\n"
-                    + "Latest version: " + result.LatestVersion,
+                    "You are running the latest version of Goldberg Emulator.\n\n" +
+                    "Current version: " + (result.CurrentVersion ?? "unknown") + "\n" +
+                    "Latest version: " + result.LatestVersion,
                     MessageBoxIcon.Information);
             }
 
