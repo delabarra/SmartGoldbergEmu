@@ -347,6 +347,9 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamPublishedFileDetailsApiUrlPrefix = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=";
         public const string SteamDirectoryGetCmListForConnectUrl =
             "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=50";
+        // Storefront autocomplete; parse type locally (game vs dlc). Delisted apps use SteamSearchGamesApiUrlFormat.
+        public const string SteamStoreSearchSuggestUrlFormat =
+            "https://store.steampowered.com/search/suggest?cc=US&l=english&realm=1&f=jsonfull&term={0}";
         public const string SteamSearchGamesApiUrlFormat = "https://steam-search.vercel.app/api/games?search={0}";
         public const string SteamStoreAppUrlFormat = "https://store.steampowered.com/app/{0}";
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";
