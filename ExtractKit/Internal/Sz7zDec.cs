@@ -188,6 +188,26 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             return res;
         }
 
+        // BCJ2 inner LZMA streams write temp buffers; remap decoded bytes onto the folder unpack size.
+        private static Action<long, long> MapBcj2StreamProgress(
+            Action<long, long> decodeProgress,
+            long innerCompleted,
+            int folderUnpackBytes)
+        {
+            if (decodeProgress == null || folderUnpackBytes <= 0)
+                return null;
+
+            return (decoded, streamTotal) =>
+            {
+                long reported = innerCompleted + decoded;
+                if (reported < 0)
+                    reported = 0;
+                if (reported > folderUnpackBytes)
+                    reported = folderUnpackBytes;
+                decodeProgress(reported, folderUnpackBytes);
+            };
+        }
+
         // decodeProgress may throw OperationCanceledException to abort; returns ErrorProgress in that case.
         private static int ReportDecodeProgress(
             Action<long, long> decodeProgress,
@@ -337,6 +357,7 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 
             int[] tempSizes = new int[3];
             int tempSize3 = 0;
+            long bcj2InnerCompleted = 0;
 
             for (uint ci = 0; ci < folder.NumCoders; ci++)
             {
@@ -394,9 +415,13 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                     if (res != SzRes.Ok)
                         return res;
 
-                    // Progress only for the stream that fills the folder output buffer.
-                    Action<long, long> streamProgress =
-                        object.ReferenceEquals(outBufCur, outBuffer) ? decodeProgress : null;
+                    // BCJ+LZMA2 writes the folder buffer directly. BCJ2 decodes into temp
+                    // streams; map those onto folder unpack size so callers still get ticks.
+                    Action<long, long> streamProgress;
+                    if (folder.NumCoders == 4)
+                        streamProgress = MapBcj2StreamProgress(decodeProgress, bcj2InnerCompleted, outSize);
+                    else
+                        streamProgress = object.ReferenceEquals(outBufCur, outBuffer) ? decodeProgress : null;
 
                     if (coder.MethodId == KCopy)
                     {
@@ -432,6 +457,13 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 
                     if (res != SzRes.Ok)
                         return res;
+
+                    if (folder.NumCoders == 4)
+                    {
+                        bcj2InnerCompleted += outSizeCur;
+                        if (bcj2InnerCompleted > outSize)
+                            bcj2InnerCompleted = outSize;
+                    }
                 }
                 else if (coder.MethodId == KBcj2)
                 {
@@ -487,6 +519,18 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 
                     if (bcj.DestPos != bcj.DestLim || !Bcj2.IsMaybeFinished(bcj))
                         return SzRes.ErrorData;
+
+                    if (decodeProgress != null)
+                    {
+                        try
+                        {
+                            decodeProgress(outSize, outSize);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            return SzRes.ErrorProgress;
+                        }
+                    }
                 }
                 else if (ci == 1)
                 {

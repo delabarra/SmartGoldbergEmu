@@ -94,7 +94,7 @@ namespace SmartGoldbergEmu.Forms
             if (DesignTimeHelper.IsDesignTime)
                 return;
 
-            _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor);
+            _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
             WireAchievementsPreviewListEvents();
             WireModsSummaryListEvents();
             WireInventoryListEvents();
@@ -570,6 +570,13 @@ namespace SmartGoldbergEmu.Forms
             return _themeService != null
                 ? _themeService.GetThemeColors(_themeService.EffectiveTheme).Foreground
                 : System.Drawing.SystemColors.ControlText;
+        }
+
+        private System.Drawing.Color GetThemePlaceholderColor()
+        {
+            return _themeService != null
+                ? _themeService.GetThemeColors(_themeService.EffectiveTheme).DisabledForeground
+                : System.Drawing.SystemColors.GrayText;
         }
 
         private void LoadDlcListAndAppPaths()
@@ -2400,7 +2407,7 @@ namespace SmartGoldbergEmu.Forms
                     label.ForeColor = colors?.ErrorColor ?? Color.Red;
                     break;
                 case SteamApiDisplaySeverity.Disabled:
-                    label.ForeColor = colors?.DisabledForeground ?? Color.Gray;
+                    label.ForeColor = colors?.DisabledForeground ?? SystemColors.GrayText;
                     break;
                 default:
                     label.ForeColor = colors?.Foreground ?? SystemColors.ControlText;
@@ -4357,7 +4364,7 @@ namespace SmartGoldbergEmu.Forms
                 var textRect = new Rectangle(3, 0, cmbForceLanguage.Width - 20, cmbForceLanguage.Height);
                 var placeholderColor = _themeService != null
                     ? _themeService.GetThemeColors(_themeService.EffectiveTheme).DisabledForeground
-                    : Color.Gray;
+                    : SystemColors.GrayText;
                 TextRenderer.DrawText(e.Graphics, _globalLanguagePlaceholder, cmbForceLanguage.Font, textRect,
                     placeholderColor,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
@@ -4378,7 +4385,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 var placeholderColor = _themeService != null
                     ? _themeService.GetThemeColors(_themeService.EffectiveTheme).DisabledForeground
-                    : Color.Gray;
+                    : SystemColors.GrayText;
                 using (var placeholderBrush = new SolidBrush(placeholderColor))
                     e.Graphics.DrawString(_globalLanguagePlaceholder, e.Font, placeholderBrush, e.Bounds.X, e.Bounds.Y);
             }

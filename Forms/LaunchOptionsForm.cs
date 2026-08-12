@@ -423,7 +423,10 @@ namespace SmartGoldbergEmu.Forms
             {
                 ConfigureLaunchDialogButtons();
                 if (lblDetails != null)
-                    lblDetails.ForeColor = Color.Gray;
+                {
+                    ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
+                    lblDetails.ForeColor = colors.DisabledForeground;
+                }
             }
             catch (Exception ex)
             {

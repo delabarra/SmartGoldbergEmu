@@ -1326,17 +1326,22 @@ namespace SmartGoldbergEmu.Forms
 
             Color backColor;
             Color foreColor;
+            ThemeColors themeColors = _themeService != null
+                ? _themeService.GetThemeColors(_themeService.EffectiveTheme)
+                : null;
             if (!itemEnabled)
             {
                 backColor = e.BackColor;
                 if ((e.State & DrawItemState.Selected) != 0)
-                    backColor = cmbSaveLocation.DroppedDown ? cmbSaveLocation.BackColor : SystemColors.Highlight;
-                foreColor = SystemColors.GrayText;
+                    backColor = cmbSaveLocation.DroppedDown
+                        ? cmbSaveLocation.BackColor
+                        : (themeColors?.Highlight ?? SystemColors.Highlight);
+                foreColor = themeColors?.DisabledForeground ?? SystemColors.GrayText;
             }
             else if ((e.State & DrawItemState.Selected) != 0)
             {
-                backColor = SystemColors.Highlight;
-                foreColor = SystemColors.HighlightText;
+                backColor = themeColors?.Highlight ?? SystemColors.Highlight;
+                foreColor = themeColors?.HighlightText ?? SystemColors.HighlightText;
             }
             else
             {

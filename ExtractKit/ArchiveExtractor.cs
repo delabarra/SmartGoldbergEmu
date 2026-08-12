@@ -63,6 +63,7 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
 
                     progressCallback?.Invoke(baseCompleted, totalBytes, displayName);
 
+                    long lastFolderSize = 0;
                     Action<long, long> decodeProgress = null;
                     if ((progressCallback != null || cancellationCheck != null) && entryWeight > 0 && totalBytes > 0)
                     {
@@ -70,21 +71,23 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                         {
                             ThrowIfCancelled(cancellationCheck);
 
+                            lastFolderSize = folderSize;
                             if (progressCallback == null)
                                 return;
 
                             long remaining = totalBytes - baseCompleted;
-                            long weight = entryWeight;
-                            if (folderSize > entryWeight && remaining > entryWeight)
-                                weight = Math.Min(remaining, folderSize);
-
-                            long partial = ScaleBytes(weight, decoded, folderSize);
+                            long weight = ArchiveExtractProgress.DecodeWeight(entryWeight, folderSize, remaining);
+                            long partial = ArchiveExtractProgress.ScaleBytes(weight, decoded, folderSize);
                             progressCallback(baseCompleted + partial, totalBytes, displayName);
                         };
                     }
 
                     reader.ExtractEntry(entry, destinationDirectory, flatFileName: false, decodeProgress);
-                    completedBytes += entryWeight;
+                    long remainingAfter = totalBytes - baseCompleted;
+                    if (remainingAfter < 0)
+                        remainingAfter = 0;
+                    completedBytes = baseCompleted + ArchiveExtractProgress.CompletedDelta(
+                        entryWeight, lastFolderSize, remainingAfter);
                     progressCallback?.Invoke(completedBytes, totalBytes, displayName);
                 }
 
@@ -117,24 +120,6 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
         {
             if (cancellationCheck != null && cancellationCheck())
                 throw new OperationCanceledException("Archive extraction was cancelled.");
-        }
-
-        private static long ScaleBytes(long fileWeight, long decodedBytes, long folderUnpackBytes)
-        {
-            if (fileWeight <= 0)
-                return 0;
-            if (folderUnpackBytes <= 0)
-                return fileWeight;
-            if (decodedBytes >= folderUnpackBytes)
-                return fileWeight;
-
-            double ratio = decodedBytes / (double)folderUnpackBytes;
-            long partial = (long)(fileWeight * ratio);
-            if (partial < 0)
-                return 0;
-            if (partial > fileWeight)
-                return fileWeight;
-            return partial;
         }
     }
 }

@@ -34,7 +34,8 @@ namespace SmartGoldbergEmu.ExtractKit
                 throw new FileNotFoundException("Archive entry was not found: " + fileInArchive);
         }
 
-        // decodeProgress(decodedBytes, folderUnpackBytes) fires while a solid 7z folder is decoded.
+        // decodeProgress(decodedBytes, folderUnpackBytes) fires while a 7z folder is decoded
+        // (including BCJ2 inner streams mapped onto the folder unpack size).
         public bool TryExtractSingleFileFlat(
             string fileInArchive,
             string destinationFolder,

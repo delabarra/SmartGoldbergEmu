@@ -1157,6 +1157,7 @@ namespace SmartGoldbergEmu.Services
                 includeByteSize);
 
             Action<long, long> decodeProgress = null;
+            long lastFolderSize = 0;
             if (progressCallback != null || cancellationCheck != null)
             {
                 decodeProgress = (decoded, folderSize) =>
@@ -1165,15 +1166,13 @@ namespace SmartGoldbergEmu.Services
                     if (cancellationCheck != null && cancellationCheck())
                         throw new OperationCanceledException();
 
+                    lastFolderSize = folderSize;
                     if (progressCallback == null || entryWeight <= 0 || totalBytes <= 0)
                         return;
 
                     long remaining = totalBytes - baseCompleted;
-                    long weight = entryWeight;
-                    if (folderSize > entryWeight && remaining > entryWeight)
-                        weight = Math.Min(remaining, folderSize);
-
-                    long partial = ScaleExtractBytes(weight, decoded, folderSize);
+                    long weight = ArchiveExtractProgress.DecodeWeight(entryWeight, folderSize, remaining);
+                    long partial = ArchiveExtractProgress.ScaleBytes(weight, decoded, folderSize);
                     ReportArchiveExtractByteProgress(
                         progressCallback,
                         extractStatus,
@@ -1186,7 +1185,11 @@ namespace SmartGoldbergEmu.Services
             }
 
             extract(decodeProgress);
-            completedBytes = baseCompleted + entryWeight;
+            long remainingAfter = totalBytes - baseCompleted;
+            if (remainingAfter < 0)
+                remainingAfter = 0;
+            completedBytes = baseCompleted + ArchiveExtractProgress.CompletedDelta(
+                entryWeight, lastFolderSize, remainingAfter);
             ReportArchiveExtractByteProgress(
                 progressCallback,
                 extractStatus,
@@ -1208,23 +1211,6 @@ namespace SmartGoldbergEmu.Services
             }
 
             return 0;
-        }
-
-        private static long ScaleExtractBytes(long fileWeight, long decodedBytes, long folderUnpackBytes)
-        {
-            if (fileWeight <= 0)
-                return 0;
-            if (folderUnpackBytes <= 0)
-                return fileWeight;
-            if (decodedBytes >= folderUnpackBytes)
-                return fileWeight;
-
-            long partial = (long)(fileWeight * (decodedBytes / (double)folderUnpackBytes));
-            if (partial < 0)
-                return 0;
-            if (partial > fileWeight)
-                return fileWeight;
-            return partial;
         }
 
         private static void ReportArchiveExtractByteProgress(

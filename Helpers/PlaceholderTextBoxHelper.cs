@@ -5,27 +5,19 @@ using System.Windows.Forms;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper for TextBox controls with placeholder text support.
-    /// Shows gray placeholder when empty, theme foreground when has value.
-    /// </summary>
+    // Shows muted placeholder when empty; theme foreground when the box has a real value.
     public class PlaceholderTextBoxHelper
     {
         private readonly Dictionary<TextBox, string> _placeholderTexts = new Dictionary<TextBox, string>();
         private readonly Func<Color> _getForegroundColor;
+        private readonly Func<Color> _getPlaceholderColor;
 
-        /// <summary>
-        /// Initializes a new instance with a function to get the theme foreground color.
-        /// </summary>
-        /// <param name="getForegroundColor">Returns the foreground color for actual text (e.g. from ThemeService).</param>
-        public PlaceholderTextBoxHelper(Func<Color> getForegroundColor)
+        public PlaceholderTextBoxHelper(Func<Color> getForegroundColor, Func<Color> getPlaceholderColor = null)
         {
             _getForegroundColor = getForegroundColor ?? (() => SystemColors.ControlText);
+            _getPlaceholderColor = getPlaceholderColor ?? (() => SystemColors.GrayText);
         }
 
-        /// <summary>
-        /// Sets up placeholder text for a TextBox control.
-        /// </summary>
         public void SetupPlaceholder(TextBox textBox, string placeholderText)
         {
             if (textBox == null || string.IsNullOrEmpty(placeholderText))
@@ -36,7 +28,7 @@ namespace SmartGoldbergEmu.Helpers
             if (string.IsNullOrEmpty(textBox.Text) || textBox.Text == placeholderText)
             {
                 textBox.Text = placeholderText;
-                textBox.ForeColor = Color.Gray;
+                textBox.ForeColor = _getPlaceholderColor();
             }
             else
             {
@@ -49,9 +41,6 @@ namespace SmartGoldbergEmu.Helpers
             textBox.Leave += TextBox_Leave;
         }
 
-        /// <summary>
-        /// Gets the placeholder text for a TextBox, or null if not set up.
-        /// </summary>
         public string GetPlaceholderText(TextBox textBox)
         {
             if (textBox == null || !_placeholderTexts.ContainsKey(textBox))
@@ -59,9 +48,6 @@ namespace SmartGoldbergEmu.Helpers
             return _placeholderTexts[textBox];
         }
 
-        /// <summary>
-        /// Updates the placeholder text for a TextBox (must already be set up).
-        /// </summary>
         public void SetPlaceholderText(TextBox textBox, string placeholderText)
         {
             if (textBox == null || !_placeholderTexts.ContainsKey(textBox))
@@ -69,9 +55,6 @@ namespace SmartGoldbergEmu.Helpers
             _placeholderTexts[textBox] = placeholderText ?? string.Empty;
         }
 
-        /// <summary>
-        /// Updates placeholder text and display. If textbox is empty or showing placeholder, shows the new placeholder.
-        /// </summary>
         public void UpdatePlaceholderAndDisplay(TextBox textBox, string newPlaceholderText)
         {
             if (textBox == null || !_placeholderTexts.ContainsKey(textBox))
@@ -84,13 +67,10 @@ namespace SmartGoldbergEmu.Helpers
                 textBox.Text == _placeholderTexts[textBox])
             {
                 textBox.Text = _placeholderTexts[textBox];
-                textBox.ForeColor = Color.Gray;
+                textBox.ForeColor = _getPlaceholderColor();
             }
         }
 
-        /// <summary>
-        /// Checks if a TextBox contains placeholder text.
-        /// </summary>
         public bool IsPlaceholderText(TextBox textBox)
         {
             if (textBox == null || !_placeholderTexts.ContainsKey(textBox))
@@ -98,9 +78,6 @@ namespace SmartGoldbergEmu.Helpers
             return textBox.Text == _placeholderTexts[textBox];
         }
 
-        /// <summary>
-        /// Gets the actual text value from a TextBox, ignoring placeholder text.
-        /// </summary>
         public string GetActualText(TextBox textBox)
         {
             if (textBox == null)
@@ -110,9 +87,6 @@ namespace SmartGoldbergEmu.Helpers
             return textBox.Text;
         }
 
-        /// <summary>
-        /// Sets the value of a TextBox, showing placeholder if empty.
-        /// </summary>
         public void SetTextBoxValue(TextBox textBox, string value)
         {
             if (textBox == null)
@@ -123,7 +97,7 @@ namespace SmartGoldbergEmu.Helpers
                 if (_placeholderTexts.ContainsKey(textBox))
                 {
                     textBox.Text = _placeholderTexts[textBox];
-                    textBox.ForeColor = Color.Gray;
+                    textBox.ForeColor = _getPlaceholderColor();
                 }
                 else
                 {
@@ -137,19 +111,14 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Updates placeholder text colors (e.g. when theme changes).
-        /// </summary>
         public void UpdatePlaceholderColors()
         {
             var foreground = _getForegroundColor();
+            var placeholder = _getPlaceholderColor();
             foreach (var kvp in _placeholderTexts)
             {
                 var textBox = kvp.Key;
-                if (textBox.Text != kvp.Value)
-                {
-                    textBox.ForeColor = foreground;
-                }
+                textBox.ForeColor = textBox.Text == kvp.Value ? placeholder : foreground;
             }
         }
 
@@ -161,7 +130,7 @@ namespace SmartGoldbergEmu.Helpers
 
             // Only clear when the control is actively showing placeholder style text.
             // This prevents clearing real user input that happens to match placeholder value.
-            if (textBox.Text == _placeholderTexts[textBox] && textBox.ForeColor == Color.Gray)
+            if (textBox.Text == _placeholderTexts[textBox] && textBox.ForeColor.ToArgb() == _getPlaceholderColor().ToArgb())
             {
                 textBox.Text = string.Empty;
                 textBox.ForeColor = _getForegroundColor();
@@ -177,7 +146,7 @@ namespace SmartGoldbergEmu.Helpers
             if (string.IsNullOrWhiteSpace(textBox.Text))
             {
                 textBox.Text = _placeholderTexts[textBox];
-                textBox.ForeColor = Color.Gray;
+                textBox.ForeColor = _getPlaceholderColor();
             }
             else
             {
