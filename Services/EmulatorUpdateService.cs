@@ -2138,7 +2138,7 @@ namespace SmartGoldbergEmu.Services
                 new UpdateManualDownloadLink
                 {
                     Label = GoldbergForkConstants.GetForkDisplayName(fork),
-                    Url = GoldbergForkConstants.GetRepositoryWebUrl(fork)
+                    Url = GoldbergForkConstants.GetReleasesWebUrl(fork)
                 }
             };
         }

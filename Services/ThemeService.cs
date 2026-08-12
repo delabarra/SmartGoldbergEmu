@@ -86,11 +86,65 @@ namespace SmartGoldbergEmu.Services
             form.ForeColor = colors.Foreground;
             ApplyThemeToControls(form.Controls, colors, effectiveTheme);
             ApplyThemeToMenus(form, colors, effectiveTheme);
+            // LinkLabel restores the system hyperlink blue after native handle init; re-apply after that.
+            ScheduleLinkColorRefresh(form);
         }
 
         private static void EnsureFormDoubleBuffered(Form form)
         {
             ControlDoubleBufferedProperty?.SetValue(form, true, null);
+        }
+
+        private void ScheduleLinkColorRefresh(Form form)
+        {
+            if (form == null || form.IsDisposed || form.Disposing)
+                return;
+
+            if (form.IsHandleCreated)
+            {
+                try
+                {
+                    form.BeginInvoke(new Action(() => ApplyLinkColorsIfAlive(form)));
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                return;
+            }
+
+            EventHandler onLoad = null;
+            onLoad = (s, e) =>
+            {
+                form.Load -= onLoad;
+                ApplyLinkColorsIfAlive(form);
+            };
+            form.Load += onLoad;
+        }
+
+        private void ApplyLinkColorsIfAlive(Form form)
+        {
+            if (_disposed || form == null || form.IsDisposed || form.Disposing)
+                return;
+            ApplyLinkColorsRecursive(form.Controls, GetThemeColors(EffectiveTheme));
+        }
+
+        private static void ApplyLinkColorsRecursive(Control.ControlCollection controls, ThemeColors colors)
+        {
+            if (controls == null)
+                return;
+
+            foreach (Control control in controls)
+            {
+                if (control is LinkLabel link)
+                {
+                    link.LinkColor = colors.LinkColor;
+                    link.ActiveLinkColor = colors.LinkColor;
+                    link.VisitedLinkColor = colors.VisitedLinkColor;
+                }
+
+                if (control.HasChildren)
+                    ApplyLinkColorsRecursive(control.Controls, colors);
+            }
         }
 
         private static Color DarkenRgb(Color color, int delta)

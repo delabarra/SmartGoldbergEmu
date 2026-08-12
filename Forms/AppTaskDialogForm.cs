@@ -899,15 +899,15 @@ namespace SmartGoldbergEmu.Forms
             ForeColor = bodyFore;
 
             // Body (white) → checkbox or 2-line spacer (same white) → button footer (grey).
-            ApplyBandColors(_pnlBody, bodyBack, bodyFore);
+            ApplyBandColors(_pnlBody, bodyBack, bodyFore, colors);
             if (_pnlCheckStrip != null)
-                ApplyBandColors(_pnlCheckStrip, bodyBack, bodyFore);
+                ApplyBandColors(_pnlCheckStrip, bodyBack, bodyFore, colors);
             if (_pnlPreButtonSpacer != null)
-                ApplyBandColors(_pnlPreButtonSpacer, bodyBack, bodyFore);
-            ApplyBandColors(_pnlButtons, footerBack, bodyFore);
+                ApplyBandColors(_pnlPreButtonSpacer, bodyBack, bodyFore, colors);
+            ApplyBandColors(_pnlButtons, footerBack, bodyFore, colors);
         }
 
-        private static void ApplyBandColors(Panel band, Color back, Color fore)
+        private static void ApplyBandColors(Panel band, Color back, Color fore, ThemeColors colors)
         {
             if (band == null)
                 return;
@@ -918,7 +918,14 @@ namespace SmartGoldbergEmu.Forms
                 if (child is Button)
                     continue;
                 child.BackColor = back;
-                if (!(child is LinkLabel) && !(child is PictureBox))
+                if (child is LinkLabel link)
+                {
+                    link.LinkColor = colors.LinkColor;
+                    link.ActiveLinkColor = colors.LinkColor;
+                    link.VisitedLinkColor = colors.VisitedLinkColor;
+                    continue;
+                }
+                if (!(child is PictureBox))
                     child.ForeColor = fore;
             }
         }
