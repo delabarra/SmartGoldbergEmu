@@ -51,6 +51,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 AppDataSectionsResult sections = await kit.GetAllSectionsAsync(id, cancellationToken).ConfigureAwait(false);
+                await ApplyGamesInfosFallbacksWhenNoApiKeyAsync(id, sections, cancellationToken).ConfigureAwait(false);
                 AppCatalogSnapshot snapshot = AppCatalogSnapshotStore.FinalizeSnapshot(
                     id,
                     sections.FetchedAtUtc,
@@ -246,8 +247,24 @@ namespace SmartGoldbergEmu.Services
                 };
             }
 
-            AppDataKit.AppDataService kit = CreateKit(language);
-            return await kit.GetAchievementsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+            if (_steamApiKeyService.TryGetValidFormatKey(out _))
+            {
+                AppDataKit.AppDataService kit = CreateKit(language);
+                return await kit.GetAchievementsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+            }
+
+            AchievementsSection fallback = await GamesInfosDatasHelper
+                .TryFetchAchievementsSectionAsync((uint)appId, language, cancellationToken)
+                .ConfigureAwait(false);
+            if (fallback != null)
+                return fallback;
+
+            return new AchievementsSection
+            {
+                Status = SnapshotSectionStatus.Unavailable,
+                Error = "Steam Web API key is required.",
+                Source = "games-infos-datas/achievements_db.json"
+            };
         }
 
         public async Task<StatsSection> FetchStatsAsync(
@@ -264,8 +281,24 @@ namespace SmartGoldbergEmu.Services
                 };
             }
 
-            AppDataKit.AppDataService kit = CreateKit(language);
-            return await kit.GetStatsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+            if (_steamApiKeyService.TryGetValidFormatKey(out _))
+            {
+                AppDataKit.AppDataService kit = CreateKit(language);
+                return await kit.GetStatsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+            }
+
+            StatsSection fallback = await GamesInfosDatasHelper
+                .TryFetchStatsSectionAsync((uint)appId, cancellationToken)
+                .ConfigureAwait(false);
+            if (fallback != null)
+                return fallback;
+
+            return new StatsSection
+            {
+                Status = SnapshotSectionStatus.Unavailable,
+                Error = "Steam Web API key is required.",
+                Source = "games-infos-datas/stats_db.json"
+            };
         }
 
         // Longer HTTP timeout: item def archives can be large.
@@ -282,8 +315,24 @@ namespace SmartGoldbergEmu.Services
                 };
             }
 
-            AppDataKit.AppDataService kit = CreateKit(language: null, httpTimeout: TimeSpan.FromSeconds(120));
-            return await kit.GetItemsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+            if (_steamApiKeyService.TryGetValidFormatKey(out _))
+            {
+                AppDataKit.AppDataService kit = CreateKit(language: null, httpTimeout: TimeSpan.FromSeconds(120));
+                return await kit.GetItemsAsync((uint)appId, cancellationToken).ConfigureAwait(false);
+            }
+
+            ItemsSection fallback = await GamesInfosDatasHelper
+                .TryFetchItemsSectionAsync((uint)appId, cancellationToken)
+                .ConfigureAwait(false);
+            if (fallback != null)
+                return fallback;
+
+            return new ItemsSection
+            {
+                Status = SnapshotSectionStatus.Unavailable,
+                Error = "Steam Web API key is required.",
+                Source = "games-infos-datas/inventory_db.json"
+            };
         }
 
         private AppDataKit.AppDataService CreateKit(string language = null, TimeSpan? httpTimeout = null)
@@ -328,9 +377,10 @@ namespace SmartGoldbergEmu.Services
                 ProbeAssetUrls = false
             }, cancellationToken).ConfigureAwait(false);
 
-            AchievementsSection achievements = await kit.GetAchievementsAsync(id, cancellationToken).ConfigureAwait(false);
-            StatsSection stats = await kit.GetStatsAsync(id, cancellationToken).ConfigureAwait(false);
-            ItemsSection items = await kit.GetItemsAsync(id, cancellationToken).ConfigureAwait(false);
+            AchievementsSection achievements = await FetchAchievementsAsync(appId, language: null, cancellationToken)
+                .ConfigureAwait(false);
+            StatsSection stats = await FetchStatsAsync(appId, language: null, cancellationToken).ConfigureAwait(false);
+            ItemsSection items = await FetchItemsAsync(appId, cancellationToken).ConfigureAwait(false);
 
             return AppCatalogSnapshotStore.FinalizeSnapshot(
                 id,
@@ -343,6 +393,61 @@ namespace SmartGoldbergEmu.Services
                 items,
                 fromAppDataKit: false,
                 AppMetadataFetchFailure.None);
+        }
+
+        // When no Web API key, fill schema sections from Nemirtingas/games-infos-datas.
+        private async Task ApplyGamesInfosFallbacksWhenNoApiKeyAsync(
+            uint appId,
+            AppDataSectionsResult sections,
+            CancellationToken cancellationToken)
+        {
+            if (sections == null || _steamApiKeyService.TryGetValidFormatKey(out _))
+                return;
+
+            if (!IsUsableSchemaSection(sections.Achievements))
+            {
+                AchievementsSection fallback = await GamesInfosDatasHelper
+                    .TryFetchAchievementsSectionAsync(appId, language: null, cancellationToken)
+                    .ConfigureAwait(false);
+                if (fallback != null)
+                    sections.Achievements = fallback;
+            }
+
+            if (!IsUsableSchemaSection(sections.Stats))
+            {
+                StatsSection fallback = await GamesInfosDatasHelper
+                    .TryFetchStatsSectionAsync(appId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (fallback != null)
+                    sections.Stats = fallback;
+            }
+
+            if (sections.Items == null
+                || sections.Items.Status != SnapshotSectionStatus.Ok
+                || string.IsNullOrWhiteSpace(sections.Items.ArchiveJson))
+            {
+                ItemsSection fallback = await GamesInfosDatasHelper
+                    .TryFetchItemsSectionAsync(appId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (fallback != null)
+                    sections.Items = fallback;
+            }
+        }
+
+        private static bool IsUsableSchemaSection(SnapshotSection section)
+        {
+            if (section == null || section.Status != SnapshotSectionStatus.Ok)
+                return false;
+
+            var achievements = section as AchievementsSection;
+            if (achievements != null)
+                return achievements.Items != null && achievements.Items.Count > 0;
+
+            var stats = section as StatsSection;
+            if (stats != null)
+                return stats.Items != null && stats.Items.Count > 0;
+
+            return true;
         }
 
         private async Task<AppCatalogSnapshot> FetchMetadataViaPicsAsync(

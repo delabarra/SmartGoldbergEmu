@@ -204,6 +204,7 @@
     <Compile Include="Generators\StatsGenerator.cs" />
     <Compile Include="Validation\SteamApiValidator.cs" />
     <Compile Include="Helpers\AchievementPreviewHelper.cs" />
+    <Compile Include="Helpers\GamesInfosDatasHelper.cs" />
     <Compile Include="Helpers\ApiKeyStatusIndicatorHelper.cs" />
     <Compile Include="Helpers\ErrorDisplayHelper.cs" />
     <Compile Include="Helpers\ControlInvokeAsyncHelper.cs" />

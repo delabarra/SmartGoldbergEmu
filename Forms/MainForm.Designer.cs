@@ -853,7 +853,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblApiKeyStatus.Name = "lblApiKeyStatus";
             this.lblApiKeyStatus.Size = new System.Drawing.Size(19, 17);
             this.lblApiKeyStatus.Text = "⚠️";
-            this.lblApiKeyStatus.ToolTipText = "Missing Steam Web API key — click to add.";
+            this.lblApiKeyStatus.ToolTipText = "Steam Web API key status";
             this.lblApiKeyStatus.Visible = false;
             // 
             // btnTheme

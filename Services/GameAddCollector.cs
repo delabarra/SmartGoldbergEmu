@@ -13,24 +13,20 @@ namespace SmartGoldbergEmu.Services
     {
         private readonly GameSetupService _gameSetupService;
         private readonly EmulatorConfigService _emulatorConfigService;
-        private readonly SteamApiKeyService _steamApiKeyService;
 
         public GameAddCollector()
             : this(
                 ServiceLocator.GameSetupService,
-                ServiceLocator.EmulatorConfigService,
-                ServiceLocator.SteamApiKeyService)
+                ServiceLocator.EmulatorConfigService)
         {
         }
 
         public GameAddCollector(
             GameSetupService gameSetupService,
-            EmulatorConfigService emulatorConfigService,
-            SteamApiKeyService steamApiKeyService)
+            EmulatorConfigService emulatorConfigService)
         {
             _gameSetupService = gameSetupService ?? throw new ArgumentNullException(nameof(gameSetupService));
             _emulatorConfigService = emulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
-            _steamApiKeyService = steamApiKeyService ?? throw new ArgumentNullException(nameof(steamApiKeyService));
         }
 
         public ulong ResolveAppIdForCollect(string executablePath)
@@ -102,8 +98,7 @@ namespace SmartGoldbergEmu.Services
                 bundle.AchievementPreview = kind;
                 bundle.AchievementsPreviewJson = previewJson ?? string.Empty;
 
-                if (_steamApiKeyService.TryGetValidFormatKey(out _)
-                    && ServiceLocator.GoldbergFilesService.ShouldAutoGenerateItems(game.AppId))
+                if (ServiceLocator.GoldbergFilesService.ShouldAutoGenerateItems(game.AppId))
                 {
                     // Items preview JSON is populated on save; collector leaves empty object for add mode.
                     bundle.ItemsJson = "{}";

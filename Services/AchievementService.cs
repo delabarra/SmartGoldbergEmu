@@ -74,7 +74,6 @@ namespace SmartGoldbergEmu.Services
         }
 
         private readonly ITaskReportService _taskReportService;
-        private readonly SteamApiKeyService _steamApiKeyService;
         private readonly string _language;
 
         private static string GetSteamSettingsFolder(GameConfig app) =>
@@ -241,11 +240,9 @@ namespace SmartGoldbergEmu.Services
 
         public AchievementService(
             ITaskReportService feedbackReporter = null,
-            SteamApiKeyService steamApiKeyService = null,
             string language = null)
         {
             _taskReportService = feedbackReporter;
-            _steamApiKeyService = steamApiKeyService ?? ServiceLocator.SteamApiKeyService;
             _language = language ?? "english";
         }
 
@@ -271,12 +268,7 @@ namespace SmartGoldbergEmu.Services
             ulong appId,
             bool showRetrieveStatusMessage)
         {
-            if (!_steamApiKeyService.TryGetValidFormatKey(out _))
-            {
-                return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.InvalidApiKey };
-            }
-
-            Program.LogService?.LogDebug($"Fetching achievements from AppDataKit with language: {_language}");
+            Program.LogService?.LogDebug($"Fetching achievements with language: {_language}");
             if (showRetrieveStatusMessage)
                 _taskReportService?.SetMessage("Retrieving achievement data... Please wait.");
 
@@ -829,7 +821,7 @@ namespace SmartGoldbergEmu.Services
                 if (fetch.Status == SteamAchievementFetchStatus.InvalidApiKey)
                 {
                     if (ProgressIsMenu(progressMode))
-                        _taskReportService?.SetMessage("Web API key required - creating placeholder achievement");
+                        _taskReportService?.SetMessage("No achievement schema available - creating placeholder");
                     return await CompleteDummyGenerationAsync(
                         app,
                         progressMode,

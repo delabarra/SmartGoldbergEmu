@@ -125,7 +125,7 @@ namespace SmartGoldbergEmu.Services
             if (game == null || game.AppId == 0)
                 return ItemGeneratorResult.Fail("Invalid game or App ID.");
 
-            if (!_steamApiKeyService.TryGetValidFormatKey(out _) || !_goldbergFilesService.ShouldAutoGenerateItems(game.AppId))
+            if (!_goldbergFilesService.ShouldAutoGenerateItems(game.AppId))
                 return ItemGeneratorResult.Fail("Skipped.");
 
             var generator = CreateItemGenerator(report);
@@ -320,12 +320,12 @@ namespace SmartGoldbergEmu.Services
 
         private AchievementService CreateAchievementService(ITaskReportService report, ulong appId)
         {
-            return new AchievementService(report, _steamApiKeyService, GetAchievementLanguage(appId));
+            return new AchievementService(report, GetAchievementLanguage(appId));
         }
 
         private ItemGenerator CreateItemGenerator(ITaskReportService report)
         {
-            return new ItemGenerator(report, _steamApiKeyService);
+            return new ItemGenerator(report);
         }
 
         private string GetAchievementLanguage(ulong appId)

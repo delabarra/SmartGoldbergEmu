@@ -144,7 +144,6 @@ namespace SmartGoldbergEmu.Forms
             _apiKeyStatusIndicatorHelper?.Dispose();
 
             _apiKeyStatusIndicatorHelper = new ApiKeyStatusIndicatorHelper(lblApiKeyStatus, _apiKeyService);
-            _apiKeyStatusIndicatorHelper.IndicatorClicked += ApiKeyStatusIndicatorHelper_IndicatorClicked;
             _apiKeyStatusIndicatorHelper.Initialize();
         }
 
@@ -171,11 +170,6 @@ namespace SmartGoldbergEmu.Forms
             if (feedback == null)
                 Program.LogService?.LogWarning("TaskReportService is null; progress will not be shown.");
             return feedback;
-        }
-
-        private void ApiKeyStatusIndicatorHelper_IndicatorClicked(object sender, EventArgs e)
-        {
-            OpenSettingsDialog(0);
         }
 
         private void OnThemeLight_Click(object sender, EventArgs e)
@@ -3942,38 +3936,6 @@ namespace SmartGoldbergEmu.Forms
         {
             try
             {
-                if (!_apiKeyService.HasApiKey())
-                {
-                    string registrationUrl = ApplicationConstants.SteamWebApiKeyRegistrationUrl;
-                    const int idConfigure = 100;
-                    AppTaskDialogResult result = AppTaskDialogForm.Show(
-                        this,
-                        new AppTaskDialogRequest
-                        {
-                            Content =
-                                "Enhance your SmartGoldbergEmu experience with a Steam Web API key!\n\n" +
-                                "With an API key, you can:\n" +
-                                "• Automatically generate achievements from Steam\n" +
-                                "• Automatically generate inventory items from Steam\n\n" +
-                                "The API key is free and only requires a Steam account.\n" +
-                                "Get a free Steam Web API key:",
-                            FooterText = "Would you like to configure an API key now?",
-                            Icon = MessageBoxIcon.Information,
-                            ContentLinks = new List<AppTaskDialogLink>
-                            {
-                                new AppTaskDialogLink(registrationUrl, registrationUrl)
-                            },
-                            Buttons = new List<AppTaskDialogButton>
-                            {
-                                new AppTaskDialogButton(idConfigure, "Configure") { IsDefault = true },
-                                new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Skip") { IsCancel = true }
-                            }
-                        });
-
-                    if (result.ButtonId == idConfigure)
-                        OpenSettingsDialog(0);
-                }
-
                 _appDataService.CompleteFirstRun();
             }
             catch (Exception ex)

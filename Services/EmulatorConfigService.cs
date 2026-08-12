@@ -1298,8 +1298,6 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             string language = GetLanguageForAchievements(gameConfig.AppId);
-            if (!_steamApiKeyService.TryGetValidFormatKey(out _))
-                return;
 
             _ = Task.Run(async () =>
             {
@@ -1307,7 +1305,7 @@ namespace SmartGoldbergEmu.Services
                 {
                     CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
                     ct.ThrowIfCancellationRequested();
-                    ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements from AppDataKit for app {gameConfig.AppId}");
+                    ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements for app {gameConfig.AppId}");
                     AchievementsSection section = await ServiceLocator.AppDataKitBridgeService
                         .FetchAchievementsAsync(gameConfig.AppId, language, ct)
                         .ConfigureAwait(false);

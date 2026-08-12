@@ -338,6 +338,9 @@ namespace SmartGoldbergEmu.Constants
 
         public const string SteamWebApiKeyRegistrationUrl = "https://steamcommunity.com/dev/apikey";
         public const string SteamUserStatsSchemaApiUrlFormat = "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?l={0}&key={1}&appid={2}";
+        // Nemirtingas/games-infos-datas: steam/{appId}/{fileName} (achievements_db, stats_db, inventory_db, …).
+        public const string GamesInfosDatasSteamFileUrlFormat =
+            "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/{1}";
         public static readonly string GamesInfosDatasSteamStatsDbUrlFormat =
             "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/" + PathConstants.GoldbergStatsDbJsonFileName;
         public const string SteamCommunityLeaderboardsXmlUrlFormat = "https://steamcommunity.com/stats/{0}/leaderboards/?xml=1";

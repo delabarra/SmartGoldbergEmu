@@ -187,6 +187,8 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergLeaderboardsFileName = "leaderboards.txt";
         public const string GoldbergStatsJsonFileName = "stats.json";
         public const string GoldbergStatsDbJsonFileName = "stats_db.json";
+        public const string GoldbergAchievementsDbJsonFileName = "achievements_db.json";
+        public const string GoldbergInventoryDbJsonFileName = "inventory_db.json";
 
         public const string GoldbergBranchesJsonFileName = "branches.json";
         public const string GoldbergDepotsFileName = "depots.txt";

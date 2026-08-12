@@ -17,12 +17,10 @@ namespace SmartGoldbergEmu.Generators
     public sealed class ItemGenerator
     {
         private readonly ITaskReportService _taskReportService;
-        private readonly SteamApiKeyService _steamApiKeyService;
 
-        public ItemGenerator(ITaskReportService taskReportService = null, SteamApiKeyService steamApiKeyService = null)
+        public ItemGenerator(ITaskReportService taskReportService = null)
         {
             _taskReportService = taskReportService;
-            _steamApiKeyService = steamApiKeyService ?? ServiceLocator.SteamApiKeyService;
         }
 
         public async Task<ItemGeneratorResult> GenerateAndSaveAsync(
@@ -33,9 +31,6 @@ namespace SmartGoldbergEmu.Generators
         {
             if (game == null || game.AppId == 0)
                 return ItemGeneratorResult.Fail("Invalid game or App ID.");
-
-            if (!_steamApiKeyService.TryGetValidFormatKey(out _))
-                return ItemGeneratorResult.Fail("A valid Steam Web API key is required (Settings).");
 
             var emulatorConfig = ServiceLocator.EmulatorConfigService;
             if (emulatorConfig == null)

@@ -71,7 +71,7 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<LaunchOptionService> _launchOptionService = new Lazy<LaunchOptionService>();
         private static readonly Lazy<GoldbergFilesService> _goldbergFilesService = new Lazy<GoldbergFilesService>();
         private static readonly Lazy<AchievementService> _achievementService =
-            new Lazy<AchievementService>(() => new AchievementService(steamApiKeyService: _steamApiKeyService.Value));
+            new Lazy<AchievementService>(() => new AchievementService());
         private static readonly Lazy<GoldbergArtifactService> _goldbergArtifactService = new Lazy<GoldbergArtifactService>();
         private static readonly Lazy<StatsGenerator> _statsGenerator = new Lazy<StatsGenerator>();
         private static readonly Lazy<RegistryService> _registryService = new Lazy<RegistryService>();

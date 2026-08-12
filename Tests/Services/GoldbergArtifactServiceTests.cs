@@ -27,21 +27,6 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public async Task GenerateItemsForAddSaveAsync_skips_when_api_key_invalid()
-        {
-            var service = CreateService(out _, apiKey: string.Empty);
-            var game = new GameConfig { AppId = TestAppId, AppName = "Spacewar" };
-
-            ItemGeneratorResult result = await service.GenerateItemsForAddSaveAsync(
-                game,
-                report: null,
-                showProgress: false);
-
-            Assert.False(result.Success);
-            Assert.Equal("Skipped.", result.ErrorMessage);
-        }
-
-        [Fact]
         public async Task GenerateItemsForAddSaveAsync_skips_when_items_json_already_populated()
         {
             string gamesRoot = TestFileHelper.CreateTempDirectory("sge-artifact-games-");

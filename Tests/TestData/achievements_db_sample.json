@@ -1,0 +1,29 @@
+[
+  {
+    "name": "ACHIEVEMENT_PIECE_OF_CAKE",
+    "hidden": false,
+    "icon": "https://example.invalid/icon.jpg",
+    "icongray": "https://example.invalid/icon_gray.jpg",
+    "displayName": {
+      "english": "Piece of Cake",
+      "french": "Du gateau",
+      "token": "NEW_ACHIEVEMENT_1_0_NAME"
+    },
+    "description": {
+      "english": "Complete the first mission",
+      "token": "NEW_ACHIEVEMENT_1_0_DESC"
+    }
+  },
+  {
+    "name": "ACHIEVEMENT_HIDDEN",
+    "hidden": 1,
+    "icon": "https://example.invalid/h.jpg",
+    "icongray": "https://example.invalid/hg.jpg",
+    "displayName": {
+      "english": "Secret"
+    },
+    "description": {
+      "english": "Hidden desc"
+    }
+  }
+]

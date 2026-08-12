@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using AppDataKit;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Services;
 
@@ -11,8 +12,6 @@ namespace SmartGoldbergEmu.Generators
 {
     public class StatsGenerator
     {
-        private const int HttpTimeoutSeconds = 10;
-
         private static readonly string[] GlobalFallbackPropertyNames = { "max", "default", "defaultvalue" };
 
         private readonly string _gamesDirectory;
@@ -94,8 +93,9 @@ namespace SmartGoldbergEmu.Generators
 
             try
             {
-                var url = string.Format(ApplicationConstants.GamesInfosDatasSteamStatsDbUrlFormat, appId);
-                var body = await HttpGetBodyAsync(url, requireSuccessStatusCode: true).ConfigureAwait(false);
+                var body = await GamesInfosDatasHelper
+                    .TryGetSteamFileBodyAsync(appId, PathConstants.GoldbergStatsDbJsonFileName)
+                    .ConfigureAwait(false);
                 return body == null ? null : ConvertStatsDbJsonToGoldbergFormat(body);
             }
             catch (Exception)
@@ -138,26 +138,6 @@ namespace SmartGoldbergEmu.Generators
             }
 
             return outArr.Count == 0 ? null : outArr.ToJsonString(JsonFormatting.Indented);
-        }
-
-        private static async Task<string> HttpGetBodyAsync(string url, bool requireSuccessStatusCode)
-        {
-            try
-            {
-                using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
-                {
-                    using (var response = await httpService.GetAsync(url).ConfigureAwait(false))
-                    {
-                        if (requireSuccessStatusCode && !response.IsSuccessStatusCode)
-                            return null;
-                        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                return null;
-            }
         }
 
         private static string FormatStatsJsonIndented(string json)

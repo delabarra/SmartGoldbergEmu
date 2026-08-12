@@ -292,11 +292,12 @@ namespace SmartGoldbergEmu.Forms
             {
                 toolTip.SetToolTip(
                     lblApiKeyHint,
-                    "Steam Web API key is required for:" + Environment.NewLine +
+                    "Steam Web API key is used for:" + Environment.NewLine +
                     Environment.NewLine +
-                    "- Achievements generation" + Environment.NewLine +
-                    "- Items generation" + Environment.NewLine +
-                    "- Workshop item descriptions");
+                    "- Live Steam achievements / stats / items (preferred when configured)" + Environment.NewLine +
+                    "- Workshop item descriptions" + Environment.NewLine +
+                    Environment.NewLine +
+                    "Without a key, achievements, stats, and items can still load from community games-infos data when available.");
             }
 
             ToolTipHelper.SetIfPresent(toolTip, btnRemoveApiKey, "Remove the saved Steam Web API key");
