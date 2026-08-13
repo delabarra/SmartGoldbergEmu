@@ -22,15 +22,33 @@ namespace SmartGoldbergEmu.Forms
         protected ThemedForm(ThemeService themeService)
         {
             _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
+            if (DesignTimeHelper.IsDesignTime)
+                return;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            WinFormsThemePaintHelper.EnableDoubleBuffer(this);
+            ThemeColors colors = _themeService.GetThemeColors(_themeService.EffectiveTheme);
+            BackColor = colors.Background;
+            ForeColor = colors.Foreground;
         }
 
         protected override void OnHandleCreated(EventArgs e)
         {
-            base.OnHandleCreated(e);
             if (DesignTimeHelper.IsDesignTime)
+            {
+                base.OnHandleCreated(e);
                 return;
+            }
             EnsureThemeBound();
+            // Colors before child handles paint with the designer defaults (white).
             ApplyTheme();
+            base.OnHandleCreated(e);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (WinFormsThemePaintHelper.TryFillEraseBackground(ref m, BackColor, ClientRectangle))
+                return;
+            base.WndProc(ref m);
         }
 
         protected void ApplyTheme()

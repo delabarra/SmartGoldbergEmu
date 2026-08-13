@@ -238,6 +238,7 @@
     <Compile Include="Helpers\AppInfoKeyValueHelper.cs" />
     <Compile Include="Helpers\SteamPicsKeyValueHelper.cs" />
     <Compile Include="Helpers\ListViewColumnHelper.cs" />
+    <Compile Include="Helpers\WinFormsThemePaintHelper.cs" />
     <Compile Include="Helpers\LogRedactionHelper.cs" />
     <Compile Include="Helpers\MarkdownToRichTextHelper.cs" />
     <Compile Include="Helpers\MenuCheckMarkHelper.cs" />

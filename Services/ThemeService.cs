@@ -18,8 +18,6 @@ namespace SmartGoldbergEmu.Services
         internal const string LaunchDialogButtonTag = "LaunchDialogButton";
         private const string ThemedTextBoxTag = "ThemedTextBox";
         private const string ThemedTabControlTag = "ThemedTabControl";
-        private static readonly PropertyInfo ControlDoubleBufferedProperty =
-            typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic);
 
         private ThemeMode _currentTheme;
         private bool _isSystemDarkMode;
@@ -81,18 +79,21 @@ namespace SmartGoldbergEmu.Services
 
             ThemeMode effectiveTheme = EffectiveTheme;
             ThemeColors colors = GetThemeColors(effectiveTheme);
-            EnsureFormDoubleBuffered(form);
-            form.BackColor = colors.Background;
-            form.ForeColor = colors.Foreground;
-            ApplyThemeToControls(form.Controls, colors, effectiveTheme);
-            ApplyThemeToMenus(form, colors, effectiveTheme);
-            // LinkLabel restores the system hyperlink blue after native handle init; re-apply after that.
-            ScheduleLinkColorRefresh(form);
-        }
-
-        private static void EnsureFormDoubleBuffered(Form form)
-        {
-            ControlDoubleBufferedProperty?.SetValue(form, true, null);
+            form.SuspendLayout();
+            try
+            {
+                WinFormsThemePaintHelper.EnableDoubleBuffer(form);
+                form.BackColor = colors.Background;
+                form.ForeColor = colors.Foreground;
+                ApplyThemeToControls(form.Controls, colors, effectiveTheme);
+                ApplyThemeToMenus(form, colors, effectiveTheme);
+                // LinkLabel restores the system hyperlink blue after native handle init; re-apply after that.
+                ScheduleLinkColorRefresh(form);
+            }
+            finally
+            {
+                form.ResumeLayout(false);
+            }
         }
 
         private void ScheduleLinkColorRefresh(Form form)
@@ -524,8 +525,22 @@ namespace SmartGoldbergEmu.Services
 
             protected override void WndProc(ref Message m)
             {
+                if (_disposed)
+                {
+                    base.WndProc(ref m);
+                    return;
+                }
+
+                if (m.Msg == WinFormsThemePaintHelper.WmEraseBkgnd)
+                {
+                    ThemeColors colors = _owner.GetThemeColors(_owner.EffectiveTheme);
+                    WinFormsThemePaintHelper.FillEraseBackground(m.WParam, _tab.ClientRectangle, colors.ControlBackground);
+                    m.Result = (IntPtr)1;
+                    return;
+                }
+
                 base.WndProc(ref m);
-                if (!_disposed && m.Msg == WmPaint)
+                if (m.Msg == WmPaint)
                     _owner.PaintTabControlChromeOverlay(_tab);
             }
 
@@ -586,6 +601,8 @@ namespace SmartGoldbergEmu.Services
 
         private void ApplyThemeToControl(Control control, ThemeColors colors, ThemeMode effectiveTheme)
         {
+            WinFormsThemePaintHelper.EnableDoubleBuffer(control);
+            bool dark = effectiveTheme == ThemeMode.Dark;
             if (control is MenuStrip menuStrip)
             {
                 menuStrip.Renderer = ThemedToolStripRendererFactory.GetRenderer(effectiveTheme, colors);
@@ -603,18 +620,22 @@ namespace SmartGoldbergEmu.Services
                 tabControl.BackColor = colors.ControlBackground;
                 tabControl.ForeColor = colors.ControlForeground;
                 EnsureTabControlOwnerDraw(tabControl);
+                WinFormsThemePaintHelper.ApplyDisabledVisualStyles(tabControl, dark);
             }
             else if (control is TabPage tabPage)
             {
                 tabPage.UseVisualStyleBackColor = false;
                 tabPage.BackColor = colors.Background;
                 tabPage.ForeColor = colors.Foreground;
+                WinFormsThemePaintHelper.ApplyDisabledVisualStyles(tabPage, dark);
             }
             else if (control is ListView listView)
             {
                 listView.BackColor = colors.ListViewBackground;
                 listView.ForeColor = colors.ListViewForeground;
                 listView.BorderStyle = BorderStyle.FixedSingle;
+                ListViewColumnHelper.ReducePaintFlicker(listView);
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(listView, dark);
             }
             else if (control is DataGridView dataGridView)
             {
@@ -626,6 +647,7 @@ namespace SmartGoldbergEmu.Services
                 listBox.BackColor = colors.FieldBackground;
                 listBox.ForeColor = colors.Foreground;
                 listBox.BorderStyle = BorderStyle.FixedSingle;
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(listBox, dark);
             }
             else if (control is Panel panel)
             {
@@ -637,6 +659,7 @@ namespace SmartGoldbergEmu.Services
                 groupBox.BackColor = colors.ControlBackground;
                 groupBox.ForeColor = colors.ControlForeground;
                 groupBox.FlatStyle = FlatStyle.Flat;
+                WinFormsThemePaintHelper.ApplyDisabledVisualStyles(groupBox, dark);
             }
             else if (control is Label label)
             {
@@ -700,6 +723,7 @@ namespace SmartGoldbergEmu.Services
                     richTextBox.ForeColor = colors.DisabledForeground;
                 }
                 richTextBox.BorderStyle = BorderStyle.FixedSingle;
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(richTextBox, dark);
             }
             else if (control is TextBox textBox)
             {
@@ -716,6 +740,7 @@ namespace SmartGoldbergEmu.Services
                         textBox.ForeColor = colors.DisabledForeground;
                     }
                     textBox.BorderStyle = BorderStyle.FixedSingle;
+                    WinFormsThemePaintHelper.ApplyExplorerWindowTheme(textBox, dark);
                     if (textBox.Tag?.ToString() != ThemedTextBoxTag)
                     {
                         textBox.Tag = ThemedTextBoxTag;
@@ -725,6 +750,7 @@ namespace SmartGoldbergEmu.Services
                 else
                 {
                     textBox.BorderStyle = BorderStyle.FixedSingle;
+                    WinFormsThemePaintHelper.ApplyExplorerWindowTheme(textBox, dark);
                 }
             }
             else if (control is ComboBox comboBox)
@@ -732,6 +758,7 @@ namespace SmartGoldbergEmu.Services
                 comboBox.BackColor = colors.FieldBackground;
                 comboBox.ForeColor = colors.Foreground;
                 comboBox.FlatStyle = FlatStyle.Flat;
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(comboBox, dark);
             }
             else if (control is NumericUpDown numericUpDown)
             {
