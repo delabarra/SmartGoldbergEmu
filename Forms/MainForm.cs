@@ -9,7 +9,6 @@ using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
-using SmartGoldbergEmu.Properties;
 using SmartGoldbergEmu.Services;
 using SmartGoldbergEmu.StubKit;
 using SmartGoldbergEmu.Validation;
@@ -63,8 +62,10 @@ namespace SmartGoldbergEmu.Forms
         private int _waitingMosaicAnimFrameIndex;
         private string _waitingMosaicAnimViewMode;
         private Bitmap[] _waitingMosaicDisplayFrames;
+        private int[] _waitingMosaicDisplayFrameDelays;
         private string _waitingMosaicDisplayFramesViewMode;
         private bool _waitingMosaicDisplayFramesDropShadow;
+        private int _waitingMosaicAnimGeneration;
         private int _stubKitDropDownLoadId;
         private bool _stubKitDropDownReopening;
 
@@ -122,7 +123,6 @@ namespace SmartGoldbergEmu.Forms
             if (DesignTimeHelper.IsDesignTime)
                 return;
 
-            this.Icon = Resources.steam_gold_x128;
             Text = ApplicationVersionHelper.GetWindowTitle();
             ApplyViewModeMenuTexts();
 
@@ -469,7 +469,7 @@ namespace SmartGoldbergEmu.Forms
                     return;
 
                 ownedImages.Clear(targetImageList);
-                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+                StopWaitingMosaicTimer();
                 _waitingMosaicAnimatedKeys.Clear();
 
                 var effectiveTheme = _themeService.EffectiveTheme;
@@ -786,7 +786,7 @@ namespace SmartGoldbergEmu.Forms
 
             _waitingMosaicAnimatedKeys.Remove(imageKey);
             if (_waitingMosaicAnimatedKeys.Count == 0)
-                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+                StopWaitingMosaicAnimation(disposeDisplayFrames: true);
         }
 
         private async Task EnsureWaitingMosaicAnimationRunningAsync()
@@ -794,19 +794,35 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing || _waitingMosaicAnimatedKeys.Count == 0)
                 return;
 
-            bool ready = await ServiceLocator.GameImageService.EnsureWaitingMosaicAnimationAsync().ConfigureAwait(true);
-            if (IsDisposed || Disposing || !ready || _waitingMosaicAnimatedKeys.Count == 0)
-                return;
-
-            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var frames)
-                || frames == null
-                || frames.Length < 2)
+            int generation = _waitingMosaicAnimGeneration;
+            string viewMode = _waitingMosaicAnimViewMode ?? _appDataService.GetViewMode();
+            if (!HasWaitingMosaicDisplayFramesForView(viewMode))
             {
-                return;
+                bool ready = await ServiceLocator.GameImageService.EnsureWaitingMosaicAnimationAsync().ConfigureAwait(true);
+                if (generation != _waitingMosaicAnimGeneration
+                    || IsDisposed
+                    || Disposing
+                    || !ready
+                    || _waitingMosaicAnimatedKeys.Count == 0)
+                {
+                    return;
+                }
+
+                viewMode = _waitingMosaicAnimViewMode ?? _appDataService.GetViewMode();
+                if (!TryBuildWaitingMosaicDisplayFrames(viewMode))
+                    return;
             }
 
-            // Prefer prebuilt mosaic-sized frames; if that fails, tick path scales source frames live.
-            TryBuildWaitingMosaicDisplayFrames(_waitingMosaicAnimViewMode);
+            if (generation != _waitingMosaicAnimGeneration || IsDisposed || Disposing)
+                return;
+
+            StartWaitingMosaicTimerAndApply();
+        }
+
+        private void StartWaitingMosaicTimerAndApply()
+        {
+            if (_waitingMosaicDisplayFrames == null || _waitingMosaicDisplayFrames.Length < 2)
+                return;
 
             if (_waitingMosaicAnimTimer == null)
             {
@@ -815,7 +831,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             if (_waitingMosaicAnimFrameIndex < 0
-                || _waitingMosaicAnimFrameIndex >= frames.Length)
+                || _waitingMosaicAnimFrameIndex >= _waitingMosaicDisplayFrames.Length)
             {
                 _waitingMosaicAnimFrameIndex = 0;
             }
@@ -837,16 +853,14 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
-            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var frames)
-                || frames == null
-                || frames.Length < 2)
+            if (_waitingMosaicDisplayFrames == null || _waitingMosaicDisplayFrames.Length < 2)
             {
-                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+                StopWaitingMosaicAnimation(disposeDisplayFrames: true);
                 return;
             }
 
             _waitingMosaicAnimFrameIndex++;
-            if (_waitingMosaicAnimFrameIndex >= frames.Length)
+            if (_waitingMosaicAnimFrameIndex >= _waitingMosaicDisplayFrames.Length)
                 _waitingMosaicAnimFrameIndex = 0;
 
             ApplyWaitingMosaicAnimationFrame();
@@ -860,11 +874,10 @@ namespace SmartGoldbergEmu.Forms
 
         private void ApplyWaitingMosaicAnimationFrame()
         {
-            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var sourceFrames)
-                || sourceFrames == null
-                || sourceFrames.Length == 0
+            if (_waitingMosaicDisplayFrames == null
+                || _waitingMosaicDisplayFrames.Length == 0
                 || _waitingMosaicAnimFrameIndex < 0
-                || _waitingMosaicAnimFrameIndex >= sourceFrames.Length)
+                || _waitingMosaicAnimFrameIndex >= _waitingMosaicDisplayFrames.Length)
             {
                 return;
             }
@@ -875,31 +888,7 @@ namespace SmartGoldbergEmu.Forms
             if (targetImageList == null || ownedImages == null || !IsMosaicViewMode(viewMode))
                 return;
 
-            Image frameSource = null;
-            bool disposeFrameSource = false;
-            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
-                && _appDataService.GetLogosViewDropShadow();
-            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
-            bool cachedDropShadow = GetWaitingMosaicDisplayFramesCacheDropShadow(viewMode, logosDropShadow, waitingDropShadow);
-            if (_waitingMosaicDisplayFrames != null
-                && _waitingMosaicDisplayFrames.Length == sourceFrames.Length
-                && string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal)
-                && _waitingMosaicDisplayFramesDropShadow == cachedDropShadow)
-            {
-                frameSource = _waitingMosaicDisplayFrames[_waitingMosaicAnimFrameIndex];
-            }
-            else
-            {
-                frameSource = CreateMosaicDisplayBitmapFromSource(
-                    sourceFrames[_waitingMosaicAnimFrameIndex].Bitmap,
-                    viewMode,
-                    ServiceLocator.ImageNormalizationService,
-                    logosDropShadow,
-                    waitingPlaceholder: true,
-                    waitingDropShadow);
-                disposeFrameSource = true;
-            }
-
+            Image frameSource = _waitingMosaicDisplayFrames[_waitingMosaicAnimFrameIndex];
             if (frameSource == null)
                 return;
 
@@ -914,7 +903,7 @@ namespace SmartGoldbergEmu.Forms
                     if (string.IsNullOrEmpty(key))
                         continue;
 
-                    // New owned bitmap each tick so ImageList/ListView pick up a changed image.
+                    // ImageList copies pixels from a clone it can own; display frames stay alive for the next tick.
                     ownedImages.Set(targetImageList, key, new Bitmap(frameSource));
                 }
 
@@ -929,12 +918,10 @@ namespace SmartGoldbergEmu.Forms
                 }
 
                 lstGames.Invalidate();
-                lstGames.Update();
             }
-            finally
+            catch (Exception ex)
             {
-                if (disposeFrameSource)
-                    frameSource.Dispose();
+                Program.LogService?.LogError("Failed to apply waiting mosaic animation frame", ex);
             }
         }
 
@@ -966,6 +953,7 @@ namespace SmartGoldbergEmu.Forms
 
             var imageNormalizationService = ServiceLocator.ImageNormalizationService;
             var built = new Bitmap[sourceFrames.Length];
+            var delays = new int[sourceFrames.Length];
             try
             {
                 for (int i = 0; i < sourceFrames.Length; i++)
@@ -977,6 +965,7 @@ namespace SmartGoldbergEmu.Forms
                         logosDropShadow,
                         waitingPlaceholder: true,
                         waitingDropShadow);
+                    delays[i] = sourceFrames[i].DelayMilliseconds;
                 }
             }
             catch
@@ -987,6 +976,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             _waitingMosaicDisplayFrames = built;
+            _waitingMosaicDisplayFrameDelays = delays;
             _waitingMosaicDisplayFramesViewMode = viewMode;
             _waitingMosaicDisplayFramesDropShadow = cachedDropShadow;
             return true;
@@ -1009,21 +999,32 @@ namespace SmartGoldbergEmu.Forms
                 : waitingDropShadow;
         }
 
-        private int GetWaitingMosaicFrameDelayMs(int frameIndex)
+        private bool HasWaitingMosaicDisplayFramesForView(string viewMode)
         {
-            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var frames)
-                || frames == null
-                || frames.Length == 0)
-            {
-                return 33;
-            }
+            if (_waitingMosaicDisplayFrames == null || _waitingMosaicDisplayFrames.Length < 2)
+                return false;
+            if (!string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal))
+                return false;
 
-            if (frameIndex < 0 || frameIndex >= frames.Length)
-                frameIndex = 0;
-            return frames[frameIndex].DelayMilliseconds;
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
+            bool cachedDropShadow = GetWaitingMosaicDisplayFramesCacheDropShadow(viewMode, logosDropShadow, waitingDropShadow);
+            return _waitingMosaicDisplayFramesDropShadow == cachedDropShadow;
         }
 
-        private void StopWaitingMosaicAnimation(bool disposeDisplayFrames)
+        private int GetWaitingMosaicFrameDelayMs(int frameIndex)
+        {
+            if (_waitingMosaicDisplayFrameDelays == null || _waitingMosaicDisplayFrameDelays.Length == 0)
+                return 33;
+
+            if (frameIndex < 0 || frameIndex >= _waitingMosaicDisplayFrameDelays.Length)
+                frameIndex = 0;
+            int ms = _waitingMosaicDisplayFrameDelays[frameIndex];
+            return ms < 10 ? 10 : ms;
+        }
+
+        private void StopWaitingMosaicTimer()
         {
             if (_waitingMosaicAnimTimer != null)
             {
@@ -1034,22 +1035,34 @@ namespace SmartGoldbergEmu.Forms
             }
 
             _waitingMosaicAnimFrameIndex = 0;
+        }
+
+        private void StopWaitingMosaicAnimation(bool disposeDisplayFrames)
+        {
+            StopWaitingMosaicTimer();
             if (disposeDisplayFrames || _waitingMosaicAnimatedKeys.Count == 0)
             {
+                _waitingMosaicAnimGeneration++;
                 _waitingMosaicAnimatedKeys.Clear();
                 DisposeWaitingMosaicDisplayFrames();
+                ServiceLocator.GameImageService.ReleaseWaitingMosaicAnimationFrames();
             }
         }
 
         private void DisposeWaitingMosaicDisplayFrames()
         {
             if (_waitingMosaicDisplayFrames == null)
+            {
+                _waitingMosaicDisplayFrameDelays = null;
                 return;
+            }
 
             for (int i = 0; i < _waitingMosaicDisplayFrames.Length; i++)
                 _waitingMosaicDisplayFrames[i]?.Dispose();
             _waitingMosaicDisplayFrames = null;
+            _waitingMosaicDisplayFrameDelays = null;
             _waitingMosaicDisplayFramesViewMode = null;
+            _waitingMosaicDisplayFramesDropShadow = false;
         }
 
         private void RemoveMosaicImageKey(string imageKey)
@@ -2187,6 +2200,12 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
+            if (!GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out _))
+            {
+                AddStubKitPlaceholderMenuItem("No executable found");
+                return;
+            }
+
             var loadingItem = new ToolStripMenuItem("Loading…") { Enabled = false };
             miCtxRowRemoveSteamStub.DropDownItems.Add(loadingItem);
 
@@ -2849,9 +2868,12 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
-            if (!GameFolderPathHelper.TryGetExecutableDirectory(game, out string folderPath))
+            if (!GameFolderPathHelper.TryGetExistingExecutableDirectory(game, out string folderPath))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid folder path detected.", "Invalid Folder Path", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "The game folder was not found. The files may have been moved or uninstalled.",
+                    MessageBoxIcon.Warning);
                 return;
             }
 
@@ -2926,6 +2948,15 @@ namespace SmartGoldbergEmu.Forms
                     this,
                     "Please select a game with a valid App ID and executable path.",
                     MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!GameFolderPathHelper.TryGetExistingExecutableDirectory(game, out _))
+            {
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "The game folder was not found. The files may have been moved or uninstalled.",
+                    MessageBoxIcon.Warning);
                 return;
             }
 
@@ -3038,30 +3069,30 @@ namespace SmartGoldbergEmu.Forms
 
         private void ctxGamesItem_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            miCtxRowCreateShortcut.Enabled = true;
             var game = GetSelectedGame();
-            miCtxRowOpenValveDataFile.Enabled = game != null && game.AppId > 0;
-            miCtxRowOpenGameAssetsFolder.Enabled = game != null && game.AppId > 0;
+            bool hasGame = game != null;
+            bool hasAppId = hasGame && game.AppId > 0;
+            bool exePresent = hasGame && GameFolderPathHelper.TryResolveStoredExecutable(game, out _);
+            bool exeFolderPresent = hasGame && GameFolderPathHelper.TryGetExistingExecutableDirectory(game, out _);
+            bool stubExePresent = hasGame && GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out _);
 
-            miCtxRowGuid.Enabled = game != null;
-            miCtxRowCopyGuid.Text = game != null
+            miCtxRowRun.Enabled = exePresent;
+            miCtxRowRunWithoutEmu.Enabled = exePresent;
+            miCtxRowOpenExecutableFolder.Enabled = exeFolderPresent;
+            miCtxRowCreateSteamAppIdFile.Enabled = exeFolderPresent && hasAppId;
+            miCtxRowCreateShortcut.Enabled = hasGame;
+            miCtxRowOpenValveDataFile.Enabled = hasAppId;
+            miCtxRowOpenGameAssetsFolder.Enabled = hasAppId;
+
+            miCtxRowGuid.Enabled = hasGame;
+            miCtxRowCopyGuid.Text = hasGame
                 ? game.GameGuid.ToString()
                 : "{guid}";
 
             miCtxRowRemoveSteamStub.Visible = true;
-            // Keep enabled when StartFolder/AppId may yield launch options even if Path is unresolved.
-            bool canRemoveSteamStub = game != null && (
-                TryResolveExecutableForStubRemoval(game, out _) ||
-                !string.IsNullOrWhiteSpace(game.StartFolder) ||
-                game.AppId > 0);
-            miCtxRowRemoveSteamStub.Enabled = canRemoveSteamStub;
-            if (game != null && !canRemoveSteamStub)
+            miCtxRowRemoveSteamStub.Enabled = stubExePresent;
+            if (hasGame && !stubExePresent)
                 Program.LogService?.LogDebug($"Remove SteamStub disabled: could not resolve executable (StartFolder={game.StartFolder}, Path={game.Path}).");
-        }
-
-        private bool TryResolveExecutableForStubRemoval(GameConfig game, out string fullExecutablePath)
-        {
-            return GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out fullExecutablePath);
         }
 
         private void ctxGamesView_Opening(object sender, System.ComponentModel.CancelEventArgs e)
@@ -3109,6 +3140,9 @@ namespace SmartGoldbergEmu.Forms
                     _taskReportService.SetMessageWithAutoClear("Save the game before launching it.");
                     return;
                 }
+
+                if (!TryEnsureGameExecutablePresent(game))
+                    return;
 
                 bool effectiveUseEmulator = ResolveUseEmulatorForLaunch(game, useEmulator);
                 _ = LaunchGameInternalAsync(game, effectiveUseEmulator).ForgetFaults(Program.LogService, nameof(LaunchGameInternalAsync));
@@ -3271,6 +3305,9 @@ namespace SmartGoldbergEmu.Forms
                     return;
                 Program.LogService?.LogDebug($"MainForm: LaunchGameInternalAsync called for {game?.AppName} (AppId: {game?.AppId}), useEmulator: {useEmulator}");
 
+                if (!TryEnsureGameExecutablePresent(game))
+                    return;
+
                 if (_gameLaunchService.IsGameRunning(game.AppId, game))
                 {
                     Program.LogService?.LogWarning($"Launch blocked: {game.AppName} is already running.");
@@ -3332,6 +3369,17 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
+        private bool TryEnsureGameExecutablePresent(GameConfig game)
+        {
+            if (game != null && GameFolderPathHelper.TryResolveStoredExecutable(game, out _))
+                return true;
+
+            Program.LogService?.LogError(
+                $"Launch aborted: executable not found (AppId={game?.AppId}, name={game?.AppName}, path={game?.Path})");
+            ShowLaunchErrorMessage(GameFolderPathHelper.GetMissingStoredExecutableMessage(game));
+            return false;
+        }
+
         private void ShowGameNotFoundMessage(ulong appId)
         {
             FormMessageBoxHelper.ShowIfAlive(this,
@@ -3343,10 +3391,9 @@ namespace SmartGoldbergEmu.Forms
 
         private void ShowLaunchErrorMessage(string errorMessage)
         {
-            FormMessageBoxHelper.ShowIfAlive(this,
+            AppTaskDialogHelper.ShowOk(
+                this,
                 $"Failed to launch game: {errorMessage}",
-                "Launch Error",
-                MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
 

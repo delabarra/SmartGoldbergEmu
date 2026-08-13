@@ -212,8 +212,26 @@ namespace SmartGoldbergEmu.Services
                 if (info.Length != placeholder.Length)
                     return false;
 
-                byte[] existing = File.ReadAllBytes(localPath);
-                return existing.SequenceEqual(placeholder);
+                using (var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    var buffer = new byte[4096];
+                    int offset = 0;
+                    while (offset < placeholder.Length)
+                    {
+                        int toRead = Math.Min(buffer.Length, placeholder.Length - offset);
+                        int read = stream.Read(buffer, 0, toRead);
+                        if (read <= 0)
+                            return false;
+                        for (int i = 0; i < read; i++)
+                        {
+                            if (buffer[i] != placeholder[offset + i])
+                                return false;
+                        }
+                        offset += read;
+                    }
+
+                    return true;
+                }
             }
             catch
             {
@@ -1053,14 +1071,14 @@ namespace SmartGoldbergEmu.Services
             if (!Directory.Exists(imagesFolder))
                 Directory.CreateDirectory(imagesFolder);
 
-            // One shared HttpService; all achievements (color + gray) download in parallel.
+            // Every icon is still downloaded. Bound HTTP overlap so 64KB download buffers
+            // (color + gray per achievement) are not held for the whole schema at once.
             using (IHttpService http = HttpServiceFactory.Create(TimeSpan.FromSeconds(AchievementConstants.HttpRequestLongTimeout)))
             {
-                var downloadTasks = new Task[achievementCount];
-                for (int i = 0; i < achievementCount; i++)
-                {
-                    CAchievement achievement = achievements[i];
-                    downloadTasks[i] = DownloadAchievementIconsWithProgressAsync(
+                await HttpHelpers.ForEachBoundedAsync(
+                    achievements,
+                    HttpHelpers.DefaultMaxConcurrentDownloads,
+                    achievement => DownloadAchievementIconsWithProgressAsync(
                         achievement,
                         imagesFolder,
                         http,
@@ -1069,10 +1087,7 @@ namespace SmartGoldbergEmu.Services
                         achievementCount,
                         totalImages,
                         () => Interlocked.Increment(ref achievementsCompleted),
-                        imagesForAchievement => Interlocked.Add(ref imagesDownloaded, imagesForAchievement));
-                }
-
-                await Task.WhenAll(downloadTasks).ConfigureAwait(false);
+                        imagesForAchievement => Interlocked.Add(ref imagesDownloaded, imagesForAchievement))).ConfigureAwait(false);
             }
 
             File.WriteAllText(achievementsFile, JsonConvert.SerializeObject(achievements, JsonFormatting.Indented), Encoding.UTF8);
@@ -1159,9 +1174,8 @@ namespace SmartGoldbergEmu.Services
             string iconPath = Path.Combine(imagesFolder, achievement.name + ".jpg");
             string iconGrayPath = Path.Combine(imagesFolder, achievement.name + "_gray.jpg");
 
-            bool[] downloaded = await Task.WhenAll(
-                EnsureAchievementImageAsync(achievement.icon, iconPath, http),
-                EnsureAchievementImageAsync(achievement.icongray, iconGrayPath, http)).ConfigureAwait(false);
+            bool colorOk = await EnsureAchievementImageAsync(achievement.icon, iconPath, http).ConfigureAwait(false);
+            bool grayOk = await EnsureAchievementImageAsync(achievement.icongray, iconGrayPath, http).ConfigureAwait(false);
 
             // Replace Steam CDN URLs with steam_settings-relative paths written into achievements.json.
             achievement.icon = GetAchievementImageRelativePath(achievement.name, false);
@@ -1169,9 +1183,9 @@ namespace SmartGoldbergEmu.Services
             achievement.icon_gray = achievement.icongray;
 
             int imagesProcessed = 0;
-            if (downloaded[0])
+            if (colorOk)
                 imagesProcessed++;
-            if (downloaded[1])
+            if (grayOk)
                 imagesProcessed++;
             return imagesProcessed;
         }

@@ -662,7 +662,7 @@ namespace SmartGoldbergEmu.Services
                     logger?.LogMessage(
                         $"Launcher update available: {result.LatestVersion} (current: {result.CurrentVersion ?? "unknown"})");
 
-                    var dialogResult = ChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result));
+                    var dialogResult = ChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result, isStartup));
 
                     if (dialogResult == DialogResult.OK)
                     {
@@ -763,7 +763,7 @@ namespace SmartGoldbergEmu.Services
         private const string ManualDownloadCaptionLabel = "You can also manually download and setup from";
         private const string ViewMoreChangelogsOnlineLabel = "View more changelogs online";
 
-        private static ChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result, bool isStartup = false)
         {
             return CreateChangelogContent(
                 result,
@@ -771,6 +771,7 @@ namespace SmartGoldbergEmu.Services
                 additionalInfo: null,
                 proceedQuestion: string.Empty,
                 okButtonText: "Install",
+                cancelButtonText: isStartup ? "Skip" : null,
                 manualDownloadLinks: BuildManualDownloadLinks(),
                 showManualDownloadCaption: false);
         }
@@ -808,6 +809,7 @@ namespace SmartGoldbergEmu.Services
             string additionalInfo,
             string proceedQuestion,
             string okButtonText = null,
+            string cancelButtonText = null,
             bool showCancelButton = true,
             IList<UpdateManualDownloadLink> manualDownloadLinks = null,
             bool showManualDownloadCaption = false)
@@ -820,6 +822,7 @@ namespace SmartGoldbergEmu.Services
                 AdditionalInfo = additionalInfo,
                 ProceedQuestion = proceedQuestion,
                 OkButtonText = okButtonText,
+                CancelButtonText = cancelButtonText,
                 ShowCancelButton = showCancelButton,
                 ShowManualDownloadCaption = showManualDownloadCaption,
                 ManualDownloadLinks = manualDownloadLinks

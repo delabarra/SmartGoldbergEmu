@@ -15,12 +15,15 @@ namespace SmartGoldbergEmu.Forms
         private const int SearchDebounceMs = 300;
         private const int MaxSearchResults = 20;
         private const int MaxStatusWidthPx = 424;
+        private const string StatusFilteringUnidentifiedDlc = "Filtering out unidentified DLC...";
 
         private List<AppSearchResult> _searchResults = new List<AppSearchResult>();
         private ulong? _selectedAppId;
         private CancellationTokenSource _searchCancellationTokenSource;
         private CancellationTokenSource _debounceCancellationTokenSource;
+        private GameSearchFilterConnection _filterConnection;
         private bool _isSearching;
+        private bool _statusLocked;
         private int _lastTooltipIndex = -1;
 
         public ulong? SelectedAppId => _selectedAppId;
@@ -37,6 +40,7 @@ namespace SmartGoldbergEmu.Forms
         {
             InitializeComponent();
             btnOK.Enabled = false;
+            _filterConnection = SteamGameSearchService.CreateFilterConnection();
         }
 
         protected override void OnShown(EventArgs e)
@@ -99,7 +103,7 @@ namespace SmartGoldbergEmu.Forms
             _searchResults.Clear();
             _selectedAppId = null;
             _lastTooltipIndex = -1;
-            UpdateStatus("Ready");
+            UpdateStatus("");
         }
 
         private void UpdateStatus(string message, string tooltipText = null)
@@ -111,8 +115,32 @@ namespace SmartGoldbergEmu.Forms
                 Invoke(new Action<string, string>(UpdateStatus), message, tooltipText);
                 return;
             }
+            _statusLocked = false;
             lblStatus.Text = message;
             toolTip.SetToolTip(lblStatus, tooltipText);
+        }
+
+        private void LockStatus(string message, CancellationToken cancellationToken)
+        {
+            if (InvokeRequired)
+            {
+                if (IsDisposed || Disposing)
+                    return;
+                Invoke(new Action<string, CancellationToken>(LockStatus), message, cancellationToken);
+                return;
+            }
+            if (cancellationToken.IsCancellationRequested || IsDisposed || Disposing)
+                return;
+            _statusLocked = true;
+            lblStatus.Text = message;
+            toolTip.SetToolTip(lblStatus, null);
+        }
+
+        private void UpdateBusyStatus(string message)
+        {
+            if (_statusLocked)
+                return;
+            UpdateStatus(message);
         }
 
         private void RunOnUiThread(Action action)
@@ -155,7 +183,16 @@ namespace SmartGoldbergEmu.Forms
                         return;
                     ApplyLiveSearchResults(liveResults);
                 });
-                var results = await FetchSearchResultsAsync(searchTerm, cancellationToken, progress)
+                var statusProgress = new Progress<string>(status =>
+                {
+                    if (searchToken.IsCancellationRequested || IsDisposed || Disposing)
+                        return;
+                    LockStatus(
+                        string.IsNullOrEmpty(status) ? StatusFilteringUnidentifiedDlc : status,
+                        searchToken);
+                });
+                var results = await FetchSearchResultsAsync(
+                    searchTerm, cancellationToken, progress, statusProgress)
                     .ConfigureAwait(false);
 
                 Program.LogService?.LogDebug($"Search returned {results?.Count ?? 0} results");
@@ -190,46 +227,23 @@ namespace SmartGoldbergEmu.Forms
         private async Task<List<AppSearchResult>> FetchSearchResultsAsync(
             string searchTerm,
             CancellationToken cancellationToken,
-            IProgress<IReadOnlyList<AppSearchResult>> progress)
+            IProgress<IReadOnlyList<AppSearchResult>> progress,
+            IProgress<string> statusProgress)
         {
             if (IsDisposed || Disposing)
                 return new List<AppSearchResult>();
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!ulong.TryParse(searchTerm, out var appId))
-            {
-                return await SteamGameSearchService
-                    .SearchByNameAsync(
-                        searchTerm,
-                        maxResults: MaxSearchResults,
-                        cancellationToken: cancellationToken,
-                        progress: progress)
-                    .ConfigureAwait(false);
-            }
-
-            var (appData, _) = await ServiceLocator.GameSetupService
-                .FetchMetadataWithRootAsync(appId.ToString(), cancellationToken: cancellationToken)
+            return await SteamGameSearchService
+                .SearchByNameAsync(
+                    searchTerm,
+                    maxResults: MaxSearchResults,
+                    cancellationToken: cancellationToken,
+                    progress: progress,
+                    statusProgress: statusProgress,
+                    filterConnection: _filterConnection)
                 .ConfigureAwait(false);
-
-            if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested)
-                return new List<AppSearchResult>();
-
-            if (appData != null && appData.Success && !string.IsNullOrEmpty(appData.Name) &&
-                appData.Type != null && string.Equals(appData.Type, "game", StringComparison.OrdinalIgnoreCase))
-            {
-                return new List<AppSearchResult>
-                {
-                    new AppSearchResult
-                    {
-                        AppId = appId,
-                        Name = appData.Name,
-                        Source = "Steam (game assets)"
-                    }
-                };
-            }
-
-            return new List<AppSearchResult>();
         }
 
         private void ApplyLiveSearchResults(IReadOnlyList<AppSearchResult> results)
@@ -247,6 +261,9 @@ namespace SmartGoldbergEmu.Forms
                 BeginInvoke(new Action(() => ApplyLiveSearchResults(results, searchFinished)));
                 return;
             }
+
+            if (searchFinished)
+                _statusLocked = false;
 
             var nextResults = results != null
                 ? new List<AppSearchResult>(results)
@@ -275,7 +292,10 @@ namespace SmartGoldbergEmu.Forms
             {
                 _selectedAppId = null;
                 btnOK.Enabled = false;
-                UpdateStatus(searchFinished ? "No results found" : "Searching...");
+                if (searchFinished)
+                    UpdateStatus("No results found");
+                else
+                    UpdateBusyStatus("Searching...");
                 return;
             }
 
@@ -308,7 +328,7 @@ namespace SmartGoldbergEmu.Forms
                     _selectedAppId = _searchResults[lstResults.SelectedIndex].AppId;
                     btnOK.Enabled = true;
                 }
-                UpdateStatus("Searching...");
+                UpdateBusyStatus("Searching...");
             }
         }
 
@@ -370,7 +390,10 @@ namespace SmartGoldbergEmu.Forms
             else
             {
                 _selectedAppId = null;
-                UpdateStatus(_isSearching ? "Searching..." : "Ready");
+                if (_isSearching)
+                    UpdateBusyStatus("Searching...");
+                else
+                    UpdateStatus("");
                 btnOK.Enabled = false;
             }
         }
@@ -382,10 +405,13 @@ namespace SmartGoldbergEmu.Forms
 
             var selectedResult = _searchResults[lstResults.SelectedIndex];
             _selectedAppId = selectedResult.AppId;
+            btnOK.Enabled = true;
+            if (_statusLocked)
+                return;
+
             var nameDisplay = TruncateNameToFit(selectedResult.Name, lblStatus.Font, MaxStatusWidthPx);
             var fullText = $"AppId: {selectedResult.AppId}{Environment.NewLine}Name: \"{selectedResult.Name}\"";
             UpdateStatus($"AppId: {selectedResult.AppId}{Environment.NewLine}{nameDisplay}", fullText);
-            btnOK.Enabled = true;
         }
 
         private void AcceptSelection()
@@ -470,6 +496,11 @@ namespace SmartGoldbergEmu.Forms
             {
                 CancelAndDispose(ref _searchCancellationTokenSource);
                 CancelAndDispose(ref _debounceCancellationTokenSource);
+                if (_filterConnection != null)
+                {
+                    _filterConnection.Dispose();
+                    _filterConnection = null;
+                }
                 components?.Dispose();
             }
             base.Dispose(disposing);

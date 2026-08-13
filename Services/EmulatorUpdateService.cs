@@ -1405,8 +1405,6 @@ namespace SmartGoldbergEmu.Services
                 {
                     Content = BuildMissingGoldbergInstallPromptMessage(),
                     Icon = MessageBoxIcon.Question,
-                    // Short two-line body: extra top pad so it doesn't look cramped under the title.
-                    TopBlankLines = 2,
                     Buttons = new List<AppTaskDialogButton>
                     {
                         new AppTaskDialogButton(idDownload, "Download") { IsDefault = true },
@@ -1621,7 +1619,7 @@ namespace SmartGoldbergEmu.Services
 
             DialogResult ShowUpdateAvailableQuestion()
             {
-                return ChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result));
+                return ChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result, isStartup));
             }
 
             void ShowNoUpdatesInfo()
@@ -2053,7 +2051,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static ChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result, bool isStartup = false)
         {
             return CreateChangelogContent(
                 result,
@@ -2061,6 +2059,7 @@ namespace SmartGoldbergEmu.Services
                 additionalInfo: null,
                 proceedQuestion: string.Empty,
                 okButtonText: "Install",
+                cancelButtonText: isStartup ? "Skip" : null,
                 manualDownloadLinks: GetSelectedGoldbergManualDownloadLinks(),
                 showManualDownloadCaption: true);
         }
@@ -2098,6 +2097,7 @@ namespace SmartGoldbergEmu.Services
             string additionalInfo,
             string proceedQuestion,
             string okButtonText = null,
+            string cancelButtonText = null,
             bool showCancelButton = true,
             IList<UpdateManualDownloadLink> manualDownloadLinks = null,
             bool showManualDownloadCaption = false)
@@ -2110,6 +2110,7 @@ namespace SmartGoldbergEmu.Services
                 AdditionalInfo = additionalInfo,
                 ProceedQuestion = proceedQuestion,
                 OkButtonText = okButtonText,
+                CancelButtonText = cancelButtonText,
                 ShowCancelButton = showCancelButton,
                 ShowManualDownloadCaption = showManualDownloadCaption,
                 ManualDownloadLinks = manualDownloadLinks

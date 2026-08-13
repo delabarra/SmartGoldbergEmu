@@ -59,6 +59,7 @@ namespace SmartGoldbergEmu.Helpers
                     return false;
             }
 
+            List<FrameBitmap> rendered = null;
             try
             {
                 var chunks = ReadChunks(fileBytes);
@@ -139,13 +140,13 @@ namespace SmartGoldbergEmu.Helpers
                 if (canvasWidth <= 0 || canvasHeight <= 0)
                     return false;
 
-                var rendered = new List<FrameBitmap>(frameDefs.Count);
+                rendered = new List<FrameBitmap>(frameDefs.Count);
                 using (var canvas = new Bitmap(canvasWidth, canvasHeight, PixelFormat.Format32bppArgb))
-                using (var graphics = Graphics.FromImage(canvas))
                 {
-                    graphics.Clear(Color.Transparent);
-                    Bitmap previousSnapshot = null;
+                    using (var clearGraphics = Graphics.FromImage(canvas))
+                        clearGraphics.Clear(Color.Transparent);
 
+                    Bitmap previousSnapshot = null;
                     try
                     {
                         foreach (var def in frameDefs)
@@ -161,19 +162,18 @@ namespace SmartGoldbergEmu.Helpers
                             }
 
                             using (var framePng = BuildFramePng(ihdr, otherChunks, def.IdatChunks, fc.Width, fc.Height))
-                            using (var frameImage = Image.FromStream(framePng, useEmbeddedColorManagement: false, validateImageData: false))
+                            using (var loaded = Image.FromStream(framePng, useEmbeddedColorManagement: false, validateImageData: false))
+                            using (var frameImage = new Bitmap(loaded))
+                            using (var graphics = Graphics.FromImage(canvas))
                             {
                                 var dest = new Rectangle(fc.XOffset, fc.YOffset, fc.Width, fc.Height);
                                 if (fc.BlendOp == 0)
                                 {
+                                    graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
                                     using (var clearBrush = new SolidBrush(Color.Transparent))
-                                    using (var g = Graphics.FromImage(canvas))
-                                    {
-                                        g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                                        g.FillRectangle(clearBrush, dest);
-                                        g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
-                                        g.DrawImage(frameImage, dest);
-                                    }
+                                        graphics.FillRectangle(clearBrush, dest);
+                                    graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
+                                    graphics.DrawImage(frameImage, dest);
                                 }
                                 else
                                 {
@@ -186,19 +186,19 @@ namespace SmartGoldbergEmu.Helpers
 
                             if (fc.DisposeOp == 1)
                             {
-                                using (var g = Graphics.FromImage(canvas))
+                                using (var graphics = Graphics.FromImage(canvas))
                                 {
-                                    g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                                    graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
                                     using (var clearBrush = new SolidBrush(Color.Transparent))
-                                        g.FillRectangle(clearBrush, new Rectangle(fc.XOffset, fc.YOffset, fc.Width, fc.Height));
+                                        graphics.FillRectangle(clearBrush, new Rectangle(fc.XOffset, fc.YOffset, fc.Width, fc.Height));
                                 }
                             }
                             else if (fc.DisposeOp == 2 && previousSnapshot != null)
                             {
-                                using (var g = Graphics.FromImage(canvas))
+                                using (var graphics = Graphics.FromImage(canvas))
                                 {
-                                    g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                                    g.DrawImageUnscaled(previousSnapshot, 0, 0);
+                                    graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+                                    graphics.DrawImageUnscaled(previousSnapshot, 0, 0);
                                 }
                             }
                         }
@@ -217,10 +217,10 @@ namespace SmartGoldbergEmu.Helpers
             }
             catch
             {
-                if (frames != null)
+                if (rendered != null)
                 {
-                    foreach (var frame in frames)
-                        frame?.Dispose();
+                    for (int i = 0; i < rendered.Count; i++)
+                        rendered[i]?.Dispose();
                 }
                 frames = null;
                 return false;

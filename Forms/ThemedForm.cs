@@ -1,7 +1,9 @@
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
+using SmartGoldbergEmu.Properties;
 using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
@@ -11,6 +13,7 @@ namespace SmartGoldbergEmu.Forms
     {
         private readonly ThemeService _themeService;
         private bool _themeBound;
+        private bool _appIconApplied;
 
         protected ThemeService ThemeService => _themeService;
 
@@ -22,6 +25,7 @@ namespace SmartGoldbergEmu.Forms
         protected ThemedForm(ThemeService themeService)
         {
             _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
+            ApplyApplicationIcon();
             if (DesignTimeHelper.IsDesignTime)
                 return;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -33,6 +37,8 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnHandleCreated(EventArgs e)
         {
+            ApplyApplicationIcon();
+            ShowIcon = true;
             if (DesignTimeHelper.IsDesignTime)
             {
                 base.OnHandleCreated(e);
@@ -61,6 +67,19 @@ namespace SmartGoldbergEmu.Forms
 
         protected virtual void OnThemeApplied()
         {
+        }
+
+        private void ApplyApplicationIcon()
+        {
+            if (_appIconApplied)
+                return;
+            Icon source = Resources.steam_gold_x128;
+            if (source == null)
+                return;
+            // Clone: Form.Dispose disposes Icon and would otherwise kill the cached resource.
+            Icon = (Icon)source.Clone();
+            ShowIcon = true;
+            _appIconApplied = true;
         }
 
         private void EnsureThemeBound()

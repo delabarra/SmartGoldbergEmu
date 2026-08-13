@@ -22,18 +22,31 @@ namespace SmartGoldbergEmu.Services
         private const string StoreSource = "Steam Store";
         private const string VercelSource = "Steam Search API";
 
+        public static GameSearchFilterConnection CreateFilterConnection()
+        {
+            return GameSearchFilterConnection.Start(TimeSpan.FromSeconds(SteamCmdTimeoutSeconds));
+        }
+
         public static async Task<List<AppSearchResult>> SearchByNameAsync(
             string searchTerm,
             int maxResults = 10,
             ITaskReportService feedbackService = null,
             CancellationToken cancellationToken = default(CancellationToken),
-            IProgress<IReadOnlyList<AppSearchResult>> progress = null)
+            IProgress<IReadOnlyList<AppSearchResult>> progress = null,
+            IProgress<string> statusProgress = null,
+            GameSearchFilterConnection filterConnection = null)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
                 return new List<AppSearchResult>();
 
             cancellationToken.ThrowIfCancellationRequested();
             feedbackService?.SetMessage("Searching...");
+
+            ulong numericAppId;
+            bool numericTerm = TryParseAppIdTerm(searchTerm, out numericAppId);
+            Task<AppSearchResult> numericAppTask = numericTerm
+                ? TryResolveNumericAppIdGameAsync(numericAppId, cancellationToken)
+                : Task.FromResult<AppSearchResult>(null);
 
             try
             {
@@ -44,20 +57,35 @@ namespace SmartGoldbergEmu.Services
                         httpService, searchTerm, maxResults, cancellationToken)
                         .ConfigureAwait(false);
 
-                    if (storeSearch.Games != null && storeSearch.Games.Count > 0)
+                    List<AppSearchResult> nameResults;
+                    // Numeric queries also search catalog names ("140", "8") — store suggest often misses those.
+                    if (!numericTerm && storeSearch.Games != null && storeSearch.Games.Count > 0)
                     {
-                        ReportProgress(progress, storeSearch.Games, cancellationToken);
-                        return storeSearch.Games;
+                        nameResults = storeSearch.Games;
+                    }
+                    else
+                    {
+                        nameResults = await SearchVercelAsync(
+                            httpService,
+                            searchTerm,
+                            maxResults,
+                            storeSearch.TypesByAppId,
+                            progress,
+                            statusProgress,
+                            filterConnection,
+                            cancellationToken)
+                            .ConfigureAwait(false);
+                        if (numericTerm)
+                            nameResults = ConcatUnique(storeSearch.Games, nameResults, maxResults);
                     }
 
-                    return await SearchVercelAsync(
-                        httpService,
-                        searchTerm,
-                        maxResults,
-                        storeSearch.TypesByAppId,
-                        progress,
-                        cancellationToken)
-                        .ConfigureAwait(false);
+                    AppSearchResult numericHit = await numericAppTask.ConfigureAwait(false);
+                    List<AppSearchResult> merged = ConcatUnique(
+                        numericHit != null ? new List<AppSearchResult> { numericHit } : null,
+                        nameResults,
+                        maxResults);
+                    ReportProgress(progress, merged, cancellationToken);
+                    return merged;
                 }
             }
             catch (OperationCanceledException)
@@ -175,6 +203,8 @@ namespace SmartGoldbergEmu.Services
             int maxResults,
             Dictionary<ulong, string> storeTypesByAppId,
             IProgress<IReadOnlyList<AppSearchResult>> progress,
+            IProgress<string> statusProgress,
+            GameSearchFilterConnection filterConnection,
             CancellationToken cancellationToken)
         {
             var allCandidates = new List<AppSearchResult>();
@@ -231,7 +261,7 @@ namespace SmartGoldbergEmu.Services
             List<AppSearchResult> ranked = FilterAndSort(allCandidates, searchTerm, verifyPoolSize);
 
             return await KeepGamesViaSteamCmdLiveAsync(
-                ranked, maxResults, storeTypesByAppId, progress, cancellationToken)
+                ranked, maxResults, storeTypesByAppId, progress, statusProgress, filterConnection, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -241,6 +271,8 @@ namespace SmartGoldbergEmu.Services
             int maxResults,
             Dictionary<ulong, string> storeTypesByAppId,
             IProgress<IReadOnlyList<AppSearchResult>> progress,
+            IProgress<string> statusProgress,
+            GameSearchFilterConnection filterConnection,
             CancellationToken cancellationToken)
         {
             if (ranked == null || ranked.Count == 0 || maxResults <= 0)
@@ -265,7 +297,6 @@ namespace SmartGoldbergEmu.Services
 
             var gate = new object();
             List<AppSearchResult> visible = BuildConfirmedVisibleResults(ranked, confirmedGames, maxResults);
-            ReportProgress(progress, visible, cancellationToken);
 
             var needTypeCheck = new List<AppSearchResult>();
             foreach (AppSearchResult candidate in ranked)
@@ -280,34 +311,56 @@ namespace SmartGoldbergEmu.Services
             }
 
             if (needTypeCheck.Count == 0)
+            {
+                ReportProgress(progress, visible, cancellationToken);
                 return visible;
+            }
+
+            // Status first so the form can lock it before live hits arrive.
+            ReportStatus(statusProgress, "Filtering out unidentified DLC...", cancellationToken);
+            ReportProgress(progress, visible, cancellationToken);
+
+            if (filterConnection != null)
+                await filterConnection.WaitUntilReadyAsync(cancellationToken).ConfigureAwait(false);
 
             var options = new AppSnapshotOptions
             {
                 HttpTimeout = TimeSpan.FromSeconds(SteamCmdTimeoutSeconds)
             };
 
-            using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(SteamCmdTimeoutSeconds) })
-            using (var concurrency = new SemaphoreSlim(SteamCmdConcurrency, SteamCmdConcurrency))
-            {
-                var tasks = new List<Task>(needTypeCheck.Count);
-                foreach (AppSearchResult candidate in needTypeCheck)
-                {
-                    tasks.Add(ResolveCandidateTypeAsync(
-                        candidate,
-                        ranked,
-                        confirmedGames,
-                        rejected,
-                        maxResults,
-                        options,
-                        http,
-                        concurrency,
-                        gate,
-                        progress,
-                        cancellationToken));
-                }
+            HttpClient http = filterConnection != null ? filterConnection.Http : null;
+            bool ownsHttp = http == null;
+            if (ownsHttp)
+                http = new HttpClient { Timeout = TimeSpan.FromSeconds(SteamCmdTimeoutSeconds) };
 
-                await Task.WhenAll(tasks).ConfigureAwait(false);
+            try
+            {
+                using (var concurrency = new SemaphoreSlim(SteamCmdConcurrency, SteamCmdConcurrency))
+                {
+                    var tasks = new List<Task>(needTypeCheck.Count);
+                    foreach (AppSearchResult candidate in needTypeCheck)
+                    {
+                        tasks.Add(ResolveCandidateTypeAsync(
+                            candidate,
+                            ranked,
+                            confirmedGames,
+                            rejected,
+                            maxResults,
+                            options,
+                            http,
+                            concurrency,
+                            gate,
+                            progress,
+                            cancellationToken));
+                    }
+
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                if (ownsHttp)
+                    http.Dispose();
             }
 
             if (cancellationToken.IsCancellationRequested)
@@ -428,6 +481,18 @@ namespace SmartGoldbergEmu.Services
             progress.Report(results);
         }
 
+        private static void ReportStatus(
+            IProgress<string> statusProgress,
+            string message,
+            CancellationToken cancellationToken)
+        {
+            if (statusProgress == null || string.IsNullOrEmpty(message))
+                return;
+            if (cancellationToken.IsCancellationRequested)
+                return;
+            statusProgress.Report(message);
+        }
+
         private static bool TryGetSteamCmdType(AppInfoFetchResult fetch, out string type)
         {
             type = null;
@@ -464,6 +529,79 @@ namespace SmartGoldbergEmu.Services
             return 0;
         }
 
+        private static bool TryParseAppIdTerm(string searchTerm, out ulong appId)
+        {
+            appId = 0;
+            return !string.IsNullOrEmpty(searchTerm)
+                && ulong.TryParse(searchTerm, out appId)
+                && appId > 0;
+        }
+
+        // Kit metadata for an App ID typed as the query (parallel with name search).
+        private static async Task<AppSearchResult> TryResolveNumericAppIdGameAsync(
+            ulong appId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var (appData, _) = await ServiceLocator.GameSetupService
+                    .FetchMetadataWithRootAsync(appId.ToString(), cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (appData != null && appData.Success && !string.IsNullOrEmpty(appData.Name) &&
+                    IsGameType(appData.Type))
+                {
+                    return new AppSearchResult
+                    {
+                        AppId = appId,
+                        Name = appData.Name,
+                        Source = StoreSource
+                    };
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogDebug($"App ID search failed for {appId}: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private static List<AppSearchResult> ConcatUnique(
+            List<AppSearchResult> first,
+            List<AppSearchResult> second,
+            int maxResults)
+        {
+            var merged = new List<AppSearchResult>(maxResults);
+            var seen = new HashSet<ulong>();
+            AppendUnique(merged, seen, first, maxResults);
+            AppendUnique(merged, seen, second, maxResults);
+            return merged;
+        }
+
+        private static void AppendUnique(
+            List<AppSearchResult> merged,
+            HashSet<ulong> seen,
+            List<AppSearchResult> source,
+            int maxResults)
+        {
+            if (source == null || merged.Count >= maxResults)
+                return;
+
+            foreach (AppSearchResult item in source)
+            {
+                if (item == null || item.AppId == 0 || !seen.Add(item.AppId))
+                    continue;
+                merged.Add(item);
+                if (merged.Count >= maxResults)
+                    return;
+            }
+        }
+
         private static List<AppSearchResult> FilterAndSort(
             List<AppSearchResult> allCandidates,
             string searchTerm,
@@ -472,20 +610,25 @@ namespace SmartGoldbergEmu.Services
             string searchLower = searchTerm.ToLowerInvariant();
             string[] searchWords = searchTerm.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             string[] searchWordsLower = searchWords.Select(w => w.ToLowerInvariant()).ToArray();
+            ulong parsedAppId;
+            bool numericTerm = TryParseAppIdTerm(searchTerm, out parsedAppId);
 
             var filteredResults = new List<AppSearchResult>();
             foreach (var candidate in allCandidates)
             {
                 string nameLower = candidate.Name.ToLowerInvariant();
-                bool matches;
+                bool matches = numericTerm && candidate.AppId == parsedAppId;
 
-                if (searchTerm.Length <= 2)
-                    matches = nameLower.Contains(searchLower);
-                else if (searchTerm.Length <= 5)
-                    matches = nameLower.StartsWith(searchLower) ||
-                              (searchWordsLower.Length > 0 && searchWordsLower.All(word => nameLower.Contains(word)));
-                else
-                    matches = searchWordsLower.Length > 0 && searchWordsLower.All(word => nameLower.Contains(word));
+                if (!matches)
+                {
+                    if (searchTerm.Length <= 2)
+                        matches = nameLower.Contains(searchLower);
+                    else if (searchTerm.Length <= 5)
+                        matches = nameLower.StartsWith(searchLower) ||
+                                  (searchWordsLower.Length > 0 && searchWordsLower.All(word => nameLower.Contains(word)));
+                    else
+                        matches = searchWordsLower.Length > 0 && searchWordsLower.All(word => nameLower.Contains(word));
+                }
 
                 if (matches)
                     filteredResults.Add(candidate);
@@ -494,6 +637,7 @@ namespace SmartGoldbergEmu.Services
             return filteredResults.OrderBy(r =>
             {
                 string nameLower = r.Name.ToLowerInvariant();
+                int appIdMatch = numericTerm && r.AppId == parsedAppId ? 0 : 1;
                 int exactMatch = r.Name.Equals(searchTerm, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
                 int startsWith = nameLower.StartsWith(searchLower) ? 0 : 1;
                 int wordMatch = 0;
@@ -512,7 +656,7 @@ namespace SmartGoldbergEmu.Services
                 if (position < 0)
                     position = int.MaxValue;
 
-                return (exactMatch, startsWith, wordMatch, position);
+                return (appIdMatch, exactMatch, startsWith, wordMatch, position);
             }).Take(maxResults).ToList();
         }
     }

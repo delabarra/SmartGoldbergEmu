@@ -428,7 +428,7 @@ namespace SmartGoldbergEmu.Forms
 
             this.Name = "ChangelogForm";
 
-            this.ShowIcon = false;
+            this.ShowIcon = true;
 
             this.ShowInTaskbar = true;
 

@@ -293,6 +293,7 @@
     <Compile Include="Services\LaunchOptionService.cs" />
     <Compile Include="Services\LogService.cs" />
     <Compile Include="Services\SteamGameSearchService.cs" />
+    <Compile Include="Services\GameSearchFilterConnection.cs" />
     <Compile Include="Services\ServiceLocator.cs" />
     <Compile Include="Services\ShortcutService.cs" />
     <Compile Include="Services\TaskReportService.cs" />

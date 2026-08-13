@@ -157,6 +157,21 @@ namespace SmartGoldbergEmu.Helpers
             return false;
         }
 
+        public static string GetMissingStoredExecutableMessage(GameConfig game)
+        {
+            string pathTrim = (game?.Path ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(pathTrim))
+                return "Game executable path cannot be empty.";
+            return "Game executable not found: " + pathTrim;
+        }
+
+        public static bool TryGetExistingExecutableDirectory(GameConfig game, out string directory)
+        {
+            if (!TryGetExecutableDirectory(game, out directory))
+                return false;
+            return !string.IsNullOrEmpty(directory) && Directory.Exists(directory);
+        }
+
         /// <summary>
         /// Directory containing the game executable (resolved <see cref="GameConfig.Path"/> when possible).
         /// </summary>

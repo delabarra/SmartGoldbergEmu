@@ -102,6 +102,52 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void ListView_library_cover_prefers_2x_when_both_exist()
+        {
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, "library_capsule.jpg"), string.Empty);
+            File.WriteAllText(Path.Combine(resources, "library_capsule_2x.jpg"), string.Empty);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(
+                resources,
+                new[]
+                {
+                    PathConstants.SteamGameResourcesLibraryCapsule2xImageFileName,
+                    PathConstants.SteamGameResourcesLibraryCapsuleImageFileName
+                });
+
+            Assert.EndsWith(
+                PathConstants.SteamGameResourcesLibraryCapsule2xImageFileName,
+                path,
+                StringComparison.OrdinalIgnoreCase);
+            Cleanup(resources);
+        }
+
+        [Fact]
+        public void ListView_logos_prefer_library_logo_2x_over_logo_png()
+        {
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, PathConstants.SteamGameResourcesLibraryLogoImageFileName), string.Empty);
+            File.WriteAllText(Path.Combine(resources, PathConstants.SteamGameResourcesLibraryLogoPics2xImageFileName), string.Empty);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(
+                resources,
+                new[]
+                {
+                    PathConstants.SteamGameResourcesLibraryLogoPics2xImageFileName,
+                    PathConstants.SteamGameResourcesLibraryLogoPicsImageFileName,
+                    PathConstants.SteamGameResourcesLibraryLogo2xImageFileName,
+                    PathConstants.SteamGameResourcesLibraryLogoImageFileName
+                });
+
+            Assert.EndsWith(
+                PathConstants.SteamGameResourcesLibraryLogoPics2xImageFileName,
+                path,
+                StringComparison.OrdinalIgnoreCase);
+            Cleanup(resources);
+        }
+
+        [Fact]
         public void ListView_library_cover_ignores_small_capsule_substitutes()
         {
             string resources = CreateResourcesDirectory();

@@ -17,6 +17,8 @@ namespace SmartGoldbergEmu.Models
 
         public string OkButtonText { get; set; }
 
+        public string CancelButtonText { get; set; }
+
         public bool ShowCancelButton { get; set; } = true;
 
         // When false, link rows render without the "You can also…" caption (inline one-line style).

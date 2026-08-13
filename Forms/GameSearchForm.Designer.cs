@@ -91,7 +91,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblStatus.Size = new System.Drawing.Size(408, 36);
             this.lblStatus.TabIndex = 3;
             this.lblStatus.TabStop = false;
-            this.lblStatus.Text = "Ready";
+            this.lblStatus.Text = "";
             // 
             // btnOK
             // 

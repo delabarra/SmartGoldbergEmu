@@ -447,7 +447,7 @@ namespace SmartGoldbergEmu.Services
             {
                 _logger?.LogError(
                     $"Launch validation failed: executable not found (AppId={game.AppId}, name={game.AppName}, path={game.Path})");
-                return ValidationResult.Failure($"Game executable not found: {game.Path}");
+                return ValidationResult.Failure(GameFolderPathHelper.GetMissingStoredExecutableMessage(game));
             }
 
             return ValidationResult.Success();

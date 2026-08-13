@@ -118,6 +118,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             btnOk.Text = string.IsNullOrWhiteSpace(_content.OkButtonText) ? "OK" : _content.OkButtonText.Trim();
+            btnCancel.Text = string.IsNullOrWhiteSpace(_content.CancelButtonText) ? "Cancel" : _content.CancelButtonText.Trim();
             btnCancel.Visible = _content.ShowCancelButton;
             CancelButton = _content.ShowCancelButton ? btnCancel : btnOk;
 

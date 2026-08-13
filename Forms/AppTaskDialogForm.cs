@@ -68,8 +68,6 @@ namespace SmartGoldbergEmu.Forms
         public IList<AppTaskDialogButton> Buttons { get; set; }
         // Optional client-width cap in pixels. 0 = FormWidthMax (standard Task Dialog–like).
         public int MaxClientWidth { get; set; }
-        // Optional blank lines above icon/message. 0 = default (BodyTopBlankLines).
-        public int TopBlankLines { get; set; }
     }
 
     public sealed class AppTaskDialogResult
@@ -117,13 +115,14 @@ namespace SmartGoldbergEmu.Forms
         // Match native Task Dialog / MessageBox command-area padding (was 12 — too tall).
         private const int BandPadY = 8;
         // Blank lines around the checkbox, owned by the checkbox slice (matches body TextRenderer line advance).
-        // Standard Task Dialog rhythm: text → 2 lines → checkbox → 2 lines → button slice.
+        // Standard rhythm: message (2 lines from top) → 2 lines → checkbox → 2 lines → button slice.
         private const int CheckStripBlankLinesAbove = 2;
         private const int CheckStripBlankLinesBelow = 2;
         // When there is no checkbox strip: text → 2 lines → button slice (same body chrome).
         private const int PreButtonSpacerBlankLines = 2;
-        // Default blank lines at the top of the body (above icon + message). Override via TopBlankLines.
-        private const int BodyTopBlankLines = 1;
+        // Icon keeps a fixed inset for every dialog; message top pad is independent.
+        private const int IconTopBlankLines = 1;
+        private const int MessageTopBlankLines = 2;
 
         private readonly AppTaskDialogRequest _request;
         private Panel _pnlBody;
@@ -422,12 +421,16 @@ namespace SmartGoldbergEmu.Forms
             return FormWidthMax;
         }
 
-        private int ResolveTopBlankLines()
+        private bool HasContentLinks()
         {
-            int requested = _request.TopBlankLines;
-            if (requested > 0)
-                return requested;
-            return BodyTopBlankLines;
+            if (_request.ContentLinks == null)
+                return false;
+            foreach (AppTaskDialogLink link in _request.ContentLinks)
+            {
+                if (link != null && !string.IsNullOrWhiteSpace(link.Url))
+                    return true;
+            }
+            return false;
         }
 
         private void MaxUnwrappedLineWidth(string text, ref int maxWidth)
@@ -478,8 +481,10 @@ namespace SmartGoldbergEmu.Forms
                 Location = new Point(0, 0)
             };
 
-            // Blank lines at the top of the body (above icon + message).
-            int topPad = LayoutMargin + (MeasureLineAdvance() * ResolveTopBlankLines());
+            int line = MeasureLineAdvance();
+            // Icon stays at the original inset for every message; only the text uses the 2-line top pad.
+            int iconTop = LayoutMargin + (line * IconTopBlankLines);
+            int textTop = line * MessageTopBlankLines;
 
             if (hasIcon)
             {
@@ -488,7 +493,7 @@ namespace SmartGoldbergEmu.Forms
                 panel.Controls.Add(new PictureBox
                 {
                     Name = "picIcon",
-                    Location = new Point(LayoutMargin, topPad),
+                    Location = new Point(LayoutMargin, iconTop),
                     Size = new Size(IconSize, IconSize),
                     SizeMode = PictureBoxSizeMode.StretchImage,
                     Image = _iconImage,
@@ -496,23 +501,13 @@ namespace SmartGoldbergEmu.Forms
                 });
             }
 
-            int y = topPad;
+            int y = textTop;
             string message = NormalizeDialogText(_request.Content);
             bool hasFooter = !string.IsNullOrWhiteSpace(_request.FooterText);
-            bool hasLinks = false;
-            if (_request.ContentLinks != null)
-            {
-                foreach (AppTaskDialogLink link in _request.ContentLinks)
-                {
-                    if (link != null && !string.IsNullOrWhiteSpace(link.Url))
-                    {
-                        hasLinks = true;
-                        break;
-                    }
-                }
-            }
+            bool hasLinks = HasContentLinks();
 
-            int contentBottom = y;
+            int iconBottom = hasIcon ? iconTop + IconSize : 0;
+            int contentBottom = Math.Max(textTop, iconBottom);
 
             if (!string.IsNullOrEmpty(message))
             {
@@ -526,10 +521,8 @@ namespace SmartGoldbergEmu.Forms
                     UseMnemonic = false
                 };
                 lblContent.Height = MeasureBodyTextHeight(message, textWidth);
-                if (hasIcon)
-                    lblContent.Height = Math.Max(lblContent.Height, IconSize);
                 panel.Controls.Add(lblContent);
-                contentBottom = lblContent.Bottom;
+                contentBottom = Math.Max(lblContent.Bottom, iconBottom);
                 // Gap only when another body block follows — never a trailing blank line under the message.
                 if (hasLinks || hasFooter)
                     y = contentBottom + MeasureLineAdvance();
@@ -538,7 +531,7 @@ namespace SmartGoldbergEmu.Forms
             }
             else if (hasIcon)
             {
-                contentBottom = topPad + IconSize;
+                contentBottom = iconBottom;
                 y = contentBottom;
             }
 
@@ -607,8 +600,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             // Spacer / checkbox slice owns the gap above the button footer; body stops at last content.
-            int minBottom = hasIcon ? (topPad + IconSize + LayoutMargin) : (topPad + LayoutMargin);
-            panel.Height = Math.Max(contentBottom, minBottom);
+            panel.Height = Math.Max(contentBottom, iconBottom);
             return panel;
         }
 
@@ -623,14 +615,14 @@ namespace SmartGoldbergEmu.Forms
             };
         }
 
-        // Strip trailing blank lines at EOF only. Convert to platform newlines so Label hard-breaks
+        // Strip leading/trailing blank lines. Convert to platform newlines so Label hard-breaks
         // (lone \n can collapse to a space in some WinForms/GDI paths).
         private static string NormalizeDialogText(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return string.Empty;
 
-            string normalized = text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd();
+            string normalized = text.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
             return normalized.Replace("\n", Environment.NewLine);
         }
 
