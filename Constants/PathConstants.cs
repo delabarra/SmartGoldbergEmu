@@ -290,8 +290,6 @@ namespace SmartGoldbergEmu.Constants
         /// </summary>
         public const string GoldbergLoadDllsFolderName = "load_dlls";
 
-        public const string GoldbergLoadDllsLoadOrderFileName = "load_order.txt";
-
         public static string CombineGameSteamSettingsLoadDllsDirectory(ulong appId) =>
             Path.Combine(GetGameSteamSettingsPath(appId), GoldbergLoadDllsFolderName);
 
@@ -637,7 +635,7 @@ namespace SmartGoldbergEmu.Constants
 
         /// <summary>
         /// Goldberg emulator binaries root (subfolders: experimental, steamclient_experimental, steam_old).
-        /// Extra DLLs live under steamclient_experimental/extra_dlls.
+        /// Extra DLLs for Goldberg load_dlls live under steamclient_experimental/extra_dlls.
         /// Location: {AppBaseDirectory}\goldberg\
         /// </summary>
         public static string GoldbergDirectory => Path.Combine(AppBaseDirectory, GoldbergDirectoryFolderName);

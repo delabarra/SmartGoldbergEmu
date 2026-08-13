@@ -5,7 +5,8 @@ using SmartGoldbergEmu.Constants;
 namespace SmartGoldbergEmu.Helpers
 {
     // Copies goldberg/steamclient_experimental/extra_dlls into per-game steam_settings/load_dlls before launch.
-    // Flat top-level only: Goldberg load_dlls scans that folder non-recursively.
+    // Flat top-level only: Goldberg load_dlls scans that folder non-recursively (LoadLibraryW).
+    // Skips upstream extra_dlls inject samples; those must not go in load_dlls.
     public static class SteamClientExtraDllsStaging
     {
         public static bool TryStageIntoLoadDllsFolder(
@@ -20,15 +21,16 @@ namespace SmartGoldbergEmu.Helpers
             if (string.IsNullOrWhiteSpace(loadDllsDestinationDirectory))
                 return false;
 
-            Directory.CreateDirectory(loadDllsDestinationDirectory);
-
             try
             {
                 foreach (string sourcePath in Directory.GetFiles(extraDllsSourceDirectory, "*.dll", SearchOption.TopDirectoryOnly))
                 {
+                    if (GoldbergInstallLayout.IsShippedSteamClientExtraDll(sourcePath))
+                        continue;
                     if (!LoadDllsArchFilter.MatchesProcessArchitecture(sourcePath, useX64))
                         continue;
 
+                    Directory.CreateDirectory(loadDllsDestinationDirectory);
                     string destPath = Path.Combine(loadDllsDestinationDirectory, Path.GetFileName(sourcePath));
                     if (File.Exists(destPath))
                         continue;

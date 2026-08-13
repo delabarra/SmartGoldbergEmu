@@ -16,10 +16,14 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamClientExperimentalFolderName = "steamclient_experimental";
         public const string SteamOldFolderName = "steam_old";
         // User drop folder under steamclient_experimental (staged into per-game steam_settings/load_dlls at launch).
+        // Not Goldberg's inject extra_dlls: those samples must not go in load_dlls.
         public const string SteamClientExperimentalExtraDllsFolderName = "extra_dlls";
         // Former top-level drop folder; migrated into steamclient_experimental/extra_dlls.
         public const string LegacySteamClientExtraDllsFolderName = "steamclient_extra_dlls";
         public const string GoldbergReadmeFileName = "readme.txt";
+        // Upstream steamclient_experimental/extra_dlls samples for ColdClientLoader inject only.
+        public const string ShippedSteamClientExtraDll32FileName = "steamclient_extra_x86.dll";
+        public const string ShippedSteamClientExtraDll64FileName = "steamclient_extra_x64.dll";
 
         private static readonly GoldbergInstallFile[] ReleaseFiles =
         {
@@ -136,9 +140,13 @@ namespace SmartGoldbergEmu.Constants
 
         public static string BuildGoldbergReadmeText()
         {
-            return "Optional extra DLLs — the only way SmartGoldbergEmu loads DLLs besides emulator files and Steam.dll mode."
+            return "Optional extra DLLs for Goldberg steam_settings/load_dlls."
                 + "\r\n\r\n"
-                + "Place .dll files here (goldberg/steamclient_experimental/extra_dlls), in this folder only (not in subfolders). At launch matching DLLs are copied into each game's steam_settings/load_dlls folder; Goldberg loads them from there when the game starts. The per-game load_dlls folder is removed when the game exits. Do not use inject tools or put DLLs beside the game exe for extras."
+                + "Experimental Goldberg builds load every .dll in steam_settings/load_dlls with LoadLibraryW when the emulator DLL attaches. At launch this folder is copied into each game's steam_settings/load_dlls (matching architecture only). That per-game folder is removed when the game exits."
+                + "\r\n\r\n"
+                + "Place .dll files here (goldberg/steamclient_experimental/extra_dlls), in this folder only (not in subfolders). Goldberg's load_dlls scan is not recursive."
+                + "\r\n\r\n"
+                + "This is not ColdClientLoader injection. Do not put steamclient_extra_x86.dll or steamclient_extra_x64.dll here. Those Goldberg samples are for startup injection only; putting them in load_dlls can cause a large FPS drop, and this launcher does not inject."
                 + "\r\n\r\n"
                 + "Architecture in the file name:"
                 + "\r\n\r\n"
@@ -149,6 +157,16 @@ namespace SmartGoldbergEmu.Constants
                 + "Both 32-bit and 64-bit: name has neither x32, x86, nor x64 (example: plugin.dll)"
                 + "\r\n\r\n"
                 + "Do not put these DLLs directly in steam_settings/load_dlls inside a game; use this folder instead.";
+        }
+
+        public static bool IsShippedSteamClientExtraDll(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName))
+                return false;
+
+            string name = Path.GetFileName(fileName);
+            return string.Equals(name, ShippedSteamClientExtraDll32FileName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, ShippedSteamClientExtraDll64FileName, StringComparison.OrdinalIgnoreCase);
         }
 
         // Moves legacy drop folders into goldberg/steamclient_experimental/extra_dlls when found.
@@ -227,7 +245,7 @@ namespace SmartGoldbergEmu.Constants
             if (!Directory.Exists(extraDir))
                 return;
 
-            foreach (string fileName in new[] { "steamclient_extra_x86.dll", "steamclient_extra_x64.dll" })
+            foreach (string fileName in new[] { ShippedSteamClientExtraDll32FileName, ShippedSteamClientExtraDll64FileName })
             {
                 string path = Path.Combine(extraDir, fileName);
                 if (!File.Exists(path))
@@ -248,9 +266,15 @@ namespace SmartGoldbergEmu.Constants
             foreach (string sourceFile in Directory.GetFiles(sourceDirectory))
             {
                 string name = Path.GetFileName(sourceFile);
-                string destFile = Path.Combine(destinationDirectory, name);
                 try
                 {
+                    if (IsShippedSteamClientExtraDll(name))
+                    {
+                        File.Delete(sourceFile);
+                        continue;
+                    }
+
+                    string destFile = Path.Combine(destinationDirectory, name);
                     if (File.Exists(destFile))
                         File.Delete(sourceFile);
                     else

@@ -1155,6 +1155,7 @@ namespace SmartGoldbergEmu.Services
                 // Top-level only: staging and Goldberg load_dlls are flat.
                 return Directory.GetFiles(dir, "*.dll", SearchOption.TopDirectoryOnly)
                     .Select(path => Path.GetFileName(path))
+                    .Where(name => !GoldbergInstallLayout.IsShippedSteamClientExtraDll(name))
                     .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
@@ -1183,6 +1184,8 @@ namespace SmartGoldbergEmu.Services
 
                     string name = Path.GetFileName(src);
                     if (string.IsNullOrEmpty(name))
+                        continue;
+                    if (GoldbergInstallLayout.IsShippedSteamClientExtraDll(name))
                         continue;
 
                     File.Copy(src, Path.Combine(destDir, name), true);

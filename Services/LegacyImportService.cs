@@ -66,6 +66,8 @@ namespace SmartGoldbergEmu.Services
             TryCleanupLocalAppDataPerUserFolder();
             // One-time: goldberg/steamclient_extra_dlls → steamclient_experimental/extra_dlls.
             GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(PathConstants.GoldbergDirectory);
+            if (Directory.Exists(PathConstants.GoldbergDirectory))
+                GoldbergInstallLayout.WriteGoldbergReadmeFile(PathConstants.GoldbergDirectory);
         }
 
         // Async 2.x library import and Goldberg file provisioning after synchronous migration.
