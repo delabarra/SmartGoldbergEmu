@@ -143,7 +143,8 @@ namespace SmartGoldbergEmu.Services
                     request.Metadata,
                     request.TaskReportService,
                     request.GameConfig.AppInfo,
-                    displayName).ConfigureAwait(false);
+                    displayName,
+                    catalogAssets: request.GameConfig.Catalog?.Assets).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -260,7 +261,8 @@ namespace SmartGoldbergEmu.Services
             ITaskReportService taskReport,
             AppInfoKeyValue appPicsData = null,
             string gameDisplayName = null,
-            bool reportFeedback = false)
+            bool reportFeedback = false,
+            GameAssetsSection catalogAssets = null)
         {
             try
             {
@@ -270,7 +272,8 @@ namespace SmartGoldbergEmu.Services
                     reportFeedback: reportFeedback,
                     steamAppIdForRemoteAssets: null,
                     appPicsData: appPicsData,
-                    gameDisplayName: gameDisplayName).ConfigureAwait(false);
+                    gameDisplayName: gameDisplayName,
+                    catalogAssets: catalogAssets).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

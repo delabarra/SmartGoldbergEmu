@@ -69,12 +69,24 @@ namespace SmartGoldbergEmu.Constants
 
         // Filenames under games/{appId}/resources/ (Steam CDN / library artwork contract).
         public const string SteamGameResourcesHeaderImageFileName = "header.jpg";
+        public const string SteamGameResourcesLibraryHeaderImageFileName = "library_header.jpg";
+        public const string SteamGameResourcesLibraryHeader2xImageFileName = "library_header_2x.jpg";
         public const string SteamGameResourcesCapsuleCoverImageFileName = "cover.jpg";
         public const string SteamGameResourcesLibraryLogoImageFileName = "logo.png";
+        public const string SteamGameResourcesLibraryLogo2xImageFileName = "logo_2x.png";
         public const string SteamGameResourcesClientIconFileExtension = ".ico";
+        public const string SteamGameResourcesLibraryCapsuleImageFileName = "library_capsule.jpg";
+        public const string SteamGameResourcesLibraryCapsule2xImageFileName = "library_capsule_2x.jpg";
         public const string SteamGameResourcesLegacyLibraryCapsuleImageFileName = "library_600x900.jpg";
+        public const string SteamGameResourcesLegacyLibraryCapsule2xImageFileName = "library_600x900_2x.jpg";
+        public const string SteamGameResourcesLibraryHeroImageFileName = "library_hero.jpg";
+        public const string SteamGameResourcesLibraryHero2xImageFileName = "library_hero_2x.jpg";
+        public const string SteamGameResourcesLibraryHeroBlurImageFileName = "library_hero_blur.jpg";
+        public const string SteamGameResourcesLibraryLogoPicsImageFileName = "library_logo.png";
+        public const string SteamGameResourcesLibraryLogoPics2xImageFileName = "library_logo_2x.png";
         public const string SteamGameResourcesCapsuleImageFileName = "capsule.jpg";
         public const string SteamGameResourcesSmallCapsuleImageFileName = "capsule_231x87.jpg";
+        public const string SteamGameResourcesLargeCapsuleImageFileName = "capsule_616x353.jpg";
         public const string SteamGameResourcesMissingAssetsNoteFileName = "missing_assets.txt";
 
         /// <summary>

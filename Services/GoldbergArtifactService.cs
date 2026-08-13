@@ -16,7 +16,7 @@ namespace SmartGoldbergEmu.Services
     {
         private static readonly string[] RefreshableResourceImageExtensions =
         {
-            ".jpg", ".jpeg", ".png", ".ico", ".gif", ".webp"
+            ".jpg", ".jpeg", ".png", ".ico", ".gif", ".webp", ".bmp", ".tga", ".icns"
         };
 
         private readonly SteamApiKeyService _steamApiKeyService;
@@ -195,7 +195,8 @@ namespace SmartGoldbergEmu.Services
                 snapshot.Online,
                 reportFeedback: report != null,
                 appPicsData: snapshot.AppInfo,
-                gameDisplayName: game.AppName).ConfigureAwait(false);
+                gameDisplayName: game.AppName,
+                catalogAssets: snapshot.Assets).ConfigureAwait(false);
 
             if (!string.Equals(previousName, game.AppName, StringComparison.Ordinal) && game.GameGuid != Guid.Empty)
             {

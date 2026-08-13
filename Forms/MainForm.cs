@@ -637,19 +637,7 @@ namespace SmartGoldbergEmu.Forms
                     return waitingDisplay;
             }
 
-            string imagePath;
-            if (viewMode == ApplicationConstants.ViewModeTile)
-            {
-                imagePath = gameImageService.GetHeaderImagePathOrFallback(game.AppId);
-            }
-            else if (viewMode == ApplicationConstants.ViewModeLogos)
-            {
-                imagePath = gameImageService.GetLogoImagePathOrFallback(game.AppId);
-            }
-            else
-            {
-                imagePath = gameImageService.GetCapsuleImagePathOrFallback(game.AppId);
-            }
+            string imagePath = gameImageService.ResolveArtworkPathForViewMode(game.AppId, viewMode);
 
             if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
             {

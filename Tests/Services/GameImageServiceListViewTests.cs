@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Services;
@@ -8,6 +9,40 @@ namespace SmartGoldbergEmu.Tests.Services
 {
     public sealed class GameImageServiceListViewTests
     {
+        [Fact]
+        public void ListView_store_banner_uses_header_not_library_header()
+        {
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, PathConstants.SteamGameResourcesHeaderImageFileName), string.Empty);
+            File.WriteAllText(Path.Combine(resources, PathConstants.SteamGameResourcesLibraryHeaderImageFileName), string.Empty);
+            File.WriteAllText(Path.Combine(resources, PathConstants.SteamGameResourcesLibraryHeader2xImageFileName), string.Empty);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(
+                resources,
+                new[] { PathConstants.SteamGameResourcesHeaderImageFileName });
+
+            Assert.EndsWith(
+                PathConstants.SteamGameResourcesHeaderImageFileName,
+                path,
+                StringComparison.OrdinalIgnoreCase);
+            Cleanup(resources);
+        }
+
+        [Fact]
+        public void ListView_store_banner_missing_header_returns_null_even_when_library_header_exists()
+        {
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, PathConstants.SteamGameResourcesLibraryHeaderImageFileName), string.Empty);
+            File.WriteAllText(Path.Combine(resources, "library_600x900.jpg"), string.Empty);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(
+                resources,
+                new[] { PathConstants.SteamGameResourcesHeaderImageFileName });
+
+            Assert.Null(path);
+            Cleanup(resources);
+        }
+
         [Fact]
         public void ListView_store_banner_uses_header_only()
         {
@@ -116,6 +151,28 @@ namespace SmartGoldbergEmu.Tests.Services
 
             Assert.Null(path);
             Cleanup(resources);
+        }
+
+        [Fact]
+        public void AllocateUniqueResourceFileName_keeps_canonical_name_then_hash_prefix()
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            const string english = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/library_capsule.jpg";
+            const string other = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/library_capsule.jpg";
+
+            string first = GameImageService.AllocateUniqueResourceFileName(english, seen);
+            string second = GameImageService.AllocateUniqueResourceFileName(other, seen);
+
+            Assert.Equal("library_capsule.jpg", first);
+            Assert.Equal("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb_library_capsule.jpg", second);
+        }
+
+        [Fact]
+        public void AllocateUniqueResourceFileName_duplicate_bare_name_returns_null()
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Assert.Equal("header.jpg", GameImageService.AllocateUniqueResourceFileName("header.jpg", seen));
+            Assert.Null(GameImageService.AllocateUniqueResourceFileName("header.jpg", seen));
         }
 
         private static string CreateResourcesDirectory()

@@ -195,7 +195,9 @@ namespace SmartGoldbergEmu.Services
         {
             string steamResourceIconPath = null;
             if (game != null && game.AppId > 0)
-                steamResourceIconPath = ServiceLocator.GameImageService.GetClientIconPathOrFallback(game.AppId);
+                steamResourceIconPath = ServiceLocator.GameImageService.ResolveArtworkPathForViewMode(
+                    game.AppId,
+                    ApplicationConstants.ViewModeIcons);
 
             return GameFolderPathHelper.TryResolveListViewIconSourcePath(game, steamResourceIconPath, out iconPath);
         }

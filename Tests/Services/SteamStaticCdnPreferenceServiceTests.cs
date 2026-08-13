@@ -133,5 +133,25 @@ namespace SmartGoldbergEmu.Tests.Services
                 "https://shared.fastly.steamstatic.com/steam/apps/570/header.jpg",
                 urls);
         }
+
+        [Fact]
+        public void GetCommunityAssetCandidateUrls_uses_requested_extension()
+        {
+            var service = new SteamStaticCdnPreferenceService();
+            service.SetPreferencesForTests(new SteamStaticCdnPreferences
+            {
+                SharedFastlyHosts = new List<string> { "shared.fastly.steamstatic.com" }
+            });
+
+            var jpg = service.GetCommunityAssetCandidateUrls(570, "abc", "jpg");
+            var ico = service.GetCommunityClientIconCandidateUrls(570, "abc");
+
+            Assert.Contains(
+                "https://shared.fastly.steamstatic.com/community_assets/images/apps/570/abc.jpg",
+                jpg);
+            Assert.Contains(
+                "https://shared.fastly.steamstatic.com/community_assets/images/apps/570/abc.ico",
+                ico);
+        }
     }
 }

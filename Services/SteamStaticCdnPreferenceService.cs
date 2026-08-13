@@ -28,26 +28,23 @@ namespace SmartGoldbergEmu.Services
 
         public IReadOnlyList<string> GetCommunityClientIconCandidateUrls(ulong appId, string hash)
         {
-            ScheduleWarmUpIfNeeded();
-            if (appId == 0 || string.IsNullOrWhiteSpace(hash))
-                return Array.Empty<string>();
-
-            var preferences = GetActivePreferences();
-            return BuildUniqueUrls(
-                preferences.SharedFastlyHosts,
-                host => BuildHttpsUrl(host, $"community_assets/images/apps/{appId}/{hash}.ico"));
+            return GetCommunityAssetCandidateUrls(appId, hash, "ico");
         }
 
-        public IReadOnlyList<string> GetCommunityAppImageCandidateUrls(ulong appId, string hash)
+        public IReadOnlyList<string> GetCommunityAssetCandidateUrls(ulong appId, string hash, string extension)
         {
             ScheduleWarmUpIfNeeded();
-            if (appId == 0 || string.IsNullOrWhiteSpace(hash))
+            if (appId == 0 || string.IsNullOrWhiteSpace(hash) || string.IsNullOrWhiteSpace(extension))
+                return Array.Empty<string>();
+
+            var ext = extension.Trim().TrimStart('.');
+            if (ext.Length == 0)
                 return Array.Empty<string>();
 
             var preferences = GetActivePreferences();
             return BuildUniqueUrls(
                 preferences.SharedFastlyHosts,
-                host => BuildHttpsUrl(host, $"community_assets/images/apps/{appId}/{hash}.jpg"));
+                host => BuildHttpsUrl(host, $"community_assets/images/apps/{appId}/{hash}.{ext}"));
         }
 
         public IReadOnlyList<string> GetAchievementIconCandidateUrls(string apiUrl)
