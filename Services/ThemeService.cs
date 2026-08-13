@@ -172,34 +172,35 @@ namespace SmartGoldbergEmu.Services
             {
                 case ThemeMode.Light:
                 {
-                                       return new ThemeColors
+                    return new ThemeColors
                     {
                         Background = SystemColors.Control,
                         Foreground = SystemColors.ControlText,
-                        FieldBackground = SystemColors.Control,
+                        FieldBackground = SystemColors.Window,
+                        FieldForeground = SystemColors.WindowText,
                         ControlBackground = SystemColors.Control,
                         ControlForeground = SystemColors.ControlText,
                         MenuBackground = SystemColors.Control,
                         MenuForeground = SystemColors.ControlText,
                         StatusStripBackground = SystemColors.Control,
                         StatusStripForeground = SystemColors.ControlText,
-                        StatusTextSecondary = Color.FromArgb(80, 80, 80),
-                        StatusTextAccent = Color.FromArgb(0, 120, 215),
-                        ListViewBackground = SystemColors.Control,
-                        ListViewForeground = SystemColors.ControlText,
-                        ListViewAlternate = SystemColors.Control,
-                        ListViewColumnHeaderBackground = DarkenRgb(SystemColors.Control, 15),
+                        StatusTextSecondary = SystemColors.GrayText,
+                        StatusTextAccent = SystemColors.Highlight,
+                        ListViewBackground = SystemColors.Window,
+                        ListViewForeground = SystemColors.WindowText,
+                        ListViewAlternate = SystemColors.Window,
+                        ListViewColumnHeaderBackground = SystemColors.Control,
                         Border = SystemColors.ControlDark,
-                        Highlight = Color.FromArgb(0, 120, 215),
-                        HighlightText = Color.White,
-                        LinkColor = Color.FromArgb(0, 102, 204),
-                        ImageMarginBackground = LightenRgb(SystemColors.Control, 8),
+                        Highlight = SystemColors.Highlight,
+                        HighlightText = SystemColors.HighlightText,
+                        LinkColor = SystemColors.HotTrack,
+                        ImageMarginBackground = SystemColors.ControlLight,
                         DisabledBackground = SystemColors.Control,
                         DisabledForeground = SystemColors.GrayText,
                         SuccessColor = Color.FromArgb(0, 150, 0),
                         ErrorColor = Color.FromArgb(200, 0, 0),
                         WarningColor = Color.FromArgb(255, 140, 0),
-                        InfoColor = Color.FromArgb(0, 102, 204),
+                        InfoColor = SystemColors.HotTrack,
                         VisitedLinkColor = Color.FromArgb(128, 0, 128)
                     };
                 }
@@ -207,21 +208,23 @@ namespace SmartGoldbergEmu.Services
                 case ThemeMode.Dark:
                 {
                     Color darkControl = Color.FromArgb(37, 37, 38);
+                    Color darkText = Color.FromArgb(240, 240, 240);
                     return new ThemeColors
                     {
                         Background = Color.FromArgb(30, 30, 30),
-                        Foreground = Color.FromArgb(240, 240, 240),
+                        Foreground = darkText,
                         FieldBackground = Color.FromArgb(30, 30, 30),
+                        FieldForeground = darkText,
                         ControlBackground = darkControl,
-                        ControlForeground = Color.FromArgb(240, 240, 240),
+                        ControlForeground = darkText,
                         MenuBackground = darkControl,
-                        MenuForeground = Color.FromArgb(240, 240, 240),
+                        MenuForeground = darkText,
                         StatusStripBackground = darkControl,
                         StatusStripForeground = Color.FromArgb(255, 255, 255),
                         StatusTextSecondary = Color.FromArgb(200, 200, 200),
                         StatusTextAccent = Color.FromArgb(150, 175, 205),
                         ListViewBackground = darkControl,
-                        ListViewForeground = Color.FromArgb(240, 240, 240),
+                        ListViewForeground = darkText,
                         ListViewAlternate = Color.FromArgb(45, 45, 48),
                         ListViewColumnHeaderBackground = DarkenRgb(darkControl, 5),
                         Border = Color.FromArgb(63, 63, 70),
@@ -247,16 +250,9 @@ namespace SmartGoldbergEmu.Services
         public void GetFallbackMosaicArtColors(ThemeMode effectiveTheme, out Color background, out Color foreground)
         {
             EnsureNotDisposed();
-            if (effectiveTheme == ThemeMode.Light)
-            {
-                background = Color.FromArgb(240, 240, 240);
-                foreground = Color.FromArgb(64, 64, 64);
-                return;
-            }
-
-            var c = GetThemeColors(effectiveTheme);
-            background = c.ListViewBackground;
-            foreground = c.ListViewForeground;
+            ThemeColors colors = GetThemeColors(effectiveTheme);
+            background = colors.ListViewBackground;
+            foreground = colors.ListViewForeground;
         }
 
         public bool IsSystemDarkMode()
@@ -645,7 +641,7 @@ namespace SmartGoldbergEmu.Services
             else if (control is ListBox listBox)
             {
                 listBox.BackColor = colors.FieldBackground;
-                listBox.ForeColor = colors.Foreground;
+                listBox.ForeColor = colors.FieldForeground;
                 listBox.BorderStyle = BorderStyle.FixedSingle;
                 WinFormsThemePaintHelper.ApplyExplorerWindowTheme(listBox, dark);
             }
@@ -715,7 +711,7 @@ namespace SmartGoldbergEmu.Services
                 if (richTextBox.ReadOnly || richTextBox.Enabled)
                 {
                     richTextBox.BackColor = colors.FieldBackground;
-                    richTextBox.ForeColor = colors.Foreground;
+                    richTextBox.ForeColor = colors.FieldForeground;
                 }
                 else
                 {
@@ -732,7 +728,7 @@ namespace SmartGoldbergEmu.Services
                     if (textBox.Enabled)
                     {
                         textBox.BackColor = colors.FieldBackground;
-                        textBox.ForeColor = colors.Foreground;
+                        textBox.ForeColor = colors.FieldForeground;
                     }
                     else
                     {
@@ -756,14 +752,14 @@ namespace SmartGoldbergEmu.Services
             else if (control is ComboBox comboBox)
             {
                 comboBox.BackColor = colors.FieldBackground;
-                comboBox.ForeColor = colors.Foreground;
+                comboBox.ForeColor = colors.FieldForeground;
                 comboBox.FlatStyle = FlatStyle.Flat;
                 WinFormsThemePaintHelper.ApplyExplorerWindowTheme(comboBox, dark);
             }
             else if (control is NumericUpDown numericUpDown)
             {
                 numericUpDown.BackColor = colors.FieldBackground;
-                numericUpDown.ForeColor = colors.Foreground;
+                numericUpDown.ForeColor = colors.FieldForeground;
                 numericUpDown.BorderStyle = BorderStyle.FixedSingle;
             }
             else if (control is CheckBox checkBox)
@@ -906,7 +902,7 @@ namespace SmartGoldbergEmu.Services
                 if (textBox.Enabled)
                 {
                     textBox.BackColor = colors.FieldBackground;
-                    textBox.ForeColor = colors.Foreground;
+                    textBox.ForeColor = colors.FieldForeground;
                 }
                 else
                 {

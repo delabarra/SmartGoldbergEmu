@@ -568,8 +568,8 @@ namespace SmartGoldbergEmu.Forms
         private System.Drawing.Color GetThemeForegroundColor()
         {
             return _themeService != null
-                ? _themeService.GetThemeColors(_themeService.EffectiveTheme).Foreground
-                : System.Drawing.SystemColors.ControlText;
+                ? _themeService.GetThemeColors(_themeService.EffectiveTheme).FieldForeground
+                : System.Drawing.SystemColors.WindowText;
         }
 
         private System.Drawing.Color GetThemePlaceholderColor()
@@ -1431,7 +1431,7 @@ namespace SmartGoldbergEmu.Forms
             else
             {
                 txtDLCList.BackColor = colors.FieldBackground;
-                txtDLCList.ForeColor = colors.Foreground;
+                txtDLCList.ForeColor = colors.FieldForeground;
             }
         }
 
@@ -1909,7 +1909,7 @@ namespace SmartGoldbergEmu.Forms
 
             if (txtAchievementsFilter != null)
             {
-                txtAchievementsFilter.ForeColor = colors.Foreground;
+                txtAchievementsFilter.ForeColor = colors.FieldForeground;
                 txtAchievementsFilter.BackColor = colors.FieldBackground;
             }
 
@@ -1979,7 +1979,7 @@ namespace SmartGoldbergEmu.Forms
                 if (txtInventoryRaw.Enabled)
                 {
                     txtInventoryRaw.BackColor = colors.FieldBackground;
-                    txtInventoryRaw.ForeColor = colors.Foreground;
+                    txtInventoryRaw.ForeColor = colors.FieldForeground;
                 }
                 else
                 {
@@ -1997,7 +1997,7 @@ namespace SmartGoldbergEmu.Forms
                 if (_inventoryInlineEditor != null && _inventoryInlineEditor.Visible)
                 {
                     _inventoryInlineEditor.BackColor = colors.FieldBackground;
-                    _inventoryInlineEditor.ForeColor = colors.Foreground;
+                    _inventoryInlineEditor.ForeColor = colors.FieldForeground;
                 }
             }
         }
@@ -2974,7 +2974,7 @@ namespace SmartGoldbergEmu.Forms
             var colors = _themeService.GetThemeColors(_themeService.EffectiveTheme);
             _inventoryInlineEditor.Font = lstInventoryItems.Font;
             _inventoryInlineEditor.BackColor = colors.FieldBackground;
-            _inventoryInlineEditor.ForeColor = colors.Foreground;
+            _inventoryInlineEditor.ForeColor = colors.FieldForeground;
             _inventoryInlineEditor.Text = _inventoryEditingOriginalText;
 
             Rectangle r = bounds;
@@ -4350,21 +4350,23 @@ namespace SmartGoldbergEmu.Forms
 
             if (selectedText == SteamLanguageDisplayHelper.UseGlobalSettingOption && !string.IsNullOrEmpty(_globalLanguagePlaceholder))
             {
+                ThemeColors colors = _themeService != null
+                    ? _themeService.GetThemeColors(_themeService.EffectiveTheme)
+                    : null;
                 using (var brush = new SolidBrush(cmbForceLanguage.BackColor))
                     e.Graphics.FillRectangle(brush, e.ClipRectangle);
 
-                ControlPaint.DrawBorder(e.Graphics, e.ClipRectangle,
-                    cmbForceLanguage.Enabled ? SystemColors.WindowFrame : SystemColors.ControlDark,
-                    ButtonBorderStyle.Solid);
+                Color border = cmbForceLanguage.Enabled
+                    ? (colors != null ? colors.Border : SystemColors.WindowFrame)
+                    : (colors != null ? colors.DisabledForeground : SystemColors.ControlDark);
+                ControlPaint.DrawBorder(e.Graphics, e.ClipRectangle, border, ButtonBorderStyle.Solid);
 
                 var buttonRect = new Rectangle(cmbForceLanguage.Width - 17, 0, 17, cmbForceLanguage.Height);
                 ControlPaint.DrawComboButton(e.Graphics, buttonRect,
                     cmbForceLanguage.Enabled ? ButtonState.Normal : ButtonState.Inactive);
 
                 var textRect = new Rectangle(3, 0, cmbForceLanguage.Width - 20, cmbForceLanguage.Height);
-                var placeholderColor = _themeService != null
-                    ? _themeService.GetThemeColors(_themeService.EffectiveTheme).DisabledForeground
-                    : SystemColors.GrayText;
+                Color placeholderColor = colors != null ? colors.DisabledForeground : SystemColors.GrayText;
                 TextRenderer.DrawText(e.Graphics, _globalLanguagePlaceholder, cmbForceLanguage.Font, textRect,
                     placeholderColor,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);

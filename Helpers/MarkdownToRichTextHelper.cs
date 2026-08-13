@@ -58,7 +58,7 @@ namespace SmartGoldbergEmu.Helpers
             var context = new RenderContext(textBox, colors, links);
 
             textBox.Clear();
-            textBox.ForeColor = colors.Foreground;
+            textBox.ForeColor = colors.FieldForeground;
             textBox.BackColor = colors.FieldBackground;
             textBox.Font = CreateFont("Segoe UI", BaseFontSize, FontStyle.Regular);
 
@@ -208,7 +208,7 @@ namespace SmartGoldbergEmu.Helpers
                 using (var headingFont = CreateFont("Segoe UI", size, FontStyle.Bold))
                 {
                     ResetParagraphIndent();
-                    AppendInline(text, headingFont, _colors.Foreground);
+                    AppendInline(text, headingFont, _colors.FieldForeground);
                     FinishLine();
                 }
             }
@@ -231,7 +231,7 @@ namespace SmartGoldbergEmu.Helpers
                 _textBox.SelectionFont = BaseFont;
                 _textBox.AppendText(new string('\u2500', 44));
                 FinishLine();
-                _textBox.SelectionColor = _colors.Foreground;
+                _textBox.SelectionColor = _colors.FieldForeground;
             }
 
             public void AppendBlockquote(string text)
@@ -246,8 +246,8 @@ namespace SmartGoldbergEmu.Helpers
             public void AppendBulletItem(string text)
             {
                 ApplyListIndent();
-                AppendPlain("\u2022 ", _colors.Foreground, BaseFont);
-                AppendInline(text, BaseFont, _colors.Foreground);
+                AppendPlain("\u2022 ", _colors.FieldForeground, BaseFont);
+                AppendInline(text, BaseFont, _colors.FieldForeground);
                 FinishLine();
                 ResetParagraphIndent();
             }
@@ -255,7 +255,7 @@ namespace SmartGoldbergEmu.Helpers
             public void AppendOrderedItem(string text)
             {
                 ApplyListIndent();
-                AppendInline(text, BaseFont, _colors.Foreground);
+                AppendInline(text, BaseFont, _colors.FieldForeground);
                 FinishLine();
                 ResetParagraphIndent();
             }
@@ -263,7 +263,7 @@ namespace SmartGoldbergEmu.Helpers
             public void AppendBodyLine(string text)
             {
                 ResetParagraphIndent();
-                AppendInline(text, BaseFont, _colors.Foreground);
+                AppendInline(text, BaseFont, _colors.FieldForeground);
                 FinishLine();
             }
 
@@ -274,7 +274,7 @@ namespace SmartGoldbergEmu.Helpers
                 foreach (string codeLine in text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
                 {
                     _textBox.SelectionFont = CodeFont;
-                    _textBox.SelectionColor = _colors.Foreground;
+                    _textBox.SelectionColor = _colors.FieldForeground;
                     _textBox.SelectionBackColor = _colors.ControlBackground;
                     _textBox.AppendText(codeLine);
                     FinishLine();
@@ -413,7 +413,7 @@ namespace SmartGoldbergEmu.Helpers
                 if (string.IsNullOrWhiteSpace(url) || !PathValidationHelper.IsSafeUrl(url))
                 {
                     _textBox.SelectionFont = baseFont;
-                    _textBox.SelectionColor = _colors.Foreground;
+                    _textBox.SelectionColor = _colors.FieldForeground;
                     _textBox.AppendText(label);
                     return;
                 }
@@ -428,7 +428,7 @@ namespace SmartGoldbergEmu.Helpers
                 }
 
                 _textBox.SelectionFont = baseFont;
-                _textBox.SelectionColor = _colors.Foreground;
+                _textBox.SelectionColor = _colors.FieldForeground;
             }
         }
 

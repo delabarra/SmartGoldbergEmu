@@ -154,10 +154,7 @@ namespace SmartGoldbergEmu.Helpers
             if (_themeMode == ThemeMode.Dark)
                 return _colors.Border;
 
-            return Color.FromArgb(
-                Math.Min(255, _colors.Border.R + 55),
-                Math.Min(255, _colors.Border.G + 55),
-                Math.Min(255, _colors.Border.B + 55));
+            return SystemColors.ControlLightLight;
         }
     }
 }

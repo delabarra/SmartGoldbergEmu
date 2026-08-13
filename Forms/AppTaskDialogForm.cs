@@ -889,11 +889,9 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
-            bool dark = colors.Background.GetBrightness() < 0.5f;
-
-            Color bodyBack = dark ? colors.Background : SystemColors.Window;
-            Color footerBack = dark ? colors.ControlBackground : SystemColors.Control;
-            Color bodyFore = dark ? colors.Foreground : SystemColors.WindowText;
+            Color bodyBack = colors.FieldBackground;
+            Color footerBack = colors.ControlBackground;
+            Color bodyFore = colors.FieldForeground;
 
             BackColor = bodyBack;
             ForeColor = bodyFore;
