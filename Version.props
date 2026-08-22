@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <VersionPrefix>2.4.2</VersionPrefix>
+    <VersionPrefix>2.4.3</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <!-- 4th FileVersion digit for hotfix releases (2.4.4.1). Leave 0 for patch/minor/major. -->
     <VersionRevision Condition="'$(VersionRevision)' == ''">0</VersionRevision>
