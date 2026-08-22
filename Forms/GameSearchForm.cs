@@ -13,9 +13,7 @@ namespace SmartGoldbergEmu.Forms
     public partial class GameSearchForm : ThemedForm
     {
         private const int SearchDebounceMs = 300;
-        private const int MaxSearchResults = 20;
-        private const int MaxStatusWidthPx = 424;
-        private const string StatusFilteringUnidentifiedDlc = "Filtering out unidentified DLC...";
+        private const int MaxNameWidthPx = 408;
 
         private List<AppSearchResult> _searchResults = new List<AppSearchResult>();
         private ulong? _selectedAppId;
@@ -23,7 +21,6 @@ namespace SmartGoldbergEmu.Forms
         private CancellationTokenSource _debounceCancellationTokenSource;
         private GameSearchFilterConnection _filterConnection;
         private bool _isSearching;
-        private bool _statusLocked;
         private int _lastTooltipIndex = -1;
 
         public ulong? SelectedAppId => _selectedAppId;
@@ -104,43 +101,51 @@ namespace SmartGoldbergEmu.Forms
             _selectedAppId = null;
             _lastTooltipIndex = -1;
             UpdateStatus("");
+            ClearSelectedGameInfo();
         }
 
-        private void UpdateStatus(string message, string tooltipText = null)
+        private void UpdateStatus(string message)
         {
             if (InvokeRequired)
             {
                 if (IsDisposed || Disposing)
                     return;
-                Invoke(new Action<string, string>(UpdateStatus), message, tooltipText);
+                Invoke(new Action<string>(UpdateStatus), message);
                 return;
             }
-            _statusLocked = false;
-            lblStatus.Text = message;
-            toolTip.SetToolTip(lblStatus, tooltipText);
+            lblStatus.Text = message ?? string.Empty;
         }
 
-        private void LockStatus(string message, CancellationToken cancellationToken)
+        private void ClearSelectedGameInfo()
         {
             if (InvokeRequired)
             {
                 if (IsDisposed || Disposing)
                     return;
-                Invoke(new Action<string, CancellationToken>(LockStatus), message, cancellationToken);
+                Invoke(new Action(ClearSelectedGameInfo));
                 return;
             }
-            if (cancellationToken.IsCancellationRequested || IsDisposed || Disposing)
-                return;
-            _statusLocked = true;
-            lblStatus.Text = message;
-            toolTip.SetToolTip(lblStatus, null);
+            lblSelectedAppId.Text = "";
+            lblSelectedName.Text = "";
+            toolTip.SetToolTip(lblSelectedAppId, null);
+            toolTip.SetToolTip(lblSelectedName, null);
         }
 
-        private void UpdateBusyStatus(string message)
+        private void UpdateSelectedGameInfo(ulong appId, string name)
         {
-            if (_statusLocked)
+            if (InvokeRequired)
+            {
+                if (IsDisposed || Disposing)
+                    return;
+                Invoke(new Action<ulong, string>(UpdateSelectedGameInfo), appId, name);
                 return;
-            UpdateStatus(message);
+            }
+
+            string displayName = TruncateNameToFit(name, lblSelectedName.Font, MaxNameWidthPx);
+            lblSelectedAppId.Text = "AppId: " + appId;
+            lblSelectedName.Text = displayName;
+            toolTip.SetToolTip(lblSelectedAppId, "AppId: " + appId);
+            toolTip.SetToolTip(lblSelectedName, "Name: \"" + (name ?? string.Empty) + "\"");
         }
 
         private void RunOnUiThread(Action action)
@@ -159,6 +164,30 @@ namespace SmartGoldbergEmu.Forms
             {
                 _isSearching = isSearching;
                 btnOK.Enabled = HasValidSelection;
+                if (isSearching)
+                    UpdateStatus("Searching...");
+            });
+        }
+
+        // Only the active search may leave the Searching state (superseded searches must not clear it).
+        private void CompleteSearchingState(CancellationTokenSource searchCts)
+        {
+            RunOnUiThread(() =>
+            {
+                if (!ReferenceEquals(_searchCancellationTokenSource, searchCts))
+                    return;
+
+                _isSearching = false;
+                btnOK.Enabled = HasValidSelection;
+
+                // Keep error text; only replace the Searching placeholder.
+                if (!string.Equals(lblStatus.Text, "Searching...", StringComparison.Ordinal))
+                    return;
+
+                if (_searchResults.Count == 0 && !string.IsNullOrEmpty(txtSearch.Text.Trim()))
+                    UpdateStatus("No results found");
+                else
+                    UpdateStatus("");
             });
         }
 
@@ -167,32 +196,45 @@ namespace SmartGoldbergEmu.Forms
             CancelAndDispose(ref _searchCancellationTokenSource);
             _searchCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
                 ServiceLocator.ApplicationLifetimeToken);
-            var cancellationToken = _searchCancellationTokenSource.Token;
+            CancellationTokenSource searchCts = _searchCancellationTokenSource;
+            var cancellationToken = searchCts.Token;
 
             try
             {
                 SetSearchingState(true);
-                UpdateStatus("Searching...");
+                RunOnUiThread(() =>
+                {
+                    if (IsDisposed || Disposing)
+                        return;
+                    lstResults.Items.Clear();
+                    _searchResults.Clear();
+                    _selectedAppId = null;
+                    _lastTooltipIndex = -1;
+                    btnOK.Enabled = false;
+                    ClearSelectedGameInfo();
+                });
 
                 Program.LogService?.LogDebug($"Starting search for: {searchTerm}");
 
                 var searchToken = cancellationToken;
-                var progress = new Progress<IReadOnlyList<AppSearchResult>>(liveResults =>
+                IProgress<IReadOnlyList<AppSearchResult>> progress = null;
+                RunOnUiThread(() =>
                 {
-                    if (searchToken.IsCancellationRequested || IsDisposed || Disposing)
-                        return;
-                    ApplyLiveSearchResults(liveResults);
+                    // Capture the WinForms sync context so live hits keep "Searching..." until the await completes.
+                    progress = new Progress<IReadOnlyList<AppSearchResult>>(liveResults =>
+                    {
+                        if (searchToken.IsCancellationRequested || IsDisposed || Disposing)
+                            return;
+                        ApplySearchResults(liveResults);
+                    });
                 });
-                var statusProgress = new Progress<string>(status =>
-                {
-                    if (searchToken.IsCancellationRequested || IsDisposed || Disposing)
-                        return;
-                    LockStatus(
-                        string.IsNullOrEmpty(status) ? StatusFilteringUnidentifiedDlc : status,
-                        searchToken);
-                });
-                var results = await FetchSearchResultsAsync(
-                    searchTerm, cancellationToken, progress, statusProgress)
+
+                var results = await SteamGameSearchService
+                    .SearchByNameAsync(
+                        searchTerm,
+                        cancellationToken: cancellationToken,
+                        progress: progress,
+                        filterConnection: _filterConnection)
                     .ConfigureAwait(false);
 
                 Program.LogService?.LogDebug($"Search returned {results?.Count ?? 0} results");
@@ -200,7 +242,15 @@ namespace SmartGoldbergEmu.Forms
                 if (cancellationToken.IsCancellationRequested || IsDisposed || Disposing)
                     return;
 
-                ApplyLiveSearchResults(results ?? new List<AppSearchResult>(), searchFinished: true);
+                // Apply final list on the UI thread before clearing Searching.
+                RunOnUiThread(() =>
+                {
+                    if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested)
+                        return;
+                    if (!ReferenceEquals(_searchCancellationTokenSource, searchCts))
+                        return;
+                    ApplySearchResults(results);
+                });
             }
             catch (OperationCanceledException)
             {
@@ -220,116 +270,134 @@ namespace SmartGoldbergEmu.Forms
             finally
             {
                 if (!IsDisposed && !Disposing)
-                    SetSearchingState(false);
+                    CompleteSearchingState(searchCts);
             }
         }
 
-        private async Task<List<AppSearchResult>> FetchSearchResultsAsync(
-            string searchTerm,
-            CancellationToken cancellationToken,
-            IProgress<IReadOnlyList<AppSearchResult>> progress,
-            IProgress<string> statusProgress)
-        {
-            if (IsDisposed || Disposing)
-                return new List<AppSearchResult>();
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return await SteamGameSearchService
-                .SearchByNameAsync(
-                    searchTerm,
-                    maxResults: MaxSearchResults,
-                    cancellationToken: cancellationToken,
-                    progress: progress,
-                    statusProgress: statusProgress,
-                    filterConnection: _filterConnection)
-                .ConfigureAwait(false);
-        }
-
-        private void ApplyLiveSearchResults(IReadOnlyList<AppSearchResult> results)
-        {
-            ApplyLiveSearchResults(results, searchFinished: false);
-        }
-
-        private void ApplyLiveSearchResults(IReadOnlyList<AppSearchResult> results, bool searchFinished)
+        private void ApplySearchResults(IReadOnlyList<AppSearchResult> results)
         {
             if (IsDisposed || Disposing)
                 return;
 
             if (InvokeRequired)
             {
-                BeginInvoke(new Action(() => ApplyLiveSearchResults(results, searchFinished)));
+                Invoke(new Action(() => ApplySearchResults(results)));
                 return;
             }
-
-            if (searchFinished)
-                _statusLocked = false;
 
             var nextResults = results != null
                 ? new List<AppSearchResult>(results)
                 : new List<AppSearchResult>();
 
-            if (!searchFinished && SameResultIds(_searchResults, nextResults))
+            if (SameResultIds(_searchResults, nextResults))
+            {
+                if (_isSearching)
+                    UpdateStatus("Searching...");
                 return;
+            }
 
             ulong? previousAppId = _selectedAppId;
-            _searchResults = nextResults;
-            _lastTooltipIndex = -1;
+            bool canAddInPlace = _searchResults.Count > 0
+                && nextResults.Count >= _searchResults.Count
+                && IsSubsetByAppId(nextResults, _searchResults);
 
-            lstResults.BeginUpdate();
-            try
+            if (!canAddInPlace)
             {
-                lstResults.Items.Clear();
-                if (_searchResults.Count > 0)
-                    lstResults.Items.AddRange(_searchResults.ToArray());
+                _searchResults = nextResults;
+                _lastTooltipIndex = -1;
+                lstResults.BeginUpdate();
+                try
+                {
+                    lstResults.Items.Clear();
+                    if (_searchResults.Count > 0)
+                        lstResults.Items.AddRange(_searchResults.ToArray());
+                }
+                finally
+                {
+                    lstResults.EndUpdate();
+                }
             }
-            finally
+            else
             {
-                lstResults.EndUpdate();
+                lstResults.BeginUpdate();
+                try
+                {
+                    for (int i = 0; i < nextResults.Count; i++)
+                    {
+                        if (i < _searchResults.Count && _searchResults[i].AppId == nextResults[i].AppId)
+                            continue;
+
+                        int existing = IndexOfAppId(_searchResults, nextResults[i].AppId);
+                        if (existing >= 0)
+                        {
+                            var moved = _searchResults[existing];
+                            _searchResults.RemoveAt(existing);
+                            lstResults.Items.RemoveAt(existing);
+                            _searchResults.Insert(i, moved);
+                            lstResults.Items.Insert(i, moved);
+                        }
+                        else
+                        {
+                            _searchResults.Insert(i, nextResults[i]);
+                            lstResults.Items.Insert(i, nextResults[i]);
+                        }
+                    }
+                }
+                finally
+                {
+                    lstResults.EndUpdate();
+                }
             }
 
+            FinishDisplayedResultsUpdate(previousAppId);
+        }
+
+        private void FinishDisplayedResultsUpdate(ulong? previousAppId)
+        {
             if (_searchResults.Count == 0)
             {
                 _selectedAppId = null;
                 btnOK.Enabled = false;
-                if (searchFinished)
-                    UpdateStatus("No results found");
+                ClearSelectedGameInfo();
+                if (_isSearching)
+                    UpdateStatus("Searching...");
                 else
-                    UpdateBusyStatus("Searching...");
+                    UpdateStatus("No results found");
                 return;
             }
 
             int restoreIndex = -1;
             if (previousAppId.HasValue)
+                restoreIndex = IndexOfAppId(_searchResults, previousAppId.Value);
+
+            if (restoreIndex >= 0)
             {
-                for (int i = 0; i < _searchResults.Count; i++)
-                {
-                    if (_searchResults[i].AppId == previousAppId.Value)
-                    {
-                        restoreIndex = i;
-                        break;
-                    }
-                }
+                if (lstResults.SelectedIndex != restoreIndex)
+                    lstResults.SelectedIndex = restoreIndex;
+            }
+            else if (lstResults.SelectedIndex < 0 || lstResults.SelectedIndex >= _searchResults.Count)
+            {
+                lstResults.SelectedIndex = 0;
             }
 
-            if (restoreIndex < 0)
-                restoreIndex = 0;
-
-            lstResults.SelectedIndex = restoreIndex;
-
-            if (searchFinished)
-            {
-                ShowSelectedAppStatus();
-            }
+            if (_isSearching)
+                UpdateStatus("Searching...");
             else
+                UpdateStatus("");
+
+            ShowSelectedGameInfo();
+        }
+
+        private static bool IsSubsetByAppId(List<AppSearchResult> current, List<AppSearchResult> next)
+        {
+            if (current == null || next == null)
+                return false;
+            for (int i = 0; i < next.Count; i++)
             {
-                if (HasValidSelection)
-                {
-                    _selectedAppId = _searchResults[lstResults.SelectedIndex].AppId;
-                    btnOK.Enabled = true;
-                }
-                UpdateBusyStatus("Searching...");
+                if (IndexOfAppId(current, next[i].AppId) < 0)
+                    return false;
             }
+            return true;
         }
 
         private static bool SameResultIds(List<AppSearchResult> current, List<AppSearchResult> next)
@@ -344,6 +412,18 @@ namespace SmartGoldbergEmu.Forms
                     return false;
             }
             return true;
+        }
+
+        private static int IndexOfAppId(List<AppSearchResult> results, ulong appId)
+        {
+            if (results == null)
+                return -1;
+            for (int i = 0; i < results.Count; i++)
+            {
+                if (results[i].AppId == appId)
+                    return i;
+            }
+            return -1;
         }
 
         private void OnSearchKeyDown(object sender, KeyEventArgs e)
@@ -385,20 +465,23 @@ namespace SmartGoldbergEmu.Forms
         {
             if (HasValidSelection)
             {
-                ShowSelectedAppStatus();
+                ShowSelectedGameInfo();
             }
             else
             {
                 _selectedAppId = null;
+                btnOK.Enabled = false;
+                ClearSelectedGameInfo();
                 if (_isSearching)
-                    UpdateBusyStatus("Searching...");
+                    UpdateStatus("Searching...");
+                else if (_searchResults.Count == 0 && !string.IsNullOrEmpty(txtSearch.Text.Trim()))
+                    UpdateStatus("No results found");
                 else
                     UpdateStatus("");
-                btnOK.Enabled = false;
             }
         }
 
-        private void ShowSelectedAppStatus()
+        private void ShowSelectedGameInfo()
         {
             if (!HasValidSelection)
                 return;
@@ -406,12 +489,7 @@ namespace SmartGoldbergEmu.Forms
             var selectedResult = _searchResults[lstResults.SelectedIndex];
             _selectedAppId = selectedResult.AppId;
             btnOK.Enabled = true;
-            if (_statusLocked)
-                return;
-
-            var nameDisplay = TruncateNameToFit(selectedResult.Name, lblStatus.Font, MaxStatusWidthPx);
-            var fullText = $"AppId: {selectedResult.AppId}{Environment.NewLine}Name: \"{selectedResult.Name}\"";
-            UpdateStatus($"AppId: {selectedResult.AppId}{Environment.NewLine}{nameDisplay}", fullText);
+            UpdateSelectedGameInfo(selectedResult.AppId, selectedResult.Name);
         }
 
         private void AcceptSelection()

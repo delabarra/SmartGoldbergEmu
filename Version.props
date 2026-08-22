@@ -1,14 +1,18 @@
 <Project>
   <PropertyGroup>
-    <VersionPrefix>2.4.3</VersionPrefix>
+    <VersionPrefix>2.4.2</VersionPrefix>
     <VersionSuffix></VersionSuffix>
+    <!-- 4th FileVersion digit for hotfix releases (2.4.4.1). Leave 0 for patch/minor/major. -->
+    <VersionRevision Condition="'$(VersionRevision)' == ''">0</VersionRevision>
     <VersionBuild Condition="'$(VersionBuild)' == ''">0</VersionBuild>
     <VersionBuildSuffix Condition="'$(VersionSuffix)' == '-preview' and '$(VersionBuild)' != '0'">+build.$(VersionBuild)</VersionBuildSuffix>
     <VersionBuildSuffix Condition="'$(VersionSuffix)' != '-preview' or '$(VersionBuild)' == '0'"></VersionBuildSuffix>
+    <VersionRevisionLabel Condition="'$(VersionRevision)' != '' and '$(VersionRevision)' != '0'">.$(VersionRevision)</VersionRevisionLabel>
+    <VersionRevisionLabel Condition="'$(VersionRevision)' == '' or '$(VersionRevision)' == '0'"></VersionRevisionLabel>
     <Version>$(VersionPrefix)$(VersionSuffix)</Version>
-    <AssemblyVersion>$(VersionPrefix)</AssemblyVersion>
-    <FileVersion>$(VersionPrefix)</FileVersion>
-    <InformationalVersion>v$(VersionPrefix)$(VersionSuffix)$(VersionBuildSuffix)</InformationalVersion>
+    <AssemblyVersion>$(VersionPrefix).$(VersionRevision)</AssemblyVersion>
+    <FileVersion>$(VersionPrefix).$(VersionRevision)</FileVersion>
+    <InformationalVersion>v$(VersionPrefix)$(VersionRevisionLabel)$(VersionSuffix)$(VersionBuildSuffix)</InformationalVersion>
     <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
     <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
     <GenerateAssemblyConfigurationAttribute>false</GenerateAssemblyConfigurationAttribute>

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Version bump when not re-running
+        description: patch=2.4.4, hotfix=2.4.4.1, minor=2.5.0, major=3.0.0
         type: choice
-        options: [patch, minor, major]
+        options: [patch, hotfix, minor, major]
         default: patch
       skip_version_bump:
         description: Re-run only — publish current Version.props without bumping

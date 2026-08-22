@@ -60,6 +60,20 @@ namespace SmartGoldbergEmu.Helpers
             return true;
         }
 
+        public static bool TryGetAppType(KeyValue root, out string type)
+        {
+            type = null;
+            KeyValue target = ResolveAppInfoTarget(root);
+            if (target?.Children == null)
+                return false;
+            KeyValue common = FindChild(target, PathConstants.SteamAppsCommonDirectoryName);
+            KeyValue typeNode = FindChild(common, SteamPicsKeyNames.Type);
+            if (typeNode == null || string.IsNullOrWhiteSpace(typeNode.Value))
+                return false;
+            type = typeNode.Value.Trim();
+            return true;
+        }
+
         /// <summary>
         /// Fills <see cref="OnlineAppData"/> from a PICS app <see cref="KeyValue"/> tree: <c>common/name</c>, supported languages, DLC ids.
         /// </summary>

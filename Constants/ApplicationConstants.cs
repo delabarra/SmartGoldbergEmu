@@ -345,11 +345,14 @@ namespace SmartGoldbergEmu.Constants
             "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/" + PathConstants.GoldbergStatsDbJsonFileName;
         public const string SteamCommunityLeaderboardsXmlUrlFormat = "https://steamcommunity.com/stats/{0}/leaderboards/?xml=1";
         public const string SteamPublishedFileDetailsApiUrlPrefix = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=";
+        // Steam ranks CMs for this client (IP/load). GetCMList is a global TCP dump if ForConnect has no netfilter.
         public const string SteamDirectoryGetCmListForConnectUrl =
-            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=50";
-        // Storefront autocomplete; parse type locally (game vs dlc). Delisted apps use SteamSearchGamesApiUrlFormat.
-        public const string SteamStoreSearchSuggestUrlFormat =
-            "https://store.steampowered.com/search/suggest?cc=US&l=english&realm=1&f=jsonfull&term={0}";
+            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=200";
+        public const string SteamDirectoryGetCmListUrl =
+            "https://api.steampowered.com/ISteamDirectory/GetCMList/v1/?cellid=0";
+        // Store catalog search (games / Windows). Packages/bundles are skipped when parsing; delisted apps use SteamSearchGamesApiUrlFormat.
+        public const string SteamStoreSearchCatalogUrlFormat =
+            "https://store.steampowered.com/search/results/?term={0}&category1=998&os=win&cc=US&l=english&start=0&count=50";
         public const string SteamSearchGamesApiUrlFormat = "https://steam-search.vercel.app/api/games?search={0}";
         public const string SteamStoreAppUrlFormat = "https://store.steampowered.com/app/{0}";
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";

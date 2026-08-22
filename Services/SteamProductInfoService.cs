@@ -21,8 +21,8 @@ namespace SmartGoldbergEmu.Services
         private static readonly Encoding Utf8WithoutBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         private static readonly TimeSpan[] SessionEstablishAttemptBudgets =
         {
-            TimeSpan.FromSeconds(25),
-            TimeSpan.FromSeconds(22),
+            TimeSpan.FromSeconds(12),
+            TimeSpan.FromSeconds(10),
         };
         private const int MaxLinkedPackagesToFetch = 32;
 
@@ -39,6 +39,8 @@ namespace SmartGoldbergEmu.Services
 
         private SteamClient _client;
         private bool _loggedOn;
+        // After one failed connect during a HoldSession, skip further 12s+ retries (package PICS, launch options).
+        private int _sessionEstablishFailed;
 
         // Upper bound for Dispose waiting on an in-flight PICS/connect that should already be cancelled.
         private static readonly TimeSpan DisposeSessionLockWait = TimeSpan.FromSeconds(8);
@@ -74,6 +76,8 @@ namespace SmartGoldbergEmu.Services
                 _sessionLock.Wait();
                 try
                 {
+                    if (Volatile.Read(ref _sessionHoldCount) == 0)
+                        ClearSessionEstablishFailed();
                     TeardownClient();
                 }
                 finally
@@ -224,6 +228,95 @@ namespace SmartGoldbergEmu.Services
 
             KeyValue kv = await GetAppKeyValueAsync(appId, ct).ConfigureAwait(false);
             return AppDataKitBridgeService.ConvertFromSteamKit(kv);
+        }
+
+        // common.type for leftover search apps: one PICS batch (local catalog already checked by the caller).
+        public async Task<Dictionary<uint, string>> GetAppCommonTypesAsync(
+            IReadOnlyCollection<uint> appIds,
+            CancellationToken ct = default(CancellationToken))
+        {
+            var types = new Dictionary<uint, string>();
+            if (_disposed || appIds == null || appIds.Count == 0)
+                return types;
+
+            var needPics = new List<uint>();
+            var seen = new HashSet<uint>();
+            foreach (uint id in appIds)
+            {
+                if (id == 0 || !seen.Add(id))
+                    continue;
+                needPics.Add(id);
+            }
+
+            if (needPics.Count == 0)
+                return types;
+
+            try
+            {
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
+                using (HoldSession())
+                {
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        if (!await EnsureLoggedOnAsync(opCt).ConfigureAwait(false))
+                        {
+                            ServiceLocator.LogService?.LogWarning(
+                                $"PICS type check skipped: Steam session not ready ({needPics.Count} apps queued).");
+                            return types;
+                        }
+
+                        PICSProductInfoResult pics = await _client
+                            .RequestProductInfo(needPics, null, opCt)
+                            .ConfigureAwait(false);
+                        if ((pics == null || pics.Apps.Count == 0) &&
+                            _loggedOn && _client != null && _client.IsConnected && !opCt.IsCancellationRequested)
+                        {
+                            pics = await _client
+                                .RequestProductInfo(needPics, null, opCt)
+                                .ConfigureAwait(false);
+                        }
+
+                        MergePicsAppTypes(pics, types);
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return types;
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogDebug(
+                    $"PICS type check failed for {needPics.Count} apps: {ex.Message}");
+                return types;
+            }
+
+            return types;
+        }
+
+        private static void MergePicsAppTypes(PICSProductInfoResult pics, Dictionary<uint, string> types)
+        {
+            if (pics == null || pics.Apps == null || types == null)
+                return;
+
+            foreach (PICSProductInfoItem item in pics.Apps)
+            {
+                if (item == null || item.ID == 0 || item.Buffer == null || item.Buffer.Length == 0)
+                    continue;
+                if (pics.UnknownAppIds != null && pics.UnknownAppIds.Contains(item.ID))
+                    continue;
+
+                KeyValue kv = item.ToKeyValue();
+                string type;
+                if (SteamPicsKeyValueHelper.TryGetAppType(kv, out type))
+                    types[item.ID] = type;
+            }
         }
 
         // Reads games/{appId}/resources/{appId}.vdf when catalog JSON is missing (legacy / export-only installs).
@@ -401,10 +494,16 @@ namespace SmartGoldbergEmu.Services
             return item.ToKeyValue();
         }
 
+        private bool HasLiveSession => _client != null && _loggedOn && _client.IsConnected;
+
+        private bool SessionEstablishAlreadyFailed => Volatile.Read(ref _sessionEstablishFailed) != 0;
+
         private async Task<bool> EnsureLoggedOnAsync(CancellationToken ct)
         {
-            if (_client != null && _loggedOn && _client.IsConnected)
+            if (HasLiveSession)
                 return true;
+            if (SessionEstablishAlreadyFailed)
+                return false;
 
             return await ReconnectAsync(ct).ConfigureAwait(false);
         }
@@ -420,7 +519,10 @@ namespace SmartGoldbergEmu.Services
                 (bool success, uint outcome) = await TryConnectAndLogOnAsync(ct, SessionEstablishAttemptBudgets[attempt])
                     .ConfigureAwait(false);
                 if (success)
+                {
+                    ClearSessionEstablishFailed();
                     return true;
+                }
 
                 lastOutcome = outcome;
                 if (ct.IsCancellationRequested)
@@ -432,6 +534,7 @@ namespace SmartGoldbergEmu.Services
                 break;
             }
 
+            MarkSessionEstablishFailed();
             ServiceLocator.LogService.LogWarning(
                 $"Steam game assets: session establishment failed ({DescribeSessionEstablishFailure(lastOutcome)}).");
             return false;
@@ -501,6 +604,16 @@ namespace SmartGoldbergEmu.Services
                 ServiceLocator.ApplicationLifetimeToken);
         }
 
+        private void MarkSessionEstablishFailed()
+        {
+            Interlocked.Exchange(ref _sessionEstablishFailed, 1);
+        }
+
+        private void ClearSessionEstablishFailed()
+        {
+            Interlocked.Exchange(ref _sessionEstablishFailed, 0);
+        }
+
         // Disconnect without taking _sessionLock so Dispose can unblock in-flight waiters.
         private void InterruptClient()
         {
@@ -546,7 +659,10 @@ namespace SmartGoldbergEmu.Services
         private void ReleaseSessionHold()
         {
             if (Interlocked.Decrement(ref _sessionHoldCount) == 0)
+            {
+                ClearSessionEstablishFailed();
                 TeardownSession();
+            }
         }
 
         public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, CancellationToken ct = default)

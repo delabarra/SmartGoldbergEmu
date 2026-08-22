@@ -387,6 +387,7 @@
     <Compile Include="SteamKit\KeyDictionary.cs" />
     <Compile Include="SteamKit\NetFilterEncryptionWithHMAC.cs" />
     <Compile Include="SteamKit\SteamClient.cs" />
+    <Compile Include="SteamKit\SteamCmDirectory.cs" />
     <Compile Include="SteamKit\SteamLogonWaitResult.cs" />
     <Compile Include="SteamKit\Types.cs" />
     <Compile Include="Models\PersistedLaunchSession.cs" />

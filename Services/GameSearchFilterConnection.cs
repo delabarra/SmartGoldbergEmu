@@ -96,7 +96,7 @@ namespace SmartGoldbergEmu.Services
         private static async Task WarmHostsAsync(HttpClient http, CancellationToken cancellationToken)
         {
             string storeOrigin = new Uri(
-                string.Format(ApplicationConstants.SteamStoreSearchSuggestUrlFormat, "x"))
+                string.Format(ApplicationConstants.SteamStoreSearchCatalogUrlFormat, "x"))
                 .GetLeftPart(UriPartial.Authority) + "/";
 
             await Task.WhenAll(

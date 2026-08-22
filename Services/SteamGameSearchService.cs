@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AppDataKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Models;
 
@@ -17,10 +19,26 @@ namespace SmartGoldbergEmu.Services
         private const int HttpTimeoutSeconds = 10;
         private const int SteamCmdTimeoutSeconds = 8;
         private const int SteamCmdConcurrency = 6;
-        // Extra ranked hits so steamcmd DLC drops can still fill maxResults.
-        private const int SteamCmdVerifyPoolMultiplier = 3;
         private const string StoreSource = "Steam Store";
         private const string VercelSource = "Steam Search API";
+
+        private static readonly Regex StoreSearchResultRowRegex = new Regex(
+            @"<a\b[^>]*\bsearch_result_row\b[^>]*>.*?</a>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+        private static readonly Regex StoreSearchAppIdRegex = new Regex(
+            @"data-ds-appid=""(\d+)""",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+        private static readonly Regex StoreSearchTitleRegex = new Regex(
+            @"class=""title"">([^<]+)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+        private struct StoreSearchPass
+        {
+            public List<AppSearchResult> Results;
+            public Dictionary<ulong, string> TypesByAppId;
+        }
 
         public static GameSearchFilterConnection CreateFilterConnection()
         {
@@ -29,11 +47,9 @@ namespace SmartGoldbergEmu.Services
 
         public static async Task<List<AppSearchResult>> SearchByNameAsync(
             string searchTerm,
-            int maxResults = 10,
             ITaskReportService feedbackService = null,
             CancellationToken cancellationToken = default(CancellationToken),
             IProgress<IReadOnlyList<AppSearchResult>> progress = null,
-            IProgress<string> statusProgress = null,
             GameSearchFilterConnection filterConnection = null)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
@@ -45,47 +61,33 @@ namespace SmartGoldbergEmu.Services
             ulong numericAppId;
             bool numericTerm = TryParseAppIdTerm(searchTerm, out numericAppId);
             Task<AppSearchResult> numericAppTask = numericTerm
-                ? TryResolveNumericAppIdGameAsync(numericAppId, cancellationToken)
+                ? TryResolveNumericAppIdAsync(numericAppId, cancellationToken)
                 : Task.FromResult<AppSearchResult>(null);
 
             try
             {
                 using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
                 {
-                    // One store suggest pass: games for the primary hit list, types to strip DLC from catalog fallback.
-                    var storeSearch = await TrySearchStoreAsync(
-                        httpService, searchTerm, maxResults, cancellationToken)
-                        .ConfigureAwait(false);
+                    Task<StoreSearchPass> storeTask = TrySearchStoreAsync(
+                        httpService, searchTerm, cancellationToken);
+                    Task<List<AppSearchResult>> catalogTask = TrySearchCatalogAsync(
+                        httpService, searchTerm, cancellationToken);
+                    await Task.WhenAll(storeTask, catalogTask).ConfigureAwait(false);
 
-                    List<AppSearchResult> nameResults;
-                    // Numeric queries also search catalog names ("140", "8") — store suggest often misses those.
-                    if (!numericTerm && storeSearch.Games != null && storeSearch.Games.Count > 0)
-                    {
-                        nameResults = storeSearch.Games;
-                    }
-                    else
-                    {
-                        nameResults = await SearchVercelAsync(
-                            httpService,
-                            searchTerm,
-                            maxResults,
-                            storeSearch.TypesByAppId,
-                            progress,
-                            statusProgress,
-                            filterConnection,
-                            cancellationToken)
-                            .ConfigureAwait(false);
-                        if (numericTerm)
-                            nameResults = ConcatUnique(storeSearch.Games, nameResults, maxResults);
-                    }
-
+                    StoreSearchPass storeSearch = await storeTask.ConfigureAwait(false);
                     AppSearchResult numericHit = await numericAppTask.ConfigureAwait(false);
-                    List<AppSearchResult> merged = ConcatUnique(
-                        numericHit != null ? new List<AppSearchResult> { numericHit } : null,
-                        nameResults,
-                        maxResults);
-                    ReportProgress(progress, merged, cancellationToken);
-                    return merged;
+                    List<AppSearchResult> catalogResults = await catalogTask.ConfigureAwait(false);
+
+                    return await RevealEligibleAppsAsync(
+                        ConcatUnique(
+                            numericHit != null ? new List<AppSearchResult> { numericHit } : null,
+                            ConcatUnique(storeSearch.Results, catalogResults)),
+                        storeSearch.TypesByAppId,
+                        storeSearch.Results,
+                        numericTerm ? numericAppId : 0UL,
+                        progress,
+                        filterConnection,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -100,23 +102,15 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private struct StoreSearchPass
-        {
-            public List<AppSearchResult> Games;
-            public Dictionary<ulong, string> TypesByAppId;
-        }
-
-        // Live store titles only (type=game). Empty/failure means caller should try the broader catalog.
         private static async Task<StoreSearchPass> TrySearchStoreAsync(
             IHttpService httpService,
             string searchTerm,
-            int maxResults,
             CancellationToken cancellationToken)
         {
             try
             {
                 string searchUrl = string.Format(
-                    ApplicationConstants.SteamStoreSearchSuggestUrlFormat,
+                    ApplicationConstants.SteamStoreSearchCatalogUrlFormat,
                     Uri.EscapeDataString(searchTerm));
 
                 string responseContent;
@@ -125,7 +119,7 @@ namespace SmartGoldbergEmu.Services
                     if (!response.IsSuccessStatusCode)
                     {
                         Program.LogService?.LogWarning(
-                            $"Steam Store search returned HTTP {(int)response.StatusCode}; falling back to catalog.");
+                            $"Steam Store catalog search returned HTTP {(int)response.StatusCode}; showing secondary catalog only.");
                         return new StoreSearchPass();
                     }
 
@@ -133,18 +127,109 @@ namespace SmartGoldbergEmu.Services
                     responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 }
 
-                if (string.IsNullOrWhiteSpace(responseContent))
+                return ParseStoreCatalogHtml(responseContent, searchTerm, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning($"Steam Store catalog search failed; showing secondary catalog only. {ex.Message}");
+                return new StoreSearchPass();
+            }
+        }
+
+        // category1=998 rows are games; packages/bundles have no data-ds-appid and are skipped.
+        // Steam also injects related titles — keep only names that match the query.
+        private static StoreSearchPass ParseStoreCatalogHtml(
+            string html,
+            string searchTerm,
+            CancellationToken cancellationToken)
+        {
+            var typesByAppId = new Dictionary<ulong, string>();
+            var results = new List<AppSearchResult>();
+            var seen = new HashSet<ulong>();
+
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                return new StoreSearchPass
                 {
-                    return new StoreSearchPass
+                    Results = results,
+                    TypesByAppId = typesByAppId
+                };
+            }
+
+            foreach (Match row in StoreSearchResultRowRegex.Matches(html))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (row == null || !row.Success)
+                    continue;
+
+                Match appIdMatch = StoreSearchAppIdRegex.Match(row.Value);
+                if (!appIdMatch.Success)
+                    continue;
+
+                ulong appId;
+                if (!ulong.TryParse(appIdMatch.Groups[1].Value, out appId) || appId == 0 || !seen.Add(appId))
+                    continue;
+
+                Match titleMatch = StoreSearchTitleRegex.Match(row.Value);
+                if (!titleMatch.Success)
+                    continue;
+
+                string appName = WebUtility.HtmlDecode(titleMatch.Groups[1].Value)?.Trim();
+                if (string.IsNullOrEmpty(appName) || !NameMatchesSearch(appName, searchTerm))
+                    continue;
+
+                typesByAppId[appId] = "game";
+                results.Add(new AppSearchResult
+                {
+                    AppId = appId,
+                    Name = appName,
+                    Source = StoreSource
+                });
+            }
+
+            return new StoreSearchPass
+            {
+                Results = results,
+                TypesByAppId = typesByAppId
+            };
+        }
+
+        private static async Task<List<AppSearchResult>> TrySearchCatalogAsync(
+            IHttpService httpService,
+            string searchTerm,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var results = new List<AppSearchResult>();
+                var seen = new HashSet<ulong>();
+
+                string searchUrl = string.Format(
+                    ApplicationConstants.SteamSearchGamesApiUrlFormat,
+                    Uri.EscapeDataString(searchTerm));
+
+                string responseContent;
+                using (var response = await httpService.GetAsync(searchUrl, cancellationToken).ConfigureAwait(false))
+                {
+                    if (!response.IsSuccessStatusCode)
                     {
-                        Games = new List<AppSearchResult>(),
-                        TypesByAppId = new Dictionary<ulong, string>()
-                    };
+                        Program.LogService?.LogWarning(
+                            $"Steam Search API returned HTTP {(int)response.StatusCode}; showing store results only.");
+                        return new List<AppSearchResult>();
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 }
 
+                if (string.IsNullOrWhiteSpace(responseContent))
+                    return new List<AppSearchResult>();
+
                 JsonArray gamesArray = JsonArray.Parse(responseContent);
-                var typesByAppId = new Dictionary<ulong, string>();
-                var results = new List<AppSearchResult>();
 
                 foreach (JsonValue item in gamesArray)
                 {
@@ -154,37 +239,23 @@ namespace SmartGoldbergEmu.Services
                     if (game == null)
                         continue;
 
-                    ulong appId = ParseAppId(game["id"]);
-                    if (appId == 0)
-                        continue;
-
-                    string type = game["type"]?.ToString();
-                    if (!string.IsNullOrEmpty(type))
-                        typesByAppId[appId] = type;
-
-                    if (!IsGameType(type))
-                        continue;
-
                     string appName = game["name"]?.ToString();
-                    if (string.IsNullOrEmpty(appName))
+                    if (string.IsNullOrEmpty(appName) || !NameMatchesSearch(appName, searchTerm))
                         continue;
 
-                    if (results.Count < maxResults)
+                    ulong appId = ParseAppId(game["appid"]);
+                    if (appId == 0 || !seen.Add(appId))
+                        continue;
+
+                    results.Add(new AppSearchResult
                     {
-                        results.Add(new AppSearchResult
-                        {
-                            AppId = appId,
-                            Name = appName,
-                            Source = StoreSource
-                        });
-                    }
+                        AppId = appId,
+                        Name = appName,
+                        Source = VercelSource
+                    });
                 }
 
-                return new StoreSearchPass
-                {
-                    Games = results,
-                    TypesByAppId = typesByAppId
-                };
+                return results;
             }
             catch (OperationCanceledException)
             {
@@ -192,133 +263,70 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogWarning($"Steam Store search failed; falling back to catalog. {ex.Message}");
-                return new StoreSearchPass();
+                Program.LogService?.LogWarning($"Steam Search API failed; showing store results only. {ex.Message}");
+                return new List<AppSearchResult>();
             }
         }
 
-        private static async Task<List<AppSearchResult>> SearchVercelAsync(
-            IHttpService httpService,
-            string searchTerm,
-            int maxResults,
-            Dictionary<ulong, string> storeTypesByAppId,
+        // Show Steam store catalog games immediately. Secondary catalog unknowns wait for steamcmd/store/PICS;
+        // confirmed non-games are never added; anything still untyped after that is added.
+        private static async Task<List<AppSearchResult>> RevealEligibleAppsAsync(
+            List<AppSearchResult> merged,
+            Dictionary<ulong, string> storeTypes,
+            List<AppSearchResult> storeResults,
+            ulong numericAppId,
             IProgress<IReadOnlyList<AppSearchResult>> progress,
-            IProgress<string> statusProgress,
             GameSearchFilterConnection filterConnection,
             CancellationToken cancellationToken)
         {
-            var allCandidates = new List<AppSearchResult>();
-
-            string searchUrl = string.Format(
-                ApplicationConstants.SteamSearchGamesApiUrlFormat,
-                Uri.EscapeDataString(searchTerm));
-
-            string responseContent;
-            using (var response = await httpService.GetAsync(searchUrl, cancellationToken).ConfigureAwait(false))
+            var ranked = new List<AppSearchResult>();
+            var visibleIds = new HashSet<ulong>();
+            var pending = new List<AppSearchResult>();
+            var storeIds = new HashSet<ulong>();
+            if (storeResults != null)
             {
-                response.EnsureSuccessStatusCode();
-                cancellationToken.ThrowIfCancellationRequested();
-                responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            }
-
-            if (string.IsNullOrWhiteSpace(responseContent))
-                throw new InvalidOperationException("Received empty response from Steam Search API");
-
-            JsonArray gamesArray = JsonArray.Parse(responseContent);
-
-            foreach (JsonValue item in gamesArray)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                JsonObject game = item as JsonObject;
-                if (game == null)
-                    continue;
-
-                string appName = game["name"]?.ToString();
-                if (string.IsNullOrEmpty(appName))
-                    continue;
-
-                ulong appId = ParseAppId(game["appid"]);
-                if (appId == 0)
-                    continue;
-
-                // Drop live non-games (DLC, music, …). Unknown ids (delisted) stay eligible.
-                string storeType;
-                if (storeTypesByAppId != null &&
-                    storeTypesByAppId.TryGetValue(appId, out storeType) &&
-                    !IsGameType(storeType))
-                    continue;
-
-                allCandidates.Add(new AppSearchResult
+                foreach (AppSearchResult storeItem in storeResults)
                 {
-                    AppId = appId,
-                    Name = appName,
-                    Source = VercelSource
-                });
-            }
-
-            int verifyPoolSize = Math.Max(maxResults, maxResults * SteamCmdVerifyPoolMultiplier);
-            List<AppSearchResult> ranked = FilterAndSort(allCandidates, searchTerm, verifyPoolSize);
-
-            return await KeepGamesViaSteamCmdLiveAsync(
-                ranked, maxResults, storeTypesByAppId, progress, statusProgress, filterConnection, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        // Only show apps once typed as game; unknowns stay hidden until confirmed.
-        private static async Task<List<AppSearchResult>> KeepGamesViaSteamCmdLiveAsync(
-            List<AppSearchResult> ranked,
-            int maxResults,
-            Dictionary<ulong, string> storeTypesByAppId,
-            IProgress<IReadOnlyList<AppSearchResult>> progress,
-            IProgress<string> statusProgress,
-            GameSearchFilterConnection filterConnection,
-            CancellationToken cancellationToken)
-        {
-            if (ranked == null || ranked.Count == 0 || maxResults <= 0)
-            {
-                var empty = new List<AppSearchResult>();
-                ReportProgress(progress, empty, cancellationToken);
-                return empty;
-            }
-
-            var confirmedGames = new HashSet<ulong>();
-            var rejected = new HashSet<ulong>();
-            if (storeTypesByAppId != null)
-            {
-                foreach (var pair in storeTypesByAppId)
-                {
-                    if (IsGameType(pair.Value))
-                        confirmedGames.Add(pair.Key);
-                    else
-                        rejected.Add(pair.Key);
+                    if (storeItem != null && storeItem.AppId != 0)
+                        storeIds.Add(storeItem.AppId);
                 }
             }
 
-            var gate = new object();
-            List<AppSearchResult> visible = BuildConfirmedVisibleResults(ranked, confirmedGames, maxResults);
-
-            var needTypeCheck = new List<AppSearchResult>();
-            foreach (AppSearchResult candidate in ranked)
+            if (merged != null)
             {
-                if (confirmedGames.Contains(candidate.AppId) || rejected.Contains(candidate.AppId))
-                    continue;
+                foreach (AppSearchResult item in merged)
+                {
+                    if (item == null || item.AppId == 0)
+                        continue;
 
-                if (candidate.AppId == 0 || candidate.AppId > uint.MaxValue)
-                    continue;
+                    string type;
+                    TryGetKnownType(item.AppId, storeTypes, out type);
+                    if (IsKnownNonGame(type))
+                        continue;
 
-                needTypeCheck.Add(candidate);
+                    ranked.Add(item);
+
+                    if (item.AppId > uint.MaxValue)
+                    {
+                        visibleIds.Add(item.AppId);
+                        continue;
+                    }
+
+                    bool knownEligible = !string.IsNullOrEmpty(type) ||
+                        storeIds.Contains(item.AppId) ||
+                        (numericAppId != 0 && item.AppId == numericAppId);
+                    if (knownEligible)
+                        visibleIds.Add(item.AppId);
+                    else
+                        pending.Add(item);
+                }
             }
 
-            if (needTypeCheck.Count == 0)
-            {
-                ReportProgress(progress, visible, cancellationToken);
-                return visible;
-            }
-
-            // Status first so the form can lock it before live hits arrive.
-            ReportStatus(statusProgress, "Filtering out unidentified DLC...", cancellationToken);
+            List<AppSearchResult> visible = BuildVisibleResults(ranked, visibleIds);
             ReportProgress(progress, visible, cancellationToken);
+
+            if (pending.Count == 0)
+                return visible;
 
             if (filterConnection != null)
                 await filterConnection.WaitUntilReadyAsync(cancellationToken).ConfigureAwait(false);
@@ -333,19 +341,23 @@ namespace SmartGoldbergEmu.Services
             if (ownsHttp)
                 http = new HttpClient { Timeout = TimeSpan.FromSeconds(SteamCmdTimeoutSeconds) };
 
+            var gate = new object();
+            var picsQueue = new List<AppSearchResult>();
+            var rejected = new HashSet<ulong>();
+
             try
             {
                 using (var concurrency = new SemaphoreSlim(SteamCmdConcurrency, SteamCmdConcurrency))
                 {
-                    var tasks = new List<Task>(needTypeCheck.Count);
-                    foreach (AppSearchResult candidate in needTypeCheck)
+                    var tasks = new List<Task>(pending.Count);
+                    foreach (AppSearchResult candidate in pending)
                     {
-                        tasks.Add(ResolveCandidateTypeAsync(
+                        tasks.Add(ResolveAndMaybeAddAsync(
                             candidate,
                             ranked,
-                            confirmedGames,
+                            visibleIds,
+                            picsQueue,
                             rejected,
-                            maxResults,
                             options,
                             http,
                             concurrency,
@@ -363,22 +375,31 @@ namespace SmartGoldbergEmu.Services
                     http.Dispose();
             }
 
-            if (cancellationToken.IsCancellationRequested)
-                return visible;
+            await AddAfterPicsTypeCheckAsync(
+                picsQueue,
+                ranked,
+                visibleIds,
+                rejected,
+                gate,
+                progress,
+                cancellationToken).ConfigureAwait(false);
 
             lock (gate)
-                visible = BuildConfirmedVisibleResults(ranked, confirmedGames, maxResults);
+            {
+                AddRemainingUndefined(ranked, visibleIds, rejected);
+                visible = BuildVisibleResults(ranked, visibleIds);
+            }
 
             ReportProgress(progress, visible, cancellationToken);
             return visible;
         }
 
-        private static async Task ResolveCandidateTypeAsync(
+        private static async Task ResolveAndMaybeAddAsync(
             AppSearchResult candidate,
             List<AppSearchResult> ranked,
-            HashSet<ulong> confirmedGames,
+            HashSet<ulong> visibleIds,
+            List<AppSearchResult> picsQueue,
             HashSet<ulong> rejected,
-            int maxResults,
             AppSnapshotOptions options,
             HttpClient http,
             SemaphoreSlim concurrency,
@@ -393,53 +414,59 @@ namespace SmartGoldbergEmu.Services
                     return;
 
                 string type = null;
+                try
+                {
+                    AppInfoFetchResult fetch = await AppInfoClient
+                        .FetchFromSteamCmdAsync((uint)candidate.AppId, options, http, cancellationToken)
+                        .ConfigureAwait(false);
+                    TryGetSteamCmdType(fetch, out type);
 
-                // steamcmd first; many store DLCs return empty {} there — fall back to Store appdetails.
-                AppInfoFetchResult fetch = await AppInfoClient
-                    .FetchFromSteamCmdAsync((uint)candidate.AppId, options, http, cancellationToken)
-                    .ConfigureAwait(false);
-                TryGetSteamCmdType(fetch, out type);
+                    if (string.IsNullOrEmpty(type))
+                    {
+                        StoreAppDetailsClient.BasicInfo store = await StoreAppDetailsClient
+                            .TryGetBasicAsync((uint)candidate.AppId, http, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (store.Success && !string.IsNullOrEmpty(store.Type))
+                            type = store.Type;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogDebug(
+                        $"Type check failed for app {candidate.AppId}: {ex.Message}");
+                    type = null;
+                }
+
+                if (IsKnownNonGame(type))
+                {
+                    lock (gate)
+                        rejected.Add(candidate.AppId);
+                    return;
+                }
 
                 if (string.IsNullOrEmpty(type))
                 {
-                    StoreAppDetailsClient.BasicInfo store = await StoreAppDetailsClient
-                        .TryGetBasicAsync((uint)candidate.AppId, http, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (store.Success && !string.IsNullOrEmpty(store.Type))
-                        type = store.Type;
-                }
-
-                // Still unknown — keep hidden (do not show then remove).
-                if (string.IsNullOrEmpty(type))
+                    lock (gate)
+                        picsQueue.Add(candidate);
                     return;
+                }
 
                 List<AppSearchResult> nextVisible = null;
                 lock (gate)
                 {
-                    if (IsGameType(type))
-                    {
-                        if (!confirmedGames.Add(candidate.AppId))
-                            return;
-                    }
-                    else
-                    {
-                        rejected.Add(candidate.AppId);
+                    if (!visibleIds.Add(candidate.AppId))
                         return;
-                    }
-
-                    nextVisible = BuildConfirmedVisibleResults(ranked, confirmedGames, maxResults);
+                    nextVisible = BuildVisibleResults(ranked, visibleIds);
                 }
 
                 ReportProgress(progress, nextVisible, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                // Superseded search — do not report stale progress.
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogDebug(
-                    $"Type check failed for app {candidate.AppId}: {ex.Message}");
             }
             finally
             {
@@ -447,32 +474,151 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static List<AppSearchResult> BuildConfirmedVisibleResults(
+        private static async Task AddAfterPicsTypeCheckAsync(
+            List<AppSearchResult> picsQueue,
             List<AppSearchResult> ranked,
-            HashSet<ulong> confirmedGames,
-            int maxResults)
+            HashSet<ulong> visibleIds,
+            HashSet<ulong> rejected,
+            object gate,
+            IProgress<IReadOnlyList<AppSearchResult>> progress,
+            CancellationToken cancellationToken)
         {
-            var visible = new List<AppSearchResult>(maxResults);
-            if (ranked == null || confirmedGames == null || confirmedGames.Count == 0)
-                return visible;
+            List<AppSearchResult> leftovers;
+            lock (gate)
+                leftovers = picsQueue.Count == 0
+                    ? new List<AppSearchResult>()
+                    : new List<AppSearchResult>(picsQueue);
 
-            foreach (AppSearchResult candidate in ranked)
+            if (leftovers.Count == 0)
+                return;
+
+            var appIds = new List<uint>(leftovers.Count);
+            foreach (AppSearchResult item in leftovers)
             {
-                if (!confirmedGames.Contains(candidate.AppId))
-                    continue;
-
-                visible.Add(candidate);
-                if (visible.Count >= maxResults)
-                    break;
+                if (item != null && item.AppId > 0 && item.AppId <= uint.MaxValue)
+                    appIds.Add((uint)item.AppId);
             }
 
+            Dictionary<uint, string> picsTypes = null;
+            if (appIds.Count > 0)
+            {
+                try
+                {
+                    picsTypes = await ServiceLocator.SteamProductInfoService
+                        .GetAppCommonTypesAsync(appIds, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogDebug($"PICS type check failed: {ex.Message}");
+                }
+            }
+
+            bool addedAny = false;
+            lock (gate)
+            {
+                foreach (AppSearchResult item in leftovers)
+                {
+                    if (item == null)
+                        continue;
+
+                    string type = null;
+                    uint id;
+                    if (picsTypes != null && item.AppId <= uint.MaxValue)
+                    {
+                        id = (uint)item.AppId;
+                        picsTypes.TryGetValue(id, out type);
+                    }
+
+                    if (IsKnownNonGame(type))
+                    {
+                        rejected.Add(item.AppId);
+                        continue;
+                    }
+                }
+            }
+
+            if (!addedAny)
+                return;
+
+            List<AppSearchResult> nextVisible;
+            lock (gate)
+                nextVisible = BuildVisibleResults(ranked, visibleIds);
+            ReportProgress(progress, nextVisible, cancellationToken);
+        }
+
+        // Ranked hits that never got a non-game type: still undefined after steamcmd/store/PICS.
+        private static void AddRemainingUndefined(
+            List<AppSearchResult> ranked,
+            HashSet<ulong> visibleIds,
+            HashSet<ulong> rejected)
+        {
+            if (ranked == null || visibleIds == null)
+                return;
+
+            foreach (AppSearchResult item in ranked)
+            {
+                if (item == null || item.AppId == 0)
+                    continue;
+                if (rejected != null && rejected.Contains(item.AppId))
+                    continue;
+                visibleIds.Add(item.AppId);
+            }
+        }
+
+        private static bool TryGetKnownType(
+            ulong appId,
+            Dictionary<ulong, string> storeTypes,
+            out string type)
+        {
+            type = null;
+            if (storeTypes != null && storeTypes.TryGetValue(appId, out type) && !string.IsNullOrEmpty(type))
+                return true;
+            return TryGetLocalAppType(appId, out type);
+        }
+
+        private static List<AppSearchResult> BuildVisibleResults(
+            List<AppSearchResult> ranked,
+            HashSet<ulong> visibleIds)
+        {
+            var visible = new List<AppSearchResult>();
+            if (ranked == null || visibleIds == null || visibleIds.Count == 0)
+                return visible;
+
+            foreach (AppSearchResult item in ranked)
+            {
+                if (item == null || !visibleIds.Contains(item.AppId))
+                    continue;
+                visible.Add(item);
+            }
+
+            visible.Sort(CompareByNameThenAppId);
             return visible;
+        }
+
+        private static int CompareByNameThenAppId(AppSearchResult a, AppSearchResult b)
+        {
+            if (ReferenceEquals(a, b))
+                return 0;
+            if (a == null)
+                return 1;
+            if (b == null)
+                return -1;
+
+            int byName = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            if (byName != 0)
+                return byName;
+            return a.AppId.CompareTo(b.AppId);
         }
 
         private static void ReportProgress(
             IProgress<IReadOnlyList<AppSearchResult>> progress,
             IReadOnlyList<AppSearchResult> results,
-            CancellationToken cancellationToken = default(CancellationToken))
+            CancellationToken cancellationToken)
         {
             if (progress == null || results == null)
                 return;
@@ -481,16 +627,28 @@ namespace SmartGoldbergEmu.Services
             progress.Report(results);
         }
 
-        private static void ReportStatus(
-            IProgress<string> statusProgress,
-            string message,
-            CancellationToken cancellationToken)
+        private static bool TryGetLocalAppType(ulong appId, out string type)
         {
-            if (statusProgress == null || string.IsNullOrEmpty(message))
-                return;
-            if (cancellationToken.IsCancellationRequested)
-                return;
-            statusProgress.Report(message);
+            type = null;
+            if (appId == 0 || appId > uint.MaxValue)
+                return false;
+
+            try
+            {
+                if (AppCatalogSnapshotStore.TryLoad(appId, out AppCatalogSnapshot catalog) &&
+                    catalog != null &&
+                    AppInfoKeyValueHelper.TryGetAppDisplayInfo(catalog.AppInfo, out _, out type) &&
+                    !string.IsNullOrEmpty(type))
+                    return true;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogDebug(
+                    $"Local type lookup failed for app {appId}: {ex.Message}");
+            }
+
+            type = null;
+            return false;
         }
 
         private static bool TryGetSteamCmdType(AppInfoFetchResult fetch, out string type)
@@ -505,12 +663,41 @@ namespace SmartGoldbergEmu.Services
                 return false;
 
             type = common.GetChild("type")?.Value;
-            return !string.IsNullOrEmpty(type);
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                type = null;
+                return false;
+            }
+
+            type = type.Trim();
+            return true;
         }
 
-        private static bool IsGameType(string type)
+        // Empty / unknown type stays in the list. Only drop when Steam gave a non-game type.
+        private static bool IsKnownNonGame(string type)
         {
-            return string.Equals(type, "game", StringComparison.OrdinalIgnoreCase);
+            return !string.IsNullOrEmpty(type) &&
+                !string.Equals(type, "game", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Drop Steam "related" padding (Starfield for fallout, etc.). Every query word must appear in the title.
+        private static bool NameMatchesSearch(string name, string searchTerm)
+        {
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(searchTerm))
+                return false;
+
+            string nameLower = name.ToLowerInvariant();
+            string[] words = searchTerm.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length == 0)
+                return false;
+
+            for (int i = 0; i < words.Length; i++)
+            {
+                if (nameLower.IndexOf(words[i].ToLowerInvariant(), StringComparison.Ordinal) < 0)
+                    return false;
+            }
+
+            return true;
         }
 
         private static ulong ParseAppId(JsonValue value)
@@ -523,7 +710,8 @@ namespace SmartGoldbergEmu.Services
                 return (ulong)asLong;
 
             string asText = value.ToString();
-            if (ulong.TryParse(asText, out ulong parsed) && parsed > 0)
+            ulong parsed;
+            if (ulong.TryParse(asText, out parsed) && parsed > 0)
                 return parsed;
 
             return 0;
@@ -537,8 +725,7 @@ namespace SmartGoldbergEmu.Services
                 && appId > 0;
         }
 
-        // Kit metadata for an App ID typed as the query (parallel with name search).
-        private static async Task<AppSearchResult> TryResolveNumericAppIdGameAsync(
+        private static async Task<AppSearchResult> TryResolveNumericAppIdAsync(
             ulong appId,
             CancellationToken cancellationToken)
         {
@@ -548,8 +735,10 @@ namespace SmartGoldbergEmu.Services
                     .FetchMetadataWithRootAsync(appId.ToString(), cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
 
-                if (appData != null && appData.Success && !string.IsNullOrEmpty(appData.Name) &&
-                    IsGameType(appData.Type))
+                if (appData != null &&
+                    appData.Success &&
+                    !string.IsNullOrEmpty(appData.Name) &&
+                    !IsKnownNonGame(appData.Type))
                 {
                     return new AppSearchResult
                     {
@@ -573,23 +762,21 @@ namespace SmartGoldbergEmu.Services
 
         private static List<AppSearchResult> ConcatUnique(
             List<AppSearchResult> first,
-            List<AppSearchResult> second,
-            int maxResults)
+            List<AppSearchResult> second)
         {
-            var merged = new List<AppSearchResult>(maxResults);
+            var merged = new List<AppSearchResult>();
             var seen = new HashSet<ulong>();
-            AppendUnique(merged, seen, first, maxResults);
-            AppendUnique(merged, seen, second, maxResults);
+            AppendUnique(merged, seen, first);
+            AppendUnique(merged, seen, second);
             return merged;
         }
 
         private static void AppendUnique(
             List<AppSearchResult> merged,
             HashSet<ulong> seen,
-            List<AppSearchResult> source,
-            int maxResults)
+            List<AppSearchResult> source)
         {
-            if (source == null || merged.Count >= maxResults)
+            if (source == null)
                 return;
 
             foreach (AppSearchResult item in source)
@@ -597,67 +784,7 @@ namespace SmartGoldbergEmu.Services
                 if (item == null || item.AppId == 0 || !seen.Add(item.AppId))
                     continue;
                 merged.Add(item);
-                if (merged.Count >= maxResults)
-                    return;
             }
-        }
-
-        private static List<AppSearchResult> FilterAndSort(
-            List<AppSearchResult> allCandidates,
-            string searchTerm,
-            int maxResults)
-        {
-            string searchLower = searchTerm.ToLowerInvariant();
-            string[] searchWords = searchTerm.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            string[] searchWordsLower = searchWords.Select(w => w.ToLowerInvariant()).ToArray();
-            ulong parsedAppId;
-            bool numericTerm = TryParseAppIdTerm(searchTerm, out parsedAppId);
-
-            var filteredResults = new List<AppSearchResult>();
-            foreach (var candidate in allCandidates)
-            {
-                string nameLower = candidate.Name.ToLowerInvariant();
-                bool matches = numericTerm && candidate.AppId == parsedAppId;
-
-                if (!matches)
-                {
-                    if (searchTerm.Length <= 2)
-                        matches = nameLower.Contains(searchLower);
-                    else if (searchTerm.Length <= 5)
-                        matches = nameLower.StartsWith(searchLower) ||
-                                  (searchWordsLower.Length > 0 && searchWordsLower.All(word => nameLower.Contains(word)));
-                    else
-                        matches = searchWordsLower.Length > 0 && searchWordsLower.All(word => nameLower.Contains(word));
-                }
-
-                if (matches)
-                    filteredResults.Add(candidate);
-            }
-
-            return filteredResults.OrderBy(r =>
-            {
-                string nameLower = r.Name.ToLowerInvariant();
-                int appIdMatch = numericTerm && r.AppId == parsedAppId ? 0 : 1;
-                int exactMatch = r.Name.Equals(searchTerm, StringComparison.OrdinalIgnoreCase) ? 0 : 1;
-                int startsWith = nameLower.StartsWith(searchLower) ? 0 : 1;
-                int wordMatch = 0;
-
-                if (searchWordsLower.Length > 0)
-                {
-                    bool allWordsAtBoundary = searchWordsLower.All(word =>
-                        nameLower.Contains(" " + word + " ") ||
-                        nameLower.StartsWith(word + " ") ||
-                        nameLower.EndsWith(" " + word) ||
-                        nameLower == word);
-                    wordMatch = allWordsAtBoundary ? 0 : 1;
-                }
-
-                int position = nameLower.IndexOf(searchLower);
-                if (position < 0)
-                    position = int.MaxValue;
-
-                return (appIdMatch, exactMatch, startsWith, wordMatch, position);
-            }).Take(maxResults).ToList();
         }
     }
 }

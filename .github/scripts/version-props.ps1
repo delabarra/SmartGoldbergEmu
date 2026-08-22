@@ -33,17 +33,27 @@ function Get-VersionPropsState {
         throw "VersionSuffix '$suffix' is not supported (expected empty or -preview)."
     }
 
-    $full = if ([string]::IsNullOrWhiteSpace($suffix)) { $prefix } else { "$prefix$suffix" }
+    $revision = 0
+    if ($text -match '<VersionRevision(?:\s[^>]*)?>\s*([^<]*?)\s*</VersionRevision>') {
+        $revisionText = $Matches[1].Trim()
+        if ($revisionText -match '^\d+$') {
+            $revision = [int]$revisionText
+        }
+    }
+
+    $numeric = if ($revision -gt 0) { "$prefix.$revision" } else { $prefix }
+    $full = if ([string]::IsNullOrWhiteSpace($suffix)) { $numeric } else { "$numeric$suffix" }
 
     return @{
-        Text   = $text
-        Prefix = $prefix
-        Major  = $major
-        Minor  = $minor
-        Patch  = $patch
-        Suffix = $suffix
-        Full   = $full
-        Tag    = "v$full"
+        Text     = $text
+        Prefix   = $prefix
+        Major    = $major
+        Minor    = $minor
+        Patch    = $patch
+        Revision = $revision
+        Suffix   = $suffix
+        Full     = $full
+        Tag      = "v$full"
         IsPreview = -not [string]::IsNullOrWhiteSpace($suffix)
         PackageBaseName = "SmartGoldbergEmu-$full"
     }
@@ -54,7 +64,8 @@ function Set-VersionPropsState {
         [string]$PropsPath,
         [string]$Text,
         [string]$Prefix,
-        [string]$Suffix
+        [string]$Suffix,
+        [int]$Revision = 0
     )
 
     $newText = $Text -replace '(<VersionPrefix>\s*)([^<]+?)(\s*</VersionPrefix>)', "`${1}$Prefix`${3}"
@@ -66,6 +77,12 @@ function Set-VersionPropsState {
         $insert = "    <VersionSuffix>$Suffix</VersionSuffix>`r`n"
         $newText = $newText -replace '(<VersionPrefix>[^<]+</VersionPrefix>\s*\r?\n)', "`${1}$insert"
     }
+
+    if ($newText -notmatch '<VersionRevision') {
+        throw 'Version.props is missing VersionRevision (required for hotfix releases).'
+    }
+
+    $newText = $newText -replace '(<VersionRevision(?:\s[^>]*)?>\s*)([^<]*?)(\s*</VersionRevision>)', "`${1}$Revision`${3}"
 
     Set-Content -LiteralPath $PropsPath -Value $newText -Encoding utf8 -NoNewline
 }
