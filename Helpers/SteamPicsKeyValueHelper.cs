@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
@@ -58,6 +57,20 @@ namespace SmartGoldbergEmu.Helpers
             KeyValue typeNode = FindChild(common, SteamPicsKeyNames.Type);
             if (typeNode != null && !string.IsNullOrWhiteSpace(typeNode.Value))
                 type = typeNode.Value.Trim();
+            return true;
+        }
+
+        public static bool TryGetAppType(KeyValue root, out string type)
+        {
+            type = null;
+            KeyValue target = ResolveAppInfoTarget(root);
+            if (target?.Children == null)
+                return false;
+            KeyValue common = FindChild(target, PathConstants.SteamAppsCommonDirectoryName);
+            KeyValue typeNode = FindChild(common, SteamPicsKeyNames.Type);
+            if (typeNode == null || string.IsNullOrWhiteSpace(typeNode.Value))
+                return false;
+            type = typeNode.Value.Trim();
             return true;
         }
 
@@ -223,30 +236,6 @@ namespace SmartGoldbergEmu.Helpers
                     if (long.TryParse(trimmed, out long dlcId) && dlcId > 0 && seenIds.Add(dlcId))
                         dlcIds.Add(dlcId);
                 }
-            }
-        }
-
-        /// <summary>
-        /// Loads exported PICS product info from <c>games/{appId}/resources/{appId}.vdf</c> when present.
-        /// </summary>
-        public static KeyValue TryLoadExportedAppPicsFromValveFile(string gamesDirectory, ulong appId)
-        {
-            if (appId == 0 || string.IsNullOrWhiteSpace(gamesDirectory))
-                return null;
-
-            string vdfPath = PathConstants.CombineGamesPerAppValveDataFilePath(gamesDirectory, appId.ToString());
-            if (!File.Exists(vdfPath))
-                return null;
-
-            try
-            {
-                return KeyValue.ParseVdf(File.ReadAllBytes(vdfPath));
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug(
-                    $"Could not parse exported game assets VDF for app {appId}: {ex.Message}");
-                return null;
             }
         }
     }

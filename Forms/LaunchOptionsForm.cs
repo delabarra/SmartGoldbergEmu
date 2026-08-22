@@ -15,7 +15,7 @@ namespace SmartGoldbergEmu.Forms
     /// Form for selecting how to launch a game. The selected option overrides the game launch
     /// with its Executable (process path), Parameters (arguments), and WorkingDir.
     /// </summary>
-    public partial class LaunchOptionsForm : Form
+    public partial class LaunchOptionsForm : ThemedForm
     {
         /// <summary>
         /// The selected launch option. When set, overrides the game launch with Executable, Parameters, WorkingDir.
@@ -26,7 +26,6 @@ namespace SmartGoldbergEmu.Forms
         public bool ExcludeConfigType { get; private set; } = true;
 
         private List<LaunchOption> _allLaunchOptions;
-        private readonly ThemeService _themeService;
         private readonly AppDataService _appDataService;
         private readonly GameConfig _game;
         private DateTime _formLoadTime;
@@ -35,7 +34,6 @@ namespace SmartGoldbergEmu.Forms
         public LaunchOptionsForm()
         {
             InitializeComponent();
-            _themeService = ServiceLocator.ThemeService;
             _appDataService = ServiceLocator.AppDataService;
             _game = null;
         }
@@ -45,21 +43,13 @@ namespace SmartGoldbergEmu.Forms
             InitializeComponent();
 
             _game = game;
-            
-            _themeService = ServiceLocator.ThemeService;
             _appDataService = ServiceLocator.AppDataService;
-            
-            // Subscribe to theme changes
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
-            
-            // Apply saved theme on startup
-            ApplyTheme();
-            
+
             // Ensure ListBox uses item ToString() for display
             lstLaunchOptions.DisplayMember = null;
-            
+
             _allLaunchOptions = launchOptions ?? new List<LaunchOption>();
-            
+
             // Set labels text
             lblTitle.Text = $"Launch Options for {game?.AppName ?? "Game"}";
             lblInstruction.Text = "Select how to launch:";
@@ -427,14 +417,16 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void ApplyTheme()
+        protected override void OnThemeApplied()
         {
             try
             {
-                _themeService.ApplyTheme(this);
                 ConfigureLaunchDialogButtons();
                 if (lblDetails != null)
-                    lblDetails.ForeColor = Color.Gray;
+                {
+                    ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
+                    lblDetails.ForeColor = colors.DisabledForeground;
+                }
             }
             catch (Exception ex)
             {
@@ -465,7 +457,7 @@ namespace SmartGoldbergEmu.Forms
         private void LaunchDialogButton_Paint(object sender, PaintEventArgs e)
         {
             var button = (Button)sender;
-            ThemeColors colors = _themeService.GetThemeColors(_themeService.EffectiveTheme);
+            ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
             Color backColor = button.Enabled ? colors.ControlBackground : colors.DisabledBackground;
             Color foreColor = button.Enabled ? colors.ControlForeground : colors.DisabledForeground;
 
@@ -477,32 +469,9 @@ namespace SmartGoldbergEmu.Forms
             TextRenderer.DrawText(e.Graphics, button.Text, button.Font, button.ClientRectangle, foreColor, backColor, flags);
         }
 
-        /// <summary>
-        /// Handles theme changes from ThemeService.
-        /// </summary>
-        public void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-            {
-                Invoke(new Action(ApplyTheme));
-            }
-            else
-            {
-                ApplyTheme();
-            }
-        }
-
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             StopAndDisposeClipboardFeedbackTimer();
-            // Unsubscribe from theme changes
-            if (_themeService != null)
-            {
-                _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            }
-
             Load -= LaunchOptionsForm_Load;
             base.OnFormClosed(e);
         }

@@ -1,21 +1,24 @@
 namespace SmartGoldbergEmu.Constants
 {
-    /// <summary>
-    /// User-facing status strip text for add-game collect and save (no other messages during these flows).
-    /// </summary>
+    // User-facing status strip text for add-game collect and save (no other messages during these flows).
     public static class AddGameStatusMessages
     {
-        /// <summary>Max time add-game status feedback stays on the strip before auto-clear.</summary>
-        public const int StatusAutoClearDelayMs = 3000;
+        public static string FetchingMetadata(ulong appId, string gameName = null)
+        {
+            string name = string.IsNullOrWhiteSpace(gameName) ? null : gameName.Trim();
+            if (name != null)
+                return $"Fetching metadata for {name} (appid {appId})…";
+            return $"Fetching metadata for appid {appId}…";
+        }
 
-        public static string LookingUpData(ulong appId) =>
-            $"Looking up data for {appId} in Steam Network";
+        public static string ConnectingToSteam =>
+            "Connecting to Steam…";
 
-        public static string RetrievingData(string gameName) =>
-            $"Retrieving data for {gameName} from Steam Network";
+        public static string AddingToLibrary(string gameName) =>
+            $"Adding {gameName} to the library.";
 
-        public static string WaitingToPreview(string gameName) =>
-            $"Awaiting preview of {gameName} data...";
+        public static string UpdatingInLibrary(string gameName) =>
+            $"Updating {gameName} in the library.";
 
         public static string GeneratingGoldbergFiles(string gameName) =>
             $"Generating {gameName} files for Goldberg";
@@ -25,5 +28,14 @@ namespace SmartGoldbergEmu.Constants
 
         public static string AddedToLibrary(string gameName) =>
             $"{gameName} added to the library.";
+
+        public static string UpdatedInLibrary(string gameName) =>
+            $"{gameName} updated in the library.";
+
+        public static string MetadataFetchFailed =>
+            "Could not fetch app data from Steam.";
+
+        public static string MetadataFetchTimedOut =>
+            "Steam timed out while fetching app data. Try again.";
     }
 }

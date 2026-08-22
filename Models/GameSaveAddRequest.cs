@@ -13,5 +13,6 @@ namespace SmartGoldbergEmu.Models
         public Action OnAssetsDownloaded { get; set; }
         public Action OnSuccessfulSaveCompleted { get; set; }
         public bool CredentialsTouched { get; set; }
+        public bool IsUpdateOfExisting { get; set; }
     }
 }

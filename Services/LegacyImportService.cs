@@ -64,6 +64,10 @@ namespace SmartGoldbergEmu.Services
             TryDeleteLegacyApiKeyFileIfRegistryHasKey();
             TryMigrateGamesIniLibrary();
             TryCleanupLocalAppDataPerUserFolder();
+            // One-time: goldberg/steamclient_extra_dlls → steamclient_experimental/extra_dlls.
+            GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(PathConstants.GoldbergDirectory);
+            if (Directory.Exists(PathConstants.GoldbergDirectory))
+                GoldbergInstallLayout.WriteGoldbergReadmeFile(PathConstants.GoldbergDirectory);
         }
 
         // Async 2.x library import and Goldberg file provisioning after synchronous migration.
@@ -412,7 +416,7 @@ namespace SmartGoldbergEmu.Services
             if (result.IsValid)
             {
                 Program.LogService?.LogMessage("Import: migrated Steam Web API key to registry.");
-                report?.SetMessage("Steam Web API key imported from previous configuration.");
+                report?.SetMessageWithAutoClear("Steam Web API key imported from previous configuration.");
                 return true;
             }
 
@@ -562,39 +566,42 @@ namespace SmartGoldbergEmu.Services
             if (game == null || game.AppId == 0)
                 return false;
 
-            OnlineAppData metadata = await _gameSetupService.EnrichForImportAsync(game, report).ConfigureAwait(false);
-            if (metadata == null)
+            using (ServiceLocator.SteamProductInfoService.HoldSession())
             {
-                metadata = new OnlineAppData
+                OnlineAppData metadata = await _gameSetupService.EnrichForImportAsync(game, report).ConfigureAwait(false);
+                if (metadata == null)
                 {
-                    AppId = game.AppId.ToString(),
-                    Success = true,
-                    DataSources = "Import"
-                };
+                    metadata = new OnlineAppData
+                    {
+                        AppId = game.AppId.ToString(),
+                        Success = true,
+                        DataSources = "Import"
+                    };
+                }
+
+                GameSettingsSaveResult saveResult = await _gameSettingsSaveService.GenerateNewGameFilesAsync(
+                    game,
+                    metadata,
+                    report,
+                    onAssetsDownloaded: null,
+                    onCompleted: null).ConfigureAwait(false);
+
+                if (!saveResult.IsSuccess)
+                {
+                    Program.LogService?.LogWarning(
+                        $"Import: file generation failed for AppId {game.AppId}: {saveResult.ErrorMessage}");
+                    return false;
+                }
+
+                if (!IsGameDataProvisioned(game.AppId))
+                {
+                    Program.LogService?.LogWarning(
+                        $"Import: file generation reported success but provisioning markers are missing for AppId {game.AppId} ({PathConstants.GetGameSteamSettingsPath(game.AppId)}).");
+                    return false;
+                }
+
+                return true;
             }
-
-            GameSettingsSaveResult saveResult = await _gameSettingsSaveService.GenerateNewGameFilesAsync(
-                game,
-                metadata,
-                report,
-                onAssetsDownloaded: null,
-                onCompleted: null).ConfigureAwait(false);
-
-            if (!saveResult.IsSuccess)
-            {
-                Program.LogService?.LogWarning(
-                    $"Import: file generation failed for AppId {game.AppId}: {saveResult.ErrorMessage}");
-                return false;
-            }
-
-            if (!IsGameDataProvisioned(game.AppId))
-            {
-                Program.LogService?.LogWarning(
-                    $"Import: file generation reported success but provisioning markers are missing for AppId {game.AppId} ({PathConstants.GetGameSteamSettingsPath(game.AppId)}).");
-                return false;
-            }
-
-            return true;
         }
 
         // 2.x often left only configs.*.ini; a fully provisioned game also has steam_appid.txt and installed_app_ids.txt.

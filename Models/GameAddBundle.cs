@@ -9,8 +9,14 @@ namespace SmartGoldbergEmu.Models
 
         public OnlineAppData Metadata { get; set; }
 
-        /// <summary>Form defaults (global Goldberg merge; per-game steam_settings not loaded).</summary>
+        // Kit-first catalog SoT captured during add-game collect (resources/{appId}.json shape).
+        public AppCatalogSnapshot Catalog { get; set; }
+
+        /// <summary>Form defaults (add: global merge; update: per-game steam_settings merged).</summary>
         public GameSettingsSnapshot FormDefaults { get; set; }
+
+        // True when collect is refreshing an existing library GUID (duplicate Update choice).
+        public bool IsUpdateOfExisting { get; set; }
 
         public AchievementPreviewKind AchievementPreview { get; set; }
 
@@ -25,6 +31,16 @@ namespace SmartGoldbergEmu.Models
             AchievementsPreviewJson = string.Empty;
             ItemsJson = "{}";
             AchievementPreview = AchievementPreviewKind.NoApiKey;
+        }
+
+        // Drop collect-time Steam trees and preview JSON once the dialog/save pipeline no longer needs them.
+        public void ReleaseHeavyRuntimeData()
+        {
+            AchievementsPreviewJson = null;
+            ItemsJson = null;
+            Metadata = null;
+            Catalog = null;
+            Game?.ReleaseHeavyRuntimeData();
         }
     }
 }

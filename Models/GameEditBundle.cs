@@ -15,6 +15,9 @@ namespace SmartGoldbergEmu.Models
 
         public Dictionary<long, string> DlcData { get; set; }
 
+        // Kit-first catalog SoT loaded from resources/{appId}.json when present (null when not yet fetched).
+        public AppCatalogSnapshot Catalog { get; set; }
+
         /// <summary>Ticket/alt values loaded from registry when absent in per-game INI (display recovery).</summary>
         public string RegistryTicket { get; set; }
 
@@ -26,6 +29,15 @@ namespace SmartGoldbergEmu.Models
             SettingsSnapshot = new GameSettingsSnapshot();
             Sidecars = new GameEditSidecarContent();
             DlcData = new Dictionary<long, string>();
+        }
+
+        public void ReleaseHeavyRuntimeData()
+        {
+            Catalog = null;
+            DlcData = null;
+            Sidecars = null;
+            SettingsSnapshot = null;
+            Game?.ReleaseHeavyRuntimeData();
         }
     }
 }

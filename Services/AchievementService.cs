@@ -4,10 +4,10 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
@@ -19,8 +19,6 @@ namespace SmartGoldbergEmu.Services
 {
     public class AchievementService
     {
-        private const int FeedbackDisplayDelayMs = 1500;
-
         private enum SteamAchievementFetchStatus
         {
             InvalidApiKey,
@@ -76,7 +74,6 @@ namespace SmartGoldbergEmu.Services
         }
 
         private readonly ITaskReportService _taskReportService;
-        private readonly SteamApiKeyService _steamApiKeyService;
         private readonly string _language;
 
         private static string GetSteamSettingsFolder(GameConfig app) =>
@@ -92,23 +89,6 @@ namespace SmartGoldbergEmu.Services
         private static readonly object _placeholderPathLock = new object();
         private static byte[] _placeholderJpegBytes;
         private static readonly object _placeholderJpegBytesLock = new object();
-
-        // Schema icon URLs often 404 on steamcommunity/public/images while the same hash is live under community_assets.
-        private static readonly string[] AchievementIconSchemaCdnHosts =
-        {
-            "cdn.fastly.steamstatic.com",
-            "cdn.akamai.steamstatic.com",
-            "cdn.cloudflare.steamstatic.com",
-            "cdn.steamstatic.com",
-            "steamcdn-a.akamaihd.net"
-        };
-
-        private static readonly string[] AchievementIconCommunityAssetHosts =
-        {
-            "shared.fastly.steamstatic.com",
-            "shared.akamai.steamstatic.com",
-            "shared.cloudflare.steamstatic.com"
-        };
 
         private static string GetAchievementPlaceholderImagePath()
         {
@@ -232,8 +212,26 @@ namespace SmartGoldbergEmu.Services
                 if (info.Length != placeholder.Length)
                     return false;
 
-                byte[] existing = File.ReadAllBytes(localPath);
-                return existing.SequenceEqual(placeholder);
+                using (var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    var buffer = new byte[4096];
+                    int offset = 0;
+                    while (offset < placeholder.Length)
+                    {
+                        int toRead = Math.Min(buffer.Length, placeholder.Length - offset);
+                        int read = stream.Read(buffer, 0, toRead);
+                        if (read <= 0)
+                            return false;
+                        for (int i = 0; i < read; i++)
+                        {
+                            if (buffer[i] != placeholder[offset + i])
+                                return false;
+                        }
+                        offset += read;
+                    }
+
+                    return true;
+                }
             }
             catch
             {
@@ -258,106 +256,24 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void AddAchievementIconCandidate(List<string> candidates, string url)
-        {
-            if (candidates == null || string.IsNullOrWhiteSpace(url))
-                return;
-            if (candidates.Any(x => string.Equals(x, url, StringComparison.OrdinalIgnoreCase)))
-                return;
-            candidates.Add(url);
-        }
-
-        private static bool TryParseSteamCommunityAppImagePath(string absolutePath, out ulong appId, out string fileName)
-        {
-            appId = 0;
-            fileName = null;
-            if (string.IsNullOrWhiteSpace(absolutePath))
-                return false;
-
-            string[] parts = absolutePath.Trim('/').Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 6)
-                return false;
-
-            if (!parts[0].Equals("steamcommunity", StringComparison.OrdinalIgnoreCase)
-                || !parts[1].Equals("public", StringComparison.OrdinalIgnoreCase)
-                || !parts[2].Equals("images", StringComparison.OrdinalIgnoreCase)
-                || !parts[3].Equals("apps", StringComparison.OrdinalIgnoreCase)
-                || !ulong.TryParse(parts[4], out appId)
-                || appId == 0
-                || string.IsNullOrWhiteSpace(parts[5]))
-            {
-                return false;
-            }
-
-            fileName = parts[5].Trim();
-            return fileName.Length > 0;
-        }
-
-        /// <summary>
-        /// Builds download candidates for a Steam Web API achievement icon URL.
-        /// Tries the schema URL / CDN host mirrors, then community_assets on shared hosts
-        /// (newer icons often 404 on steamcommunity/public/images while the hash is live there).
-        /// </summary>
-        internal static IReadOnlyList<string> GetAchievementIconCandidateUrls(string apiUrl)
-        {
-            var urls = new List<string>();
-            if (string.IsNullOrWhiteSpace(apiUrl))
-                return urls;
-
-            AddAchievementIconCandidate(urls, apiUrl);
-
-            if (!Uri.TryCreate(apiUrl, UriKind.Absolute, out var sourceUri))
-                return urls;
-
-            string pathAndQuery = string.IsNullOrEmpty(sourceUri.PathAndQuery)
-                ? string.Empty
-                : sourceUri.PathAndQuery.TrimStart('/');
-
-            foreach (string host in AchievementIconSchemaCdnHosts)
-            {
-                if (string.Equals(host, sourceUri.Host, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                AddAchievementIconCandidate(
-                    urls,
-                    ApplicationConstants.HttpsUriSchemePrefix + host + "/" + pathAndQuery);
-            }
-
-            if (TryParseSteamCommunityAppImagePath(sourceUri.AbsolutePath, out ulong appId, out string fileName))
-            {
-                string relative = "community_assets/images/apps/" + appId + "/" + fileName;
-                foreach (string host in AchievementIconCommunityAssetHosts)
-                {
-                    AddAchievementIconCandidate(
-                        urls,
-                        ApplicationConstants.HttpsUriSchemePrefix + host + "/" + relative);
-                }
-            }
-
-            return urls;
-        }
-
         public AchievementService(
             ITaskReportService feedbackReporter = null,
-            SteamApiKeyService steamApiKeyService = null,
             string language = null)
         {
             _taskReportService = feedbackReporter;
-            _steamApiKeyService = steamApiKeyService ?? ServiceLocator.SteamApiKeyService;
             _language = language ?? "english";
         }
 
-        private async Task ShowFeedbackAndClearAsync(string message, bool showProgress, TaskReportKind? type = null)
+        private void ShowFeedbackAndClear(string message, bool showProgress, TaskReportKind? type = null)
         {
             if (!showProgress || _taskReportService == null)
                 return;
 
             if (type.HasValue)
-                _taskReportService.SetMessage(message, type.Value);
+                _taskReportService.SetMessageWithAutoClear(message, type.Value);
             else
-                _taskReportService.SetMessage(message);
+                _taskReportService.SetMessageWithAutoClear(message);
             _taskReportService.SetProgress(0, 0);
-            await Task.Delay(FeedbackDisplayDelayMs);
-            ClearAddSaveAchievementProgress();
         }
 
         private void ClearAddSaveAchievementProgress()
@@ -370,39 +286,38 @@ namespace SmartGoldbergEmu.Services
             ulong appId,
             bool showRetrieveStatusMessage)
         {
-            if (!_steamApiKeyService.TryGetValidFormatKey(out string apiKey))
-            {
-                return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.InvalidApiKey };
-            }
-
-            string url = string.Format(AchievementConstants.SteamUserStatsApiUrl, _language, apiKey, appId);
-            Program.LogService?.LogDebug($"Fetching achievements from Steam API with language: {_language}");
+            Program.LogService?.LogDebug($"Fetching achievements with language: {_language}");
             if (showRetrieveStatusMessage)
                 _taskReportService?.SetMessage("Retrieving achievement data... Please wait.");
 
             try
             {
-                string result = await HttpHelpers.GetStringWithRetryAsync(
-                    url,
-                    AchievementConstants.HttpRetryCount,
-                    AchievementConstants.HttpRetryDelayMs,
-                    AchievementConstants.HttpRequestShortTimeout).ConfigureAwait(false);
+                AchievementsSection section = await ServiceLocator.AppDataKitBridgeService
+                    .FetchAchievementsAsync(appId, _language)
+                    .ConfigureAwait(false);
 
-                if (result.StartsWith("ERROR:", StringComparison.Ordinal))
+                if (section == null)
+                    return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList };
+
+                if (section.Status == SnapshotSectionStatus.Unavailable
+                    && !string.IsNullOrEmpty(section.Error)
+                    && section.Error.IndexOf("API key", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.InvalidApiKey };
+                }
+
+                if (section.Status == SnapshotSectionStatus.Error)
                 {
                     return new SteamAchievementFetchResult
                     {
                         Status = SteamAchievementFetchStatus.ApiError,
-                        ApiErrorCode = result.Substring("ERROR:".Length).Trim()
+                        ApiErrorCode = string.IsNullOrWhiteSpace(section.Error) ? "error" : section.Error
                     };
                 }
 
-                CSteamGameSchema schema = JsonConvert.DeserializeObject<CSteamGameSchema>(result);
-                List<CAchievement> achievements = schema?.game?.availableGameStats?.achievements;
+                List<CAchievement> achievements = MapKitAchievements(section);
                 if (achievements == null || achievements.Count == 0)
-                {
                     return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList };
-                }
 
                 return new SteamAchievementFetchResult
                 {
@@ -410,23 +325,11 @@ namespace SmartGoldbergEmu.Services
                     Achievements = achievements
                 };
             }
-            catch (HttpRequestException httpEx)
+            catch (OperationCanceledException)
             {
-                var errorMsg = $"Web request error: {httpEx.Message}\n\nIs your internet connection working? The AppID might also be incorrect.";
-                Program.LogService?.LogError(errorMsg, httpEx);
-                return new SteamAchievementFetchResult { Failure = new ConnectionException(errorMsg, url, httpEx) };
-            }
-            catch (TaskCanceledException)
-            {
-                return new SteamAchievementFetchResult { Failure = new RequestTimeoutException(url) };
-            }
-            catch (JsonKitException jsonEx)
-            {
-                var errorMsg = $"Failed to parse achievement data: {jsonEx.Message}\n\nThe API response format may have changed.";
-                Program.LogService?.LogError(errorMsg, jsonEx);
                 return new SteamAchievementFetchResult
                 {
-                    Failure = new AchievementException(errorMsg, appId.ToString(), jsonEx)
+                    Failure = new RequestTimeoutException("AppDataKit achievements")
                 };
             }
             catch (Exception ex)
@@ -438,6 +341,32 @@ namespace SmartGoldbergEmu.Services
                     Failure = new AchievementException(errorMsg, appId.ToString(), ex)
                 };
             }
+        }
+
+        private static List<CAchievement> MapKitAchievements(AchievementsSection section)
+        {
+            if (section?.Items == null || section.Items.Count == 0)
+                return null;
+
+            var list = new List<CAchievement>(section.Items.Count);
+            foreach (AchievementSchemaEntry entry in section.Items)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.Name))
+                    continue;
+
+                list.Add(new CAchievement
+                {
+                    name = entry.Name,
+                    displayName = entry.DisplayName ?? string.Empty,
+                    description = entry.Description ?? string.Empty,
+                    hidden = entry.Hidden ? 1 : 0,
+                    icon = entry.IconUrl ?? string.Empty,
+                    icongray = entry.IconGrayUrl ?? string.Empty,
+                    icon_gray = entry.IconGrayUrl ?? string.Empty
+                });
+            }
+
+            return list;
         }
 
         // Add-mode preview is in-memory only; strip Steam CDN URLs so UI does not try to load remote icons.
@@ -479,7 +408,7 @@ namespace SmartGoldbergEmu.Services
                 return created;
             }
 
-            await ShowFeedbackAndClearAsync(
+            ShowFeedbackAndClear(
                 created ? successMessage : failureMessage,
                 active,
                 created ? (TaskReportKind?)null : TaskReportKind.Error);
@@ -885,7 +814,7 @@ namespace SmartGoldbergEmu.Services
                 catch (Exception)
                 {
                     if (ProgressIsMenu(progressMode))
-                        _taskReportService?.SetMessage("Warning: Could not clean up old files");
+                        _taskReportService?.SetMessage("Could not clean up old files.", TaskReportKind.Warning);
                 }
 
                 EnsureSteamSettingsFolder(app);
@@ -899,9 +828,9 @@ namespace SmartGoldbergEmu.Services
                     if (ProgressIsMenu(progressMode))
                     {
                         if (fetch.Failure is RequestTimeoutException)
-                            _taskReportService?.SetMessage("Error: Request timed out");
+                            _taskReportService?.SetMessage("Request timed out.", TaskReportKind.Error);
                         else
-                            _taskReportService?.SetMessage(fetch.Failure.Message);
+                            _taskReportService?.SetMessage(fetch.Failure.Message, TaskReportKind.Error);
                     }
 
                     throw fetch.Failure;
@@ -910,7 +839,7 @@ namespace SmartGoldbergEmu.Services
                 if (fetch.Status == SteamAchievementFetchStatus.InvalidApiKey)
                 {
                     if (ProgressIsMenu(progressMode))
-                        _taskReportService?.SetMessage("Web API key required - creating placeholder achievement");
+                        _taskReportService?.SetMessage("No achievement schema available - creating placeholder");
                     return await CompleteDummyGenerationAsync(
                         app,
                         progressMode,
@@ -943,10 +872,7 @@ namespace SmartGoldbergEmu.Services
 
                 if (success && ProgressIsMenu(progressMode) && _taskReportService != null)
                 {
-                    _taskReportService.SetMessage("Achievement generation successful");
-                    _taskReportService.SetProgress(100, 100);
-                    await Task.Delay(FeedbackDisplayDelayMs);
-                    _taskReportService.SetMessage("");
+                    _taskReportService.SetMessageWithAutoClear("Achievement generation successful");
                     _taskReportService.SetProgress(0, 0);
                 }
 
@@ -1145,30 +1071,24 @@ namespace SmartGoldbergEmu.Services
             if (!Directory.Exists(imagesFolder))
                 Directory.CreateDirectory(imagesFolder);
 
-            // Icons download in parallel; Interlocked counters feed either per-image (menu) or per-achievement (add-save) progress.
-            var tasks = achievements.Select(async achievement =>
+            // Every icon is still downloaded. Bound HTTP overlap so 64KB download buffers
+            // (color + gray per achievement) are not held for the whole schema at once.
+            using (IHttpService http = HttpServiceFactory.Create(TimeSpan.FromSeconds(AchievementConstants.HttpRequestLongTimeout)))
             {
-                int imagesForThisAchievement = await DownloadAchievementImagesAsync(achievement, imagesFolder);
-                int newImagesDownloaded = Interlocked.Add(ref imagesDownloaded, imagesForThisAchievement);
-                int newAchievementsCompleted = Interlocked.Increment(ref achievementsCompleted);
-                if (!ProgressActive(progressMode))
-                    return;
-
-                if (ProgressIsAddSave(progressMode))
-                {
-                    _taskReportService?.SetProgress(newAchievementsCompleted, achievementCount);
-                    if (progressMode == AchievementProgressMode.AddSaveVerbose)
-                        _taskReportService?.SetMessage($"Generating achievements {newAchievementsCompleted}/{achievementCount}");
-                    else if (ProgressBarOnly(progressMode))
-                        ReportAddSaveDownloadingIconsProgress(app, progressMode, newAchievementsCompleted, achievementCount);
-                }
-                else
-                {
-                    _taskReportService?.SetProgress(newImagesDownloaded, totalImages);
-                    _taskReportService?.SetMessage($"{newAchievementsCompleted}/{achievementCount} achievements generated... Please wait.");
-                }
-            });
-            await Task.WhenAll(tasks);
+                await HttpHelpers.ForEachBoundedAsync(
+                    achievements,
+                    HttpHelpers.DefaultMaxConcurrentDownloads,
+                    achievement => DownloadAchievementIconsWithProgressAsync(
+                        achievement,
+                        imagesFolder,
+                        http,
+                        app,
+                        progressMode,
+                        achievementCount,
+                        totalImages,
+                        () => Interlocked.Increment(ref achievementsCompleted),
+                        imagesForAchievement => Interlocked.Add(ref imagesDownloaded, imagesForAchievement))).ConfigureAwait(false);
+            }
 
             File.WriteAllText(achievementsFile, JsonConvert.SerializeObject(achievements, JsonFormatting.Indented), Encoding.UTF8);
             TryEnsureUserSavesAchievementsProgressFile(app.AppId, achievements);
@@ -1184,50 +1104,89 @@ namespace SmartGoldbergEmu.Services
             return true;
         }
 
-        private async Task<bool> EnsureAchievementImageAsync(string url, string localPath)
+        private async Task DownloadAchievementIconsWithProgressAsync(
+            CAchievement achievement,
+            string imagesFolder,
+            IHttpService http,
+            GameConfig app,
+            AchievementProgressMode progressMode,
+            int achievementCount,
+            int totalImages,
+            Func<int> onAchievementCompleted,
+            Func<int, int> onImagesDownloaded)
+        {
+            int imagesForThisAchievement = await DownloadAchievementImagesAsync(achievement, imagesFolder, http)
+                .ConfigureAwait(false);
+            int newImagesDownloaded = onImagesDownloaded(imagesForThisAchievement);
+            int newAchievementsCompleted = onAchievementCompleted();
+            if (!ProgressActive(progressMode))
+                return;
+
+            if (ProgressIsAddSave(progressMode))
+            {
+                _taskReportService?.SetProgress(newAchievementsCompleted, achievementCount);
+                if (progressMode == AchievementProgressMode.AddSaveVerbose)
+                    _taskReportService?.SetMessage($"Generating achievements {newAchievementsCompleted}/{achievementCount}");
+                else if (ProgressBarOnly(progressMode))
+                    ReportAddSaveDownloadingIconsProgress(app, progressMode, newAchievementsCompleted, achievementCount);
+            }
+            else
+            {
+                _taskReportService?.SetProgress(newImagesDownloaded, totalImages);
+                _taskReportService?.SetMessage($"{newAchievementsCompleted}/{achievementCount} achievements generated... Please wait.");
+            }
+        }
+
+        private async Task<bool> EnsureAchievementImageAsync(string url, string localPath, IHttpService http)
         {
             // Skip only real icons; placeholder JPGs from prior failed downloads must be retried.
             if (File.Exists(localPath) && !IsPlaceholderAchievementImage(localPath))
                 return true;
 
-            foreach (string candidateUrl in GetAchievementIconCandidateUrls(url))
+            if (http == null)
+                return TrySavePlaceholderAsJpeg(localPath);
+
+            var candidateUrls = ServiceLocator.SteamStaticCdnPreferenceService.GetAchievementIconCandidateUrls(url);
+            foreach (var candidateUrl in candidateUrls)
             {
                 if (string.IsNullOrEmpty(candidateUrl) || !PathValidationHelper.IsSafeUrl(candidateUrl))
                     continue;
 
                 try
                 {
-                    byte[] data = await HttpHelpers.GetByteArrayAsync(
-                        candidateUrl,
-                        AchievementConstants.HttpRequestLongTimeout);
-                    await Task.Run(() => File.WriteAllBytes(localPath, data));
+                    await HttpHelpers.DownloadFileAtomicAsync(http, candidateUrl, localPath).ConfigureAwait(false);
                     return true;
                 }
                 catch (Exception)
                 {
-                    // Try the next CDN / community_assets candidate.
+                    // Try the next CDN mirror.
                 }
             }
 
             return TrySavePlaceholderAsJpeg(localPath);
         }
 
-        private async Task<int> DownloadAchievementImagesAsync(CAchievement achievement, string imagesFolder)
+        private async Task<int> DownloadAchievementImagesAsync(
+            CAchievement achievement,
+            string imagesFolder,
+            IHttpService http)
         {
             string iconPath = Path.Combine(imagesFolder, achievement.name + ".jpg");
             string iconGrayPath = Path.Combine(imagesFolder, achievement.name + "_gray.jpg");
-            int imagesProcessed = 0;
 
-            if (await EnsureAchievementImageAsync(achievement.icon, iconPath))
-                imagesProcessed++;
-            if (await EnsureAchievementImageAsync(achievement.icongray, iconGrayPath))
-                imagesProcessed++;
+            bool colorOk = await EnsureAchievementImageAsync(achievement.icon, iconPath, http).ConfigureAwait(false);
+            bool grayOk = await EnsureAchievementImageAsync(achievement.icongray, iconGrayPath, http).ConfigureAwait(false);
 
             // Replace Steam CDN URLs with steam_settings-relative paths written into achievements.json.
             achievement.icon = GetAchievementImageRelativePath(achievement.name, false);
             achievement.icongray = GetAchievementImageRelativePath(achievement.name, true);
             achievement.icon_gray = achievement.icongray;
 
+            int imagesProcessed = 0;
+            if (colorOk)
+                imagesProcessed++;
+            if (grayOk)
+                imagesProcessed++;
             return imagesProcessed;
         }
 

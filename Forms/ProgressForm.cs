@@ -1,15 +1,13 @@
 using System;
 using System.Windows.Forms;
-using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class ProgressForm : Form
+    public partial class ProgressForm : ThemedForm
     {
         private int _cancelledFlag;
         private int _lastReportedPercentage;
-        private readonly ThemeService _themeService;
         private Timer _autoCloseTimer;
 
         public ProgressForm()
@@ -18,18 +16,10 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public ProgressForm(ThemeService themeService)
+            : base(themeService)
         {
             InitializeComponent();
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             btnCancel.Click += OnCancel_Click;
-            ApplyTheme();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
-        }
-
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
-            ApplyTheme();
         }
 
         public void UpdateProgress(string message, int percentage)
@@ -48,15 +38,29 @@ namespace SmartGoldbergEmu.Forms
             else
                 _lastReportedPercentage = clamped;
 
-            lblStatus.Text = message ?? string.Empty;
+            // Keep "Cancelling..." visible while background work winds down.
+            if (IsCancelled)
+                lblStatus.Text = "Cancelling...";
+            else
+                lblStatus.Text = message ?? string.Empty;
             pbarProgress.Value = clamped;
+            // Startup update path pumps with DoEvents; force a paint so download updates are visible.
+            lblStatus.Update();
+            pbarProgress.Update();
         }
 
         public bool IsCancelled => System.Threading.Volatile.Read(ref _cancelledFlag) != 0;
 
-        public void DisableCancel()
+        // After download/extract/install work finishes, only cleanup remains — do not accept cancel.
+        public void DisableCancellation()
         {
-            RunOnUiThread(() => { btnCancel.Enabled = false; });
+            RunOnUiThread(() =>
+            {
+                if (IsDisposed || Disposing)
+                    return;
+                btnCancel.Enabled = false;
+                CancelButton = null;
+            });
         }
 
         public void ShowCancellationAndClose(string message)
@@ -107,6 +111,7 @@ namespace SmartGoldbergEmu.Forms
             _lastReportedPercentage = 0;
             StopAndDisposeAutoCloseTimer();
             btnCancel.Enabled = true;
+            CancelButton = btnCancel;
             lblStatus.Text = "Preparing download...";
             pbarProgress.Value = 0;
             btnCancel.Text = "Cancel";
@@ -117,11 +122,16 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            ReleaseUiSubscriptions();
+            base.OnFormClosed(e);
+        }
+
+        // Also runs from Dispose when Close was skipped (e.g. only Hide then using-dispose).
+        private void ReleaseUiSubscriptions()
+        {
             StopAndDisposeAutoCloseTimer();
             btnCancel.Click -= OnCancel_Click;
             btnCancel.Click -= OnClose_Click;
-            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            base.OnFormClosed(e);
         }
 
         private void OnClose_Click(object sender, EventArgs e)
@@ -134,18 +144,6 @@ namespace SmartGoldbergEmu.Forms
             System.Threading.Volatile.Write(ref _cancelledFlag, 1);
             btnCancel.Enabled = false;
             lblStatus.Text = "Cancelling...";
-        }
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            RunOnUiThread(ApplyTheme);
-        }
-
-        private void ApplyTheme()
-        {
-            _themeService.ApplyTheme(this);
         }
 
         private void RunOnUiThread(Action action)

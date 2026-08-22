@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
@@ -102,9 +103,7 @@ namespace SmartGoldbergEmu.Services
                 await RunAddGameAchievementsGenerationAsync(request.GameConfig, taskReport).ConfigureAwait(false);
 
                 taskReport?.SetProgress(0, 0);
-                taskReport?.SetMessageWithAutoClear(
-                    AddGameStatusMessages.AddedToLibrary(displayName),
-                    delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                taskReport?.SetMessageWithAutoClear(AddGameStatusMessages.AddedToLibrary(displayName));
             }
             catch (Exception ex)
             {
@@ -143,8 +142,9 @@ namespace SmartGoldbergEmu.Services
                     request.GameConfig.AppId,
                     request.Metadata,
                     request.TaskReportService,
-                    request.GameConfig.AppPicsKeyValue,
-                    displayName).ConfigureAwait(false);
+                    request.GameConfig.AppInfo,
+                    displayName,
+                    catalogAssets: request.GameConfig.Catalog?.Assets).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -194,10 +194,14 @@ namespace SmartGoldbergEmu.Services
                 await Task.Yield();
                 await _emulatorConfigService.GenerateMetadataFilesAsync(request.GameConfig, request.Metadata).ConfigureAwait(false);
                 TryEnsureSteamAppIdBesideExecutable(request.GameConfig);
+                Program.LogService?.LogMessage(
+                    $"Emulator files for AppId {request.GameConfig?.AppId} generated.");
             }
             catch (Exception ex)
             {
-                LogWarningWithExceptionMessage("Failed to generate metadata files", ex);
+                Program.LogService?.LogError(
+                    $"Emulator files for AppId {request.GameConfig?.AppId} failed: {ex.Message}",
+                    ex);
             }
         }
 
@@ -233,7 +237,17 @@ namespace SmartGoldbergEmu.Services
                         friendlyProgressMessages: true)
                     .ConfigureAwait(false);
                 if (!itemGenResult.Success && itemGenResult.ErrorMessage != "Skipped.")
-                    Program.LogService?.LogMessage("Item definitions not created for new game: " + itemGenResult.ErrorMessage);
+                {
+                    // No inventory definitions is common; keep detail for real failures.
+                    if (string.Equals(itemGenResult.ErrorMessage, "No items found.", StringComparison.Ordinal))
+                        Program.LogService?.LogDebug("Item definitions not created for new game: No items found.");
+                    else
+                        Program.LogService?.LogWarning(
+                            "Item definitions not created for new game: " + itemGenResult.ErrorMessage);
+                }
+                // Archive JSON is on disk in the catalog file / items.json; drop the in-memory copy.
+                if (request.GameConfig?.Catalog?.Items != null)
+                    request.GameConfig.Catalog.Items.ArchiveJson = null;
             }
             catch (Exception ex)
             {
@@ -245,9 +259,10 @@ namespace SmartGoldbergEmu.Services
             ulong appId,
             OnlineAppData metadata,
             ITaskReportService taskReport,
-            SteamKit.KeyValue appPicsData = null,
+            AppInfoKeyValue appPicsData = null,
             string gameDisplayName = null,
-            bool reportFeedback = false)
+            bool reportFeedback = false,
+            GameAssetsSection catalogAssets = null)
         {
             try
             {
@@ -257,7 +272,8 @@ namespace SmartGoldbergEmu.Services
                     reportFeedback: reportFeedback,
                     steamAppIdForRemoteAssets: null,
                     appPicsData: appPicsData,
-                    gameDisplayName: gameDisplayName).ConfigureAwait(false);
+                    gameDisplayName: gameDisplayName,
+                    catalogAssets: catalogAssets).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -309,18 +325,32 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 string appIdText = gameConfig.AppId.ToString();
-                taskReport?.SetMessage("Fetching game assets...");
-                var picsData = await _steamProductInfoService.WarmGameConfigAppPicsRootAsync(gameConfig).ConfigureAwait(false);
+
+                // Already have a root from setup/edit load (AppInfo or the catalog snapshot) → skip the PICS re-warm.
+                AppInfoKeyValue picsData = gameConfig.AppInfo ?? gameConfig.Catalog?.AppInfo;
+                if (picsData != null)
+                {
+                    gameConfig.AppInfo = picsData;
+                }
+                else
+                {
+                    taskReport?.SetMessage("Fetching game assets...");
+                    picsData = await _steamProductInfoService.WarmGameConfigAppInfoAsync(gameConfig).ConfigureAwait(false);
+                }
+
                 if (picsData == null)
                 {
                     taskReport?.SetMessage("Game assets unavailable.", TaskReportKind.Warning);
                     return;
                 }
 
+                if (gameConfig.Catalog != null)
+                    AppCatalogSnapshotStore.TrySave(gameConfig.Catalog);
+
                 taskReport?.SetMessage("Exporting game assets...");
                 bool exported = _steamProductInfoService.ExportAppPicsToValveTextFile(appIdText, picsData);
                 if (exported)
-                    taskReport?.SetMessage("Game assets exported.");
+                    taskReport?.SetMessageWithAutoClear("Game assets exported.");
                 else
                 {
                     taskReport?.SetMessage("Game assets export skipped.", TaskReportKind.Warning);

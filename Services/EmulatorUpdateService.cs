@@ -1,31 +1,46 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.Win32;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Forms;
+using SmartGoldbergEmu.ExtractKit;
 
 namespace SmartGoldbergEmu.Services
 {
     public static class EmulatorUpdateService
     {
-        private const string SevenZipDownloadUrl = ApplicationConstants.SevenZipStandaloneExeDownloadUrl;
         private const string PreExistentVersion = "pre-existent";
 
         private const int HttpTimeoutSeconds = 10;
         private const int StartupUpdateCheckTimeoutSeconds = 15;
         private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(10);
-        private static readonly TimeSpan SevenZipDownloadTimeout = TimeSpan.FromMinutes(2);
+
+        // Contiguous UI bands: download and extract dominate; install/cleanup are short.
+        private const int ProgressFetch = 3;
+        private const int ProgressReleaseReady = 4;
+        private const int ProgressPrep = 5;
+        private const int ProgressDefender = 6;
+        private const int ProgressDownloadStart = 6;
+        private const int ProgressDownloadEnd = 50;
+        private const int ProgressExtractStart = 50;
+        private const int ProgressExtractEnd = 90;
+        private const int ProgressInstallDlls = 91;
+        private const int ProgressInstallAssets = 94;
+        private const int ProgressInstalled = 96;
+        private const int ProgressCleanup = 97;
+        private const int ProgressCleanupDefender = 99;
+        private const int ProgressComplete = 100;
 
         private static string _downloadUrl;
         private static string _latestVersion;
@@ -49,35 +64,82 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static IList<UpdateManualDownloadLink> GetGoldbergManualDownloadLinks()
+        private static GoldbergReleaseChannel GetConfiguredGoldbergReleaseChannel()
         {
-            return new[]
+#if !DEBUG
+            return GoldbergReleaseChannel.Auto;
+#else
+            try
             {
-                new UpdateManualDownloadLink
-                {
-                    Label = "Repack",
-                    Url = GoldbergForkConstants.RepackRepositoryWebUrl
-                },
-                new UpdateManualDownloadLink
-                {
-                    Label = GoldbergForkConstants.GetForkDisplayName(GoldbergForkSource.Detanup),
-                    Url = GoldbergForkConstants.RepositoryWebUrlDetanup
-                },
-                new UpdateManualDownloadLink
-                {
-                    Label = GoldbergForkConstants.GetForkDisplayName(GoldbergForkSource.Alex),
-                    Url = GoldbergForkConstants.RepositoryWebUrlAlex
-                }
+                return ServiceLocator.AppDataService.GetGoldbergReleaseChannel();
+            }
+            catch
+            {
+                return GoldbergReleaseChannel.Auto;
+            }
+#endif
+        }
+
+        // Single link for the fork currently selected in settings (releases page).
+        private static List<AppTaskDialogLink> BuildSelectedGoldbergReleaseContentLinks()
+        {
+            string url = GoldbergForkConstants.GetReleasesWebUrl(GetConfiguredGoldbergForkSource());
+            if (string.IsNullOrWhiteSpace(url))
+                return new List<AppTaskDialogLink>();
+
+            url = url.Trim();
+            return new List<AppTaskDialogLink>
+            {
+                new AppTaskDialogLink(url, url)
             };
         }
 
-        private static string GetGoldbergManualDownloadForkUrlsText()
+        private static void ShowUpdateFailedDialog(IWin32Window owner, Exception ex)
         {
-            var links = GetGoldbergManualDownloadLinks();
-            var lines = new List<string>(links.Count);
-            foreach (var link in links)
-                lines.Add(link.Label + ": " + link.Url);
-            return string.Join("\n", lines);
+            string detail = FlattenFailureDetailToOneLine(GetUpdateFailureDetail(ex));
+            string body;
+            if (IsRateLimitMessage(detail))
+            {
+                body =
+                    "Update failed: GitHub API rate limit exceeded.\n\n" +
+                    "Wait a few minutes and try again or manually download from:";
+            }
+            else
+            {
+                body =
+                    "Update failed:\n\n" +
+                    detail + "\n\n" +
+                    "Please try again or download manually from:";
+            }
+
+            AppTaskDialogForm.Show(
+                owner,
+                new AppTaskDialogRequest
+                {
+                    Content = body,
+                    Icon = MessageBoxIcon.Error,
+                    ContentLinks = BuildSelectedGoldbergReleaseContentLinks(),
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(TaskDialogHelper.IdOk, "Skip")
+                        {
+                            IsDefault = true,
+                            IsCancel = true
+                        }
+                    }
+                });
+        }
+
+        private static string FlattenFailureDetailToOneLine(string detail)
+        {
+            if (string.IsNullOrWhiteSpace(detail))
+                return "unknown error";
+
+            string normalized = detail.Trim().Replace("\r\n", "\n").Replace('\r', '\n');
+            string[] parts = normalized.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+                parts[i] = parts[i].Trim();
+            return string.Join(" ", parts);
         }
 
         private static void ApplyResolvedRelease(GoldbergResolvedRelease resolved, UpdateCheckResult result)
@@ -107,7 +169,7 @@ namespace SmartGoldbergEmu.Services
             string archivePath,
             Action<string, int> progressCallback)
         {
-            progressCallback?.Invoke("Requesting Windows Defender exclusion...", 12);
+            progressCallback?.Invoke("Requesting Windows Defender exclusion...", ProgressDefender);
             bool added = await Task.Run(() => AddDefenderExclusionSync(archivePath)).ConfigureAwait(false);
             if (!added)
                 throw new UpdateException("Windows Defender exclusion was denied. Installation aborted.");
@@ -121,24 +183,42 @@ namespace SmartGoldbergEmu.Services
             if (uiContext == null)
                 return true;
 
-            DialogResult choice = DialogResult.OK;
+            bool continueDownload = true;
             uiContext.Send(_ =>
             {
-                choice = FormMessageBoxHelper.ShowDialogIfAlive(
+                GoldbergForkSource fork = GetConfiguredGoldbergForkSource();
+                string releasesUrl = GoldbergForkConstants.GetReleasesWebUrl(fork);
+                string forkName = GoldbergForkConstants.GetForkDisplayName(fork);
+                const int idContinue = 100;
+                AppTaskDialogResult result = AppTaskDialogForm.Show(
                     null,
-                    "Note:\n" +
-                    "ColdLoaderLauncher executables may be flagged by Windows Defender and can trigger false positives.\n\n" +
-                    "A temporary Windows Defender exclusion will be added during the download and installation process. " +
-                    "The downloaded files and the exclusion will be automatically removed once the installation is complete.\n\n" +
-                    "Exclusion target:\n" +
-                    "- " + GoldbergForkConstants.UpstreamWinReleaseAssetName + "\n\n" +
-                    "Do you want to continue?",
-                    ApplicationConstants.WindowTitle,
-                    MessageBoxButtons.OKCancel,
-                    MessageBoxIcon.Warning);
+                    new AppTaskDialogRequest
+                    {
+                        Content =
+                            "Some executables in the fork archive are flagged by Windows Defender as false positives because of upstream inject-related tooling. They are not required by SmartGoldbergEmu.\n\n" +
+                            "Flagged files:\n" +
+                            "- steamclient loader (32-bit EXE)\n" +
+                            "- steamclient loader (64-bit EXE)\n\n" +
+                            "Note: A temporary Windows Defender exclusion is required to complete the installation. The downloaded archive and the exclusion will be automatically removed after extraction and installation are complete.\n\n" +
+                            "Exclusion target:\n" +
+                            "- " + GoldbergForkConstants.UpstreamWinReleaseAssetName + "\n\n" +
+                            "Alternatively, you can manually download the fork files from the " + forkName + " releases page:",
+                        FooterText = "Do you want to continue?",
+                        CustomIcon = SystemIcons.Shield,
+                        ContentLinks = new List<AppTaskDialogLink>
+                        {
+                            new AppTaskDialogLink(releasesUrl, releasesUrl)
+                        },
+                        Buttons = new List<AppTaskDialogButton>
+                        {
+                            new AppTaskDialogButton(idContinue, "Continue") { IsDefault = true },
+                            new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                        }
+                    });
+                continueDownload = result.ButtonId == idContinue;
             }, null);
 
-            return choice == DialogResult.OK;
+            return continueDownload;
         }
 
         private static string GetGoldbergDownloadArchiveFileName()
@@ -180,7 +260,7 @@ namespace SmartGoldbergEmu.Services
                     errorContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                 if (IsGitHubRateLimitResponse(response, errorContent))
-                    throw new InvalidOperationException("GitHub API rate limit exceeded. Try again later or use authenticated requests.");
+                    throw new InvalidOperationException("GitHub API rate limit exceeded.\nWait a few minutes and try again.");
 
                 response.EnsureSuccessStatusCode();
                 return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -201,12 +281,12 @@ namespace SmartGoldbergEmu.Services
                 return false;
 
             ApplyResolvedRelease(resolved, result);
-            ServiceLocator.LogService?.LogMessage(
+            ServiceLocator.LogService?.LogDebug(
                 $"Using upstream Goldberg fork release as download source ({GoldbergForkConstants.GetForkDisplayName(fork)}).");
             return true;
         }
 
-        // Resolution order: delabarra repack (configured fork asset), then that fork's upstream only.
+        // Resolution order depends on channel: Auto = repack then upstream; DEBUG may force one.
         private static async Task<bool> TryResolveDownloadReleaseAsync(
             IHttpService httpService,
             GoldbergForkSource configuredFork,
@@ -215,46 +295,55 @@ namespace SmartGoldbergEmu.Services
             var errors = new List<string>();
             string forkName = GoldbergForkConstants.GetForkDisplayName(configuredFork);
             _resolvedFork = configuredFork;
+            GoldbergReleaseChannel channel = GetConfiguredGoldbergReleaseChannel();
+            bool tryRepack = channel != GoldbergReleaseChannel.Upstream;
+            bool tryUpstream = channel != GoldbergReleaseChannel.Repack;
 
-            try
+            if (tryRepack)
             {
-                string repackJson = await FetchReleaseJsonAsync(httpService, GoldbergForkConstants.RepackReleasesApiUrl).ConfigureAwait(false);
-                var repackResolved = new GoldbergResolvedRelease();
-                if (!string.IsNullOrEmpty(repackJson)
-                    && GoldbergReleaseResolveHelper.TryParseRepackRelease(repackJson, configuredFork, repackResolved))
+                try
                 {
-                    ApplyResolvedRelease(repackResolved, result);
-                    ServiceLocator.LogService?.LogMessage("Using Goldberg repack release as download source.");
-                    return true;
+                    string repackJson = await FetchReleaseJsonAsync(httpService, GoldbergForkConstants.RepackReleasesApiUrl).ConfigureAwait(false);
+                    var repackResolved = new GoldbergResolvedRelease();
+                    if (!string.IsNullOrEmpty(repackJson)
+                        && GoldbergReleaseResolveHelper.TryParseRepackRelease(repackJson, configuredFork, repackResolved))
+                    {
+                        ApplyResolvedRelease(repackResolved, result);
+                        ServiceLocator.LogService?.LogDebug("Using Goldberg repack release as download source.");
+                        return true;
+                    }
+                    errors.Add("Repack: no asset for " + forkName);
                 }
-                errors.Add("Repack: no asset for " + forkName);
-            }
-            catch (Exception ex)
-            {
-                if (IsRateLimitMessage(ex.Message))
+                catch (Exception ex)
                 {
-                    result.ErrorMessage = ex.Message;
-                    return false;
+                    if (IsRateLimitMessage(ex.Message))
+                    {
+                        result.ErrorMessage = ex.Message;
+                        return false;
+                    }
+                    errors.Add("Repack: " + ex.Message);
+                    ServiceLocator.LogService?.LogWarning($"Goldberg repack release check failed: {ex.Message}");
                 }
-                errors.Add("Repack: " + ex.Message);
-                ServiceLocator.LogService?.LogWarning($"Goldberg repack release check failed: {ex.Message}");
             }
 
-            try
+            if (tryUpstream)
             {
-                if (await TryResolveUpstreamReleaseAsync(httpService, configuredFork, result).ConfigureAwait(false))
-                    return true;
-                errors.Add(forkName + " upstream: no Windows release asset");
-            }
-            catch (Exception ex)
-            {
-                if (IsRateLimitMessage(ex.Message))
+                try
                 {
-                    result.ErrorMessage = ex.Message;
-                    return false;
+                    if (await TryResolveUpstreamReleaseAsync(httpService, configuredFork, result).ConfigureAwait(false))
+                        return true;
+                    errors.Add(forkName + " upstream: no Windows release asset");
                 }
-                errors.Add(forkName + " upstream: " + ex.Message);
-                ServiceLocator.LogService?.LogWarning($"Goldberg upstream ({forkName}) release check failed: {ex.Message}");
+                catch (Exception ex)
+                {
+                    if (IsRateLimitMessage(ex.Message))
+                    {
+                        result.ErrorMessage = ex.Message;
+                        return false;
+                    }
+                    errors.Add(forkName + " upstream: " + ex.Message);
+                    ServiceLocator.LogService?.LogWarning($"Goldberg upstream ({forkName}) release check failed: {ex.Message}");
+                }
             }
 
             result.ErrorMessage = "Could not find a Goldberg download for " + forkName + ".\n" + string.Join("\n", errors);
@@ -410,12 +499,14 @@ namespace SmartGoldbergEmu.Services
             return result;
         }
 
-        public static async Task DownloadAndInstallAsync(Action<string, int> progressCallback = null, Func<bool> cancellationCheck = null, Action onCopyPhaseStart = null)
+        public static async Task DownloadAndInstallAsync(
+            Action<string, int> progressCallback = null,
+            Func<bool> cancellationCheck = null,
+            Action disallowCancellation = null)
         {
             var uiMarshalingContext = SynchronizationContext.Current;
             string tempFolder = Path.Combine(PathConstants.AppBaseDirectory, PathConstants.LauncherUpdateTempFolderName);
             string archivePath = null;
-            string sevenZipPath;
             string tempGoldbergFolder = Path.Combine(tempFolder, PathConstants.GoldbergDirectoryFolderName);
             string tempUserAssetsFolder = Path.Combine(tempFolder, PathConstants.LauncherUpdateUserAssetsUnpackFolderName);
             bool exclusionAdded = false;
@@ -424,16 +515,12 @@ namespace SmartGoldbergEmu.Services
             {
                 _downloadUrl = null;
 
-                // Check for cancellation
-                if (cancellationCheck?.Invoke() == true)
-                {
-                    throw new UpdateException("Download cancelled by user");
-                }
+                ThrowIfUpdateCancelled(cancellationCheck);
 
                 // Ensure we have the download URL
                 if (string.IsNullOrEmpty(_downloadUrl))
                 {
-                    progressCallback?.Invoke("Fetching latest release information...", 5);
+                    progressCallback?.Invoke("Fetching latest release information...", ProgressFetch);
                     var checkResult = await CheckForUpdatesAsync(isStartup: false).ConfigureAwait(false);
                     if (!checkResult.Success || string.IsNullOrEmpty(_downloadUrl))
                     {
@@ -442,12 +529,12 @@ namespace SmartGoldbergEmu.Services
                             : checkResult.ErrorMessage);
                     }
 
-                    progressCallback?.Invoke(BuildGoldbergReleaseReadyMessage(), 8);
+                    progressCallback?.Invoke(BuildGoldbergReleaseReadyMessage(), ProgressReleaseReady);
                 }
 
                 archivePath = Path.Combine(tempFolder, GetGoldbergDownloadArchiveFileName());
 
-                progressCallback?.Invoke("Preparing download...", 10);
+                progressCallback?.Invoke("Preparing download...", ProgressPrep);
                 await Task.Run(() =>
                 {
                     Directory.CreateDirectory(tempFolder);
@@ -462,17 +549,13 @@ namespace SmartGoldbergEmu.Services
                     exclusionAdded = await TryAddWindowsDefenderExclusionAsync(archivePath, progressCallback).ConfigureAwait(false);
                 }
 
-                // Check for cancellation before download
-                if (cancellationCheck?.Invoke() == true)
-                {
-                    throw new UpdateException("Download cancelled by user");
-                }
+                ThrowIfUpdateCancelled(cancellationCheck);
 
                 // Download archive (10 min timeout, cancellable)
                 try
                 {
                     var forkSource = GetConfiguredGoldbergForkSource();
-                    progressCallback?.Invoke(BuildGoldbergDownloadProgressMessage(), 15);
+                    progressCallback?.Invoke(BuildGoldbergDownloadProgressMessage(), ProgressDownloadStart);
                     bool exclusionAddedDuringDownload = await DownloadGoldbergArchiveWithFallbackAsync(
                         forkSource,
                         archivePath,
@@ -482,33 +565,9 @@ namespace SmartGoldbergEmu.Services
                         uiMarshalingContext).ConfigureAwait(false);
                     exclusionAdded = exclusionAdded || exclusionAddedDuringDownload;
                     archivePath = Path.Combine(tempFolder, GetGoldbergDownloadArchiveFileName());
-                    progressCallback?.Invoke("Download completed", 40);
+                    progressCallback?.Invoke("Download completed", ProgressDownloadEnd);
 
-                    if (cancellationCheck?.Invoke() == true)
-                        throw new UpdateException("Download cancelled by user");
-
-                    if (TryResolveInstalledSevenZipExecutable(out sevenZipPath))
-                    {
-                        progressCallback?.Invoke("Using installed 7-Zip", 49);
-                    }
-                    else
-                    {
-                        sevenZipPath = Path.Combine(tempFolder, PathConstants.LauncherSevenZipReducedExecutableName);
-                        if (!File.Exists(sevenZipPath))
-                        {
-                            progressCallback?.Invoke("Downloading 7-Zip extractor...", 41);
-                            await DownloadFileAsync(SevenZipDownloadUrl, sevenZipPath, (progress) =>
-                            {
-                                int percentage = 41 + (int)(progress * 8);
-                                progressCallback?.Invoke("Downloading 7-Zip extractor...", percentage);
-                            }, cancellationCheck, SevenZipDownloadTimeout).ConfigureAwait(false);
-                            progressCallback?.Invoke("7-Zip extractor downloaded", 49);
-                        }
-                        else
-                        {
-                            progressCallback?.Invoke("7-Zip extractor already present", 49);
-                        }
-                    }
+                    ThrowIfUpdateCancelled(cancellationCheck);
                 }
                 catch (UpdateException)
                 {
@@ -519,44 +578,43 @@ namespace SmartGoldbergEmu.Services
                     throw new UpdateException($"Download failed: {ex.Message}", ex);
                 }
 
-                if (cancellationCheck?.Invoke() == true)
-                    throw new UpdateException("Download cancelled by user");
+                ThrowIfUpdateCancelled(cancellationCheck);
 
-                // Extract (55-87) â€” heavy 7-Zip work off the UI thread
+                // Extract — byte progress across selected install entries (solid 7z decode included)
                 try
                 {
                     await Task.Run(() =>
                     {
-                        progressCallback?.Invoke("Extracting Goldberg emulator files...", 55);
-                        ExtractGoldbergReleaseLayoutSync(sevenZipPath, archivePath, tempGoldbergFolder, cancellationCheck);
-                        progressCallback?.Invoke("Emulator files extracted", 77);
-
-                        progressCallback?.Invoke("Extracting user assets...", 80);
-                        ExtractUserAssetsToTempSync(sevenZipPath, archivePath, tempUserAssetsFolder, cancellationCheck);
-                        progressCallback?.Invoke("User assets extracted", 87);
+                        progressCallback?.Invoke("Opening archive...", ProgressExtractStart);
+                        using (var session = new ArchiveExtractSession(archivePath))
+                        {
+                            ExtractGoldbergArchiveToTempSync(
+                                session,
+                                tempGoldbergFolder,
+                                tempUserAssetsFolder,
+                                cancellationCheck,
+                                progressCallback);
+                            ThrowIfUpdateCancelled(cancellationCheck);
+                            progressCallback?.Invoke("Emulator files extracted", ProgressExtractEnd);
+                        }
                     }).ConfigureAwait(false);
                 }
                 catch (UpdateException)
                 {
                     throw;
                 }
+                catch (OperationCanceledException)
+                {
+                    throw new UpdateException("Download cancelled by user");
+                }
                 catch (Exception ex)
                 {
                     throw new UpdateException($"Extraction failed: {ex.Message}", ex);
                 }
 
-                if (cancellationCheck?.Invoke() == true)
-                    throw new UpdateException("Download cancelled by user");
+                ThrowIfUpdateCancelled(cancellationCheck);
 
-                if (onCopyPhaseStart != null)
-                {
-                    if (uiMarshalingContext != null)
-                        uiMarshalingContext.Send(_ => onCopyPhaseStart(), null);
-                    else
-                        onCopyPhaseStart();
-                }
-
-                // Copy files to final destinations (reports 88, 89, 91, 95)
+                // Copy files to final destinations
                 try
                 {
                     await Task.Run(() => CopyFilesFromTempSync(tempGoldbergFolder, tempUserAssetsFolder, cancellationCheck, progressCallback)).ConfigureAwait(false);
@@ -565,10 +623,17 @@ namespace SmartGoldbergEmu.Services
                 {
                     throw;
                 }
+                catch (OperationCanceledException)
+                {
+                    throw new UpdateException("Download cancelled by user");
+                }
                 catch (Exception ex)
                 {
                     throw new UpdateException($"File installation failed: {ex.Message}", ex);
                 }
+
+                // Install finished; cleanup must run — do not accept cancel for the rest of this flow.
+                disallowCancellation?.Invoke();
 
                 await Task.Run(() =>
                 {
@@ -577,20 +642,25 @@ namespace SmartGoldbergEmu.Services
                         SaveCurrentVersion(_latestVersion);
                     }
 
-                    progressCallback?.Invoke("Cleaning up...", 96);
+                    progressCallback?.Invoke("Cleaning up...", ProgressCleanup);
                     DeleteTempFolder(tempFolder);
                     DeleteGoldbergGenerateInterfacesInstallFolder();
                     if (exclusionAdded && !string.IsNullOrEmpty(archivePath))
                     {
-                        progressCallback?.Invoke("Removing Windows Defender exclusion...", 98);
+                        progressCallback?.Invoke("Removing Windows Defender exclusion...", ProgressCleanupDefender);
                         RemoveDefenderExclusionSync(archivePath);
                     }
                 }).ConfigureAwait(false);
 
-                progressCallback?.Invoke("Installation complete!", 100);
+                progressCallback?.Invoke("Installation complete", ProgressComplete);
+                // 7z solid-folder decode buffers are unreachable after session dispose; compact LOH so WS can drop (net48).
+                LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
             }
             catch (Exception ex)
             {
+                // Failure path is also cleanup-only; ignore further cancel clicks.
+                disallowCancellation?.Invoke();
+
                 await Task.Run(() =>
                 {
                     DeleteTempFolder(tempFolder);
@@ -636,10 +706,15 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
-                    await DownloadFileAsync(_downloadUrl, archivePath, (progress) =>
+                    await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
                     {
-                        int percentage = 15 + (int)(progress * 25);
-                        progressCallback?.Invoke(downloadMessage, percentage);
+                        ReportGoldbergDownloadProgress(
+                            progressCallback,
+                            downloadMessage,
+                            ProgressDownloadStart,
+                            ProgressDownloadEnd,
+                            received,
+                            total);
                     }, cancellationCheck).ConfigureAwait(false);
                     return false;
                 }
@@ -656,7 +731,7 @@ namespace SmartGoldbergEmu.Services
                 }
             }
 
-            if (!_resolvedFromRepack)
+            if (!_resolvedFromRepack || GetConfiguredGoldbergReleaseChannel() == GoldbergReleaseChannel.Repack)
             {
                 if (primaryException != null)
                     throw new UpdateException($"Download failed: {primaryException.Message}", primaryException);
@@ -664,8 +739,10 @@ namespace SmartGoldbergEmu.Services
             }
 
             string forkName = GoldbergForkConstants.GetForkDisplayName(forkSource);
-            ServiceLocator.LogService?.LogMessage("Repack download failed; trying " + forkName + " upstream release.");
-            progressCallback?.Invoke("Repack download failed — trying " + forkName + " upstream...", 18);
+            ServiceLocator.LogService?.LogDebug("Repack download failed; trying " + forkName + " upstream release.");
+            // Stay inside the download band; ProgressForm never moves the bar backwards.
+            int fallbackResume = ProgressDownloadStart + Math.Max(1, (ProgressDownloadEnd - ProgressDownloadStart) / 10);
+            progressCallback?.Invoke("Repack download failed — trying " + forkName + " upstream...", fallbackResume);
 
             using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
             {
@@ -696,141 +773,145 @@ namespace SmartGoldbergEmu.Services
             {
                 if (!ShowDefenderExclusionWarningOnUi(uiContext))
                     throw new UpdateException("Download cancelled by user");
-                progressCallback?.Invoke("Requesting Windows Defender exclusion...", 20);
+                progressCallback?.Invoke("Requesting Windows Defender exclusion...", fallbackResume);
                 exclusionAddedDuringFallback = await Task.Run(() => AddDefenderExclusionSync(archivePath)).ConfigureAwait(false);
                 if (!exclusionAddedDuringFallback)
                     throw new UpdateException("Windows Defender exclusion was denied. Installation aborted.");
             }
 
-            await DownloadFileAsync(_downloadUrl, archivePath, (progress) =>
+            await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
             {
-                int percentage = 20 + (int)(progress * 20);
-                progressCallback?.Invoke(downloadMessage, percentage);
+                ReportGoldbergDownloadProgress(
+                    progressCallback,
+                    downloadMessage,
+                    fallbackResume,
+                    ProgressDownloadEnd,
+                    received,
+                    total);
             }, cancellationCheck).ConfigureAwait(false);
 
             return exclusionAddedDuringFallback;
         }
 
-        private static async Task DownloadFileAsync(string url, string destinationPath, Action<double> progressCallback = null, Func<bool> cancellationCheck = null, TimeSpan? timeout = null)
+        private static void ReportGoldbergDownloadProgress(
+            Action<string, int> progressCallback,
+            string downloadMessage,
+            int progressStart,
+            int progressEnd,
+            long bytesReceived,
+            long totalBytes)
         {
-            var cts = new CancellationTokenSource();
-            var effectiveTimeout = timeout ?? DownloadTimeout;
-            var lastReportedProgress = 0.0;
-            var progressLock = new object();
-            Action<double> wrappedProgress = (p) =>
+            if (progressCallback == null)
+                return;
+
+            int span = Math.Max(1, progressEnd - progressStart);
+            int percentage;
+            string sizeText;
+            if (totalBytes > 0)
             {
-                if (cancellationCheck?.Invoke() == true)
-                    cts.Cancel();
-                lock (progressLock)
+                double ratio = Math.Min(1.0, bytesReceived / (double)totalBytes);
+                percentage = progressStart + (int)(ratio * span);
+                sizeText = HttpHelpers.FormatByteSizeRange(bytesReceived, totalBytes);
+            }
+            else
+            {
+                // No Content-Length: keep the bar moving in the download band and show bytes received.
+                double softRatio = 1.0 - (1.0 / (1.0 + bytesReceived / (8.0 * 1024 * 1024)));
+                if (softRatio > 0.95)
+                    softRatio = 0.95;
+                percentage = progressStart + (int)(softRatio * span);
+                sizeText = HttpHelpers.FormatByteSize(bytesReceived);
+            }
+
+            if (percentage > progressEnd)
+                percentage = progressEnd;
+            progressCallback(downloadMessage + " " + sizeText, percentage);
+        }
+
+        private static async Task DownloadFileAsync(
+            string url,
+            string destinationPath,
+            Action<long, long> progressCallback = null,
+            Func<bool> cancellationCheck = null,
+            TimeSpan? timeout = null)
+        {
+            using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ServiceLocator.ApplicationLifetimeToken))
+            {
+                var effectiveTimeout = timeout ?? DownloadTimeout;
+                long lastReportedBytes = -1L;
+                var progressLock = new object();
+                Action<long, long> wrappedProgress = (received, total) =>
                 {
-                    if (progressCallback != null && (p - lastReportedProgress >= 0.01 || p >= 1.0))
+                    if (cancellationCheck?.Invoke() == true
+                        || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
+                        cts.Cancel();
+                    lock (progressLock)
                     {
-                        lastReportedProgress = p;
-                        progressCallback(p);
+                        if (progressCallback == null)
+                            return;
+
+                        bool shouldReport = received != lastReportedBytes
+                            || (total > 0 && received >= total)
+                            || received == 0;
+                        if (!shouldReport)
+                            return;
+
+                        lastReportedBytes = received;
+                        progressCallback(received, total);
                     }
-                }
-            };
+                };
 
-            try
-            {
-                using (var httpService = HttpServiceFactory.Create(effectiveTimeout))
+                System.Threading.Timer poll = null;
+                if (cancellationCheck != null)
                 {
-                    await httpService.DownloadFileAsync(url, destinationPath, wrappedProgress, cts.Token).ConfigureAwait(false);
+                    poll = new System.Threading.Timer(_ =>
+                    {
+                        if (cancellationCheck() || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
+                            cts.Cancel();
+                    }, null, 0, 500);
                 }
-            }
-            catch (Exception ex)
-            {
-                var baseEx = ex is AggregateException ae ? (ae.InnerException ?? ae) : ex;
-                if (baseEx is OperationCanceledException || baseEx is TaskCanceledException)
-                {
-                    TryDeletePartialDownloadQuiet(destinationPath);
-                    throw new UpdateException("Download cancelled by user");
-                }
-                if (baseEx is TimeoutException || (baseEx?.Message ?? "").IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    TryDeletePartialDownloadQuiet(destinationPath);
-                    throw new UpdateException($"Download timed out after {(int)effectiveTimeout.TotalMinutes} minutes. Check your connection and try again.");
-                }
-                throw;
-            }
-        }
 
-        private static bool TryResolveInstalledSevenZipExecutable(out string executablePath)
-        {
-            executablePath = null;
-            string installDir = GetSevenZipInstallDirectoryFromRegistry();
-            if (string.IsNullOrWhiteSpace(installDir))
-                return false;
-
-            installDir = installDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string[] candidates = { "7z.exe", "7za.exe", PathConstants.LauncherSevenZipReducedExecutableName };
-            foreach (string name in candidates)
-            {
-                string full = Path.Combine(installDir, name);
-                if (File.Exists(full))
-                {
-                    executablePath = full;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static string GetSevenZipInstallDirectoryFromRegistry()
-        {
-            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
-            {
                 try
                 {
-                    using (RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
-                    using (RegistryKey key = baseKey.OpenSubKey(ApplicationConstants.SevenZipRegistrySubKey))
+                    using (var httpService = HttpServiceFactory.Create(effectiveTimeout))
                     {
-                        string path = ReadSevenZipPathValue(key);
-                        if (!string.IsNullOrWhiteSpace(path))
-                            return path;
+                        await httpService.DownloadFileAsync(url, destinationPath, wrappedProgress, cts.Token).ConfigureAwait(false);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // try next view
+                    var baseEx = ex is AggregateException ae ? (ae.InnerException ?? ae) : ex;
+                    if (baseEx is OperationCanceledException || baseEx is TaskCanceledException)
+                    {
+                        TryDeletePartialDownloadQuiet(destinationPath);
+                        throw new UpdateException("Download cancelled by user");
+                    }
+                    if (baseEx is TimeoutException || (baseEx?.Message ?? "").IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        TryDeletePartialDownloadQuiet(destinationPath);
+                        throw new UpdateException($"Download timed out after {(int)effectiveTimeout.TotalMinutes} minutes. Check your connection and try again.");
+                    }
+                    throw;
+                }
+                finally
+                {
+                    if (poll != null)
+                        poll.Dispose();
                 }
             }
-
-            try
-            {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(ApplicationConstants.SevenZipRegistrySubKey))
-                {
-                    return ReadSevenZipPathValue(key);
-                }
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static string ReadSevenZipPathValue(RegistryKey key)
-        {
-            if (key == null)
-                return null;
-            object pathValue = key.GetValue(ApplicationConstants.SevenZipRegistryInstallPathValueName);
-            string s = pathValue as string;
-            return string.IsNullOrWhiteSpace(s) ? null : s;
         }
 
         private const string ArchiveReleaseUserSettingsDir = "release/files/settings/";
-        private static readonly string ArchiveSoundsDir =
-            ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalSoundsFolderName + "/";
 
-        private static bool TryCopySteamUiSoundsTo(string targetSoundsPath, string logFallbackHint)
+        // Prefer local Steam WAVs; CDN fills gaps later in EnsureGlobalConfigFilesExistAsync.
+        private static bool TryCopySteamUiSoundsTo(string targetSoundsPath)
         {
-            if (SteamInstallationPathHelper.TryCopyOverlayNotificationSoundsFromSteam(targetSoundsPath))
-                return true;
+            if (!SteamInstallationPathHelper.TryCopyOverlayNotificationSoundsFromSteam(targetSoundsPath))
+                return false;
 
-            ServiceLocator.LogService?.LogWarning(
-                $"Steam overlay notification sounds were not copied ({logFallbackHint}); using bundled or extracted sounds if available.");
-            return false;
+            ServiceLocator.LogService?.LogDebug(
+                "Overlay notification sounds ready (source: Steam steamui\\sounds).");
+            return true;
         }
 
         private static ProcessStartInfo CreateDefenderMpPreferenceStartInfo(string path, bool add, ProcessWindowStyle? windowStyle = null)
@@ -919,109 +1000,264 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void ExtractGoldbergReleaseLayoutSync(
-            string sevenZipPath,
-            string archivePath,
+        private static void ExtractGoldbergArchiveToTempSync(
+            ArchiveExtractSession session,
             string tempGoldbergRoot,
-            Func<bool> cancellationCheck = null)
+            string tempUserAssetsFolder,
+            Func<bool> cancellationCheck = null,
+            Action<string, int> progressCallback = null)
         {
-            foreach (GoldbergInstallLayout.GoldbergInstallFile file in GoldbergInstallLayout.GetReleaseInstallFiles())
-            {
-                if (cancellationCheck?.Invoke() == true)
-                    throw new UpdateException("Download cancelled by user");
+            const string extractStatus = "Extracting emulator files...";
+            const int progressStart = ProgressExtractStart;
+            const int progressEnd = ProgressExtractEnd;
 
-                string relativeDir = file.InstallRelativeDirectory;
-                string destinationFolder = string.IsNullOrEmpty(relativeDir)
-                    ? tempGoldbergRoot
-                    : Path.Combine(tempGoldbergRoot, relativeDir);
-                Directory.CreateDirectory(destinationFolder);
-                ExtractInstallFileSync(sevenZipPath, archivePath, file, destinationFolder);
+            IReadOnlyList<GoldbergInstallLayout.GoldbergInstallFile> files = GoldbergInstallLayout.GetReleaseInstallFiles();
+            int fileCount = files.Count;
+            long[] fileSizes = new long[fileCount];
+            long totalBytes = 0;
+            for (int i = 0; i < fileCount; i++)
+            {
+                fileSizes[i] = ResolveInstallFileUncompressedSize(session, files[i]);
+                if (fileSizes[i] > 0)
+                    totalBytes += fileSizes[i];
             }
+
+            string avatarArchivePath = ArchiveReleaseUserSettingsDir + PathConstants.GlobalAccountAvatarFileName;
+            string fontArchivePath = ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalFontsFolderName + "/"
+                + PathConstants.GoldbergGlobalDefaultOverlayFontFileName;
+
+            long avatarSize;
+            long fontSize;
+            if (!session.TryGetEntryUncompressedSize(avatarArchivePath, out avatarSize) || avatarSize < 0)
+                avatarSize = 0;
+            if (!session.TryGetEntryUncompressedSize(fontArchivePath, out fontSize) || fontSize < 0)
+                fontSize = 0;
+            totalBytes += avatarSize + fontSize;
+
+            bool useFileCount = totalBytes <= 0;
+            if (useFileCount)
+            {
+                for (int i = 0; i < fileCount; i++)
+                    fileSizes[i] = 1;
+                avatarSize = 1;
+                fontSize = 1;
+                totalBytes = fileCount + 2;
+            }
+
+            bool includeByteSize = !useFileCount;
+            long completedBytes = 0;
+            for (int i = 0; i < fileCount; i++)
+            {
+                ThrowIfUpdateCancelled(cancellationCheck);
+
+                GoldbergInstallLayout.GoldbergInstallFile file = files[i];
+                long entryWeight = Math.Max(0, fileSizes[i]);
+                ExtractEntryWithByteProgress(
+                    progressCallback,
+                    extractStatus,
+                    progressStart,
+                    progressEnd,
+                    ref completedBytes,
+                    totalBytes,
+                    entryWeight,
+                    includeByteSize,
+                    cancellationCheck,
+                    decodeProgress =>
+                    {
+                        string relativeDir = file.InstallRelativeDirectory;
+                        string destinationFolder = string.IsNullOrEmpty(relativeDir)
+                            ? tempGoldbergRoot
+                            : Path.Combine(tempGoldbergRoot, relativeDir);
+                        Directory.CreateDirectory(destinationFolder);
+                        ExtractInstallFileSync(session, file, destinationFolder, decodeProgress);
+                    });
+            }
+
+            ThrowIfUpdateCancelled(cancellationCheck);
+
+            Directory.CreateDirectory(tempUserAssetsFolder);
+            string tempSettingsFolder = Path.Combine(tempUserAssetsFolder, PathConstants.GoldbergGlobalSettingsFolderName);
+            Directory.CreateDirectory(tempSettingsFolder);
+
+            try
+            {
+                ExtractEntryWithByteProgress(
+                    progressCallback,
+                    extractStatus,
+                    progressStart,
+                    progressEnd,
+                    ref completedBytes,
+                    totalBytes,
+                    avatarSize,
+                    includeByteSize,
+                    cancellationCheck,
+                    decodeProgress => session.TryExtractSingleFileFlat(avatarArchivePath, tempSettingsFolder, decodeProgress));
+            }
+            catch (Exception ex) when (!IsUserCancelException(ex))
+            {
+                ServiceLocator.LogService?.LogWarning($"Optional avatar extraction failed: {ex.Message}");
+                completedBytes += Math.Max(0, avatarSize);
+            }
+
+            ThrowIfUpdateCancelled(cancellationCheck);
+
+            try
+            {
+                string tempFontsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalFontsFolderName);
+                Directory.CreateDirectory(tempFontsPath);
+                ExtractEntryWithByteProgress(
+                    progressCallback,
+                    extractStatus,
+                    progressStart,
+                    progressEnd,
+                    ref completedBytes,
+                    totalBytes,
+                    fontSize,
+                    includeByteSize,
+                    cancellationCheck,
+                    decodeProgress => session.TryExtractSingleFileFlat(fontArchivePath, tempFontsPath, decodeProgress));
+            }
+            catch (Exception ex) when (!IsUserCancelException(ex))
+            {
+                ServiceLocator.LogService?.LogWarning($"Optional fonts extraction failed: {ex.Message}");
+                completedBytes += Math.Max(0, fontSize);
+            }
+
+            ThrowIfUpdateCancelled(cancellationCheck);
+
+            ReportArchiveExtractByteProgress(
+                progressCallback, extractStatus, completedBytes, totalBytes, progressStart, progressEnd, includeByteSize);
+
+            // Fork-bundled WAVs are not extracted — EnsureGlobalConfigFilesExistAsync uses Steam client → CDN.
+        }
+
+        private static void ExtractEntryWithByteProgress(
+            Action<string, int> progressCallback,
+            string extractStatus,
+            int progressStart,
+            int progressEnd,
+            ref long completedBytes,
+            long totalBytes,
+            long entryWeight,
+            bool includeByteSize,
+            Func<bool> cancellationCheck,
+            Action<Action<long, long>> extract)
+        {
+            if (entryWeight < 0)
+                entryWeight = 0;
+
+            long baseCompleted = completedBytes;
+            ReportArchiveExtractByteProgress(
+                progressCallback,
+                extractStatus,
+                baseCompleted,
+                totalBytes,
+                progressStart,
+                progressEnd,
+                includeByteSize);
+
+            Action<long, long> decodeProgress = null;
+            long lastFolderSize = 0;
+            if (progressCallback != null || cancellationCheck != null)
+            {
+                decodeProgress = (decoded, folderSize) =>
+                {
+                    // OperationCanceledException so ExtractKit can abort solid 7z decode cleanly.
+                    if (cancellationCheck != null && cancellationCheck())
+                        throw new OperationCanceledException();
+
+                    lastFolderSize = folderSize;
+                    if (progressCallback == null || entryWeight <= 0 || totalBytes <= 0)
+                        return;
+
+                    long remaining = totalBytes - baseCompleted;
+                    long weight = ArchiveExtractProgress.DecodeWeight(entryWeight, folderSize, remaining);
+                    long partial = ArchiveExtractProgress.ScaleBytes(weight, decoded, folderSize);
+                    ReportArchiveExtractByteProgress(
+                        progressCallback,
+                        extractStatus,
+                        baseCompleted + partial,
+                        totalBytes,
+                        progressStart,
+                        progressEnd,
+                        includeByteSize);
+                };
+            }
+
+            extract(decodeProgress);
+            long remainingAfter = totalBytes - baseCompleted;
+            if (remainingAfter < 0)
+                remainingAfter = 0;
+            completedBytes = baseCompleted + ArchiveExtractProgress.CompletedDelta(
+                entryWeight, lastFolderSize, remainingAfter);
+            ReportArchiveExtractByteProgress(
+                progressCallback,
+                extractStatus,
+                completedBytes,
+                totalBytes,
+                progressStart,
+                progressEnd,
+                includeByteSize);
+        }
+
+        private static long ResolveInstallFileUncompressedSize(
+            ArchiveExtractSession session,
+            GoldbergInstallLayout.GoldbergInstallFile file)
+        {
+            foreach (string archivePathCandidate in GoldbergInstallLayout.GetArchivePathCandidates(file))
+            {
+                if (session.TryGetEntryUncompressedSize(archivePathCandidate, out long size) && size > 0)
+                    return size;
+            }
+
+            return 0;
+        }
+
+        private static void ReportArchiveExtractByteProgress(
+            Action<string, int> progressCallback,
+            string statusMessage,
+            long completedBytes,
+            long totalBytes,
+            int progressStart,
+            int progressEnd,
+            bool includeByteSize)
+        {
+            if (progressCallback == null)
+                return;
+
+            int percentage = ArchiveExtractProgress.MapToPercent(completedBytes, totalBytes, progressStart, progressEnd);
+            if (includeByteSize && totalBytes > 0)
+            {
+                long shownCompleted = completedBytes;
+                if (shownCompleted < 0)
+                    shownCompleted = 0;
+                if (shownCompleted > totalBytes)
+                    shownCompleted = totalBytes;
+
+                string sizeText = HttpHelpers.FormatByteSizeRange(shownCompleted, totalBytes);
+                progressCallback(statusMessage + " " + sizeText, percentage);
+                return;
+            }
+
+            progressCallback(statusMessage, percentage);
         }
 
         private static void ExtractInstallFileSync(
-            string sevenZipPath,
-            string archivePath,
+            ArchiveExtractSession session,
             GoldbergInstallLayout.GoldbergInstallFile file,
-            string destinationFolder)
+            string destinationFolder,
+            Action<long, long> decodeProgress = null)
         {
             string destinationPath = Path.Combine(destinationFolder, file.FileName);
             foreach (string archivePathCandidate in GoldbergInstallLayout.GetArchivePathCandidates(file))
             {
-                ExtractSingleFileSync(sevenZipPath, archivePath, archivePathCandidate, destinationFolder);
+                session.TryExtractSingleFileFlat(archivePathCandidate, destinationFolder, decodeProgress);
                 if (File.Exists(destinationPath))
                     return;
             }
 
             throw new UpdateException(
                 "Required Goldberg file was not found in the archive: " + file.FileName);
-        }
-
-        private static void ExtractUserAssetsToTempSync(string sevenZipPath, string archivePath, string tempUserAssetsFolder, Func<bool> cancellationCheck = null)
-        {
-            // Check for cancellation
-            if (cancellationCheck?.Invoke() == true)
-            {
-                throw new UpdateException("Download cancelled by user");
-            }
-
-            Directory.CreateDirectory(tempUserAssetsFolder);
-            string tempSettingsFolder = Path.Combine(tempUserAssetsFolder, PathConstants.GoldbergGlobalSettingsFolderName);
-            Directory.CreateDirectory(tempSettingsFolder);
-
-            // Extract avatar to temp
-            try
-            {
-                string avatarPath = ArchiveReleaseUserSettingsDir + PathConstants.GlobalAccountAvatarFileName;
-                ExtractSingleFileSync(sevenZipPath, archivePath, avatarPath, tempSettingsFolder);
-            }
-            catch (Exception ex)
-            {
-                // Avatar is optional - log but don't fail
-                ServiceLocator.LogService?.LogWarning($"Optional avatar extraction failed: {ex.Message}");
-            }
-
-            // Check for cancellation
-            if (cancellationCheck?.Invoke() == true)
-            {
-                throw new UpdateException("Download cancelled by user");
-            }
-
-            // Extract fonts to temp
-            try
-            {
-                string tempFontsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalFontsFolderName);
-                Directory.CreateDirectory(tempFontsPath);
-                
-                string fontFile = ArchiveReleaseUserSettingsDir + PathConstants.GoldbergGlobalFontsFolderName + "/" + PathConstants.GoldbergGlobalDefaultOverlayFontFileName;
-                ExtractSingleFileSync(sevenZipPath, archivePath, fontFile, tempFontsPath);
-            }
-            catch (Exception ex)
-            {
-                // Fonts are optional - log but don't fail
-                ServiceLocator.LogService?.LogWarning($"Optional fonts extraction failed: {ex.Message}");
-            }
-
-            // Check for cancellation
-            if (cancellationCheck?.Invoke() == true)
-            {
-                throw new UpdateException("Download cancelled by user");
-            }
-
-            // Extract sounds to temp (we'll try Steam copy during the copy phase)
-            try
-            {
-                string tempSoundsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalSoundsFolderName);
-                Directory.CreateDirectory(tempSoundsPath);
-
-                ExtractSingleFileSync(sevenZipPath, archivePath, ArchiveSoundsDir + PathConstants.SteamClientUiFriendNotificationWav, tempSoundsPath);
-                ExtractSingleFileSync(sevenZipPath, archivePath, ArchiveSoundsDir + PathConstants.SteamClientUiAchievementNotificationWav, tempSoundsPath);
-            }
-            catch (Exception ex)
-            {
-                // Sounds are optional - log but don't fail
-                ServiceLocator.LogService?.LogWarning($"Optional sounds extraction failed: {ex.Message}");
-            }
         }
 
         private static void DeleteGoldbergGenerateInterfacesInstallFolder()
@@ -1044,22 +1280,20 @@ namespace SmartGoldbergEmu.Services
 
         private static void CopyFilesFromTempSync(string tempGoldbergFolder, string tempUserAssetsFolder, Func<bool> cancellationCheck, Action<string, int> progressCallback)
         {
-            if (cancellationCheck?.Invoke() == true)
-                throw new UpdateException("Download cancelled by user");
+            ThrowIfUpdateCancelled(cancellationCheck);
 
-            progressCallback?.Invoke("Installing emulator DLLs...", 88);
+            progressCallback?.Invoke("Installing emulator DLLs...", ProgressInstallDlls);
 
             string targetGoldbergDirectory = PathConstants.GoldbergDirectory;
             Directory.CreateDirectory(targetGoldbergDirectory);
-            CopyDirectoryContents(tempGoldbergFolder, targetGoldbergDirectory, true);
+            CopyDirectoryContents(tempGoldbergFolder, targetGoldbergDirectory, true, cancellationCheck);
             GoldbergInstallLayout.RemoveLegacyFlatDllsFromGoldbergRoot(targetGoldbergDirectory);
             GoldbergInstallLayout.RemoveLegacyGoldbergSubfolders(targetGoldbergDirectory);
             GoldbergInstallLayout.WriteGoldbergReadmeFile(targetGoldbergDirectory);
             SteamInstallationPathHelper.TrySyncSteamDllToDirectory(PathConstants.GoldbergSteamOldDirectory, out _);
-            progressCallback?.Invoke("Installing user assets...", 91);
+            progressCallback?.Invoke("Installing user assets...", ProgressInstallAssets);
 
-            if (cancellationCheck?.Invoke() == true)
-                throw new UpdateException("Download cancelled by user");
+            ThrowIfUpdateCancelled(cancellationCheck);
 
             // Copy user assets
             string targetSettingsPath = PathConstants.GlobalSettingsPath;
@@ -1076,11 +1310,7 @@ namespace SmartGoldbergEmu.Services
                     File.Copy(avatarSource, PathConstants.GlobalAccountAvatarPath, false);
                 }
 
-                // Check for cancellation
-                if (cancellationCheck?.Invoke() == true)
-                {
-                    throw new UpdateException("Download cancelled by user");
-                }
+                ThrowIfUpdateCancelled(cancellationCheck);
 
                 // Copy fonts
                 string tempFontsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalFontsFolderName);
@@ -1088,28 +1318,19 @@ namespace SmartGoldbergEmu.Services
                 {
                     string targetFontsPath = PathConstants.GlobalFontsPath;
                     Directory.CreateDirectory(targetFontsPath);
-                    CopyDirectoryContents(tempFontsPath, targetFontsPath, false); // false = only if doesn't exist
+                    CopyDirectoryContents(tempFontsPath, targetFontsPath, false, cancellationCheck); // false = only if doesn't exist
                 }
 
-                // Check for cancellation
-                if (cancellationCheck?.Invoke() == true)
-                {
-                    throw new UpdateException("Download cancelled by user");
-                }
+                ThrowIfUpdateCancelled(cancellationCheck);
 
-                string targetSoundsPath = PathConstants.GlobalSoundsPath;
-                Directory.CreateDirectory(targetSoundsPath);
-                if (!TryCopySteamUiSoundsTo(targetSoundsPath, "using extracted"))
-                {
-                    string tempSoundsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalSoundsFolderName);
-                    if (Directory.Exists(tempSoundsPath))
-                        CopyDirectoryContents(tempSoundsPath, targetSoundsPath, false);
-                }
+                Directory.CreateDirectory(PathConstants.GlobalSoundsPath);
+                TryCopySteamUiSoundsTo(PathConstants.GlobalSoundsPath);
+                // Do not copy fork archive WAVs.
             }
-            progressCallback?.Invoke("Files installed", 95);
+            progressCallback?.Invoke("Files installed", ProgressInstalled);
         }
 
-        private static void CopyDirectoryContents(string sourceDir, string targetDir, bool overwrite)
+        private static void CopyDirectoryContents(string sourceDir, string targetDir, bool overwrite, Func<bool> cancellationCheck = null)
         {
             if (!Directory.Exists(sourceDir))
                 return;
@@ -1118,6 +1339,8 @@ namespace SmartGoldbergEmu.Services
 
             foreach (string file in Directory.GetFiles(sourceDir))
             {
+                ThrowIfUpdateCancelled(cancellationCheck);
+
                 string fileName = Path.GetFileName(file);
                 string targetPath = Path.Combine(targetDir, fileName);
 
@@ -1129,34 +1352,31 @@ namespace SmartGoldbergEmu.Services
 
             foreach (string subDir in Directory.GetDirectories(sourceDir))
             {
+                ThrowIfUpdateCancelled(cancellationCheck);
+
                 string subDirName = Path.GetFileName(subDir);
                 string targetSubDir = Path.Combine(targetDir, subDirName);
-                CopyDirectoryContents(subDir, targetSubDir, overwrite);
+                CopyDirectoryContents(subDir, targetSubDir, overwrite, cancellationCheck);
             }
         }
 
-        private static void ExtractSingleFileSync(string sevenZipPath, string archivePath, string fileInArchive, string destinationFolder)
+        private static void ThrowIfUpdateCancelled(Func<bool> cancellationCheck)
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = sevenZipPath,
-                Arguments = $"e \"{archivePath}\" -o\"{destinationFolder}\" -y \"-ir!{fileInArchive}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
+            if (ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested
+                || (cancellationCheck != null && cancellationCheck()))
+                throw new UpdateException("Download cancelled by user");
+        }
 
-            using (var process = Process.Start(startInfo))
-            {
-                process.WaitForExit();
-
-                if (process.ExitCode != 0)
-                {
-                    string error = process.StandardError.ReadToEnd();
-                    throw new UpdateException($"7-Zip extraction failed: {error}");
-                }
-            }
+        private static bool IsUserCancelException(Exception ex)
+        {
+            if (ex == null)
+                return false;
+            if (ex is OperationCanceledException || ex is TaskCanceledException)
+                return true;
+            if (ex is UpdateException && ex.Message != null &&
+                ex.Message.IndexOf("cancelled", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
         }
 
         private enum GoldbergMissingInstallContext
@@ -1168,8 +1388,30 @@ namespace SmartGoldbergEmu.Services
         private static string BuildMissingGoldbergInstallPromptMessage()
         {
             return
-                "Goldberg Emulator files are missing.\n\n" +
-                "Do you want to proceed with the installation?";
+                "Goldberg Emulator files are missing.\n" +
+                "Do you want to download and install them now?";
+        }
+
+        private static bool PromptMissingGoldbergDownload(IWin32Window owner, GoldbergMissingInstallContext context)
+        {
+            const int idDownload = 100;
+            string cancelLabel = context == GoldbergMissingInstallContext.StartupSessionCheck
+                ? "Skip"
+                : "Cancel";
+
+            AppTaskDialogResult result = AppTaskDialogForm.Show(
+                owner,
+                new AppTaskDialogRequest
+                {
+                    Content = BuildMissingGoldbergInstallPromptMessage(),
+                    Icon = MessageBoxIcon.Question,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idDownload, "Download") { IsDefault = true },
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, cancelLabel) { IsCancel = true }
+                    }
+                });
+            return result.ButtonId == idDownload;
         }
 
         private static bool ResolveMissingGoldbergDownloadOutcome(
@@ -1186,9 +1428,9 @@ namespace SmartGoldbergEmu.Services
                 return false;
 
             if (cancelledOrForkSkipped)
-                logger?.LogMessage("Download was cancelled or fork not chosen - allowing app to continue without files");
+                logger?.LogDebug("Download was cancelled or fork not chosen - allowing app to continue without files");
             else
-                logger?.LogMessage("Goldberg download failed at startup - allowing app to continue without files");
+                logger?.LogWarning("Goldberg download failed at startup - allowing app to continue without files");
             return true;
         }
 
@@ -1200,28 +1442,21 @@ namespace SmartGoldbergEmu.Services
 
             logger?.LogWarning("Goldberg emulator files are missing");
 
-            var dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(
-                uiOwner,
-                BuildMissingGoldbergInstallPromptMessage(),
-                ApplicationConstants.WindowTitle,
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Question);
-
-            if (dialogResult == DialogResult.OK)
+            if (PromptMissingGoldbergDownload(uiOwner, context))
             {
-                logger?.LogMessage("User chose to download Goldberg files");
+                logger?.LogDebug("User chose to download Goldberg files");
                 bool success = await DownloadAndInstallWithUIAsync(logger, uiOwner).ConfigureAwait(true);
                 return ResolveMissingGoldbergDownloadOutcome(logger, context, success);
             }
 
             if (context == GoldbergMissingInstallContext.StartupSessionCheck)
             {
-                logger?.LogMessage("User chose to skip Goldberg files download");
+                logger?.LogDebug("User chose to skip Goldberg files download");
                 _wasCancelledForMissingFiles = true;
                 return true;
             }
 
-            logger?.LogMessage("User declined Goldberg emulator download from game launch");
+            logger?.LogDebug("User declined Goldberg emulator download from game launch");
             return false;
         }
 
@@ -1230,23 +1465,18 @@ namespace SmartGoldbergEmu.Services
         {
             logger?.LogWarning("Goldberg emulator files are missing");
 
-            DialogResult dialogResult = DialogResult.Cancel;
+            bool downloadChosen = false;
             if (invokeOnUIThread != null)
             {
                 invokeOnUIThread(() =>
                 {
-                    dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(
-                        null,
-                        BuildMissingGoldbergInstallPromptMessage(),
-                        ApplicationConstants.WindowTitle,
-                        MessageBoxButtons.OKCancel,
-                        MessageBoxIcon.Question);
+                    downloadChosen = PromptMissingGoldbergDownload(null, context);
                 });
             }
 
-            if (dialogResult == DialogResult.OK)
+            if (downloadChosen)
             {
-                logger?.LogMessage("User chose to download Goldberg files");
+                logger?.LogDebug("User chose to download Goldberg files");
                 bool success = false;
                 try
                 {
@@ -1272,12 +1502,12 @@ namespace SmartGoldbergEmu.Services
 
             if (context == GoldbergMissingInstallContext.StartupSessionCheck)
             {
-                logger?.LogMessage("User chose to skip Goldberg files download");
+                logger?.LogDebug("User chose to skip Goldberg files download");
                 _wasCancelledForMissingFiles = true;
                 return true;
             }
 
-            logger?.LogMessage("User declined Goldberg emulator download from game launch");
+            logger?.LogDebug("User declined Goldberg emulator download from game launch");
             return false;
         }
 
@@ -1296,7 +1526,9 @@ namespace SmartGoldbergEmu.Services
                     return false;
                 if (GoldbergFilesCheckSync())
                 {
-                    logger?.LogError("Goldberg emulator files still missing after download attempt (game launch)");
+                    logger?.LogError(
+                        "Goldberg emulator files still missing after download attempt (game launch). "
+                        + "Check goldberg\\steamclient_experimental and retry Goldberg Update.");
                     return false;
                 }
                 return true;
@@ -1314,25 +1546,25 @@ namespace SmartGoldbergEmu.Services
             {
                 if (_wasCancelledForMissingFiles)
                 {
-                    logger?.LogMessage("User previously cancelled missing files download, skipping check but allowing app to continue");
+                    logger?.LogDebug("User previously cancelled missing files download, skipping check but allowing app to continue");
                     return true;
                 }
 
                 if (GoldbergFilesCheckSync())
                     return PromptAndInstallMissingGoldbergFiles(logger, invokeOnUIThread, GoldbergMissingInstallContext.StartupSessionCheck);
 
-                logger?.LogMessage("Goldberg emulator files are present");
+                logger?.LogDebug("Goldberg emulator files are present");
 
                 var appDataService = ServiceLocator.AppDataService;
                 string currentVersion = appDataService.GetGoldbergVersion();
                 if (string.IsNullOrEmpty(currentVersion))
                 {
-                    logger?.LogMessage("No version found in cfg, setting to pre-existent");
+                    logger?.LogDebug("No version found in cfg, setting to pre-existent");
                     appDataService.SetGoldbergVersion("pre-existent");
                 }
                 else
                 {
-                    logger?.LogMessage($"Current emulator version: {currentVersion}");
+                    logger?.LogDebug($"Current emulator version: {currentVersion}");
                 }
 
                 return true;
@@ -1387,17 +1619,17 @@ namespace SmartGoldbergEmu.Services
 
             DialogResult ShowUpdateAvailableQuestion()
             {
-                return UpdateChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result));
+                return ChangelogForm.ShowDialogIfAlive(owner, BuildUpdateChangelogContent(result, isStartup));
             }
 
             void ShowNoUpdatesInfo()
             {
-                const string caption = "No Updates Available";
-                string text =
-                    $"You are running the latest version of Goldberg Emulator.\n\n" +
-                    $"Current version: {result.CurrentVersion ?? "unknown"}\n" +
-                    $"Latest version: {result.LatestVersion}";
-                FormMessageBoxHelper.ShowIfAlive(owner, text, caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(
+                    owner,
+                    "You are running the latest version of Goldberg Emulator.\n\n" +
+                    "Current version: " + (result.CurrentVersion ?? "unknown") + "\n" +
+                    "Latest version: " + result.LatestVersion,
+                    MessageBoxIcon.Information);
             }
 
             void ShowCheckFailedWarning()
@@ -1413,31 +1645,31 @@ namespace SmartGoldbergEmu.Services
                 {
                     if (isStartup && _lastCancelledUpdateVersion == result.LatestVersion)
                     {
-                        logger?.LogMessage($"Update {result.LatestVersion} available but user previously declined, skipping prompt");
+                        logger?.LogDebug($"Update {result.LatestVersion} available but user previously declined, skipping prompt");
                         return;
                     }
 
                     if (!isStartup)
                         _lastCancelledUpdateVersion = null;
 
-                    logger?.LogMessage($"Update available: {result.LatestVersion} (current: {result.CurrentVersion ?? "unknown"})");
+                    logger?.LogMessage($"Goldberg emulator update available: {result.LatestVersion} (current: {result.CurrentVersion ?? "unknown"})");
 
                     var dialogResult = ShowUpdateAvailableQuestion();
                     if (dialogResult == DialogResult.OK)
                     {
-                        logger?.LogMessage("User chose to download and install update");
+                        logger?.LogDebug("User chose to download and install update");
                         _lastCancelledUpdateVersion = null;
                         await installWhenUserAcceptedOkAsync().ConfigureAwait(true);
                     }
                     else
                     {
-                        logger?.LogMessage("User chose to skip update");
+                        logger?.LogDebug("User chose to skip update");
                         _lastCancelledUpdateVersion = result.LatestVersion;
                     }
                 }
                 else
                 {
-                    logger?.LogMessage($"No updates available (current: {result.CurrentVersion ?? "unknown"}, latest: {result.LatestVersion})");
+                    logger?.LogMessage("Goldberg emulator up to date.");
 
                     if (!isStartup)
                         ShowNoUpdatesInfo();
@@ -1503,10 +1735,10 @@ namespace SmartGoldbergEmu.Services
                     await DownloadAndInstallAsync(
                         (message, progress) => { progressForm.UpdateProgress(message, progress); },
                         () => progressForm.IsCancelled,
-                        () => progressForm.DisableCancel()).ConfigureAwait(true);
+                        () => progressForm.DisableCancellation()).ConfigureAwait(true);
 
-                    logger?.LogMessage("Goldberg emulator update completed successfully");
-                    progressForm.ShowSuccessAndClose("Installation complete!");
+                    logger?.LogMessage("Goldberg emulator updated.");
+                    progressForm.ShowSuccessAndClose("Installation complete");
                     await WaitForProgressFormCloseAsync(progressForm).ConfigureAwait(true);
                     return true;
                 }
@@ -1522,18 +1754,152 @@ namespace SmartGoldbergEmu.Services
                     else
                     {
                         LogGoldbergUpdateFailure(logger, ex, "emulator download");
-                        FormMessageBoxHelper.ShowIfAlive(
-                            progressForm,
-                            $"Update failed: {ex.Message}\n\nPlease try again or download manually from:\n{GetGoldbergManualDownloadForkUrlsText()}",
-                            "Update Failed",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Error);
-                        progressForm.Hide();
+                        // Close (do not Hide): FormClosed unsubscribes ThemeChanged; a hidden open form can keep the process alive.
+                        progressForm.Close();
+                        await WaitForProgressFormCloseAsync(progressForm).ConfigureAwait(true);
+                        ShowUpdateFailedDialog(null, ex);
                     }
 
                     return false;
                 }
             }
+        }
+
+        // Confirm via changelog, then download and install even when already on that version.
+        public static async Task ReinstallWithUIAsync(ILogService logger, Control uiOwner)
+        {
+            await FetchLatestAndPresentOnUiAsync(
+                logger,
+                uiOwner,
+                "reinstall",
+                "Reinstall Error",
+                "Error preparing emulator reinstall",
+                async result =>
+                {
+                    if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Reinstall Failed"))
+                        return;
+
+                    var dialogResult = ChangelogForm.ShowDialogIfAlive(
+                        uiOwner,
+                        BuildReinstallChangelogContent(result));
+                    if (dialogResult != DialogResult.OK)
+                    {
+                        logger?.LogDebug("User cancelled emulator reinstall");
+                        return;
+                    }
+
+                    logger?.LogDebug("User confirmed emulator reinstall");
+                    await RunDownloadAndInstallWithProgressFormAsync(logger).ConfigureAwait(true);
+                }).ConfigureAwait(false);
+        }
+
+        public static async Task ShowLatestChangelogWithUIAsync(ILogService logger, Control uiOwner)
+        {
+            await FetchLatestAndPresentOnUiAsync(
+                logger,
+                uiOwner,
+                "changelog",
+                "Changelog Error",
+                "Error loading changelog",
+                result =>
+                {
+                    if (!EnsureReleaseCheckSucceeded(uiOwner, result, "Changelog Unavailable"))
+                        return Task.CompletedTask;
+
+                    ChangelogForm.ShowDialogIfAlive(uiOwner, BuildViewChangelogContent(result));
+                    return Task.CompletedTask;
+                }).ConfigureAwait(false);
+        }
+
+        private static async Task FetchLatestAndPresentOnUiAsync(
+            ILogService logger,
+            Control uiOwner,
+            string failureContext,
+            string catchCaption,
+            string catchMessagePrefix,
+            Func<UpdateCheckResult, Task> presentOnUiAsync)
+        {
+            if (logger == null)
+                throw new ArgumentNullException(nameof(logger));
+            if (uiOwner == null)
+                throw new ArgumentNullException(nameof(uiOwner));
+            if (presentOnUiAsync == null)
+                throw new ArgumentNullException(nameof(presentOnUiAsync));
+
+            void RunSyncOnUi(Action a)
+            {
+                if (uiOwner.IsDisposed || uiOwner.Disposing)
+                    return;
+                if (uiOwner.InvokeRequired)
+                    uiOwner.Invoke(a);
+                else
+                    a();
+            }
+
+            try
+            {
+                var result = await Task.Run(() => CheckForUpdatesAsync(isStartup: false)).ConfigureAwait(false);
+                await ControlInvokeAsyncHelper.InvokeAsync(uiOwner, () => presentOnUiAsync(result))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LogGoldbergUpdateFailure(logger, ex, failureContext);
+                string detail = GetUpdateFailureDetail(ex);
+                RunSyncOnUi(() =>
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        uiOwner,
+                        catchMessagePrefix + ": " + detail,
+                        catchCaption,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                });
+            }
+        }
+
+        private static bool EnsureReleaseCheckSucceeded(
+            IWin32Window owner,
+            UpdateCheckResult result,
+            string failureCaption)
+        {
+            if (result != null && result.Success)
+                return true;
+
+            FormMessageBoxHelper.ShowIfAlive(
+                owner,
+                BuildEmulatorUpdateCheckFailedUserMessage(result),
+                failureCaption,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private static string BuildEmulatorUpdateCheckFailedUserMessage(UpdateCheckResult result)
+        {
+            const string manualHint =
+                "Try again later, or download manually from the fork / repack release pages.";
+
+            if (result == null)
+                return "Failed to check for emulator updates.\n\n" + manualHint;
+
+            if (result.TimedOut
+                || string.Equals(result.ErrorMessage, "Request timed out", StringComparison.OrdinalIgnoreCase))
+            {
+                return "The emulator update check timed out.\n\n"
+                    + "Check your connection and try again.\n\n"
+                    + manualHint;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                return "Failed to check for emulator updates.\n\n"
+                    + result.ErrorMessage.Trim()
+                    + "\n\n"
+                    + manualHint;
+            }
+
+            return "Failed to check for emulator updates.\n\n" + manualHint;
         }
 
         // Runs the HTTP check off the UI thread; presents dialogs on uiOwner (async install, no DoEvents wait loop).
@@ -1627,7 +1993,7 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                logger?.LogMessage("Checking for Goldberg emulator updates...");
+                logger?.LogDebug("Checking for Goldberg emulator updates...");
 
                 // Run off the UI sync context so WinForms cannot deadlock if this is invoked from a form thread.
                 var checkTask = Task.Run(() => CheckForUpdatesAsync(isStartup: isStartup));
@@ -1685,16 +2051,103 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static UpdateChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result)
+        private static ChangelogDialogContent BuildUpdateChangelogContent(UpdateCheckResult result, bool isStartup = false)
         {
-            return new UpdateChangelogDialogContent
+            return CreateChangelogContent(
+                result,
+                "A new version of Goldberg Emulator is available.",
+                additionalInfo: null,
+                proceedQuestion: string.Empty,
+                okButtonText: "Install",
+                cancelButtonText: isStartup ? "Skip" : null,
+                manualDownloadLinks: GetSelectedGoldbergManualDownloadLinks(),
+                showManualDownloadCaption: true);
+        }
+
+        private static ChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)
+        {
+            string versionLabel = FormatLatestVersionLabel(result, "latest");
+            return CreateChangelogContent(
+                result,
+                "Reinstall Goldberg Emulator (" + versionLabel + ").",
+                additionalInfo: null,
+                proceedQuestion: string.Empty,
+                okButtonText: "Reinstall",
+                manualDownloadLinks: GetSelectedGoldbergManualDownloadLinks(),
+                showManualDownloadCaption: true);
+        }
+
+        private static ChangelogDialogContent BuildViewChangelogContent(UpdateCheckResult result)
+        {
+            string latestLabel = FormatLatestVersionLabel(result, "unknown");
+            return CreateChangelogContent(
+                result,
+                "Goldberg Emulator release notes (" + latestLabel + ").",
+                additionalInfo: null,
+                proceedQuestion: string.Empty,
+                okButtonText: "Close",
+                showCancelButton: false,
+                manualDownloadLinks: GetViewMoreChangelogsOnlineLinks(),
+                showManualDownloadCaption: false);
+        }
+
+        private static ChangelogDialogContent CreateChangelogContent(
+            UpdateCheckResult result,
+            string headline,
+            string additionalInfo,
+            string proceedQuestion,
+            string okButtonText = null,
+            string cancelButtonText = null,
+            bool showCancelButton = true,
+            IList<UpdateManualDownloadLink> manualDownloadLinks = null,
+            bool showManualDownloadCaption = false)
+        {
+            return new ChangelogDialogContent
             {
                 FormTitle = ApplicationConstants.WindowTitle,
-                Headline = "A new version of Goldberg Emulator is available.",
-                ReleaseNotes = result.ReleaseNotes,
-                ProceedQuestion = "Do you want to proceed with the installation?",
-                ManualDownloadLinks = GetGoldbergManualDownloadLinks()
+                Headline = headline,
+                ReleaseNotes = result?.ReleaseNotes,
+                AdditionalInfo = additionalInfo,
+                ProceedQuestion = proceedQuestion,
+                OkButtonText = okButtonText,
+                CancelButtonText = cancelButtonText,
+                ShowCancelButton = showCancelButton,
+                ShowManualDownloadCaption = showManualDownloadCaption,
+                ManualDownloadLinks = manualDownloadLinks
             };
+        }
+
+        private static IList<UpdateManualDownloadLink> GetSelectedGoldbergManualDownloadLinks()
+        {
+            GoldbergForkSource fork = GetConfiguredGoldbergForkSource();
+            return new[]
+            {
+                new UpdateManualDownloadLink
+                {
+                    Label = GoldbergForkConstants.GetForkDisplayName(fork),
+                    Url = GoldbergForkConstants.GetReleasesWebUrl(fork)
+                }
+            };
+        }
+
+        private static IList<UpdateManualDownloadLink> GetViewMoreChangelogsOnlineLinks()
+        {
+            GoldbergForkSource fork = GetConfiguredGoldbergForkSource();
+            return new[]
+            {
+                new UpdateManualDownloadLink
+                {
+                    Label = "View more changelogs online",
+                    Url = GoldbergForkConstants.GetReleasesWebUrl(fork)
+                }
+            };
+        }
+
+        private static string FormatLatestVersionLabel(UpdateCheckResult result, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(result?.LatestVersion)
+                ? fallback
+                : result.LatestVersion.Trim();
         }
     }
 }

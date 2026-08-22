@@ -14,20 +14,50 @@ namespace SmartGoldbergEmu.Helpers
             return ApplicationConstants.WindowTitle + " - " + GetDisplayVersion();
         }
 
-        // Stable: MAJOR.MINOR or MAJOR.MINOR.PATCH. Preview: same + (build N, preview).
+        // Stable: MAJOR.MINOR, MAJOR.MINOR.PATCH, or MAJOR.MINOR.PATCH.REVISION when the 4th digit is set.
         public static string GetDisplayVersion()
         {
-            if (!TryParseVersionComponents(out int major, out int minor, out int patch, out int build, out string previewLabel))
+            if (!TryParseVersionComponents(out int major, out int minor, out int patch, out int revision, out int build, out string previewLabel))
                 return "unknown";
 
-            return FormatDisplayVersion(major, minor, patch, build, previewLabel);
+            return FormatDisplayVersion(major, minor, patch, revision, build, previewLabel);
         }
 
-        // Full MAJOR.MINOR.PATCH for release tags and update comparison (patch always present).
+        // Same as GetDisplayVersion, with a leading "v" to match GitHub release tags in comparisons.
+        public static string GetTaggedDisplayVersion()
+        {
+            return EnsureReleaseTagPrefix(GetDisplayVersion());
+        }
+
+        public static string EnsureReleaseTagPrefix(string version)
+        {
+            if (string.IsNullOrWhiteSpace(version))
+                return version;
+
+            version = version.Trim();
+            if (version.Equals("unknown", StringComparison.OrdinalIgnoreCase)
+                || version.Equals("latest", StringComparison.OrdinalIgnoreCase))
+                return version;
+
+            if (version.Length > 1
+                && (version[0] == 'v' || version[0] == 'V')
+                && char.IsDigit(version[1]))
+                return version;
+
+            if (char.IsDigit(version[0]))
+                return "v" + version;
+
+            return version;
+        }
+
+        // MAJOR.MINOR.PATCH for tags and updates; include .REVISION when a hotfix digit is set.
         public static string GetVersionForComparison()
         {
-            if (!TryParseVersionComponents(out int major, out int minor, out int patch, out int _, out string _))
+            if (!TryParseVersionComponents(out int major, out int minor, out int patch, out int revision, out int _, out string _))
                 return string.Empty;
+
+            if (revision > 0)
+                return major + "." + minor + "." + patch + "." + revision;
 
             return major + "." + minor + "." + patch;
         }
@@ -35,7 +65,7 @@ namespace SmartGoldbergEmu.Helpers
         public static bool TryGetBuildNumber(out int buildNumber)
         {
             buildNumber = 0;
-            if (!TryParseVersionComponents(out int _, out int _, out int _, out int build, out string _))
+            if (!TryParseVersionComponents(out int _, out int _, out int _, out int _, out int build, out string _))
                 return false;
 
             if (build <= 0)
@@ -47,30 +77,48 @@ namespace SmartGoldbergEmu.Helpers
 
         public static string FormatVersionLabel(int major, int minor, int patch)
         {
+            return FormatVersionLabel(major, minor, patch, 0);
+        }
+
+        public static string FormatVersionLabel(int major, int minor, int patch, int revision)
+        {
             var label = new StringBuilder();
             label.Append(major).Append('.').Append(minor);
-            if (patch > 0)
+            if (patch > 0 || revision > 0)
                 label.Append('.').Append(patch);
+            if (revision > 0)
+                label.Append('.').Append(revision);
 
             return label.ToString();
         }
 
         public static string FormatDisplayVersion(int major, int minor, int patch, int build, string previewLabel)
         {
-            string label = FormatVersionLabel(major, minor, patch);
+            return FormatDisplayVersion(major, minor, patch, 0, build, previewLabel);
+        }
+
+        public static string FormatDisplayVersion(int major, int minor, int patch, int revision, int build, string previewLabel)
+        {
+            string label = FormatVersionLabel(major, minor, patch, revision);
             if (!string.IsNullOrEmpty(previewLabel) && build > 0)
                 return label + " (build " + build + ", preview)";
 
             return label;
         }
 
-        private static bool TryParseVersionComponents(out int major, out int minor, out int patch, out int build, out string previewLabel)
+        private static bool TryParseVersionComponents(
+            out int major,
+            out int minor,
+            out int patch,
+            out int revision,
+            out int build,
+            out string previewLabel)
         {
-            major = minor = patch = build = 0;
+            major = minor = patch = revision = build = 0;
             previewLabel = null;
             string raw = GetRawProductVersion();
             if (!string.IsNullOrEmpty(raw))
-                return TryParseProductVersion(raw, out major, out minor, out patch, out build, out previewLabel);
+                return TryParseProductVersion(raw, out major, out minor, out patch, out revision, out build, out previewLabel);
 
             var assemblyVersion = Assembly.GetExecutingAssembly().GetName().Version;
             if (assemblyVersion == null)
@@ -79,12 +127,20 @@ namespace SmartGoldbergEmu.Helpers
             major = assemblyVersion.Major;
             minor = assemblyVersion.Minor;
             patch = assemblyVersion.Build >= 0 ? assemblyVersion.Build : 0;
+            revision = assemblyVersion.Revision >= 0 ? assemblyVersion.Revision : 0;
             return true;
         }
 
-        internal static bool TryParseProductVersion(string raw, out int major, out int minor, out int patch, out int build, out string previewLabel)
+        internal static bool TryParseProductVersion(
+            string raw,
+            out int major,
+            out int minor,
+            out int patch,
+            out int revision,
+            out int build,
+            out string previewLabel)
         {
-            major = minor = patch = build = 0;
+            major = minor = patch = revision = build = 0;
             previewLabel = null;
             if (string.IsNullOrWhiteSpace(raw))
                 return false;
@@ -124,6 +180,10 @@ namespace SmartGoldbergEmu.Helpers
 
             patch = 0;
             if (parts.Length >= 3 && !int.TryParse(parts[2], out patch))
+                return false;
+
+            revision = 0;
+            if (parts.Length >= 4 && !int.TryParse(parts[3], out revision))
                 return false;
 
             return true;

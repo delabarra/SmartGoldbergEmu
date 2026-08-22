@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace SmartGoldbergEmu.Helpers
 {
@@ -11,22 +12,36 @@ namespace SmartGoldbergEmu.Helpers
     public static class MosaicViewHelper
     {
         /// <summary>
-        /// Tile view image dimensions: 256×120 pixels (actual image size from header.jpg).
-        /// This is what ImageList.ImageSize should be set to.
+        /// Store Banner ImageList cell and normal artwork: 256×120.
         /// </summary>
         public const int TileViewImageWidth = 256;
         public const int TileViewImageHeight = 120;
 
+        // Waiting mosaic spinner shadow (light mode): silhouette follows opaque pixels per frame.
+        public const int WaitingMosaicShadowOffsetX = 2;
+        public const int WaitingMosaicShadowOffsetY = 2;
+        private const float WaitingMosaicShadowAlpha = 0.38f;
+
+        // Waiting spinner only: narrower than the cell so FixWidthCropHeight keeps more of the square
+        // (still crops top/bottom). Centered in the cell — does not affect game art spacing.
+        // Height leaves room for the light-mode silhouette shadow offset.
+        public const int TileViewWaitingArtworkWidth = 200;
+        public const int TileViewWaitingArtworkHeight = TileViewImageHeight - WaitingMosaicShadowOffsetY;
+
         /// <summary>
-        /// Compact tiles view display dimensions: 171x256 pixels.
-        /// Source image is cover.jpg (2:3 ratio), scaled down for ImageList compatibility.
+        /// Library Cover ImageList cell / artwork: 171×256.
         /// </summary>
         public const int CompactTilesViewImageWidth = 171;
         public const int CompactTilesViewImageHeight = 256;
 
+        public static Size TileViewImageSize => new Size(TileViewImageWidth, TileViewImageHeight);
+        public static Size TileViewWaitingArtworkSize => new Size(TileViewWaitingArtworkWidth, TileViewWaitingArtworkHeight);
+        public static Size CompactTilesViewImageSize => new Size(CompactTilesViewImageWidth, CompactTilesViewImageHeight);
+        // Library Cover fills the ImageList cell.
+        public static Size CompactTilesArtworkSize => CompactTilesViewImageSize;
+
         /// <summary>
-        /// Logos view image dimensions: 200×170 pixels.
-        /// This is what ImageList.ImageSize should be set to and the on-disk logo.png target after normalization.
+        /// Logos view cell dimensions: 200×170 pixels. Logos are letterboxed inside to preserve aspect ratio.
         /// </summary>
         public const int LogoViewImageWidth = 200;
         public const int LogoViewImageHeight = 170;
@@ -90,32 +105,6 @@ namespace SmartGoldbergEmu.Helpers
         public const int LogoViewHeight = LogoViewImageHeight + (LogoViewPadding * 2); // 170 + 8 = 178
 
         /// <summary>
-        /// Scales an image proportionally into the tile view cell (256×120), same as the main list ImageList path.
-        /// </summary>
-        public static Bitmap CreateTileViewDisplayBitmap(Image source)
-        {
-            if (source == null)
-                throw new ArgumentNullException(nameof(source));
-
-            var targetSize = new Size(TileViewImageWidth, TileViewImageHeight);
-            var output = new Bitmap(targetSize.Width, targetSize.Height);
-
-            using (var graphics = Graphics.FromImage(output))
-            {
-                graphics.Clear(Color.Transparent);
-                graphics.CompositingQuality = CompositingQuality.HighQuality;
-                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.SmoothingMode = SmoothingMode.HighQuality;
-                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-                var destinationRect = GetContainDestinationRectForTileList(source.Size, targetSize);
-                graphics.DrawImage(source, destinationRect);
-            }
-
-            return output;
-        }
-
-        /// <summary>
         /// Composites a logos-view cell with a light drop shadow so logos read clearly on pale ListView backgrounds.
         /// On-disk <c>logo.png</c> files are unchanged; this is only for the ImageList bitmap.
         /// </summary>
@@ -125,53 +114,120 @@ namespace SmartGoldbergEmu.Helpers
                 throw new ArgumentNullException(nameof(source));
 
             var targetSize = LogoViewImageSize;
-            var output = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
-            var imageRect = new Rectangle(0, 0, targetSize.Width, targetSize.Height);
+            var destinationRect = GetContainDestinationRect(source.Size, targetSize);
 
-            using (var graphics = Graphics.FromImage(output))
+            // Build the logo alone first so file colors are not SourceOver-blended onto the black shadow.
+            var logoLayer = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
+            try
             {
-                graphics.Clear(Color.Transparent);
-                graphics.CompositingQuality = CompositingQuality.HighQuality;
-                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.SmoothingMode = SmoothingMode.HighQuality;
-                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-                if (dropShadow)
+                using (var logoGraphics = Graphics.FromImage(logoLayer))
                 {
-                    var shadowRect = new Rectangle(
-                        LogoViewShadowOffsetX,
-                        LogoViewShadowOffsetY,
-                        targetSize.Width,
-                        targetSize.Height);
+                    ConfigureLogoDrawGraphics(logoGraphics);
+                    logoGraphics.Clear(Color.Transparent);
+                    logoGraphics.DrawImage(source, destinationRect);
+                }
 
-                    using (var shadowAttributes = CreateLogoViewShadowImageAttributes())
+                var output = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
+                using (var graphics = Graphics.FromImage(output))
+                {
+                    ConfigureLogoDrawGraphics(graphics);
+                    graphics.Clear(Color.Transparent);
+
+                    if (dropShadow)
                     {
-                        graphics.DrawImage(
-                            source,
-                            shadowRect,
-                            0,
-                            0,
-                            source.Width,
-                            source.Height,
-                            GraphicsUnit.Pixel,
-                            shadowAttributes);
+                        var shadowRect = new Rectangle(
+                            LogoViewShadowOffsetX,
+                            LogoViewShadowOffsetY,
+                            targetSize.Width,
+                            targetSize.Height);
+
+                        using (var shadowAttributes = CreateSilhouetteShadowImageAttributes(LogoViewShadowAlpha))
+                        {
+                            graphics.DrawImage(
+                                logoLayer,
+                                shadowRect,
+                                0,
+                                0,
+                                logoLayer.Width,
+                                logoLayer.Height,
+                                GraphicsUnit.Pixel,
+                                shadowAttributes);
+                        }
+
+                        // Logo pixels replace shadow (coverage AA must not pick up black underneath).
+                        CopyCoveragePixelsOverShadow(output, logoLayer);
+                    }
+                    else
+                    {
+                        graphics.DrawImageUnscaled(logoLayer, 0, 0);
                     }
                 }
 
-                graphics.DrawImage(source, imageRect);
+                // Depth32Bit ImageList / AlphaBlend expects premultiplied alpha; straight alpha looks too dark.
+                PremultiplyAlphaInPlace(output);
+                return output;
+            }
+            finally
+            {
+                logoLayer.Dispose();
+            }
+        }
+
+        // Cell-sized waiting art: silhouette shadow follows opaque pixels (fits animated APNG frames).
+        public static Bitmap CompositeWaitingMosaicSilhouetteDropShadow(Bitmap content)
+        {
+            if (content == null)
+                throw new ArgumentNullException(nameof(content));
+
+            var output = new Bitmap(content.Width, content.Height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(output))
+            {
+                ConfigureLogoDrawGraphics(graphics);
+                graphics.Clear(Color.Transparent);
+
+                var shadowRect = new Rectangle(
+                    WaitingMosaicShadowOffsetX,
+                    WaitingMosaicShadowOffsetY,
+                    content.Width,
+                    content.Height);
+
+                using (var shadowAttributes = CreateSilhouetteShadowImageAttributes(WaitingMosaicShadowAlpha))
+                {
+                    graphics.DrawImage(
+                        content,
+                        shadowRect,
+                        0,
+                        0,
+                        content.Width,
+                        content.Height,
+                        GraphicsUnit.Pixel,
+                        shadowAttributes);
+                }
+
+                CopyCoveragePixelsOverShadow(output, content);
             }
 
+            PremultiplyAlphaInPlace(output);
             return output;
         }
 
-        private static ImageAttributes CreateLogoViewShadowImageAttributes()
+        private static void ConfigureLogoDrawGraphics(Graphics graphics)
+        {
+            graphics.CompositingQuality = CompositingQuality.HighQuality;
+            // Bicubic samples transparent black neighbors and darkens soft PNG edges; bilinear is safer for logos.
+            graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
+            graphics.SmoothingMode = SmoothingMode.HighQuality;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        }
+
+        private static ImageAttributes CreateSilhouetteShadowImageAttributes(float shadowAlpha)
         {
             var matrix = new ColorMatrix(new[]
             {
                 new float[] { 0, 0, 0, 0, 0 },
                 new float[] { 0, 0, 0, 0, 0 },
                 new float[] { 0, 0, 0, 0, 0 },
-                new float[] { 0, 0, 0, LogoViewShadowAlpha, 0 },
+                new float[] { 0, 0, 0, shadowAlpha, 0 },
                 new float[] { 0, 0, 0, 0, 1 }
             });
 
@@ -180,7 +236,95 @@ namespace SmartGoldbergEmu.Helpers
             return attributes;
         }
 
-        private static Rectangle GetContainDestinationRectForTileList(Size sourceSize, Size targetSize)
+        // Where content has coverage, keep the content pixel as-is so colors match the file.
+        private static void CopyCoveragePixelsOverShadow(Bitmap destination, Bitmap contentLayer)
+        {
+            var bounds = new Rectangle(0, 0, destination.Width, destination.Height);
+            var destData = destination.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+            var contentData = contentLayer.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                int height = bounds.Height;
+                int width = bounds.Width;
+                int destStride = destData.Stride;
+                int contentStride = contentData.Stride;
+                var destBuffer = new byte[destStride * height];
+                var contentBuffer = new byte[contentStride * height];
+                Marshal.Copy(destData.Scan0, destBuffer, 0, destBuffer.Length);
+                Marshal.Copy(contentData.Scan0, contentBuffer, 0, contentBuffer.Length);
+
+                for (int y = 0; y < height; y++)
+                {
+                    int destRow = y * destStride;
+                    int contentRow = y * contentStride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int contentIndex = contentRow + (x * 4);
+                        byte alpha = contentBuffer[contentIndex + 3];
+                        if (alpha == 0)
+                            continue;
+
+                        int destIndex = destRow + (x * 4);
+                        destBuffer[destIndex] = contentBuffer[contentIndex];
+                        destBuffer[destIndex + 1] = contentBuffer[contentIndex + 1];
+                        destBuffer[destIndex + 2] = contentBuffer[contentIndex + 2];
+                        destBuffer[destIndex + 3] = alpha;
+                    }
+                }
+
+                Marshal.Copy(destBuffer, 0, destData.Scan0, destBuffer.Length);
+            }
+            finally
+            {
+                destination.UnlockBits(destData);
+                contentLayer.UnlockBits(contentData);
+            }
+        }
+
+        private static void PremultiplyAlphaInPlace(Bitmap bitmap)
+        {
+            var bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+            var data = bitmap.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+            try
+            {
+                int height = bounds.Height;
+                int width = bounds.Width;
+                int stride = data.Stride;
+                var buffer = new byte[stride * height];
+                Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
+
+                for (int y = 0; y < height; y++)
+                {
+                    int row = y * stride;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int index = row + (x * 4);
+                        byte alpha = buffer[index + 3];
+                        if (alpha == 255)
+                            continue;
+                        if (alpha == 0)
+                        {
+                            buffer[index] = 0;
+                            buffer[index + 1] = 0;
+                            buffer[index + 2] = 0;
+                            continue;
+                        }
+
+                        buffer[index] = (byte)(buffer[index] * alpha / 255);
+                        buffer[index + 1] = (byte)(buffer[index + 1] * alpha / 255);
+                        buffer[index + 2] = (byte)(buffer[index + 2] * alpha / 255);
+                    }
+                }
+
+                Marshal.Copy(buffer, 0, data.Scan0, buffer.Length);
+            }
+            finally
+            {
+                bitmap.UnlockBits(data);
+            }
+        }
+
+        private static Rectangle GetContainDestinationRect(Size sourceSize, Size targetSize)
         {
             if (sourceSize.Width <= 0 || sourceSize.Height <= 0)
                 return new Rectangle(0, 0, targetSize.Width, targetSize.Height);

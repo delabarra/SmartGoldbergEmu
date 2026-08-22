@@ -2,18 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using SmartGoldbergEmu;
-using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Extensions;
-using SmartGoldbergEmu.Services;
 
 namespace SteamKit
 {
@@ -41,16 +37,10 @@ public class SteamClient
     private NetFilterEncryptionWithHMAC _encryption;
     private TaskCompletionSource<bool> _handshakeCompletion;
 
-    // Known Steam CM servers (Content Machine)
-    private static readonly string[] SteamServers = new[]
-    {
-        "162.125.18.133:27015",  // US
-        "162.125.18.1:27015",    // US
-        "162.125.19.1:27015",    // US
-        "205.185.116.151:27015", // EU
-    };
-
-    private const int CmDirectoryHttpTimeoutSeconds = 8;
+    // Sequential CM tries; keep this under the product-info logon wait budget.
+    private const int MaxCmCandidatesPerConnect = 5;
+    private static readonly TimeSpan CmTcpConnectTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan CmHandshakeTimeout = TimeSpan.FromSeconds(4);
 
     public bool IsConnected => _isConnected;
 
@@ -59,6 +49,7 @@ public class SteamClient
         if (_isConnected)
             return;
 
+        CancelAndDisposeConnectionCts();
         _cancellationTokenSource = new CancellationTokenSource();
         _ = ConnectAsync(_cancellationTokenSource.Token).ForgetFaults(Program.LogService, "SteamClient.ConnectAsync");
     }
@@ -68,12 +59,36 @@ public class SteamClient
         _isConnected = false;
         _channelEncrypted = false;
         _encryption = null;
-        _cancellationTokenSource?.Cancel();
+        CancelAndDisposeConnectionCts();
 
         _handshakeCompletion?.TrySetResult(false);
         CloseSocket();
 
         OnDisconnected?.Invoke();
+    }
+
+    private void CancelAndDisposeConnectionCts()
+    {
+        CancellationTokenSource cts = _cancellationTokenSource;
+        _cancellationTokenSource = null;
+        if (cts == null)
+            return;
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            cts.Dispose();
+        }
+        catch
+        {
+        }
     }
 
     private void CloseSocket()
@@ -169,163 +184,139 @@ public class SteamClient
 
         try
         {
-            var serverCandidates = await GetServerCandidatesAsync(ct);
+            List<string> cachedRanked;
+            bool cacheFresh = SteamCmDirectory.TryGetFreshRankedCache(out cachedRanked);
+            Task<List<string>> directoryTask = cacheFresh ? null : SteamCmDirectory.RefreshRankedAsync(ct);
 
-            // Try to connect to a Steam CM server
-            foreach (var serverAddr in serverCandidates)
+            var tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var attempted = new ConnectAttemptCounter();
+
+            string lastGood = SteamCmDirectory.LastSuccessfulEndpoint;
+            IEnumerable<string> lastGoodList = string.IsNullOrWhiteSpace(lastGood)
+                ? Array.Empty<string>()
+                : new[] { lastGood };
+
+            if (await TryConnectToCandidatesAsync(lastGoodList, tried, attempted, ct, ex => lastError = ex).ConfigureAwait(false))
+            {
+                if (directoryTask != null)
+                    _ = directoryTask.ForgetFaults(Program.LogService, "SteamCmDirectory.RefreshRankedAsync");
+                return;
+            }
+
+            List<string> steamRanked = cachedRanked;
+            if (directoryTask != null)
             {
                 try
                 {
-                    var parts = serverAddr.Split(':');
-                    if (parts.Length != 2 || !int.TryParse(parts[1], out var port))
-                        continue;
-
-                    var host = parts[0];
-
-                    _tcpClient = new TcpClient();
-
-                    // Bound each connect attempt to avoid hanging indefinitely.
-                    var connectTask = _tcpClient.ConnectAsync(host, port);
-                    var completed = await Task.WhenAny(connectTask, Task.Delay(TimeSpan.FromSeconds(5), ct));
-
-                    if (completed != connectTask)
-                    {
-                        _tcpClient.Dispose();
-                        continue;
-                    }
-
-                    // Propagate socket exceptions from connectTask.
-                    await connectTask;
-
-                    _networkStream = _tcpClient.GetStream();
-                    _isConnected = true;
-                    _channelEncrypted = false;
-                    _handshakeCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-                    // Start receiving messages
-                    _ = ReceiveLoopAsync(ct).ForgetFaults(Program.LogService, "SteamClient.ReceiveLoopAsync");
-
-                    var handshakeTask = _handshakeCompletion.Task;
-                    var handshakeCompleted = await Task.WhenAny(handshakeTask, Task.Delay(TimeSpan.FromSeconds(4), ct));
-                    if (handshakeCompleted == handshakeTask && handshakeTask.Result)
-                    {
-                        return;
-                    }
-
-                    _isConnected = false;
-                    _channelEncrypted = false;
-                    _encryption = null;
-                    CloseSocket();
+                    steamRanked = await directoryTask.ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    lastError = ex;
-                    _isConnected = false;
-                    _channelEncrypted = false;
-                    _encryption = null;
-                    CloseSocket();
-                    // Try next server
+                    steamRanked = null;
                 }
             }
 
-            _isConnected = false;
-            var reason = lastError != null
-                ? FormatConnectFailureUserMessage(lastError)
-                : "Could not connect to any Steam server. Check your internet connection.";
-            OnConnectionFailed?.Invoke(reason);
-            OnDisconnected?.Invoke();
+            if (await TryConnectToCandidatesAsync(steamRanked, tried, attempted, ct, ex => lastError = ex).ConfigureAwait(false))
+                return;
+
+            if (await TryConnectToCandidatesAsync(SteamCmDirectory.FallbackTcpEndpoints, tried, attempted, ct, ex => lastError = ex).ConfigureAwait(false))
+                return;
+
+            FailConnect(lastError);
         }
         catch (Exception ex)
         {
-            _isConnected = false;
-            OnConnectionFailed?.Invoke(FormatConnectFailureUserMessage(ex));
-            OnDisconnected?.Invoke();
+            FailConnect(ex);
         }
     }
 
-    private async Task<List<string>> GetServerCandidatesAsync(CancellationToken ct)
+    private void FailConnect(Exception lastError)
     {
-        var serverCandidates = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _isConnected = false;
+        string reason = lastError != null
+            ? FormatConnectFailureUserMessage(lastError)
+            : "Could not connect to any Steam server. Check your internet connection.";
+        OnConnectionFailed?.Invoke(reason);
+        OnDisconnected?.Invoke();
+    }
 
-        try
+    private sealed class ConnectAttemptCounter
+    {
+        public int Count;
+    }
+
+    private async Task<bool> TryConnectToCandidatesAsync(
+        IEnumerable<string> serverCandidates,
+        HashSet<string> tried,
+        ConnectAttemptCounter attempted,
+        CancellationToken ct,
+        Action<Exception> setLastError)
+    {
+        if (serverCandidates == null)
+            return false;
+
+        foreach (var serverAddr in serverCandidates)
         {
-            var discoveredServers = await FetchCmDirectoryServersAsync(ct);
-            if (discoveredServers.Count > 0)
+            if (attempted.Count >= MaxCmCandidatesPerConnect)
+                return false;
+
+            string host;
+            int port;
+            if (!SteamCmDirectory.TryParseTcpEndpoint(serverAddr, out host, out port) || !tried.Add(serverAddr))
+                continue;
+
+            attempted.Count++;
+
+            try
             {
-                foreach (var server in discoveredServers)
+                _tcpClient = new TcpClient();
+
+                var connectTask = _tcpClient.ConnectAsync(host, port);
+                var completed = await Task.WhenAny(connectTask, Task.Delay(CmTcpConnectTimeout, ct)).ConfigureAwait(false);
+
+                if (completed != connectTask)
                 {
-                    if (seen.Add(server))
-                    {
-                        serverCandidates.Add(server);
-                    }
+                    _tcpClient.Dispose();
+                    _tcpClient = null;
+                    continue;
                 }
+
+                await connectTask.ConfigureAwait(false);
+
+                _networkStream = _tcpClient.GetStream();
+                _isConnected = true;
+                _channelEncrypted = false;
+                _handshakeCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                _ = ReceiveLoopAsync(ct).ForgetFaults(Program.LogService, "SteamClient.ReceiveLoopAsync");
+
+                var handshakeTask = _handshakeCompletion.Task;
+                var handshakeCompleted = await Task.WhenAny(handshakeTask, Task.Delay(CmHandshakeTimeout, ct))
+                    .ConfigureAwait(false);
+                if (handshakeCompleted == handshakeTask && handshakeTask.Result)
+                {
+                    SteamCmDirectory.RememberSuccess(serverAddr);
+                    return true;
+                }
+
+                ResetFailedHandshake();
             }
-        }
-        catch (Exception)
-        {
-            // Fall back to built-in CM list silently.
-        }
-
-        // IP endpoints tend to be more reliable for direct TCP in this minimal client.
-        serverCandidates.Sort((a, b) => IsLikelyIpEndpoint(b).CompareTo(IsLikelyIpEndpoint(a)));
-
-        foreach (var fallback in SteamServers)
-        {
-            if (seen.Add(fallback))
+            catch (Exception ex)
             {
-                serverCandidates.Add(fallback);
+                setLastError?.Invoke(ex);
+                ResetFailedHandshake();
             }
         }
 
-        return serverCandidates;
+        return false;
     }
 
-    private static bool IsLikelyIpEndpoint(string endpoint)
+    private void ResetFailedHandshake()
     {
-        int colonIndex = endpoint.LastIndexOf(':');
-        string host = colonIndex > 0 ? endpoint.Substring(0, colonIndex) : endpoint;
-        return IPAddress.TryParse(host, out _);
-    }
-
-    private static async Task<List<string>> FetchCmDirectoryServersAsync(CancellationToken ct)
-    {
-        using (var http = HttpServiceFactory.Create(TimeSpan.FromSeconds(CmDirectoryHttpTimeoutSeconds)))
-        {
-            using (var response = await http.GetAsync(ApplicationConstants.SteamDirectoryGetCmListForConnectUrl, ct).ConfigureAwait(false))
-            {
-                response.EnsureSuccessStatusCode();
-                string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                if (ct.IsCancellationRequested)
-                    ct.ThrowIfCancellationRequested();
-
-                return ParseServerListFromDirectoryResponse(body);
-            }
-        }
-    }
-
-    private static List<string> ParseServerListFromDirectoryResponse(string response)
-    {
-        var result = new List<string>();
-        var section = Regex.Match(response, "\"serverlist\"\\s*:\\s*\\[(?<items>.*?)\\]", RegexOptions.Singleline);
-
-        if (!section.Success)
-            return result;
-
-        var items = section.Groups["items"].Value;
-        var serverMatches = Regex.Matches(items, "\"(?<server>[^\"]+)\"");
-
-        foreach (Match match in serverMatches)
-        {
-            var server = match.Groups["server"].Value.Trim();
-            if (!string.IsNullOrWhiteSpace(server))
-            {
-                result.Add(server);
-            }
-        }
-
-        return result;
+        _isConnected = false;
+        _channelEncrypted = false;
+        _encryption = null;
+        CloseSocket();
     }
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
@@ -735,7 +726,17 @@ public class SteamClient
     private PICSProductInfoResult _pendingPICSResult;
     private ulong _nextJobId = 1;
 
-    public async Task<PICSProductInfoResult> RequestProductInfo(uint appId = 0, uint packageId = 0, CancellationToken cancellationToken = default(CancellationToken))
+    public Task<PICSProductInfoResult> RequestProductInfo(uint appId = 0, uint packageId = 0, CancellationToken cancellationToken = default(CancellationToken))
+    {
+        uint[] appIds = appId > 0 ? new[] { appId } : null;
+        uint[] packageIds = packageId > 0 ? new[] { packageId } : null;
+        return RequestProductInfo(appIds, packageIds, cancellationToken);
+    }
+
+    public async Task<PICSProductInfoResult> RequestProductInfo(
+        IReadOnlyList<uint> appIds,
+        IReadOnlyList<uint> packageIds,
+        CancellationToken cancellationToken = default(CancellationToken))
     {
         _pendingPICS = new TaskCompletionSource<PICSProductInfoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingPICSResult = new PICSProductInfoResult();
@@ -744,9 +745,28 @@ public class SteamClient
         msg.ProtoHeader.steamid = _loggedOnSteamID;
         msg.ProtoHeader.client_sessionid = _sessionId;
         msg.ProtoHeader.JobIDSource = _nextJobId++;
-        if (appId > 0)     msg.Body.PICSAppIds.Add(appId);
-        if (packageId > 0) msg.Body.PICSPackageIds.Add(packageId);
-        msg.Body.PICSSingleResponse = true;
+        int idCount = 0;
+        if (appIds != null)
+        {
+            foreach (uint id in appIds)
+            {
+                if (id == 0)
+                    continue;
+                msg.Body.PICSAppIds.Add(id);
+                idCount++;
+            }
+        }
+        if (packageIds != null)
+        {
+            foreach (uint id in packageIds)
+            {
+                if (id == 0)
+                    continue;
+                msg.Body.PICSPackageIds.Add(id);
+                idCount++;
+            }
+        }
+        msg.Body.PICSSingleResponse = idCount <= 1;
         Send(msg);
 
         try

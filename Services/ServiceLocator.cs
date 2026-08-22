@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Threading;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Generators;
 using SmartGoldbergEmu.Models;
@@ -8,6 +9,9 @@ namespace SmartGoldbergEmu.Services
 {
     public static class ServiceLocator
     {
+        private static readonly object _applicationLifetimeGate = new object();
+        private static CancellationTokenSource _applicationLifetimeCts = new CancellationTokenSource();
+
         private sealed class DesignTimeLogService : ILogService
         {
             internal static readonly DesignTimeLogService Instance = new DesignTimeLogService();
@@ -53,6 +57,7 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<LaunchSessionCleanupService> _launchSessionCleanupService = new Lazy<LaunchSessionCleanupService>();
         private static readonly Lazy<GameLaunchService> _gameLaunchService = new Lazy<GameLaunchService>();
         private static readonly Lazy<SteamProductInfoService> _steamProductInfoService = new Lazy<SteamProductInfoService>();
+        private static readonly Lazy<AppDataKitBridgeService> _appDataKitBridgeService = new Lazy<AppDataKitBridgeService>();
         private static readonly Lazy<GameSetupService> _gameSetupService = new Lazy<GameSetupService>();
         private static readonly Lazy<ThemeService> _themeService = new Lazy<ThemeService>();
         private static readonly Lazy<EmulatorConfigService> _emulatorConfigService = new Lazy<EmulatorConfigService>();
@@ -61,26 +66,41 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<GameImageService> _gameImageService = new Lazy<GameImageService>();
         private static readonly Lazy<ImageNormalizationService> _imageNormalizationService = new Lazy<ImageNormalizationService>();
         private static readonly Lazy<IconService> _iconService = new Lazy<IconService>();
-        private static readonly Lazy<DlcService> _dlcService = new Lazy<DlcService>(() => new DlcService());
         private static volatile TaskReportService _taskReportService;
         private static readonly Lazy<SteamApiKeyService> _steamApiKeyService = new Lazy<SteamApiKeyService>();
         private static readonly Lazy<LaunchOptionService> _launchOptionService = new Lazy<LaunchOptionService>();
         private static readonly Lazy<GoldbergFilesService> _goldbergFilesService = new Lazy<GoldbergFilesService>();
         private static readonly Lazy<AchievementService> _achievementService =
-            new Lazy<AchievementService>(() => new AchievementService(steamApiKeyService: _steamApiKeyService.Value));
+            new Lazy<AchievementService>(() => new AchievementService());
         private static readonly Lazy<GoldbergArtifactService> _goldbergArtifactService = new Lazy<GoldbergArtifactService>();
         private static readonly Lazy<StatsGenerator> _statsGenerator = new Lazy<StatsGenerator>();
         private static readonly Lazy<RegistryService> _registryService = new Lazy<RegistryService>();
         private static readonly Lazy<AssetDownloadService> _assetDownloadService = new Lazy<AssetDownloadService>();
+        private static readonly Lazy<SteamStaticCdnPreferenceService> _steamStaticCdnPreferenceService =
+            new Lazy<SteamStaticCdnPreferenceService>();
         private static readonly Lazy<GameSettingsSaveService> _gameSettingsSaveService = new Lazy<GameSettingsSaveService>();
         private static readonly Lazy<PendingAddGameListService> _pendingAddGameListService = new Lazy<PendingAddGameListService>();
         private static readonly Lazy<GameAddCollector> _gameAddCollector = new Lazy<GameAddCollector>();
         private static readonly Lazy<GameEditLoader> _gameEditLoader = new Lazy<GameEditLoader>();
         private static readonly Lazy<GameSaveWriter> _gameSaveWriter = new Lazy<GameSaveWriter>();
-        private static readonly Lazy<SteamlessService> _steamlessService = new Lazy<SteamlessService>();
+        private static readonly Lazy<StubKitService> _stubKitService = new Lazy<StubKitService>();
         private static readonly Lazy<SteamInterfacesService> _steamInterfacesService = new Lazy<SteamInterfacesService>();
 
         public static ILogService LogService => _logService.Value;
+
+        // Cancelled first during DisposeApplicationResources; link long-lived I/O to this token.
+        public static CancellationToken ApplicationLifetimeToken
+        {
+            get
+            {
+                lock (_applicationLifetimeGate)
+                {
+                    if (_applicationLifetimeCts == null)
+                        return new CancellationToken(canceled: true);
+                    return _applicationLifetimeCts.Token;
+                }
+            }
+        }
 
         public static AppDataService AppDataService => _appDataServiceOverride ?? _appDataService.Value;
 
@@ -108,6 +128,8 @@ namespace SmartGoldbergEmu.Services
 
         public static SteamProductInfoService SteamProductInfoService => _steamProductInfoService.Value;
 
+        public static AppDataKitBridgeService AppDataKitBridgeService => _appDataKitBridgeService.Value;
+
         public static EmulatorConfigService EmulatorConfigService => _emulatorConfigService.Value;
 
         public static GoldbergCfgService GoldbergCfgService => _goldbergCfgService.Value;
@@ -120,13 +142,33 @@ namespace SmartGoldbergEmu.Services
 
         public static IconService IconService => _iconService.Value;
 
-        public static DlcService DlcService => _dlcService.Value;
-
         public static TaskReportService TaskReportService => _taskReportService;
 
         internal static void SetTaskReportService(TaskReportService service)
         {
             _taskReportService = service;
+        }
+
+        internal static void ClearTaskReportService()
+        {
+            _taskReportService = null;
+        }
+
+        // Test-only: recreate lifetime CTS after DisposeApplicationResources in the same process.
+        internal static void ResetApplicationLifetimeForTests()
+        {
+            lock (_applicationLifetimeGate)
+            {
+                try
+                {
+                    _applicationLifetimeCts?.Dispose();
+                }
+                catch
+                {
+                }
+
+                _applicationLifetimeCts = new CancellationTokenSource();
+            }
         }
 
         public static SteamApiKeyService SteamApiKeyService => _steamApiKeyService.Value;
@@ -145,6 +187,9 @@ namespace SmartGoldbergEmu.Services
 
         public static AssetDownloadService AssetDownloadService => _assetDownloadService.Value;
 
+        public static SteamStaticCdnPreferenceService SteamStaticCdnPreferenceService =>
+            _steamStaticCdnPreferenceService.Value;
+
         public static GameSettingsSaveService GameSettingsSaveService => _gameSettingsSaveService.Value;
 
         public static PendingAddGameListService PendingAddGameListService => _pendingAddGameListService.Value;
@@ -155,13 +200,25 @@ namespace SmartGoldbergEmu.Services
 
         public static GameSaveWriter GameSaveWriter => _gameSaveWriter.Value;
 
-        public static SteamlessService SteamlessService => _steamlessService.Value;
+        public static StubKitService StubKitService => _stubKitService.Value;
 
         public static SteamInterfacesService SteamInterfacesService => _steamInterfacesService.Value;
 
-        // Call once after the UI message loop exits; tears down session-scoped singletons (Steam PICS, images, theme).
+        // Idempotent. Prefer calling from MainForm close (dispose-then-close); Program also calls after the message loop as a safety net.
+        // Order: cancel app lifetime → cancel delayed launch work → dispose Steam/images/theme → drop TaskReportService ref.
         internal static void DisposeApplicationResources()
         {
+            CancelApplicationLifetime();
+
+            try
+            {
+                if (_gameLaunchService.IsValueCreated)
+                    _gameLaunchService.Value.CancelPendingRegistryRestores();
+            }
+            catch
+            {
+            }
+
             try
             {
                 if (_steamProductInfoService.IsValueCreated)
@@ -185,6 +242,49 @@ namespace SmartGoldbergEmu.Services
             {
                 if (_themeService.IsValueCreated)
                     _themeService.Value.Dispose();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                TaskReportService report = _taskReportService;
+                if (report != null)
+                {
+                    report.Clear();
+                    ClearTaskReportService();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // Cancels app lifetime without disposing services (tests / early cancel).
+        internal static void CancelApplicationLifetime()
+        {
+            CancellationTokenSource cts;
+            lock (_applicationLifetimeGate)
+            {
+                cts = _applicationLifetimeCts;
+                _applicationLifetimeCts = null;
+            }
+
+            if (cts == null)
+                return;
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                cts.Dispose();
             }
             catch
             {

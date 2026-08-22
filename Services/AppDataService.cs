@@ -205,6 +205,12 @@ namespace SmartGoldbergEmu.Services
             else
                 settings.FullLaunchOptions = false;
 
+            var autoHandleSteamStubsStr = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_handle_steam_stubs");
+            if (bool.TryParse(autoHandleSteamStubsStr, out bool autoHandleSteamStubs))
+                settings.AutoHandleSteamStubs = autoHandleSteamStubs;
+            else
+                settings.AutoHandleSteamStubs = false;
+
             var logosViewDropShadowStr = _iniService.GetValue(
                 iniFile,
                 ApplicationConstants.SettingSectionApplication,
@@ -213,11 +219,6 @@ namespace SmartGoldbergEmu.Services
                 settings.LogosViewDropShadow = logosViewDropShadow;
             else
                 settings.LogosViewDropShadow = true;
-
-            settings.SteamlessCliPath = _iniService.GetValue(
-                iniFile,
-                ApplicationConstants.SettingSectionApplication,
-                ApplicationConstants.SettingKeySteamlessCliPath);
 
             var autoUpdateStr = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_update");
             if (bool.TryParse(autoUpdateStr, out bool autoUpdate))
@@ -381,16 +382,12 @@ namespace SmartGoldbergEmu.Services
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_update", settings.AutoUpdate.ToString().ToLower());
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "is_first_run", settings.IsFirstRun.ToString().ToLower());
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "full_launch_options", settings.FullLaunchOptions.ToString().ToLower());
+                _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_handle_steam_stubs", settings.AutoHandleSteamStubs.ToString().ToLower());
                 _iniService.SetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyLogosViewDropShadow,
                     settings.LogosViewDropShadow.ToString().ToLower());
-                _iniService.SetValue(
-                    iniFile,
-                    ApplicationConstants.SettingSectionApplication,
-                    ApplicationConstants.SettingKeySteamlessCliPath,
-                    settings.SteamlessCliPath ?? string.Empty);
 
                 StripUiSettingsFromConfig(iniFile);
                 _iniService.WriteFile(iniFile, _configFilePath);
@@ -436,7 +433,7 @@ namespace SmartGoldbergEmu.Services
                 var settingsFile = Path.Combine(_globalSettingsPath, PathConstants.GoldbergGlobalUserJsonFileName);
                 var json = JsonConvert.SerializeObject(settings, JsonFormatting.Indented);
                 File.WriteAllText(settingsFile, json);
-                Feedback?.SetMessage("Global settings saved successfully");
+                Feedback?.SetMessageWithAutoClear("Global settings saved successfully");
 
                 return ValidationResult.Success();
             }
@@ -572,19 +569,59 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        public GoldbergReleaseChannel GetGoldbergReleaseChannel()
+        {
+            try
+            {
+                if (!File.Exists(_configFilePath))
+                    return GoldbergReleaseChannel.Auto;
+
+                var iniFile = _iniService.ParseFile(_configFilePath);
+                var raw = _iniService.GetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyReleaseChannel);
+                return GoldbergReleaseChannelIni.Parse(raw);
+            }
+            catch (Exception ex)
+            {
+                LogRedactionHelper.WriteDebug($"Failed to read Goldberg release channel: {ex.Message}");
+                return GoldbergReleaseChannel.Auto;
+            }
+        }
+
         public ValidationResult SetGoldbergForkSource(GoldbergForkSource source)
+        {
+            return SetGoldbergForkSource(source, GoldbergReleaseChannel.Auto);
+        }
+
+        public ValidationResult SetGoldbergForkSource(GoldbergForkSource source, GoldbergReleaseChannel channel)
         {
             try
             {
                 EnsureConfigDirectoryExists();
                 var iniFile = _iniService.ParseFile(_configFilePath);
-                var previousRaw = _iniService.GetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyFork);
-                var previous = GoldbergForkSourceIni.Parse(previousRaw);
-                bool forkChanged = !string.IsNullOrWhiteSpace(previousRaw)
-                    && previous != source;
+                var previousForkRaw = _iniService.GetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyFork);
+                var previousFork = GoldbergForkSourceIni.Parse(previousForkRaw);
+                var previousChannelRaw = _iniService.GetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyReleaseChannel);
+                var previousChannel = GoldbergReleaseChannelIni.Parse(previousChannelRaw);
+                bool selectionChanged = (!string.IsNullOrWhiteSpace(previousForkRaw) && previousFork != source)
+                    || !GoldbergReleaseChannelIni.AreEquivalent(previousChannel, channel);
 
-                _iniService.SetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyFork, GoldbergForkSourceIni.ToStorageValue(source));
-                if (forkChanged)
+                _iniService.SetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyFork,
+                    GoldbergForkSourceIni.ToStorageValue(source));
+                _iniService.SetValue(
+                    iniFile,
+                    GoldbergForkConstants.IniSection,
+                    GoldbergForkConstants.IniKeyReleaseChannel,
+                    GoldbergReleaseChannelIni.ToStorageValue(channel));
+                if (selectionChanged)
                     _iniService.SetValue(iniFile, GoldbergForkConstants.IniSection, GoldbergForkConstants.IniKeyVersion, string.Empty);
                 _iniService.WriteFile(iniFile, _configFilePath);
                 return ValidationResult.Success();
@@ -689,17 +726,6 @@ namespace SmartGoldbergEmu.Services
             return SetAppStringSetting(normalized, "Column widths cannot be null or empty", (s, v) => s.DetailsColumnWidths = v, "Failed to set column widths");
         }
 
-        public string GetSteamlessCliPath()
-        {
-            var path = GetAppSetting(s => s.SteamlessCliPath);
-            return string.IsNullOrWhiteSpace(path) ? null : path.Trim();
-        }
-
-        public ValidationResult SetSteamlessCliPath(string cliPath)
-        {
-            return SetAppSetting(s => s.SteamlessCliPath = cliPath?.Trim(), "Failed to save Steamless CLI path");
-        }
-
         public bool GetAutoUpdate()
         {
             return GetAppSetting(s => s.AutoUpdate);
@@ -708,6 +734,16 @@ namespace SmartGoldbergEmu.Services
         public ValidationResult SetAutoUpdate(bool autoUpdate)
         {
             return SetAppSetting(s => { s.AutoUpdate = autoUpdate; }, "Failed to set auto-update");
+        }
+
+        public bool GetAutoHandleSteamStubs()
+        {
+            return GetAppSetting(s => s.AutoHandleSteamStubs);
+        }
+
+        public ValidationResult SetAutoHandleSteamStubs(bool autoHandleSteamStubs)
+        {
+            return SetAppSetting(s => { s.AutoHandleSteamStubs = autoHandleSteamStubs; }, "Failed to set auto-handle SteamStubs");
         }
 
         // Optional dev override for launcher update API (e.g. local mock server). Release builds use GitHub constants when unset.
@@ -761,23 +797,88 @@ namespace SmartGoldbergEmu.Services
                 if (!includeAssets)
                     return ValidationResult.Success();
 
-                ValidationResult soundResult = await EnsureSoundFilesExistAsync().ConfigureAwait(false);
-                if (!soundResult.IsValid)
-                    return soundResult;
-
-                ValidationResult fontResult = await EnsureFontFilesExistAsync().ConfigureAwait(false);
-                if (!fontResult.IsValid)
-                    return fontResult;
-
-                ValidationResult glyphResult = await EnsureGlyphFilesExistAsync().ConfigureAwait(false);
-                if (!glyphResult.IsValid)
-                    return glyphResult;
+                // Soft-fail: batch A (Steam lineage) ∥ batch B (EXAMPLE).
+                Task batchA = EnsureSteamLineageAssetsAsync();
+                Task batchB = EnsureExampleAssetsAsync();
+                await Task.WhenAll(batchA, batchB).ConfigureAwait(false);
 
                 return ValidationResult.Success();
             }
             catch (Exception ex)
             {
                 return ValidationResult.Failure($"{failurePrefix}: {ex.Message}");
+            }
+        }
+
+        // Batch A: Steam.dll + overlay WAVs + LocalAppData clientui image (local Steam → CDN). Soft-fail; logs only.
+        private async Task EnsureSteamLineageAssetsAsync()
+        {
+            try
+            {
+                int prepared = 0;
+
+                if (!SteamInstallationPathHelper.TryEnsureSteamDllFromSteamClient(
+                        PathConstants.GoldbergSteamOldDirectory, out string steamDllError)
+                    && !SteamInstallationPathHelper.IsSteamDllPresentInGoldbergFolder())
+                {
+                    ValidationResult cdnDll = await ServiceLocator.AssetDownloadService
+                        .DownloadSteamDllAsync(PathConstants.GoldbergSteamOldDirectory)
+                        .ConfigureAwait(false);
+                    if (!cdnDll.IsValid)
+                    {
+                        ServiceLocator.LogService?.LogWarning(
+                            "Steam lineage assets incomplete (Steam.dll): " + (steamDllError ?? "missing")
+                            + "; CDN fallback: " + (cdnDll.ErrorMessage ?? "failed")
+                            + " (Steam.dll mode unavailable until fixed).");
+                    }
+                    else
+                    {
+                        ServiceLocator.LogService?.LogDebug("Steam.dll ready (source: Steam CDN).");
+                        prepared++;
+                    }
+                }
+
+                var soundsOutcome = await EnsureSoundFilesExistAsync().ConfigureAwait(false);
+                if (!soundsOutcome.Result.IsValid)
+                    ServiceLocator.LogService?.LogWarning(
+                        "Steam lineage assets incomplete (overlay sounds): " + soundsOutcome.Result.ErrorMessage);
+                else if (soundsOutcome.Prepared)
+                    prepared++;
+
+                var imageOutcome = await EnsureSteamClientUiHashedImageExistsAsync().ConfigureAwait(false);
+                if (!imageOutcome.Result.IsValid)
+                    ServiceLocator.LogService?.LogWarning(
+                        "Steam lineage assets incomplete (clientui image): " + imageOutcome.Result.ErrorMessage);
+                else if (imageOutcome.Prepared)
+                    prepared++;
+
+                if (prepared > 0)
+                    ServiceLocator.LogService?.LogMessage("Steam lineage assets ready.");
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning("Steam lineage assets soft-fail: " + ex.Message);
+            }
+        }
+
+        // Batch B: avatar + font + glyphs from EXAMPLE. Soft-fail; logs only.
+        private async Task EnsureExampleAssetsAsync()
+        {
+            try
+            {
+                await EnsureAvatarExistsAsync().ConfigureAwait(false);
+
+                ValidationResult fontResult = await EnsureFontFilesExistAsync().ConfigureAwait(false);
+                if (!fontResult.IsValid)
+                    ServiceLocator.LogService?.LogWarning("Overlay font self-heal soft-fail: " + fontResult.ErrorMessage);
+
+                ValidationResult glyphResult = await EnsureGlyphFilesExistAsync().ConfigureAwait(false);
+                if (!glyphResult.IsValid)
+                    ServiceLocator.LogService?.LogWarning("Controller glyphs self-heal soft-fail: " + glyphResult.ErrorMessage);
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning("EXAMPLE assets soft-fail: " + ex.Message);
             }
         }
 
@@ -812,7 +913,7 @@ ip_country=US
             File.WriteAllText(filePath, defaultContent);
         }
 
-        private async Task<ValidationResult> EnsureSoundFilesExistAsync()
+        private async Task<(ValidationResult Result, bool Prepared)> EnsureSoundFilesExistAsync()
         {
             try
             {
@@ -822,26 +923,36 @@ ip_country=US
                 var achievementSoundPath = Path.Combine(soundsPath, PathConstants.SteamClientUiAchievementNotificationWav);
                 var friendSoundPath = Path.Combine(soundsPath, PathConstants.SteamClientUiFriendNotificationWav);
 
-                ValidationResult result;
                 if (File.Exists(achievementSoundPath) && File.Exists(friendSoundPath))
-                    result = ValidationResult.Success();
-                else
                 {
-                    var steamResult = TryCopyFromSteam(soundsPath);
-                    result = steamResult.IsValid
-                        ? steamResult
-                        : await ServiceLocator.AssetDownloadService.DownloadSoundFilesAsync(soundsPath).ConfigureAwait(false);
+                    OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
+                    return (ValidationResult.Success(), false);
                 }
 
-                if (result.IsValid)
+                if (TryCopyFromSteam(soundsPath).IsValid)
                 {
-                    await EnsureAvatarExistsAsync().ConfigureAwait(false);
+                    OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
+                    ServiceLocator.LogService?.LogDebug(
+                        "Overlay notification sounds ready (source: Steam steamui\\sounds).");
+                    return (ValidationResult.Success(), true);
                 }
-                return result;
+
+                ValidationResult cdnResult = await ServiceLocator.AssetDownloadService
+                    .DownloadSoundFilesAsync(soundsPath)
+                    .ConfigureAwait(false);
+                if (cdnResult.IsValid)
+                {
+                    OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
+                    ServiceLocator.LogService?.LogDebug(
+                        "Overlay notification sounds ready (source: Steam CDN).");
+                    return (cdnResult, true);
+                }
+
+                return (cdnResult, false);
             }
             catch (Exception ex)
             {
-                return ValidationResult.Failure($"Failed to ensure sound files exist: {ex.Message}");
+                return (ValidationResult.Failure($"Failed to ensure sound files exist: {ex.Message}"), false);
             }
         }
 
@@ -858,6 +969,39 @@ ip_country=US
             catch (Exception ex)
             {
                 return ValidationResult.Failure($"Failed to copy from Steam: {ex.Message}");
+            }
+        }
+
+        private async Task<(ValidationResult Result, bool Prepared)> EnsureSteamClientUiHashedImageExistsAsync()
+        {
+            try
+            {
+                string destPath = PathConstants.LocalAppDataSteamClientUiHashedImagePath;
+                if (File.Exists(destPath))
+                    return (ValidationResult.Success(), false);
+
+                if (SteamInstallationPathHelper.TryCopySteamClientUiHashedImageFromSteam(destPath))
+                {
+                    ServiceLocator.LogService?.LogDebug(
+                        "Steam clientui image ready (source: Steam clientui\\images).");
+                    return (ValidationResult.Success(), true);
+                }
+
+                ValidationResult cdnResult = await ServiceLocator.AssetDownloadService
+                    .DownloadSteamClientUiHashedImageAsync(destPath)
+                    .ConfigureAwait(false);
+                if (cdnResult.IsValid)
+                {
+                    ServiceLocator.LogService?.LogDebug(
+                        "Steam clientui image ready (source: Steam CDN).");
+                    return (cdnResult, true);
+                }
+
+                return (cdnResult, false);
+            }
+            catch (Exception ex)
+            {
+                return (ValidationResult.Failure("Failed to ensure Steam clientui image exists: " + ex.Message), false);
             }
         }
 
@@ -906,7 +1050,7 @@ ip_country=US
                 
                 if (!File.Exists(avatarPath))
                 {
-                    await DownloadAvatarFromGitHubAsync(avatarPath).ConfigureAwait(false);
+                    await DownloadAvatarFromSourceAsync(avatarPath).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -915,17 +1059,17 @@ ip_country=US
             }
         }
 
-        private static async Task DownloadAvatarFromGitHubAsync(string avatarPath)
+        private static async Task DownloadAvatarFromSourceAsync(string avatarPath)
         {
             try
             {
                 bool success = await ServiceLocator.AssetDownloadService.DownloadAvatarAsync(avatarPath).ConfigureAwait(false);
                 if (!success)
-                    LogRedactionHelper.WriteDebug("Failed to download avatar from GitHub");
+                    LogRedactionHelper.WriteDebug("Failed to download avatar from EXAMPLE");
             }
             catch (Exception ex)
             {
-                LogRedactionHelper.WriteDebug($"Failed to download avatar from GitHub: {ex.Message}");
+                LogRedactionHelper.WriteDebug($"Failed to download avatar from EXAMPLE: {ex.Message}");
             }
         }
 

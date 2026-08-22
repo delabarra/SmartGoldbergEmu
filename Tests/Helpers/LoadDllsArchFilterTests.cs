@@ -10,9 +10,12 @@ namespace SmartGoldbergEmu.Tests.Helpers
         [InlineData("extra_x64.dll", false, false)]
         [InlineData("extra_x32.dll", true, false)]
         [InlineData("extra_x32.dll", false, true)]
+        [InlineData("extra_x86.dll", true, false)]
+        [InlineData("extra_x86.dll", false, true)]
         [InlineData("extra.dll", true, true)]
         [InlineData("extra.dll", false, true)]
         [InlineData("both_x64_and_x32.dll", true, true)]
+        [InlineData("both_x64_and_x86.dll", false, true)]
         public void MatchesProcessArchitecture_filters_by_filename_markers(string fileName, bool useX64, bool expected)
         {
             Assert.Equal(expected, LoadDllsArchFilter.MatchesProcessArchitecture(fileName, useX64));

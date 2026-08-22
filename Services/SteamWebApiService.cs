@@ -7,132 +7,16 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using SmartGoldbergEmu.Constants;
-using SmartGoldbergEmu.Generators;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
-using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
 {
-        public static class SteamWebApiService
+    // Unique Steam/community endpoints not covered by AppDataKit (workshop titles, leaderboards).
+    public static class SteamWebApiService
     {
         private const int HttpTimeoutSeconds = 10;
-        private const int ItemArchiveTimeoutSeconds = 120;
         private const int PublishedFileDetailsBatchSize = 100;
-
-        public static async Task<AchievementSchema> GetAchievementsAsync(string appId, string language, string apiKey)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(apiKey))
-                    return new AchievementSchema { Success = false, ErrorMessage = "API key required" };
-
-                string url = string.Format(ApplicationConstants.SteamUserStatsSchemaApiUrlFormat, language, apiKey, appId);
-                using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
-                {
-                    string responseContent;
-                    using (var response = await httpService.GetAsync(url).ConfigureAwait(false))
-                    {
-                        responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    }
-
-                    JsonObject root = JsonObject.Parse(responseContent);
-                    JsonValue game = root["game"];
-
-                    if (game == null)
-                        return new AchievementSchema { Success = false, ErrorMessage = "No achievement data found" };
-
-                    var achievements = new List<AchievementData>();
-                    JsonValue availableGameStats = game["availableGameStats"];
-
-                    if (availableGameStats != null && availableGameStats["achievements"] is JsonArray achievementsArray)
-                    {
-                        foreach (JsonValue ach in achievementsArray)
-                        {
-                            achievements.Add(new AchievementData
-                            {
-                                Name = ach["name"]?.ToString(),
-                                DisplayName = ach["displayName"]?.ToString(),
-                                Description = ach["description"]?.ToString(),
-                                Icon = ach["icon"]?.ToString(),
-                                IconGray = ach["icongray"]?.ToString(),
-                                Hidden = ach["hidden"]?.ToObject<int>() == 1
-                            });
-                        }
-                    }
-
-                    return new AchievementSchema
-                    {
-                        Success = true,
-                        AppId = appId,
-                        GameName = game["gameName"]?.ToString(),
-                        GameVersion = game["gameVersion"]?.ToString(),
-                        Achievements = achievements
-                    };
-                }
-            }
-            catch (Exception ex)
-            {
-                return new AchievementSchema { Success = false, ErrorMessage = LogRedactionHelper.RedactApiKey(ex.Message, apiKey) };
-            }
-        }
-
-        public static async Task<ItemMeta> GetItemMetaAsync(string appId, string apiKey)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(apiKey))
-                    return new ItemMeta { Success = false };
-
-                string url = string.Format(ApplicationConstants.SteamInventoryItemDefMetaApiUrlFormat, apiKey, appId);
-                using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
-                {
-                    string responseContent;
-                    using (var response = await httpService.GetAsync(url).ConfigureAwait(false))
-                    {
-                        responseContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    }
-
-                    JsonObject root = JsonObject.Parse(responseContent);
-                    JsonValue responseObj = root["response"];
-
-                    if (responseObj == null)
-                        return new ItemMeta { Success = false };
-
-                    return new ItemMeta
-                    {
-                        Success = true,
-                        Digest = responseObj["digest"]?.ToString(),
-                        Modified = responseObj["modified"]?.ToObject<long>() ?? 0
-                    };
-                }
-            }
-            catch (Exception)
-            {
-                return new ItemMeta { Success = false };
-            }
-        }
-
-        public static async Task<string> GetItemDefArchiveJsonAsync(string appId, string digest)
-        {
-            if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(digest))
-                return null;
-
-            string url = string.Format(
-                ApplicationConstants.SteamGameInventoryItemDefArchiveApiUrlFormat,
-                Uri.EscapeDataString(appId),
-                Uri.EscapeDataString(digest));
-
-            using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(ItemArchiveTimeoutSeconds)))
-            {
-                using (var response = await httpService.GetAsync(url).ConfigureAwait(false))
-                {
-                    if (!response.IsSuccessStatusCode)
-                        return null;
-                    return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                }
-            }
-        }
 
         public static async Task<Dictionary<string, string>> GetPublishedFileTitlesAsync(
             string apiKey,
@@ -198,7 +82,9 @@ namespace SmartGoldbergEmu.Services
             return map;
         }
 
-        public static async Task<List<string>> GetLeaderboardsFromCommunityAsync(string appId)
+        public static async Task<List<string>> GetLeaderboardsFromCommunityAsync(
+            string appId,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             var result = new List<string>();
             if (string.IsNullOrWhiteSpace(appId))
@@ -206,15 +92,17 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string url = string.Format(ApplicationConstants.SteamCommunityLeaderboardsXmlUrlFormat, Uri.EscapeDataString(appId));
                 using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
                 {
                     string xml;
-                    using (var response = await httpService.GetAsync(url).ConfigureAwait(false))
+                    using (var response = await httpService.GetAsync(url, cancellationToken).ConfigureAwait(false))
                     {
                         if (!response.IsSuccessStatusCode)
                             return result;
 
+                        cancellationToken.ThrowIfCancellationRequested();
                         xml = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     }
                     if (string.IsNullOrWhiteSpace(xml))
@@ -231,6 +119,10 @@ namespace SmartGoldbergEmu.Services
                         result.Add(name + "=0=0");
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch
             {
                 return new List<string>();
@@ -240,4 +132,3 @@ namespace SmartGoldbergEmu.Services
         }
     }
 }
-

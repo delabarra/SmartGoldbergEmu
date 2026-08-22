@@ -90,7 +90,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblDetails.AutoEllipsis = true;
             this.lblDetails.Cursor = System.Windows.Forms.Cursors.Hand;
             this.lblDetails.Font = new System.Drawing.Font("Segoe UI", 8F);
-            this.lblDetails.ForeColor = System.Drawing.Color.Gray;
+            this.lblDetails.ForeColor = System.Drawing.SystemColors.GrayText;
             this.lblDetails.Location = new System.Drawing.Point(10, 181);
             this.lblDetails.Name = "lblDetails";
             this.lblDetails.Size = new System.Drawing.Size(395, 100);

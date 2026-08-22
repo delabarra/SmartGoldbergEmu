@@ -9,16 +9,18 @@ using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
-using SmartGoldbergEmu.Properties;
 using SmartGoldbergEmu.Services;
+using SmartGoldbergEmu.StubKit;
 using SmartGoldbergEmu.Validation;
 using SteamKit;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using Timer = System.Windows.Forms.Timer;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class MainForm : Form
+    public partial class MainForm : ThemedForm
     {
         private readonly GameDataService _gameDataService;
         private readonly AppDataService _appDataService;
@@ -36,6 +38,9 @@ namespace SmartGoldbergEmu.Forms
         private ImageList _tileImageList;
         private ImageList _compactTileImageList;
         private ImageList _logoImageList;
+        private readonly ImageListOwnedImages _tileOwnedImages = new ImageListOwnedImages();
+        private readonly ImageListOwnedImages _compactTileOwnedImages = new ImageListOwnedImages();
+        private readonly ImageListOwnedImages _logoOwnedImages = new ImageListOwnedImages();
         private ApiKeyStatusIndicatorHelper _apiKeyStatusIndicatorHelper;
         private UriFileWatcherHelper _uriFileWatcherHelper;
         private string _persistedDetailsColumnWidths;
@@ -44,8 +49,25 @@ namespace SmartGoldbergEmu.Forms
         private Timer _gameListRefreshTimer;
         private const int GameListRefreshDebounceMs = 80;
         private bool _gameListRefreshFullTiles;
+        // Dispose Steam/theme/image singletons before allowing Close so the process does not linger after the UI is gone.
+        private bool _closeDisposeStarted;
+        private bool _closeAfterDisposeReady;
+        private CancellationTokenSource _formLifetimeCts = new CancellationTokenSource();
         private int _tileImageLoadGeneration;
         private string _pendingAddMosaicImageKey;
+        // After games.ini commit, draft is cleared but assets may still be downloading — keep waiting art on these rows.
+        private readonly HashSet<Guid> _addSaveWaitingForAssetsGuids = new HashSet<Guid>();
+        private readonly HashSet<string> _waitingMosaicAnimatedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private Timer _waitingMosaicAnimTimer;
+        private int _waitingMosaicAnimFrameIndex;
+        private string _waitingMosaicAnimViewMode;
+        private Bitmap[] _waitingMosaicDisplayFrames;
+        private int[] _waitingMosaicDisplayFrameDelays;
+        private string _waitingMosaicDisplayFramesViewMode;
+        private bool _waitingMosaicDisplayFramesDropShadow;
+        private int _waitingMosaicAnimGeneration;
+        private int _stubKitDropDownLoadId;
+        private bool _stubKitDropDownReopening;
 
         public ulong? PendingAppIdLaunch { get; set; }
 
@@ -80,6 +102,7 @@ namespace SmartGoldbergEmu.Forms
             GameLaunchService gameLaunchService,
             GameSetupService gameSetupService,
             LaunchOptionService launchOptionService)
+            : base(themeService)
         {
             InitializeComponent();
 
@@ -100,7 +123,6 @@ namespace SmartGoldbergEmu.Forms
             if (DesignTimeHelper.IsDesignTime)
                 return;
 
-            this.Icon = Resources.steam_gold_x128;
             Text = ApplicationVersionHelper.GetWindowTitle();
             ApplyViewModeMenuTexts();
 
@@ -113,8 +135,6 @@ namespace SmartGoldbergEmu.Forms
             InitializeTheme();
             SetupListViewOwnerDraw();
 
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
-
             _uriFileWatcherHelper = new UriFileWatcherHelper(this, LaunchGameByAppId);
             _uriFileWatcherHelper.Setup();
         }
@@ -124,7 +144,6 @@ namespace SmartGoldbergEmu.Forms
             _apiKeyStatusIndicatorHelper?.Dispose();
 
             _apiKeyStatusIndicatorHelper = new ApiKeyStatusIndicatorHelper(lblApiKeyStatus, _apiKeyService);
-            _apiKeyStatusIndicatorHelper.IndicatorClicked += ApiKeyStatusIndicatorHelper_IndicatorClicked;
             _apiKeyStatusIndicatorHelper.Initialize();
         }
 
@@ -151,11 +170,6 @@ namespace SmartGoldbergEmu.Forms
             if (feedback == null)
                 Program.LogService?.LogWarning("TaskReportService is null; progress will not be shown.");
             return feedback;
-        }
-
-        private void ApiKeyStatusIndicatorHelper_IndicatorClicked(object sender, EventArgs e)
-        {
-            OpenSettingsDialog(0);
         }
 
         private void OnThemeLight_Click(object sender, EventArgs e)
@@ -192,28 +206,17 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to initialize theme: {ex.Message}");
+                Program.LogService?.LogError("Failed to initialize theme", ex);
             }
         }
 
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
+        protected override void OnThemeApplied()
         {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-            {
-                Invoke(new Action(ApplyThemeFromService));
-                return;
-            }
-            ApplyThemeFromService();
-        }
-
-        private void ApplyThemeFromService()
-        {
-            _themeService.ApplyTheme(this);
             UpdateThemeIcon();
             UpdateThemeMenuCheckMarks();
-            ReloadMosaicTileImagesIfNeeded();
+            // Avoid mosaic reload during first handle create (before games load); match prior ThemeChanged-only behavior.
+            if (Visible)
+                ReloadMosaicTileImagesIfNeeded();
         }
 
         private void ReloadMosaicTileImagesIfNeeded()
@@ -226,8 +229,9 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            CancelFormLifetime();
+
             _taskReportService.Clear();
-            _themeService.ThemeChanged -= ThemeService_ThemeChanged;
 
             if (_detailsColumnWidthsSaveTimer != null)
             {
@@ -245,6 +249,14 @@ namespace SmartGoldbergEmu.Forms
                 _gameListRefreshTimer = null;
             }
 
+            StopWaitingMosaicAnimation(disposeDisplayFrames: true);
+
+            // ImageList.Dispose owns Depth32Bit originals; drop side-map refs first to avoid double-Dispose.
+            _gameDisplayService.ReleaseIconImageOwnership();
+            _tileOwnedImages.ReleaseOwnership();
+            _compactTileOwnedImages.ReleaseOwnership();
+            _logoOwnedImages.ReleaseOwnership();
+
             _largeImageList?.Dispose();
             _largeImageList = null;
             _smallImageList?.Dispose();
@@ -256,8 +268,14 @@ namespace SmartGoldbergEmu.Forms
             _logoImageList?.Dispose();
             _logoImageList = null;
 
+            _tileOwnedImages.Dispose();
+            _compactTileOwnedImages.Dispose();
+            _logoOwnedImages.Dispose();
+
             _apiKeyStatusIndicatorHelper?.Dispose();
             _uriFileWatcherHelper?.Dispose();
+
+            ClearStubKitDropDownItems();
 
             base.OnFormClosed(e);
         }
@@ -275,8 +293,8 @@ namespace SmartGoldbergEmu.Forms
         {
             _largeImageList = CreateImageList(new Size(32, 32));
             _smallImageList = CreateImageList(new Size(16, 16));
-            _tileImageList = CreateImageList(new Size(MosaicViewHelper.TileViewImageWidth, MosaicViewHelper.TileViewImageHeight));
-            _compactTileImageList = CreateImageList(new Size(MosaicViewHelper.CompactTilesViewImageWidth, MosaicViewHelper.CompactTilesViewImageHeight));
+            _tileImageList = CreateImageList(MosaicViewHelper.TileViewImageSize);
+            _compactTileImageList = CreateImageList(MosaicViewHelper.CompactTilesViewImageSize);
             _logoImageList = CreateImageList(MosaicViewHelper.LogoViewImageSize);
         }
 
@@ -339,7 +357,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to initialize game display: {ex.Message}");
+                Program.LogService?.LogError("Failed to initialize game display", ex);
             }
         }
 
@@ -354,6 +372,27 @@ namespace SmartGoldbergEmu.Forms
             return null;
         }
 
+        private ImageListOwnedImages GetTileOwnedImagesForViewMode(string viewMode)
+        {
+            if (viewMode == ApplicationConstants.ViewModeTile)
+                return _tileOwnedImages;
+            if (viewMode == ApplicationConstants.ViewModeCompactTiles)
+                return _compactTileOwnedImages;
+            if (viewMode == ApplicationConstants.ViewModeLogos)
+                return _logoOwnedImages;
+            return null;
+        }
+
+        private void ClearInactiveMosaicImageLists(string activeViewMode)
+        {
+            if (activeViewMode != ApplicationConstants.ViewModeTile)
+                _tileOwnedImages.Clear(_tileImageList);
+            if (activeViewMode != ApplicationConstants.ViewModeCompactTiles)
+                _compactTileOwnedImages.Clear(_compactTileImageList);
+            if (activeViewMode != ApplicationConstants.ViewModeLogos)
+                _logoOwnedImages.Clear(_logoImageList);
+        }
+
         private void LoadGames(string viewMode = null)
         {
             try
@@ -364,25 +403,59 @@ namespace SmartGoldbergEmu.Forms
                     tileImageList ?? _largeImageList,
                     tileImageList ?? _smallImageList,
                     GetImportPendingPredicate(),
-                    GetAddPendingPredicate());
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to load games: {ex.Message}");
+                Program.LogService?.LogError("Failed to load games", ex);
             }
         }
 
         private void StartLoadTileImages(string viewMode)
         {
             int generation = ++_tileImageLoadGeneration;
-            _ = LoadTileImagesAsync(viewMode, generation).ForgetFaults(Program.LogService, nameof(LoadTileImagesAsync));
+            _ = LoadTileImagesAsync(viewMode, generation, FormLifetimeToken)
+                .ForgetFaults(Program.LogService, nameof(LoadTileImagesAsync));
         }
 
-        private async Task LoadTileImagesAsync(string viewMode, int generation)
+        private CancellationToken FormLifetimeToken
+        {
+            get
+            {
+                CancellationTokenSource cts = _formLifetimeCts;
+                if (cts == null)
+                    return new CancellationToken(canceled: true);
+                return cts.Token;
+            }
+        }
+
+        private void CancelFormLifetime()
+        {
+            CancellationTokenSource cts = Interlocked.Exchange(ref _formLifetimeCts, null);
+            if (cts == null)
+                return;
+            try
+            {
+                cts.Cancel();
+            }
+            catch
+            {
+            }
+            try
+            {
+                cts.Dispose();
+            }
+            catch
+            {
+            }
+        }
+
+        private async Task LoadTileImagesAsync(string viewMode, int generation, CancellationToken cancellationToken)
         {
             try
             {
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested)
                     return;
 
                 var gameImageService = ServiceLocator.GameImageService;
@@ -391,29 +464,39 @@ namespace SmartGoldbergEmu.Forms
                 if (targetImageList == null)
                     return;
 
-                targetImageList.Images.Clear();
+                var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+                if (ownedImages == null)
+                    return;
+
+                ownedImages.Clear(targetImageList);
+                StopWaitingMosaicTimer();
+                _waitingMosaicAnimatedKeys.Clear();
 
                 var effectiveTheme = _themeService.EffectiveTheme;
                 _themeService.GetFallbackMosaicArtColors(effectiveTheme, out var mosaicBackground, out var mosaicForeground);
                 await gameImageService.EnsureMosaicFallbackForViewAsync(viewMode, effectiveTheme, mosaicBackground, mosaicForeground).ConfigureAwait(true);
 
-                if (IsDisposed || Disposing || generation != _tileImageLoadGeneration)
+                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                     return;
 
                 var addedAppIds = new HashSet<string>();
                 bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
                     && _appDataService.GetLogosViewDropShadow();
+                bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
 
                 foreach (ListViewItem item in lstGames.Items)
                 {
-                    if (IsDisposed || Disposing || generation != _tileImageLoadGeneration)
+                    if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                         return;
 
                     var game = item.Tag as GameConfig;
                     if (game == null)
                         continue;
 
-                    string imageKey = GameDisplayService.GetMosaicImageKey(game);
+                    string imageKey = GameDisplayService.GetMosaicImageKey(
+                        game,
+                        GetAddPendingPredicate(),
+                        GetUpdatePendingPredicate());
 
                     if (addedAppIds.Contains(imageKey))
                         continue;
@@ -423,29 +506,35 @@ namespace SmartGoldbergEmu.Forms
                         viewMode,
                         gameImageService,
                         imageNormalizationService,
-                        logosDropShadow).ConfigureAwait(true);
+                        logosDropShadow,
+                        waitingDropShadow).ConfigureAwait(true);
 
                     if (imageCopy == null)
                         continue;
 
-                    if (generation != _tileImageLoadGeneration)
+                    if (cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                     {
                         imageCopy.Dispose();
                         continue;
                     }
 
-                    targetImageList.Images.Add(imageKey, imageCopy);
+                    ownedImages.Set(targetImageList, imageKey, imageCopy);
                     addedAppIds.Add(imageKey);
+                    if (ShouldUseWaitingMosaicPlaceholder(game))
+                        RegisterWaitingMosaicAnimation(imageKey, viewMode);
                 }
 
-                if (IsDisposed || Disposing || generation != _tileImageLoadGeneration)
+                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
                     return;
 
                 lstGames.Invalidate();
             }
+            catch (OperationCanceledException)
+            {
+            }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to load tile images: {ex.Message}");
+                Program.LogService?.LogError("Failed to load tile images", ex);
             }
         }
 
@@ -470,7 +559,14 @@ namespace SmartGoldbergEmu.Forms
                 if (targetImageList == null)
                     return;
 
-                string imageKey = GameDisplayService.GetMosaicImageKey(game);
+                var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+                if (ownedImages == null)
+                    return;
+
+                string imageKey = GameDisplayService.GetMosaicImageKey(
+                    game,
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
                 if (string.IsNullOrEmpty(imageKey))
                     return;
 
@@ -483,13 +579,15 @@ namespace SmartGoldbergEmu.Forms
 
                 bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
                     && _appDataService.GetLogosViewDropShadow();
+                bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
 
                 Bitmap imageCopy = await LoadMosaicDisplayBitmapForGameAsync(
                     game,
                     viewMode,
                     gameImageService,
                     imageNormalizationService,
-                    logosDropShadow).ConfigureAwait(true);
+                    logosDropShadow,
+                    waitingDropShadow).ConfigureAwait(true);
 
                 if (imageCopy == null)
                     return;
@@ -500,19 +598,22 @@ namespace SmartGoldbergEmu.Forms
                     return;
                 }
 
-                if (targetImageList.Images.ContainsKey(imageKey))
-                    targetImageList.Images.RemoveByKey(imageKey);
-                targetImageList.Images.Add(imageKey, imageCopy);
+                ownedImages.Set(targetImageList, imageKey, imageCopy);
 
                 var item = GameDisplayService.FindListItemByGameGuid(lstGames, game.GameGuid);
                 if (item != null)
                     item.ImageKey = imageKey;
 
+                if (ShouldUseWaitingMosaicPlaceholder(game))
+                    RegisterWaitingMosaicAnimation(imageKey, viewMode);
+                else
+                    UnregisterWaitingMosaicAnimation(imageKey);
+
                 lstGames.Invalidate();
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to update tile for {game?.AppName}: {ex.Message}");
+                Program.LogService?.LogError($"Failed to update tile for {game?.AppName} (AppId {game?.AppId})", ex);
             }
         }
 
@@ -521,34 +622,22 @@ namespace SmartGoldbergEmu.Forms
             string viewMode,
             GameImageService gameImageService,
             ImageNormalizationService imageNormalizationService,
-            bool logosDropShadow)
+            bool logosDropShadow,
+            bool waitingDropShadow)
         {
-            string imagePath;
-            if (viewMode == ApplicationConstants.ViewModeTile)
+            if (ShouldUseWaitingMosaicPlaceholder(game))
             {
-                imagePath = gameImageService.GetImagePath(game.AppId, PathConstants.SteamGameResourcesHeaderImageFileName);
+                Bitmap waitingDisplay = TryCreateWaitingMosaicDisplayBitmap(
+                    viewMode,
+                    gameImageService,
+                    imageNormalizationService,
+                    logosDropShadow,
+                    waitingDropShadow);
+                if (waitingDisplay != null)
+                    return waitingDisplay;
             }
-            else if (viewMode == ApplicationConstants.ViewModeLogos)
-            {
-                imagePath = gameImageService.GetLogoImagePathOrFallback(game.AppId);
-                if (!string.IsNullOrEmpty(imagePath))
-                    gameImageService.NormalizeResolvedLogoForLogosListIfNeeded(imagePath);
-            }
-            else
-            {
-                imagePath = gameImageService.GetCapsuleImagePathOrFallback(game.AppId);
-                if (!string.IsNullOrEmpty(imagePath))
-                {
-                    var imageFileName = Path.GetFileName(imagePath);
-                    if (string.Equals(imageFileName, PathConstants.SteamGameResourcesCapsuleCoverImageFileName, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(imageFileName, PathConstants.SteamGameResourcesCapsuleImageFileName, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(imageFileName, PathConstants.SteamGameResourcesLegacyLibraryCapsuleImageFileName, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(imageFileName, PathConstants.SteamGameResourcesSmallCapsuleImageFileName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        imageNormalizationService.EnsureCompactTileFileNormalizedForCompactTilesView(imagePath);
-                    }
-                }
-            }
+
+            string imagePath = gameImageService.ResolveArtworkPathForViewMode(game.AppId, viewMode);
 
             if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
             {
@@ -556,11 +645,11 @@ namespace SmartGoldbergEmu.Forms
                 {
                     using (var image = Image.FromFile(imagePath))
                     {
-                        if (viewMode == ApplicationConstants.ViewModeTile)
-                            return MosaicViewHelper.CreateTileViewDisplayBitmap(image);
-                        if (viewMode == ApplicationConstants.ViewModeLogos)
-                            return MosaicViewHelper.CreateLogoViewDisplayBitmap(image, logosDropShadow);
-                        return new Bitmap(image);
+                        return CreateMosaicDisplayBitmapFromSource(
+                            image,
+                            viewMode,
+                            imageNormalizationService,
+                            logosDropShadow);
                     }
                 }
                 catch
@@ -573,18 +662,407 @@ namespace SmartGoldbergEmu.Forms
                 if (rawFallback == null)
                     return null;
 
-                if (viewMode == ApplicationConstants.ViewModeTile)
-                    return MosaicViewHelper.CreateTileViewDisplayBitmap(rawFallback);
-                if (viewMode == ApplicationConstants.ViewModeLogos)
+                return CreateMosaicDisplayBitmapFromSource(
+                    rawFallback,
+                    viewMode,
+                    imageNormalizationService,
+                    logosDropShadow);
+            }
+        }
+
+        private bool ShouldUseWaitingMosaicPlaceholder(GameConfig game)
+        {
+            if (game == null || game.GameGuid == Guid.Empty)
+                return false;
+
+            if (_addSaveWaitingForAssetsGuids.Contains(game.GameGuid))
+                return true;
+
+            // New add drafts only (not update drafts that already show library art under the AppId key).
+            return _pendingAddGameListService.IsPendingGame(game)
+                && !_pendingAddGameListService.IsPendingUpdate(game);
+        }
+
+        private static Bitmap TryCreateWaitingMosaicDisplayBitmap(
+            string viewMode,
+            GameImageService gameImageService,
+            ImageNormalizationService imageNormalizationService,
+            bool logosDropShadow,
+            bool waitingDropShadow)
+        {
+            // Prefer Steam clientui hashed spinner; if missing, use FallbackTileArt.csv mosaic art.
+            using (var rawWaiting = gameImageService.TryCloneWaitingMosaicPlaceholderBitmap())
+            {
+                if (rawWaiting != null)
+                    return CreateMosaicDisplayBitmapFromSource(
+                        rawWaiting,
+                        viewMode,
+                        imageNormalizationService,
+                        logosDropShadow,
+                        waitingPlaceholder: true,
+                        waitingDropShadow);
+            }
+
+            using (var rawCsvFallback = gameImageService.TryCloneMosaicFallbackBitmap())
+            {
+                if (rawCsvFallback == null)
+                    return null;
+                return CreateMosaicDisplayBitmapFromSource(
+                    rawCsvFallback,
+                    viewMode,
+                    imageNormalizationService,
+                    logosDropShadow,
+                    waitingPlaceholder: true,
+                    waitingDropShadow);
+            }
+        }
+
+        private static Bitmap CreateMosaicDisplayBitmapFromSource(
+            Image source,
+            string viewMode,
+            ImageNormalizationService imageNormalizationService,
+            bool logosDropShadow,
+            bool waitingPlaceholder = false,
+            bool waitingDropShadow = false)
+        {
+            if (source == null || imageNormalizationService == null)
+                return null;
+
+            return imageNormalizationService.CreateMosaicDisplayBitmap(
+                source,
+                viewMode,
+                logosDropShadow,
+                waitingPlaceholder,
+                waitingDropShadow);
+        }
+
+        // Seeds the AppId mosaic key with waiting art before the list drops the pending-* key (avoids a blank tile on Save).
+        private bool TrySeedMosaicKeyWithWaitingPlaceholder(string imageKey, string viewMode)
+        {
+            if (string.IsNullOrEmpty(imageKey) || !IsMosaicViewMode(viewMode))
+                return false;
+
+            var targetImageList = GetTileImageListForViewMode(viewMode);
+            var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+            if (targetImageList == null || ownedImages == null)
+                return false;
+
+            var gameImageService = ServiceLocator.GameImageService;
+            var imageNormalizationService = ServiceLocator.ImageNormalizationService;
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
+
+            Bitmap waitingDisplay = TryCreateWaitingMosaicDisplayBitmap(
+                viewMode,
+                gameImageService,
+                imageNormalizationService,
+                logosDropShadow,
+                waitingDropShadow);
+            if (waitingDisplay == null)
+                return false;
+
+            ownedImages.Set(targetImageList, imageKey, waitingDisplay);
+            RegisterWaitingMosaicAnimation(imageKey, viewMode);
+            return true;
+        }
+
+        private void RegisterWaitingMosaicAnimation(string imageKey, string viewMode)
+        {
+            if (string.IsNullOrEmpty(imageKey) || !IsMosaicViewMode(viewMode))
+                return;
+
+            _waitingMosaicAnimatedKeys.Add(imageKey);
+            _waitingMosaicAnimViewMode = viewMode;
+            // Kick decode immediately so the spinner starts soon after the first static frame.
+            _ = EnsureWaitingMosaicAnimationRunningAsync()
+                .ForgetFaults(Program.LogService, nameof(EnsureWaitingMosaicAnimationRunningAsync));
+        }
+
+        private void UnregisterWaitingMosaicAnimation(string imageKey)
+        {
+            if (string.IsNullOrEmpty(imageKey))
+                return;
+
+            _waitingMosaicAnimatedKeys.Remove(imageKey);
+            if (_waitingMosaicAnimatedKeys.Count == 0)
+                StopWaitingMosaicAnimation(disposeDisplayFrames: true);
+        }
+
+        private async Task EnsureWaitingMosaicAnimationRunningAsync()
+        {
+            if (IsDisposed || Disposing || _waitingMosaicAnimatedKeys.Count == 0)
+                return;
+
+            int generation = _waitingMosaicAnimGeneration;
+            string viewMode = _waitingMosaicAnimViewMode ?? _appDataService.GetViewMode();
+            if (!HasWaitingMosaicDisplayFramesForView(viewMode))
+            {
+                bool ready = await ServiceLocator.GameImageService.EnsureWaitingMosaicAnimationAsync().ConfigureAwait(true);
+                if (generation != _waitingMosaicAnimGeneration
+                    || IsDisposed
+                    || Disposing
+                    || !ready
+                    || _waitingMosaicAnimatedKeys.Count == 0)
                 {
-                    using (var normalized = imageNormalizationService.CreateFallbackLogoDisplayBitmapForLogosView(rawFallback))
-                    {
-                        return MosaicViewHelper.CreateLogoViewDisplayBitmap(normalized, logosDropShadow);
-                    }
+                    return;
                 }
 
-                return imageNormalizationService.CreateCompactTileDisplayBitmapFromImage(rawFallback);
+                viewMode = _waitingMosaicAnimViewMode ?? _appDataService.GetViewMode();
+                if (!TryBuildWaitingMosaicDisplayFrames(viewMode))
+                    return;
             }
+
+            if (generation != _waitingMosaicAnimGeneration || IsDisposed || Disposing)
+                return;
+
+            StartWaitingMosaicTimerAndApply();
+        }
+
+        private void StartWaitingMosaicTimerAndApply()
+        {
+            if (_waitingMosaicDisplayFrames == null || _waitingMosaicDisplayFrames.Length < 2)
+                return;
+
+            if (_waitingMosaicAnimTimer == null)
+            {
+                _waitingMosaicAnimTimer = new Timer();
+                _waitingMosaicAnimTimer.Tick += WaitingMosaicAnimTimer_Tick;
+            }
+
+            if (_waitingMosaicAnimFrameIndex < 0
+                || _waitingMosaicAnimFrameIndex >= _waitingMosaicDisplayFrames.Length)
+            {
+                _waitingMosaicAnimFrameIndex = 0;
+            }
+
+            int interval = GetWaitingMosaicFrameDelayMs(_waitingMosaicAnimFrameIndex);
+            if (interval < 15)
+                interval = 15;
+            _waitingMosaicAnimTimer.Interval = interval;
+            ApplyWaitingMosaicAnimationFrame();
+            if (!_waitingMosaicAnimTimer.Enabled)
+                _waitingMosaicAnimTimer.Start();
+        }
+
+        private void WaitingMosaicAnimTimer_Tick(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing || _waitingMosaicAnimatedKeys.Count == 0)
+            {
+                StopWaitingMosaicAnimation(disposeDisplayFrames: false);
+                return;
+            }
+
+            if (_waitingMosaicDisplayFrames == null || _waitingMosaicDisplayFrames.Length < 2)
+            {
+                StopWaitingMosaicAnimation(disposeDisplayFrames: true);
+                return;
+            }
+
+            _waitingMosaicAnimFrameIndex++;
+            if (_waitingMosaicAnimFrameIndex >= _waitingMosaicDisplayFrames.Length)
+                _waitingMosaicAnimFrameIndex = 0;
+
+            ApplyWaitingMosaicAnimationFrame();
+
+            int interval = GetWaitingMosaicFrameDelayMs(_waitingMosaicAnimFrameIndex);
+            if (interval < 15)
+                interval = 15;
+            if (_waitingMosaicAnimTimer != null && _waitingMosaicAnimTimer.Interval != interval)
+                _waitingMosaicAnimTimer.Interval = interval;
+        }
+
+        private void ApplyWaitingMosaicAnimationFrame()
+        {
+            if (_waitingMosaicDisplayFrames == null
+                || _waitingMosaicDisplayFrames.Length == 0
+                || _waitingMosaicAnimFrameIndex < 0
+                || _waitingMosaicAnimFrameIndex >= _waitingMosaicDisplayFrames.Length)
+            {
+                return;
+            }
+
+            string viewMode = _waitingMosaicAnimViewMode ?? _appDataService.GetViewMode();
+            var targetImageList = GetTileImageListForViewMode(viewMode);
+            var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+            if (targetImageList == null || ownedImages == null || !IsMosaicViewMode(viewMode))
+                return;
+
+            Image frameSource = _waitingMosaicDisplayFrames[_waitingMosaicAnimFrameIndex];
+            if (frameSource == null)
+                return;
+
+            try
+            {
+                // Copy keys — Set may re-enter UI and mutate the waiting set.
+                string[] keys = new string[_waitingMosaicAnimatedKeys.Count];
+                _waitingMosaicAnimatedKeys.CopyTo(keys);
+
+                foreach (string key in keys)
+                {
+                    if (string.IsNullOrEmpty(key))
+                        continue;
+
+                    // ImageList copies pixels from a clone it can own; display frames stay alive for the next tick.
+                    ownedImages.Set(targetImageList, key, new Bitmap(frameSource));
+                }
+
+                // ListView caches ImageList slots; clear+restore ImageKey forces a visual update.
+                foreach (ListViewItem item in lstGames.Items)
+                {
+                    string imageKey = item.ImageKey;
+                    if (string.IsNullOrEmpty(imageKey) || !_waitingMosaicAnimatedKeys.Contains(imageKey))
+                        continue;
+                    item.ImageKey = string.Empty;
+                    item.ImageKey = imageKey;
+                }
+
+                lstGames.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError("Failed to apply waiting mosaic animation frame", ex);
+            }
+        }
+
+        private bool TryBuildWaitingMosaicDisplayFrames(string viewMode)
+        {
+            if (!IsMosaicViewMode(viewMode))
+                return false;
+
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
+            bool cachedDropShadow = GetWaitingMosaicDisplayFramesCacheDropShadow(viewMode, logosDropShadow, waitingDropShadow);
+
+            if (_waitingMosaicDisplayFrames != null
+                && string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal)
+                && _waitingMosaicDisplayFramesDropShadow == cachedDropShadow)
+            {
+                return true;
+            }
+
+            if (!ServiceLocator.GameImageService.TryGetWaitingMosaicAnimationFrames(out var sourceFrames)
+                || sourceFrames == null
+                || sourceFrames.Length < 2)
+            {
+                return false;
+            }
+
+            DisposeWaitingMosaicDisplayFrames();
+
+            var imageNormalizationService = ServiceLocator.ImageNormalizationService;
+            var built = new Bitmap[sourceFrames.Length];
+            var delays = new int[sourceFrames.Length];
+            try
+            {
+                for (int i = 0; i < sourceFrames.Length; i++)
+                {
+                    built[i] = CreateMosaicDisplayBitmapFromSource(
+                        sourceFrames[i].Bitmap,
+                        viewMode,
+                        imageNormalizationService,
+                        logosDropShadow,
+                        waitingPlaceholder: true,
+                        waitingDropShadow);
+                    delays[i] = sourceFrames[i].DelayMilliseconds;
+                }
+            }
+            catch
+            {
+                for (int i = 0; i < built.Length; i++)
+                    built[i]?.Dispose();
+                return false;
+            }
+
+            _waitingMosaicDisplayFrames = built;
+            _waitingMosaicDisplayFrameDelays = delays;
+            _waitingMosaicDisplayFramesViewMode = viewMode;
+            _waitingMosaicDisplayFramesDropShadow = cachedDropShadow;
+            return true;
+        }
+
+        private bool ShouldApplyWaitingMosaicDropShadow()
+        {
+            return _themeService != null
+                && _themeService.EffectiveTheme == ThemeMode.Light;
+        }
+
+        private static bool GetWaitingMosaicDisplayFramesCacheDropShadow(
+            string viewMode,
+            bool logosDropShadow,
+            bool waitingDropShadow)
+        {
+            // Logos use the logos-shadow setting; store/library use light-mode waiting shadow.
+            return viewMode == ApplicationConstants.ViewModeLogos
+                ? logosDropShadow
+                : waitingDropShadow;
+        }
+
+        private bool HasWaitingMosaicDisplayFramesForView(string viewMode)
+        {
+            if (_waitingMosaicDisplayFrames == null || _waitingMosaicDisplayFrames.Length < 2)
+                return false;
+            if (!string.Equals(_waitingMosaicDisplayFramesViewMode, viewMode, StringComparison.Ordinal))
+                return false;
+
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
+            bool cachedDropShadow = GetWaitingMosaicDisplayFramesCacheDropShadow(viewMode, logosDropShadow, waitingDropShadow);
+            return _waitingMosaicDisplayFramesDropShadow == cachedDropShadow;
+        }
+
+        private int GetWaitingMosaicFrameDelayMs(int frameIndex)
+        {
+            if (_waitingMosaicDisplayFrameDelays == null || _waitingMosaicDisplayFrameDelays.Length == 0)
+                return 33;
+
+            if (frameIndex < 0 || frameIndex >= _waitingMosaicDisplayFrameDelays.Length)
+                frameIndex = 0;
+            int ms = _waitingMosaicDisplayFrameDelays[frameIndex];
+            return ms < 10 ? 10 : ms;
+        }
+
+        private void StopWaitingMosaicTimer()
+        {
+            if (_waitingMosaicAnimTimer != null)
+            {
+                _waitingMosaicAnimTimer.Stop();
+                _waitingMosaicAnimTimer.Tick -= WaitingMosaicAnimTimer_Tick;
+                _waitingMosaicAnimTimer.Dispose();
+                _waitingMosaicAnimTimer = null;
+            }
+
+            _waitingMosaicAnimFrameIndex = 0;
+        }
+
+        private void StopWaitingMosaicAnimation(bool disposeDisplayFrames)
+        {
+            StopWaitingMosaicTimer();
+            if (disposeDisplayFrames || _waitingMosaicAnimatedKeys.Count == 0)
+            {
+                _waitingMosaicAnimGeneration++;
+                _waitingMosaicAnimatedKeys.Clear();
+                DisposeWaitingMosaicDisplayFrames();
+                ServiceLocator.GameImageService.ReleaseWaitingMosaicAnimationFrames();
+            }
+        }
+
+        private void DisposeWaitingMosaicDisplayFrames()
+        {
+            if (_waitingMosaicDisplayFrames == null)
+            {
+                _waitingMosaicDisplayFrameDelays = null;
+                return;
+            }
+
+            for (int i = 0; i < _waitingMosaicDisplayFrames.Length; i++)
+                _waitingMosaicDisplayFrames[i]?.Dispose();
+            _waitingMosaicDisplayFrames = null;
+            _waitingMosaicDisplayFrameDelays = null;
+            _waitingMosaicDisplayFramesViewMode = null;
+            _waitingMosaicDisplayFramesDropShadow = false;
         }
 
         private void RemoveMosaicImageKey(string imageKey)
@@ -592,18 +1070,10 @@ namespace SmartGoldbergEmu.Forms
             if (string.IsNullOrEmpty(imageKey))
                 return;
 
-            RemoveMosaicImageKeyFromList(_tileImageList, imageKey);
-            RemoveMosaicImageKeyFromList(_compactTileImageList, imageKey);
-            RemoveMosaicImageKeyFromList(_logoImageList, imageKey);
-        }
-
-        private static void RemoveMosaicImageKeyFromList(ImageList imageList, string imageKey)
-        {
-            if (imageList?.Images == null || string.IsNullOrEmpty(imageKey))
-                return;
-
-            if (imageList.Images.ContainsKey(imageKey))
-                imageList.Images.RemoveByKey(imageKey);
+            UnregisterWaitingMosaicAnimation(imageKey);
+            _tileOwnedImages.Remove(_tileImageList, imageKey);
+            _compactTileOwnedImages.Remove(_compactTileImageList, imageKey);
+            _logoOwnedImages.Remove(_logoImageList, imageKey);
         }
 
         private void SetupContextMenus()
@@ -619,6 +1089,7 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowRunWithoutEmu.Click += OnRunWithoutEmu_Click;
             miCtxRowRemove.Click += OnRemoveGame_Click;
             miCtxRowProperties.Click += OnGameProperties_Click;
+            miCtxRowRefreshCatalog.Click += OnRefreshGameCatalogAndAssets_Click;
             miCtxRowGenAchievements.Click += OnGenerateAchievements_Click;
             miCtxRowGenItems.Click += OnGenerateItems_Click;
             miCtxRowOpenValveDataFile.Click += OnOpenValveDataFile_Click;
@@ -634,11 +1105,15 @@ namespace SmartGoldbergEmu.Forms
             miCtxRowOpenExecutableFolder.Click += OnOpenExecutableFolder_Click;
             miCtxRowOpenSettingsFolder.Click += OnOpenSettingsFolder_Click;
             miCtxRowOpenInventoryFile.Click += OnOpenInventoryFile_Click;
+            miCtxRowOpenGameAssetsFolder.Click += OnOpenGameAssetsFolder_Click;
 
             miCtxRowCopyGuid.Click += OnCopyGuid_Click;
             miCtxRowCreateShortcut.Click += OnCreateShortcut_Click;
             miCtxRowCreateSteamAppIdFile.Click += OnCreateSteamAppIdFile_Click;
-            miCtxRowApplySteamless.Click += OnApplySteamless_Click;
+            miCtxRowRemoveSteamStub.DropDownOpening += OnRemoveSteamStub_DropDownOpening;
+            ClearStubKitDropDownItems();
+            AddStubKitAutoHandleMenuHeader();
+            miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripMenuItem("Loading…") { Enabled = false });
 
             lstGames.ItemActivate += lstGames_ItemActivate;
 
@@ -841,6 +1316,7 @@ namespace SmartGoldbergEmu.Forms
             string detailsColumnWidths = null)
         {
             _appDataService.SetViewMode(viewMode);
+            ClearInactiveMosaicImageLists(viewMode);
             lstGames.BeginUpdate();
             try
             {
@@ -902,7 +1378,7 @@ namespace SmartGoldbergEmu.Forms
             using (var f = new ForkSelectForm())
             {
                 if (f.ShowDialog(this) == DialogResult.OK)
-                    Program.LogService?.LogMessage("Fork selection saved");
+                    Program.LogService?.LogDebug("Fork selection saved");
             }
         }
 
@@ -913,9 +1389,9 @@ namespace SmartGoldbergEmu.Forms
 
         private async Task OnCheckUpdatesAsync()
         {
-            if (IsDisposed || Disposing)
+            if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                 return;
-            Program.LogService?.LogMessage("Manual update check triggered by user");
+            Program.LogService?.LogDebug("Manual Goldberg update check");
             _taskReportService.SetMessage("Checking for updates...");
             try
             {
@@ -925,17 +1401,21 @@ namespace SmartGoldbergEmu.Forms
                     isStartup: false,
                     onCheckStart: null,
                     onCheckComplete: null).ConfigureAwait(true);
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Update check UI flow failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Goldberg update check UI flow failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Update check", ex), TaskReportKind.Error);
             }
             finally
             {
-                _taskReportService.SetMessage(string.Empty);
+                if (!IsDisposed && !Disposing && !FormLifetimeToken.IsCancellationRequested)
+                    _taskReportService.SetMessage(string.Empty);
             }
         }
 
@@ -949,28 +1429,49 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing)
                 return;
 
-            var dialogResult = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                "This will download and reinstall Goldberg Emulator files.\n\nProceed?",
-                "Reinstall",
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Question);
-
-            if (dialogResult != DialogResult.OK)
-                return;
-
-            Program.LogService?.LogMessage("Manual reinstall triggered by user");
-            _taskReportService.SetMessage("Reinstalling...");
+            Program.LogService?.LogDebug("Manual Goldberg reinstall");
+            _taskReportService.SetMessage("Preparing emulator reinstall...");
 
             try
             {
-                await EmulatorUpdateService.DownloadAndInstallWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                await EmulatorUpdateService.ReinstallWithUIAsync(Program.LogService, this).ConfigureAwait(true);
                 if (IsDisposed || Disposing)
                     return;
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Reinstall failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Goldberg reinstall failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Reinstall", ex), TaskReportKind.Error);
+            }
+            finally
+            {
+                _taskReportService.SetMessage(string.Empty);
+            }
+        }
+
+        private void OnViewEmulatorChangelog_Click(object sender, EventArgs e)
+        {
+            _ = OnViewEmulatorChangelogAsync().ForgetFaults(Program.LogService, nameof(OnViewEmulatorChangelogAsync));
+        }
+
+        private async Task OnViewEmulatorChangelogAsync()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            Program.LogService?.LogDebug("View emulator changelog");
+            _taskReportService.SetMessage("Loading changelog...");
+
+            try
+            {
+                await EmulatorUpdateService.ShowLatestChangelogWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError("Emulator changelog failed", ex);
+                _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Emulator changelog", ex), TaskReportKind.Error);
             }
             finally
             {
@@ -980,44 +1481,23 @@ namespace SmartGoldbergEmu.Forms
 
         private async void OnAddGame_Click(object sender, EventArgs e)
         {
-            var warmupCts = new System.Threading.CancellationTokenSource();
-            // Warm the anonymous Steam session while the user picks a file, so the later 5s
-            // metadata fetch reuses a live connection instead of timing out on a cold connect.
-            Task warmupTask = ServiceLocator.SteamProductInfoService.PreWarmSessionAsync(warmupCts.Token);
-            bool proceeded = false;
-            try
+            // Pre-warm Steam while the user picks an exe / AppId; drop the session when add finishes or is cancelled.
+            using (ServiceLocator.SteamProductInfoService.HoldSession(preWarm: true))
             {
-                string executablePath = SelectGameExecutable();
-                if (string.IsNullOrEmpty(executablePath))
-                    return;
-
-                proceeded = true;
-                await AddGameFromExecutable(executablePath);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Error adding game: {ex.Message}", ex);
-                if (!IsDisposed && !Disposing)
-                    _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
-            }
-            finally
-            {
-                if (!proceeded)
-                    warmupCts.Cancel();
-
                 try
                 {
-                    await warmupTask.ConfigureAwait(true);
+                    string executablePath = SelectGameExecutable();
+                    if (string.IsNullOrEmpty(executablePath))
+                        return;
+
+                    await AddGameFromExecutable(executablePath);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Program.LogService?.LogError("Error adding game", ex);
+                    if (!IsDisposed && !Disposing)
+                        _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
                 }
-
-                // User backed out of file selection: drop the connection we warmed for nothing.
-                if (!proceeded)
-                    await ServiceLocator.SteamProductInfoService.CloseSessionAsync().ConfigureAwait(true);
-
-                warmupCts.Dispose();
             }
         }
 
@@ -1028,13 +1508,39 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing || string.IsNullOrWhiteSpace(executablePath))
                     return;
 
-                _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateDraftFromExecutable(executablePath));
-                ShowPendingAddInList();
-
                 _taskReportService.SetProgress(0, 0);
 
+                ulong appId = ServiceLocator.GameAddCollector.ResolveAppIdForCollect(executablePath);
+                if (appId == 0)
+                {
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
+                    return;
+                }
+
+                if (IsDisposed || Disposing)
+                    return;
+
+                GameConfig duplicate = _gameDataService.FindDuplicateForAdd(executablePath, appId, out bool matchedByExecutable);
+                if (duplicate != null)
+                {
+                    DuplicateGameAction action = DuplicateGameDialogHelper.Show(this, duplicate, matchedByExecutable);
+                    if (action == DuplicateGameAction.Edit)
+                    {
+                        _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.");
+                        EditGame(duplicate.GameGuid);
+                        return;
+                    }
+
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
+                    return;
+                }
+
+                _pendingAddGameListService.SetDraft(PendingAddGameListService.CreateDraftFromExecutable(executablePath));
+
+                ShowPendingAddInList();
+
                 GameAddCollectResult collectResult = await ServiceLocator.GameAddCollector
-                    .CollectFromExecutableAsync(executablePath, this, _taskReportService)
+                    .CollectFromExecutableAsync(executablePath, this, _taskReportService, appId)
                     .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
@@ -1042,10 +1548,9 @@ namespace SmartGoldbergEmu.Forms
                 if (collectResult.Cancelled)
                 {
                     ClearPendingAddListEntry();
-                    if (collectResult.MetadataFetchFailed)
-                        _taskReportService.SetMessage("Could not fetch app data from Steam.", TaskReportKind.Error);
-                    else
-                        _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                    // Metadata fetch errors are already on the strip from GameSetupService.
+                    if (!collectResult.MetadataFetchFailed)
+                        _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
                     return;
                 }
 
@@ -1067,12 +1572,34 @@ namespace SmartGoldbergEmu.Forms
 
                 _taskReportService.SetProgress(0, 0);
                 if (!await OpenGameSettingsFormAsync(gameConfig, metadata, collectResult.Bundle).ConfigureAwait(true))
-                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                {
+                    _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
+                    return;
+                }
+
+                if (IsDisposed || Disposing)
+                    return;
+
+                // Stub check after the game is in the library.
+                if (_gameDataService.GetGame(gameConfig.GameGuid) != null)
+                {
+                    string stubExe = executablePath;
+                    ulong stubAppId = gameConfig.AppId;
+                    string stubName = gameConfig.AppName;
+                    // Schedule after add returns so list/mosaic can paint; do not block save completion.
+                    BeginInvoke(new MethodInvoker(() =>
+                    {
+                        if (IsDisposed || Disposing)
+                            return;
+                        _ = OfferSteamStubRemovalIfNeededAsync(stubExe, stubAppId, stubName)
+                            .ForgetFaults(Program.LogService, nameof(OfferSteamStubRemovalIfNeededAsync));
+                    }));
+                }
             }
             catch (Exception ex)
             {
                 ClearPendingAddListEntry();
-                Program.LogService?.LogError($"Error adding game: {ex.Message}", ex);
+                Program.LogService?.LogError("Error adding game", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
             }
         }
@@ -1081,36 +1608,47 @@ namespace SmartGoldbergEmu.Forms
         {
             bool existedBeforeDialog = _gameDataService.GetGame(gameConfig.GameGuid) != null;
             PendingAddGameSave pendingAddSave = null;
-            using (var gameSettingsForm = new GameSettingsForm(
-                gameConfig,
-                isEditMode: false,
-                metadata: metadata,
-                feedbackService: _taskReportService,
-                onSaveCompleted: null,
-                addBundle: addBundle))
+            try
             {
-                DialogResult dialogResult = gameSettingsForm.ShowDialog(this);
-                pendingAddSave = gameSettingsForm.PendingAddSave;
-                bool existsAfterDialog = _gameDataService.GetGame(gameConfig.GameGuid) != null;
-                bool gameWasAdded = !existedBeforeDialog && existsAfterDialog;
-
-                if (dialogResult == DialogResult.Retry && gameSettingsForm.EditExistingGameGuid != Guid.Empty)
+                using (var gameSettingsForm = new GameSettingsForm(
+                    gameConfig,
+                    isEditMode: false,
+                    metadata: metadata,
+                    feedbackService: _taskReportService,
+                    onSaveCompleted: null,
+                    addBundle: addBundle))
                 {
+                    DialogResult dialogResult = gameSettingsForm.ShowDialog(this);
+                    pendingAddSave = gameSettingsForm.PendingAddSave;
+                    bool existsAfterDialog = _gameDataService.GetGame(gameConfig.GameGuid) != null;
+                    bool gameWasAdded = !existedBeforeDialog && existsAfterDialog;
+
+                    if (dialogResult == DialogResult.OK || gameWasAdded)
+                    {
+                        if (pendingAddSave != null)
+                            return await CompletePendingAddSaveAsync(pendingAddSave).ConfigureAwait(true);
+                        return true;
+                    }
+
                     ClearPendingAddListEntry();
-                    _taskReportService.SetMessageWithAutoClear("Opening the existing game for edit.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
-                    EditGame(gameSettingsForm.EditExistingGameGuid);
-                    return true;
+                    return false;
                 }
-
-                if (dialogResult == DialogResult.OK || gameWasAdded)
+            }
+            finally
+            {
+                if (pendingAddSave == null)
                 {
-                    if (pendingAddSave != null)
-                        return await CompletePendingAddSaveAsync(pendingAddSave).ConfigureAwait(true);
-                    return true;
+                    addBundle?.ReleaseHeavyRuntimeData();
+                    gameConfig?.ReleaseHeavyRuntimeData();
                 }
-
-                ClearPendingAddListEntry();
-                return false;
+                else if (addBundle != null)
+                {
+                    // Do not touch Game here: failed save may restore the draft; success already released it.
+                    addBundle.AchievementsPreviewJson = null;
+                    addBundle.ItemsJson = null;
+                    addBundle.Metadata = null;
+                    addBundle.Catalog = null;
+                }
             }
         }
 
@@ -1121,7 +1659,10 @@ namespace SmartGoldbergEmu.Forms
 
             GameConfig draftToRestore = pending.GameConfig;
             Guid savedGameGuid = draftToRestore.GameGuid;
+            bool isUpdate = pending.IsUpdateOfExisting;
             _pendingAddGameListService.Clear();
+            if (!isUpdate && savedGameGuid != Guid.Empty)
+                _addSaveWaitingForAssetsGuids.Add(savedGameGuid);
 
             GameSettingsSnapshot snapshot = pending.SettingsSnapshot ?? new GameSettingsSnapshot { AppId = pending.GameConfig.AppId };
 
@@ -1157,23 +1698,25 @@ namespace SmartGoldbergEmu.Forms
                     TaskReportService = _taskReportService,
                     OnAssetsDownloaded = formSaveRequest.OnAssetsDownloaded,
                     OnSuccessfulSaveCompleted = formSaveRequest.OnSuccessfulSaveCompleted,
-                    CredentialsTouched = pending.CredentialsTouched
+                    CredentialsTouched = pending.CredentialsTouched,
+                    IsUpdateOfExisting = isUpdate
                 }).ConfigureAwait(true);
 
                 if (!saveResult.IsSuccess)
                 {
-                    if (_gameDataService.GetGame(draftToRestore.GameGuid) == null)
+                    _addSaveWaitingForAssetsGuids.Remove(savedGameGuid);
+                    if (_gameDataService.GetGame(draftToRestore.GameGuid) == null || isUpdate)
                     {
-                        _pendingAddGameListService.SetDraft(draftToRestore);
+                        _pendingAddGameListService.SetDraft(draftToRestore, isUpdate: isUpdate);
                         ShowPendingAddInList();
                     }
 
                     if (saveResult.HasCustomStatsJsonError)
                     {
-                        FormMessageBoxHelper.ShowIfAlive(this,
-                            "Custom stats contain invalid JSON. Please fix the format before saving.",
-                            "Invalid JSON",
-                            MessageBoxButtons.OK,
+                        AppTaskDialogHelper.ShowOk(
+                            this,
+                            "Custom stats contain invalid JSON.\n" +
+                            "Please fix the format before saving.",
                             MessageBoxIcon.Warning);
                     }
                     else if (!string.IsNullOrWhiteSpace(saveResult.ErrorMessage))
@@ -1183,17 +1726,23 @@ namespace SmartGoldbergEmu.Forms
                     return false;
                 }
 
+                pending.Metadata = null;
+                pending.CustomStatsRawJson = null;
+                pending.AdditionalFilesSaveRequest = null;
+                pending.SaveDlcAndPaths = null;
+                pending.GameConfig = null;
                 return true;
             }
             catch (Exception ex)
             {
-                if (_gameDataService.GetGame(draftToRestore.GameGuid) == null)
+                _addSaveWaitingForAssetsGuids.Remove(savedGameGuid);
+                if (_gameDataService.GetGame(draftToRestore.GameGuid) == null || isUpdate)
                 {
-                    _pendingAddGameListService.SetDraft(draftToRestore);
+                    _pendingAddGameListService.SetDraft(draftToRestore, isUpdate: isUpdate);
                     ShowPendingAddInList();
                 }
 
-                Program.LogService?.LogError($"Error saving game: {ex.Message}", ex);
+                Program.LogService?.LogError("Error saving game", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Saving game", ex), TaskReportKind.Error);
                 return false;
             }
@@ -1206,9 +1755,51 @@ namespace SmartGoldbergEmu.Forms
 
             Guid gameGuid = _pendingAddGameListService.GetDraft().GameGuid;
             string mosaicKey = _pendingAddMosaicImageKey;
+            bool wasUpdate = _pendingAddGameListService.IsUpdateDraft;
+            GameConfig draft = _pendingAddGameListService.GetDraft();
             _pendingAddGameListService.Clear();
             _pendingAddMosaicImageKey = null;
+            _addSaveWaitingForAssetsGuids.Remove(gameGuid);
+            draft?.ReleaseHeavyRuntimeData();
+
+            if (wasUpdate && _gameDataService.GetGame(gameGuid) != null)
+            {
+                RestoreLibraryGameInList(gameGuid);
+                // Update drafts share the AppId mosaic key with the library tile — do not remove it.
+                if (!string.IsNullOrEmpty(mosaicKey)
+                    && mosaicKey.StartsWith("pending-", StringComparison.OrdinalIgnoreCase))
+                    RemoveMosaicImageKey(mosaicKey);
+                return;
+            }
+
             RemovePendingAddFromListView(gameGuid, mosaicKey);
+        }
+
+        private void RestoreLibraryGameInList(Guid gameGuid)
+        {
+            GameConfig game = _gameDataService.GetGame(gameGuid);
+            if (game == null)
+                return;
+
+            var viewMode = _appDataService.GetViewMode();
+            var tileImageList = GetTileImageListForViewMode(viewMode);
+            var item = GameDisplayService.FindListItemByGameGuid(lstGames, gameGuid);
+            if (item != null)
+            {
+                _gameDisplayService.UpdateListViewItem(
+                    item,
+                    game,
+                    viewMode,
+                    tileImageList ?? _largeImageList,
+                    tileImageList ?? _smallImageList,
+                    GetImportPendingPredicate(),
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
+                lstGames.Invalidate();
+                return;
+            }
+
+            ScheduleRefreshGames(reloadTiles: true);
         }
 
         private void ShowPendingAddInList()
@@ -1226,9 +1817,13 @@ namespace SmartGoldbergEmu.Forms
                 tileImageList ?? _largeImageList,
                 tileImageList ?? _smallImageList,
                 GetImportPendingPredicate(),
-                GetAddPendingPredicate());
+                GetAddPendingPredicate(),
+                GetUpdatePendingPredicate());
 
-            _pendingAddMosaicImageKey = GameDisplayService.GetMosaicImageKey(draft);
+            _pendingAddMosaicImageKey = GameDisplayService.GetMosaicImageKey(
+                draft,
+                GetAddPendingPredicate(),
+                GetUpdatePendingPredicate());
             EnsurePendingAddItemVisible();
 
             if (IsMosaicViewMode(viewMode))
@@ -1242,7 +1837,10 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             string priorMosaicKey = _pendingAddMosaicImageKey;
-            string newMosaicKey = GameDisplayService.GetMosaicImageKey(draft);
+            string newMosaicKey = GameDisplayService.GetMosaicImageKey(
+                draft,
+                GetAddPendingPredicate(),
+                GetUpdatePendingPredicate());
             var viewMode = _appDataService.GetViewMode();
             var tileImageList = GetTileImageListForViewMode(viewMode);
             var item = GameDisplayService.FindListItemByGameGuid(lstGames, draft.GameGuid);
@@ -1255,7 +1853,8 @@ namespace SmartGoldbergEmu.Forms
                     tileImageList ?? _largeImageList,
                     tileImageList ?? _smallImageList,
                     GetImportPendingPredicate(),
-                    GetAddPendingPredicate());
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
             }
             else
             {
@@ -1267,7 +1866,8 @@ namespace SmartGoldbergEmu.Forms
             if (IsMosaicViewMode(viewMode)
                 && !string.Equals(priorMosaicKey, newMosaicKey, StringComparison.Ordinal))
             {
-                if (!string.IsNullOrEmpty(priorMosaicKey))
+                if (!string.IsNullOrEmpty(priorMosaicKey)
+                    && priorMosaicKey.StartsWith("pending-", StringComparison.OrdinalIgnoreCase))
                     RemoveMosaicImageKey(priorMosaicKey);
                 _ = UpsertMosaicTileForGameAsync(draft, viewMode).ForgetFaults(Program.LogService, nameof(UpsertMosaicTileForGameAsync));
             }
@@ -1304,6 +1904,11 @@ namespace SmartGoldbergEmu.Forms
             return _pendingAddGameListService.IsPendingGame;
         }
 
+        private Func<GameConfig, bool> GetUpdatePendingPredicate()
+        {
+            return _pendingAddGameListService.IsPendingUpdate;
+        }
+
         private static void SaveAdditionalFilesFromPending(PendingAddGameSave pending)
         {
             GameSettingsForm.SaveAdditionalFilesFromRequest(pending?.AdditionalFilesSaveRequest, null);
@@ -1315,11 +1920,16 @@ namespace SmartGoldbergEmu.Forms
             {
                 openFileDialog.Filter = ApplicationConstants.ExecutableFileFilter;
                 openFileDialog.FilterIndex = 1;
-                openFileDialog.RestoreDirectory = true;
                 openFileDialog.Title = "Select Game Executable";
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.GameExecutable);
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.GameExecutable,
+                        openFileDialog.FileName);
                     return openFileDialog.FileName;
                 }
             }
@@ -1344,7 +1954,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (IsDisposed || Disposing)
                 return;
-            Program.LogService?.LogMessage("Manual launcher update check triggered by user");
+            Program.LogService?.LogDebug("Manual launcher update check");
             _taskReportService.SetMessage("Checking for launcher updates...");
             try
             {
@@ -1355,8 +1965,68 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Launcher update check UI flow failed: {ex.Message}", ex);
+                Program.LogService?.LogError("Launcher update check UI flow failed", ex);
                 _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher update check", ex), TaskReportKind.Error);
+            }
+            finally
+            {
+                _taskReportService.SetMessage(string.Empty);
+            }
+        }
+
+        private void OnReinstallLauncher_Click(object sender, EventArgs e)
+        {
+            _ = OnReinstallLauncherAsync().ForgetFaults(Program.LogService, nameof(OnReinstallLauncherAsync));
+        }
+
+        private async Task OnReinstallLauncherAsync()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            Program.LogService?.LogDebug("Manual launcher reinstall");
+            _taskReportService.SetMessage("Preparing launcher reinstall...");
+
+            try
+            {
+                await LauncherUpdateService.ReinstallWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError("Launcher reinstall failed", ex);
+                _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher reinstall", ex), TaskReportKind.Error);
+            }
+            finally
+            {
+                _taskReportService.SetMessage(string.Empty);
+            }
+        }
+
+        private void OnViewLauncherChangelog_Click(object sender, EventArgs e)
+        {
+            _ = OnViewLauncherChangelogAsync().ForgetFaults(Program.LogService, nameof(OnViewLauncherChangelogAsync));
+        }
+
+        private async Task OnViewLauncherChangelogAsync()
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            Program.LogService?.LogDebug("View launcher changelog");
+            _taskReportService.SetMessage("Loading changelog...");
+
+            try
+            {
+                await LauncherUpdateService.ShowLatestChangelogWithUIAsync(Program.LogService, this).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError("Launcher changelog failed", ex);
+                _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Launcher changelog", ex), TaskReportKind.Error);
             }
             finally
             {
@@ -1392,7 +2062,7 @@ namespace SmartGoldbergEmu.Forms
             if (games.All(g => _pendingAddGameListService.IsPendingGame(g)))
             {
                 ClearPendingAddListEntry();
-                _taskReportService.SetMessageWithAutoClear("Adding game cancelled.", delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                _taskReportService.SetMessageWithAutoClear("Adding game cancelled.");
                 return;
             }
 
@@ -1400,7 +2070,7 @@ namespace SmartGoldbergEmu.Forms
             if (games.Count == 0)
                 return;
 
-            var (confirmed, deleteFiles) = RemovesGameForm.Show(games, this);
+            var (confirmed, deleteFiles) = RemoveGamesDialogHelper.Show(games, this);
             if (!confirmed)
                 return;
 
@@ -1416,7 +2086,8 @@ namespace SmartGoldbergEmu.Forms
                 else
                 {
                     lastError = removeResult.ErrorMessage;
-                    Program.LogService?.LogError($"Failed to remove game {game.AppName}: {removeResult.ErrorMessage}");
+                    Program.LogService?.LogError(
+                        $"Failed to remove game {game.AppName} (AppId {game.AppId}): {removeResult.ErrorMessage}");
                 }
             }
 
@@ -1424,8 +2095,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 RefreshGames();
                 _taskReportService.SetMessageWithAutoClear(
-                    removed == 1 ? $"{games[0].AppName} removed." : $"{removed} games removed.",
-                    TaskReportKind.Info);
+                    removed == 1 ? $"{games[0].AppName} removed." : $"{removed} games removed.");
             }
 
             if (removed < games.Count && !string.IsNullOrWhiteSpace(lastError))
@@ -1433,7 +2103,43 @@ namespace SmartGoldbergEmu.Forms
                 string userMessage = "Failed to remove some games from library.";
                 if (!lastError.Contains("\\") && !lastError.Contains("/"))
                     userMessage = $"Failed to remove game: {lastError}";
-                FormMessageBoxHelper.ShowIfAlive(this, userMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, userMessage, "Remove Game", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async void OnRefreshGameCatalogAndAssets_Click(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing)
+                return;
+            if (!TryGetSelectedGameWithAppId(out GameConfig selectedGame))
+                return;
+
+            Program.LogService?.LogDebug(
+                $"Catalog and asset refresh: {selectedGame.AppName} (AppId {selectedGame.AppId})");
+
+            using (ServiceLocator.SteamProductInfoService.HoldSession())
+            {
+                try
+                {
+                    var feedbackService = GetLocatorTaskReportOrNull();
+                    await ServiceLocator.GoldbergArtifactService
+                        .RefreshGameCatalogAndAssetsAsync(selectedGame, feedbackService)
+                        .ConfigureAwait(true);
+
+                    if (IsDisposed || Disposing)
+                        return;
+
+                    NotifyAddSaveListChanged(selectedGame.GameGuid, reloadMosaic: true);
+                    Program.LogService?.LogMessage(
+                        $"Catalog for AppId {selectedGame.AppId} retrieved.");
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogError(
+                        $"Catalog for AppId {selectedGame.AppId} failed: {selectedGame.AppName}",
+                        ex);
+                    FormMessageBoxHelper.ShowIfAlive(this, "Failed to refresh game data and assets. Please check the SmartGoldbergEmu log for details.", "Refresh Game Data", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 
@@ -1444,7 +2150,8 @@ namespace SmartGoldbergEmu.Forms
             if (!TryGetSelectedGameWithAppId(out GameConfig selectedGame))
                 return;
 
-            Program.LogService?.LogMessage($"Starting achievement generation for game: {selectedGame.AppName} (App ID: {selectedGame.AppId})");
+            Program.LogService?.LogDebug(
+                $"Achievement generation: {selectedGame.AppName} (AppId {selectedGame.AppId})");
 
             try
             {
@@ -1455,12 +2162,15 @@ namespace SmartGoldbergEmu.Forms
 
                 if (IsDisposed || Disposing)
                     return;
-                Program.LogService?.LogMessage("Achievement generation completed successfully");
+                Program.LogService?.LogMessage(
+                    $"Emulator files for AppId {selectedGame.AppId} generated.");
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to generate achievements: {ex.Message}", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, "Failed to generate achievements. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Program.LogService?.LogError(
+                    $"Emulator files for AppId {selectedGame.AppId} failed (achievements): {selectedGame.AppName}",
+                    ex);
+                FormMessageBoxHelper.ShowIfAlive(this, "Failed to generate achievements. Please check the SmartGoldbergEmu log for details.", "Generate Achievements", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1470,80 +2180,559 @@ namespace SmartGoldbergEmu.Forms
                 EditGame(game.GameGuid);
         }
 
-        private async void OnApplySteamless_Click(object sender, EventArgs e)
+        private async void OnRemoveSteamStub_DropDownOpening(object sender, EventArgs e)
+        {
+            // Show() after async rebuild re-enters Opening; skip so we do not loop.
+            if (_stubKitDropDownReopening || IsDisposed || Disposing)
+                return;
+
+            int loadId = ++_stubKitDropDownLoadId;
+            // Capture before await — clearing/rebuilding DropDownItems after await parks the menu at (0,0).
+            Point dropLocation = GetStubKitDropDownScreenLocation(miCtxRowRemoveSteamStub);
+
+            ClearStubKitDropDownItems();
+            AddStubKitAutoHandleMenuHeader();
+
+            var game = GetSelectedGame();
+            if (game == null)
+            {
+                AddStubKitPlaceholderMenuItem("No game selected");
+                return;
+            }
+
+            if (!GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out _))
+            {
+                AddStubKitPlaceholderMenuItem("No executable found");
+                return;
+            }
+
+            var loadingItem = new ToolStripMenuItem("Loading…") { Enabled = false };
+            miCtxRowRemoveSteamStub.DropDownItems.Add(loadingItem);
+
+            IReadOnlyList<StubExecutableTarget> targets;
+            try
+            {
+                targets = await ServiceLocator.StubKitService.ResolveTargetsAsync(game).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                if (!IsStubKitDropDownLoadCurrent(loadId))
+                    return;
+
+                Program.LogService?.LogError("StubKit: failed to resolve launch executables.", ex);
+                ClearStubKitDropDownItems();
+                AddStubKitAutoHandleMenuHeader();
+                AddStubKitPlaceholderMenuItem("Could not load executables");
+                ReopenStubKitDropDownAt(dropLocation);
+                return;
+            }
+
+            if (!IsStubKitDropDownLoadCurrent(loadId))
+                return;
+
+            ClearStubKitDropDownItems();
+            AddStubKitAutoHandleMenuHeader();
+
+            if (targets == null || targets.Count == 0)
+            {
+                AddStubKitPlaceholderMenuItem("No executable found");
+                ReopenStubKitDropDownAt(dropLocation);
+                return;
+            }
+
+            // Show each exe immediately as Loading…, then fill Patch/Restore/No stub as PE checks finish.
+            var menuItems = new List<ToolStripMenuItem>();
+            foreach (StubExecutableTarget target in targets)
+            {
+                if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
+                    continue;
+
+                var item = new ToolStripMenuItem
+                {
+                    Tag = target,
+                    Image = TryExtractStubMenuIcon(target.FullPath)
+                };
+                ApplyStubKitMenuItemPresentation(item, target);
+                miCtxRowRemoveSteamStub.DropDownItems.Add(item);
+                menuItems.Add(item);
+            }
+
+            if (miCtxRowRemoveSteamStub.DropDownItems.Count <= 2)
+            {
+                AddStubKitPlaceholderMenuItem("No executable found");
+                ReopenStubKitDropDownAt(dropLocation);
+                return;
+            }
+
+            ReopenStubKitDropDownAt(dropLocation);
+
+            foreach (ToolStripMenuItem item in menuItems)
+            {
+                if (!IsStubKitDropDownLoadCurrent(loadId))
+                    return;
+
+                var target = item.Tag as StubExecutableTarget;
+                if (target == null || !target.IsDetectionPending)
+                    continue;
+
+                try
+                {
+                    await ServiceLocator.StubKitService.DetectTargetAsync(target).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    if (!IsStubKitDropDownLoadCurrent(loadId))
+                        return;
+
+                    Program.LogService?.LogError("StubKit: failed to detect SteamStub on " + target.FullPath, ex);
+                    target.IsDetectionPending = false;
+                    target.CanRemove = false;
+                    target.HasSteamStub = false;
+                    target.StubName = "none";
+                }
+
+                if (!IsStubKitDropDownLoadCurrent(loadId))
+                    return;
+
+                ApplyStubKitMenuItemPresentation(item, target);
+            }
+
+            if (IsStubKitDropDownLoadCurrent(loadId))
+                StubKitService.ReleaseTemporaryBuffers();
+        }
+
+        private void ApplyStubKitMenuItemPresentation(ToolStripMenuItem item, StubExecutableTarget target)
+        {
+            if (item == null || target == null)
+                return;
+
+            string text = string.IsNullOrWhiteSpace(target.DisplayName)
+                ? Path.GetFileName(target.FullPath)
+                : target.DisplayName.Trim();
+
+            StubExecutableMenuAction action = target.MenuAction;
+            switch (action)
+            {
+                case StubExecutableMenuAction.Loading:
+                    text += " - [Loading…]";
+                    break;
+                case StubExecutableMenuAction.Patch:
+                    text += " - [Patch]";
+                    break;
+                case StubExecutableMenuAction.Restore:
+                    text += " - [Restore]";
+                    break;
+                default:
+                    text += " - [No stub]";
+                    break;
+            }
+
+            string pathHint = string.IsNullOrWhiteSpace(target.RelativeOrExeHint)
+                ? target.FullPath
+                : target.RelativeOrExeHint + Environment.NewLine + target.FullPath;
+
+            string statusHint;
+            switch (action)
+            {
+                case StubExecutableMenuAction.Loading:
+                    statusHint = "Checking this executable for SteamStub…"
+                        + Environment.NewLine + pathHint;
+                    break;
+                case StubExecutableMenuAction.Patch:
+                    statusHint = string.IsNullOrWhiteSpace(target.StubName)
+                        ? "Remove SteamStub from this executable." + Environment.NewLine + pathHint
+                        : "Remove " + target.StubName.Trim() + "." + Environment.NewLine + pathHint;
+                    break;
+                case StubExecutableMenuAction.Restore:
+                    statusHint = "Restore the original executable from the backup."
+                        + Environment.NewLine + pathHint;
+                    break;
+                default:
+                    statusHint = "No SteamStub found on this executable."
+                        + Environment.NewLine + pathHint;
+                    break;
+            }
+
+            bool actionable = action == StubExecutableMenuAction.Patch
+                || action == StubExecutableMenuAction.Restore;
+
+            item.Click -= OnRemoveSteamStubTarget_Click;
+            item.Text = text;
+            item.Enabled = actionable;
+            item.ToolTipText = statusHint;
+            if (actionable)
+                item.Click += OnRemoveSteamStubTarget_Click;
+        }
+
+        private bool IsStubKitDropDownLoadCurrent(int loadId)
+        {
+            return loadId == _stubKitDropDownLoadId
+                && !IsDisposed
+                && !Disposing
+                && ctxGamesItem != null
+                && ctxGamesItem.Visible;
+        }
+
+        // DropDownLocation is protected on net48; submenu opens at the item's right edge.
+        private static Point GetStubKitDropDownScreenLocation(ToolStripMenuItem item)
+        {
+            if (item == null)
+                return Point.Empty;
+
+            ToolStrip parent = item.GetCurrentParent();
+            if (parent == null)
+                return Point.Empty;
+
+            Rectangle bounds = item.Bounds;
+            return parent.PointToScreen(new Point(bounds.Right, bounds.Top));
+        }
+
+        private void ReopenStubKitDropDownAt(Point dropLocation)
+        {
+            if (miCtxRowRemoveSteamStub?.DropDown == null)
+                return;
+            if (ctxGamesItem == null || !ctxGamesItem.Visible)
+                return;
+
+            _stubKitDropDownReopening = true;
+            try
+            {
+                if (dropLocation.IsEmpty)
+                    miCtxRowRemoveSteamStub.ShowDropDown();
+                else
+                    miCtxRowRemoveSteamStub.DropDown.Show(dropLocation);
+            }
+            finally
+            {
+                _stubKitDropDownReopening = false;
+            }
+        }
+
+        private void ClearStubKitDropDownItems()
+        {
+            if (miCtxRowRemoveSteamStub == null)
+                return;
+
+            ToolStripItemCollection items = miCtxRowRemoveSteamStub.DropDownItems;
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                ToolStripItem item = items[i];
+                items.RemoveAt(i);
+                if (item.Image != null)
+                {
+                    Image image = item.Image;
+                    item.Image = null;
+                    image.Dispose();
+                }
+
+                item.Dispose();
+            }
+        }
+
+        // Checked toggle first, then a separator, then per-exe Patch/Restore items.
+        private void AddStubKitAutoHandleMenuHeader()
+        {
+            if (miCtxRowRemoveSteamStub == null)
+                return;
+
+            bool enabled = false;
+            try
+            {
+                enabled = _appDataService.GetAutoHandleSteamStubs();
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("StubKit: could not read Auto handle SteamStubs setting: " + ex.Message);
+            }
+
+            var autoItem = new ToolStripMenuItem("Auto handle SteamStubs - (Auto patch)")
+            {
+                Name = "miCtxStubAutoHandle",
+                CheckOnClick = true,
+                Checked = enabled,
+                ToolTipText = "When checked, removable SteamStub is unpacked automatically when adding or launching a game (no confirm dialog)."
+            };
+            autoItem.Click += OnStubKitAutoHandle_Click;
+            miCtxRowRemoveSteamStub.DropDownItems.Add(autoItem);
+            miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripSeparator());
+        }
+
+        private void OnStubKitAutoHandle_Click(object sender, EventArgs e)
+        {
+            var item = sender as ToolStripMenuItem;
+            if (item == null)
+                return;
+
+            var result = _appDataService.SetAutoHandleSteamStubs(item.Checked);
+            if (result.IsValid)
+                return;
+
+            item.Checked = !item.Checked;
+            FormMessageBoxHelper.ShowIfAlive(
+                this,
+                result.ErrorMessage ?? "Could not save Auto handle SteamStubs.",
+                StubKitFeedback.DialogTitle,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        private void AddStubKitPlaceholderMenuItem(string text)
+        {
+            miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripMenuItem(text) { Enabled = false });
+        }
+
+        private async void OnRemoveSteamStubTarget_Click(object sender, EventArgs e)
         {
             if (IsDisposed || Disposing)
                 return;
 
-            var game = GetSelectedGame();
-            if (game == null)
+            var menuItem = sender as ToolStripMenuItem;
+            var target = menuItem?.Tag as StubExecutableTarget;
+            if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
                 return;
 
-            if (!TryResolveExecutableForSteamless(game, out string executablePath))
-            {
-                ShowSteamlessApplyFeedback(game.AppName, new SteamlessApplyResult { Outcome = SteamlessApplyOutcome.ExecutablePathInvalid });
-                return;
-            }
+            if (target.MenuAction == StubExecutableMenuAction.Restore)
+                await RestoreStubKitExecutableAsync(target.FullPath).ConfigureAwait(true);
+            else if (target.MenuAction == StubExecutableMenuAction.Patch)
+                await ApplyStubKitToExecutableAsync(target.FullPath).ConfigureAwait(true);
+        }
 
-            if (!TryEnsureSteamlessCliPath())
-                return;
+        // Returns false when the user cancels (Cancel / window X); true to continue (Accept, Skip, or no prompt).
+        private async Task<bool> OfferSteamStubRemovalIfNeededAsync(string executablePath, ulong appId, string gameName)
+        {
+            if (IsDisposed || Disposing)
+                return true;
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+                return true;
 
-            if (!SteamlessOptionsForm.TryShow(game.AppName, executablePath, this, out SteamlessCliOptions cliOptions))
-                return;
+            string extension = Path.GetExtension(executablePath);
+            if (!string.Equals(extension, ".exe", StringComparison.OrdinalIgnoreCase))
+                return true;
 
-            Program.LogService?.LogMessage($"Running Steamless on {game.AppName}: {executablePath}");
-            _taskReportService.StartProgress(SteamlessFeedback.Progress(game.AppName));
-            prgFeedback.Style = ProgressBarStyle.Marquee;
-
+            DetectResult detect;
             try
             {
-                var result = await ServiceLocator.SteamlessService.ApplySteamlessAsync(executablePath, cliOptions, Program.LogService).ConfigureAwait(true);
-                if (IsDisposed || Disposing)
-                    return;
-
-                ShowSteamlessApplyFeedback(game.AppName, result);
+                detect = await Task.Run(() => StubKitService.DetectExecutable(executablePath))
+                    .ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Running Steamless on {game.AppName} failed.", ex);
-                ShowSteamlessApplyFeedback(game.AppName, new SteamlessApplyResult
+                Program.LogService?.LogError("StubKit: failed to check executable for SteamStub.", ex);
+                return true;
+            }
+
+            if (IsDisposed || Disposing)
+                return true;
+            if (detect == null || !detect.CanRemove)
+                return true;
+
+            bool autoHandle = false;
+            try
+            {
+                autoHandle = _appDataService != null && _appDataService.GetAutoHandleSteamStubs();
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("StubKit: could not read Auto handle SteamStubs setting: " + ex.Message);
+            }
+
+            if (autoHandle)
+            {
+                Program.LogService?.LogDebug("StubKit: auto-handling SteamStub on " + executablePath);
+                await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
+                return true;
+            }
+
+            const int idAccept = 100;
+            const int idSkip = 101;
+            AppTaskDialogResult answer = AppTaskDialogForm.Show(
+                this,
+                new AppTaskDialogRequest
                 {
-                    Outcome = SteamlessApplyOutcome.Unexpected,
+                    Content = StubKitFeedback.OfferRemoveQuestion(appId, gameName, Path.GetFileName(executablePath)),
+                    // Wider than default so long Game: lines fit before wrapping.
+                    MaxClientWidth = 640,
+                    Icon = MessageBoxIcon.Question,
+                    VerificationText = "Auto handle SteamStubs - (Auto patch)",
+                    VerificationChecked = false,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idAccept, "Accept") { IsDefault = true },
+                        new AppTaskDialogButton(idSkip, "Skip"),
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                    }
+                });
+            if (answer.ButtonId == TaskDialogHelper.IdCancel)
+                return false;
+            if (answer.ButtonId != idAccept)
+                return true;
+
+            if (answer.VerificationChecked)
+            {
+                var saveResult = _appDataService.SetAutoHandleSteamStubs(true);
+                if (!saveResult.IsValid)
+                {
+                    Program.LogService?.LogWarning(
+                        "StubKit: could not save Auto handle SteamStubs: " + (saveResult.ErrorMessage ?? "unknown error"));
+                }
+                else
+                    Program.LogService?.LogDebug("StubKit: Auto handle SteamStubs enabled from confirm dialog");
+            }
+
+            await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
+            return true;
+        }
+
+        private string TryResolveLaunchExecutableForStubCheck(GameConfig game, LaunchOption launchOption)
+        {
+            if (game == null)
+                return null;
+
+            try
+            {
+                ResolvedLaunchCommand command = _gameLaunchService.GetResolvedLaunchCommand(game, launchOption);
+                if (command != null && !string.IsNullOrWhiteSpace(command.ExecutablePath) && File.Exists(command.ExecutablePath))
+                    return command.ExecutablePath;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogDebug("StubKit: could not resolve launch executable for SteamStub check: " + ex.Message);
+            }
+
+            if (GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out string settingsPath)
+                && !string.IsNullOrWhiteSpace(settingsPath)
+                && File.Exists(settingsPath))
+            {
+                return settingsPath;
+            }
+
+            return null;
+        }
+
+        private async Task ApplyStubKitToExecutableAsync(string executablePath, string gameName = null)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            string name = !string.IsNullOrWhiteSpace(gameName)
+                ? gameName.Trim()
+                : GetSelectedGame()?.AppName;
+            if (string.IsNullOrWhiteSpace(name))
+                name = "game";
+
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+            {
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult { Outcome = StubKitApplyOutcome.ExecutablePathInvalid });
+                return;
+            }
+
+            Program.LogService?.LogDebug($"Removing SteamStub on {name}: {executablePath}");
+            _taskReportService.SetMessage(StubKitFeedback.PatchingInProgress(name));
+
+            try
+            {
+                var result = await ServiceLocator.StubKitService
+                    .ApplyAsync(executablePath, Program.LogService)
+                    .ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+
+                ShowStubKitApplyFeedback(name, result);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Removing SteamStub on {name} failed.", ex);
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult
+                {
+                    Outcome = StubKitApplyOutcome.Unexpected,
                     LogDetail = ex.Message
                 });
             }
-            finally
+        }
+
+        private async Task RestoreStubKitExecutableAsync(string executablePath)
+        {
+            if (IsDisposed || Disposing)
+                return;
+
+            string name = GetSelectedGame()?.AppName;
+            if (string.IsNullOrWhiteSpace(name))
+                name = "game";
+
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
             {
-                if (!IsDisposed && !Disposing)
-                    prgFeedback.Style = ProgressBarStyle.Blocks;
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult { Outcome = StubKitApplyOutcome.ExecutablePathInvalid });
+                return;
+            }
+
+            Program.LogService?.LogDebug($"Restoring SteamStub backup for {name}: {executablePath}");
+            _taskReportService.SetMessage(StubKitFeedback.RestoringInProgress(name));
+
+            try
+            {
+                var result = await ServiceLocator.StubKitService.RestoreAsync(executablePath, Program.LogService).ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+
+                ShowStubKitApplyFeedback(name, result);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Restoring SteamStub backup for {name} failed.", ex);
+                ShowStubKitApplyFeedback(name, new StubKitApplyResult
+                {
+                    Outcome = StubKitApplyOutcome.Unexpected,
+                    LogDetail = ex.Message
+                });
             }
         }
 
-        private void ShowSteamlessApplyFeedback(string gameName, SteamlessApplyResult result)
+        private void ShowStubKitApplyFeedback(string gameName, StubKitApplyResult result)
         {
             if (result == null)
                 return;
 
             if (!string.IsNullOrWhiteSpace(result.LogDetail))
-                Program.LogService?.LogMessage("Steamless detail: " + result.LogDetail);
+                Program.LogService?.LogMessage("StubKit detail: " + result.LogDetail);
 
-            if (SteamlessFeedback.UsePopupForOutcome(result.Outcome))
+            string message = StubKitFeedback.ResultMessage(result.Outcome, gameName);
+            TaskReportKind kind = StubKitFeedback.KindForOutcome(result.Outcome);
+            Program.LogService?.LogMessage(message);
+
+            if (result.Outcome == StubKitApplyOutcome.Success ||
+                result.Outcome == StubKitApplyOutcome.Restored)
             {
-                FormMessageBoxHelper.ShowIfAlive(
-                    this,
-                    SteamlessFeedback.PopupMessage(result.Outcome, gameName, result.LogDetail),
-                    SteamlessFeedback.DialogTitle,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                _taskReportService.SetMessageWithAutoClear(message, kind);
                 return;
             }
 
-            string status = SteamlessFeedback.StatusMessage(result.Outcome, gameName);
-            if (string.IsNullOrEmpty(status))
-                return;
+            _taskReportService.SetMessage(message, kind);
+            FormMessageBoxHelper.ShowIfAlive(
+                this,
+                message,
+                StubKitFeedback.DialogTitle,
+                MessageBoxButtons.OK,
+                StubKitFeedback.IconForOutcome(result.Outcome));
+        }
 
-            int delayMs = result.Outcome == SteamlessApplyOutcome.Success ? 6000 : 8000;
-            _taskReportService.SetMessageWithAutoClear(status, SteamlessFeedback.StatusKindForOutcome(result.Outcome), delayMs);
+        private static Image TryExtractStubMenuIcon(string executablePath)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath))
+                return null;
+
+            try
+            {
+                using (Icon icon = ServiceLocator.IconService.ExtractSmallIcon(executablePath))
+                {
+                    if (icon == null)
+                        return null;
+                    return icon.ToBitmap();
+                }
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private async void OnGenerateItems_Click(object sender, EventArgs e)
@@ -1553,7 +2742,8 @@ namespace SmartGoldbergEmu.Forms
             if (!TryGetSelectedGameWithAppId(out GameConfig selectedGame))
                 return;
 
-            Program.LogService?.LogMessage($"Starting {PathConstants.GoldbergItemsJsonFileName} generation for game: {selectedGame.AppName} (App ID: {selectedGame.AppId})");
+            Program.LogService?.LogDebug(
+                $"{PathConstants.GoldbergItemsJsonFileName} generation: {selectedGame.AppName} (AppId {selectedGame.AppId})");
 
             try
             {
@@ -1565,16 +2755,31 @@ namespace SmartGoldbergEmu.Forms
                     return;
                 if (!result.Success)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, result.ErrorMessage, "Generate Items", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    if (!string.Equals(result.ErrorMessage, "No items found.", StringComparison.Ordinal)
+                        && !string.Equals(result.ErrorMessage, "Skipped.", StringComparison.Ordinal))
+                    {
+                        Program.LogService?.LogWarning(
+                            $"Emulator files for AppId {selectedGame.AppId} incomplete (items): {result.ErrorMessage}");
+                    }
+                    else
+                    {
+                        Program.LogService?.LogDebug(
+                            $"Emulator files for AppId {selectedGame.AppId}: items skipped ({result.ErrorMessage})");
+                    }
+
+                    AppTaskDialogHelper.ShowOk(this, result.ErrorMessage, MessageBoxIcon.Information);
                     return;
                 }
 
-                Program.LogService?.LogMessage($"{PathConstants.GoldbergItemsJsonFileName} generation completed successfully");
+                Program.LogService?.LogMessage(
+                    $"Emulator files for AppId {selectedGame.AppId} generated.");
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to generate {PathConstants.GoldbergItemsJsonFileName}: {ex.Message}", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to generate {PathConstants.GoldbergItemsJsonFileName}. Please check the SmartGoldbergEmu log for details.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Program.LogService?.LogError(
+                    $"Emulator files for AppId {selectedGame.AppId} failed (items): {selectedGame.AppName}",
+                    ex);
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to generate {PathConstants.GoldbergItemsJsonFileName}. Please check the SmartGoldbergEmu log for details.", "Generate Items", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1591,7 +2796,7 @@ namespace SmartGoldbergEmu.Forms
 
                 if (!PathValidationHelper.IsSafeFilePath(valveDataPath))
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, "Invalid Valve data file path detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    FormMessageBoxHelper.ShowIfAlive(this, "Invalid Valve data file path detected.", "Valve Data File", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
@@ -1605,8 +2810,8 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to open Valve data file: {ex.Message}", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open Valve data file.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Program.LogService?.LogError("Failed to open Valve data file", ex);
+                FormMessageBoxHelper.ShowIfAlive(this, "Failed to open Valve data file.", "Valve Data File", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1630,7 +2835,7 @@ namespace SmartGoldbergEmu.Forms
             string url = string.Format(urlFormat, game.AppId);
             if (!PathValidationHelper.IsSafeUrl(url))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Invalid URL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -1640,8 +2845,8 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to open {pageName}: {ex.Message}", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open {pageName}.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Program.LogService?.LogError($"Failed to open {pageName}", ex);
+                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to open {pageName}.", "Could Not Open Link", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1656,13 +2861,19 @@ namespace SmartGoldbergEmu.Forms
             var game = GetSelectedGame();
             if (game == null || string.IsNullOrEmpty(game.Path))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid executable path.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "Please select a game with a valid executable path.",
+                    MessageBoxIcon.Information);
                 return;
             }
 
-            if (!GameFolderPathHelper.TryGetExecutableDirectory(game, out string folderPath))
+            if (!GameFolderPathHelper.TryGetExistingExecutableDirectory(game, out string folderPath))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid folder path detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "The game folder was not found. The files may have been moved or uninstalled.",
+                    MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1681,16 +2892,30 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             string settingsPath = ServiceLocator.EmulatorConfigService.GetGameSteamSettingsPath(game.AppId);
-            ShellFolderHelper.OpenFolderForOwner(this, settingsPath, createIfMissing: true, "Error", "Failed to open settings folder");
+            ShellFolderHelper.OpenFolderForOwner(this, settingsPath, createIfMissing: true, "Folder Not Found", "Could Not Open Settings Folder");
+        }
+
+        private void OnOpenGameAssetsFolder_Click(object sender, EventArgs e)
+        {
+            if (!TryGetSelectedGameWithAppId(out GameConfig game))
+                return;
+
+            string assetsPath = PathConstants.CombineGamesPerAppResourcesDirectory(
+                PathConstants.GamesDirectory,
+                game.AppId.ToString());
+            ShellFolderHelper.OpenFolderForOwner(this, assetsPath, createIfMissing: true, "Folder Not Found", "Could Not Open Game Assets Folder");
         }
 
         private void OnOpenGoldbergFolder_Click(object sender, EventArgs e) =>
-            ShellFolderHelper.OpenFolderForOwner(this, PathConstants.GoldbergDirectory, createIfMissing: true, "Error", "Failed to open Goldberg folder");
+            ShellFolderHelper.OpenFolderForOwner(this, PathConstants.GoldbergDirectory, createIfMissing: true, "Folder Not Found", "Could Not Open Goldberg Folder");
+
+        private void OnOpenLauncherFolder_Click(object sender, EventArgs e) =>
+            ShellFolderHelper.OpenFolderForOwner(this, PathConstants.AppBaseDirectory, createIfMissing: false, "Folder Not Found", "Could Not Open Launcher Folder");
 
         private void OnOpenExtraDllsFolder_Click(object sender, EventArgs e)
         {
             string extraDllsDir = ServiceLocator.GoldbergFilesService.EnsureSteamClientExtraDllsDirectory();
-            ShellFolderHelper.OpenFolderForOwner(this, extraDllsDir, createIfMissing: true, "Error", "Failed to open extra DLLs folder");
+            ShellFolderHelper.OpenFolderForOwner(this, extraDllsDir, createIfMissing: true, "Folder Not Found", "Could Not Open Extra DLLs Folder");
         }
 
         private void OnOpenInventoryFile_Click(object sender, EventArgs e)
@@ -1706,7 +2931,7 @@ namespace SmartGoldbergEmu.Forms
                 var icon = errorMessage != null && errorMessage.StartsWith("File does not exist", StringComparison.Ordinal)
                     ? MessageBoxIcon.Information
                     : MessageBoxIcon.Error;
-                string title = icon == MessageBoxIcon.Information ? "File Not Found" : "Error";
+                string title = icon == MessageBoxIcon.Information ? "File Not Found" : "Could Not Open Inventory";
                 string body = icon == MessageBoxIcon.Information
                     ? errorMessage + "\n\nYou may need to generate items first."
                     : errorMessage ?? "Failed to open inventory file.";
@@ -1719,17 +2944,28 @@ namespace SmartGoldbergEmu.Forms
             var game = GetSelectedGame();
             if (game == null || game.AppId == 0 || string.IsNullOrEmpty(game.Path))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid App ID and executable path.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "Please select a game with a valid App ID and executable path.",
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!GameFolderPathHelper.TryGetExistingExecutableDirectory(game, out _))
+            {
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "The game folder was not found. The files may have been moved or uninstalled.",
+                    MessageBoxIcon.Warning);
                 return;
             }
 
             ValidationResult result = ServiceLocator.EmulatorConfigService.TryEnsureSteamAppIdBesideExecutable(game);
             if (result.IsValid)
             {
-                FormMessageBoxHelper.ShowIfAlive(this,
-                    $"{PathConstants.SteamAppIdFileName} for appid {game.AppId} created successfully.",
-                    "File Created",
-                    MessageBoxButtons.OK,
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    PathConstants.SteamAppIdFileName + " for appid " + game.AppId + " created successfully.",
                     MessageBoxIcon.Information);
                 return;
             }
@@ -1738,7 +2974,7 @@ namespace SmartGoldbergEmu.Forms
             MessageBoxIcon icon = message.IndexOf("does not exist", StringComparison.OrdinalIgnoreCase) >= 0
                 ? MessageBoxIcon.Warning
                 : MessageBoxIcon.Error;
-            string title = icon == MessageBoxIcon.Warning ? "Folder Not Found" : "Error";
+            string title = icon == MessageBoxIcon.Warning ? "Folder Not Found" : "Create Steam App ID";
             FormMessageBoxHelper.ShowIfAlive(this, message, title, MessageBoxButtons.OK, icon);
         }
 
@@ -1750,16 +2986,15 @@ namespace SmartGoldbergEmu.Forms
                 try
                 {
                     Clipboard.SetText(game.GameGuid.ToString());
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Entry GUID copied to clipboard:\n{game.GameGuid}", "GUID copied", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy entry GUID: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    FormMessageBoxHelper.ShowIfAlive(this, $"Failed to copy entry GUID: {ex.Message}", "Copy GUID", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             else
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Please select a game.", MessageBoxIcon.Information);
             }
         }
 
@@ -1768,17 +3003,18 @@ namespace SmartGoldbergEmu.Forms
             var game = GetSelectedGame();
             if (game == null)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Please select a game.", MessageBoxIcon.Information);
                 return;
             }
 
             if (!UriProtocolRegistryService.IsProtocolRegistered())
             {
-                FormMessageBoxHelper.ShowIfAlive(this,
-                    $"The {ApplicationConstants.UriProtocolAuthorityPrefix} protocol is not registered. Please restart the application to register it automatically.\n\n" +
+                AppTaskDialogHelper.ShowOk(
+                    this,
+                    "The " + ApplicationConstants.UriProtocolAuthorityPrefix
+                    + " protocol is not registered.\n" +
+                    "Please restart the application to register it automatically.\n\n" +
                     "If the problem persists, try running the application as administrator.",
-                    "Protocol Not Registered",
-                    MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 return;
             }
@@ -1791,26 +3027,29 @@ namespace SmartGoldbergEmu.Forms
                     string sanitizedName = ShortcutService.SanitizeFileName(game.AppName);
                     saveFileDialog.FileName = $"{sanitizedName}.url";
                     saveFileDialog.Title = "Create Shortcut";
-                    
+                    FileDialogBrowseHelper.ApplyInitialDirectory(
+                        saveFileDialog,
+                        FileDialogBrowseHelper.Purpose.Shortcut);
+
                     if (saveFileDialog.ShowDialog() == DialogResult.OK)
                     {
+                        FileDialogBrowseHelper.RememberFile(
+                            FileDialogBrowseHelper.Purpose.Shortcut,
+                            saveFileDialog.FileName);
                         GameFolderPathHelper.TryResolveIconSourcePath(game, out string iconPath);
                         if (string.IsNullOrEmpty(iconPath))
                             iconPath = null;
 
                         if (ShortcutService.Create(saveFileDialog.FileName, game.AppId, game.AppName, iconPath))
                         {
-                            FormMessageBoxHelper.ShowIfAlive(this,
-                                $"Shortcut created successfully:\n{saveFileDialog.FileName}",
-                                "Shortcut Created",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Information);
+                            Program.LogService?.LogMessage(
+                                "Shortcut created: " + saveFileDialog.FileName);
                         }
                         else
                         {
                             FormMessageBoxHelper.ShowIfAlive(this,
                                 "Failed to create shortcut. Please check the file path and permissions.",
-                                "Error",
+                                "Create Shortcut",
                                 MessageBoxButtons.OK,
                                 MessageBoxIcon.Error);
                         }
@@ -1819,10 +3058,10 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to create shortcut: {ex.Message}", ex);
+                Program.LogService?.LogError("Failed to create shortcut", ex);
                 FormMessageBoxHelper.ShowIfAlive(this,
                     "Failed to create shortcut. Please check the file path and permissions.",
-                    "Error",
+                    "Create Shortcut",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
@@ -1830,79 +3069,30 @@ namespace SmartGoldbergEmu.Forms
 
         private void ctxGamesItem_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            miCtxRowCreateShortcut.Enabled = true;
             var game = GetSelectedGame();
-            miCtxRowOpenValveDataFile.Enabled = game != null && game.AppId > 0;
+            bool hasGame = game != null;
+            bool hasAppId = hasGame && game.AppId > 0;
+            bool exePresent = hasGame && GameFolderPathHelper.TryResolveStoredExecutable(game, out _);
+            bool exeFolderPresent = hasGame && GameFolderPathHelper.TryGetExistingExecutableDirectory(game, out _);
+            bool stubExePresent = hasGame && GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out _);
 
-            miCtxRowApplySteamless.Visible = true;
-            bool canApplySteamless = game != null && TryResolveExecutableForSteamless(game, out _);
-            miCtxRowApplySteamless.Enabled = canApplySteamless;
-            if (game != null && !canApplySteamless)
-                Program.LogService?.LogDebug($"Steamless disabled: could not resolve executable (StartFolder={game.StartFolder}, Path={game.Path}).");
-        }
+            miCtxRowRun.Enabled = exePresent;
+            miCtxRowRunWithoutEmu.Enabled = exePresent;
+            miCtxRowOpenExecutableFolder.Enabled = exeFolderPresent;
+            miCtxRowCreateSteamAppIdFile.Enabled = exeFolderPresent && hasAppId;
+            miCtxRowCreateShortcut.Enabled = hasGame;
+            miCtxRowOpenValveDataFile.Enabled = hasAppId;
+            miCtxRowOpenGameAssetsFolder.Enabled = hasAppId;
 
-        private bool TryResolveExecutableForSteamless(GameConfig game, out string fullExecutablePath)
-        {
-            return GameFolderPathHelper.TryResolveExecutableForSteamless(game, out fullExecutablePath);
-        }
+            miCtxRowGuid.Enabled = hasGame;
+            miCtxRowCopyGuid.Text = hasGame
+                ? game.GameGuid.ToString()
+                : "{guid}";
 
-        private bool TryEnsureSteamlessCliPath()
-        {
-            if (ServiceLocator.SteamlessService.TryGetConfiguredCli(out _, out _))
-                return true;
-
-            string setupPrompt = ServiceLocator.SteamlessService.HasInvalidSavedCliPath()
-                ? SteamlessFeedback.NotInstalledPopupBody()
-                : SteamlessFeedback.NotConfiguredDisclaimerBody();
-
-            var disclaimer = FormMessageBoxHelper.ShowDialogIfAlive(
-                this,
-                setupPrompt,
-                SteamlessFeedback.DialogTitle,
-                MessageBoxButtons.OKCancel,
-                MessageBoxIcon.Information);
-            if (disclaimer != DialogResult.OK)
-                return false;
-
-            string selectedCliPath = PromptSelectSteamlessCli();
-            if (string.IsNullOrEmpty(selectedCliPath))
-                return false;
-
-            var saveResult = ServiceLocator.SteamlessService.TryPersistCliPath(selectedCliPath, out _);
-            if (!saveResult.IsValid)
-            {
-                FormMessageBoxHelper.ShowIfAlive(
-                    this,
-                    saveResult.ErrorMessage,
-                    SteamlessFeedback.DialogTitle,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return false;
-            }
-
-            Program.LogService?.LogMessage("Steamless CLI path saved.");
-            return true;
-        }
-
-        private string PromptSelectSteamlessCli()
-        {
-            using (var openFileDialog = new OpenFileDialog())
-            {
-                openFileDialog.Filter = ApplicationConstants.SteamlessCliFileDialogFilter;
-                openFileDialog.FilterIndex = 1;
-                openFileDialog.FileName = PathConstants.SteamlessCliExecutableName;
-                openFileDialog.RestoreDirectory = false;
-                string browseRoot = ServiceLocator.SteamlessService.GetCliBrowseInitialDirectory();
-                if (!string.IsNullOrEmpty(browseRoot))
-                    openFileDialog.InitialDirectory = browseRoot;
-                openFileDialog.Title = "Select Steamless.CLI.exe";
-                openFileDialog.CheckFileExists = true;
-
-                if (openFileDialog.ShowDialog(this) == DialogResult.OK)
-                    return openFileDialog.FileName;
-            }
-
-            return null;
+            miCtxRowRemoveSteamStub.Visible = true;
+            miCtxRowRemoveSteamStub.Enabled = stubExePresent;
+            if (hasGame && !stubExePresent)
+                Program.LogService?.LogDebug($"Remove SteamStub disabled: could not resolve executable (StartFolder={game.StartFolder}, Path={game.Path}).");
         }
 
         private void ctxGamesView_Opening(object sender, System.ComponentModel.CancelEventArgs e)
@@ -1947,9 +3137,12 @@ namespace SmartGoldbergEmu.Forms
             {
                 if (_pendingAddGameListService.IsPendingGame(game))
                 {
-                    _taskReportService.SetMessageWithAutoClear("Save the game before launching it.", delayMs: 6000);
+                    _taskReportService.SetMessageWithAutoClear("Save the game before launching it.");
                     return;
                 }
+
+                if (!TryEnsureGameExecutablePresent(game))
+                    return;
 
                 bool effectiveUseEmulator = ResolveUseEmulatorForLaunch(game, useEmulator);
                 _ = LaunchGameInternalAsync(game, effectiveUseEmulator).ForgetFaults(Program.LogService, nameof(LaunchGameInternalAsync));
@@ -2004,7 +3197,7 @@ namespace SmartGoldbergEmu.Forms
             Program.LogService?.LogDebug("Validating Steam API DLLs before launch");
             var apiStatus = SteamApiValidator.DetectAndValidateSteamApi(validationRoot);
 
-            if (!((apiStatus.X32Found && !apiStatus.X32IsClean) || (apiStatus.X64Found && !apiStatus.X64IsClean)))
+            if (!SteamApiValidator.HasDirtySteamApi(apiStatus))
             {
                 Program.LogService?.LogDebug("Steam API DLLs validation passed");
                 return true;
@@ -2015,31 +3208,39 @@ namespace SmartGoldbergEmu.Forms
             string message =
                 "Modded Steam API DLLs found.\n\n" +
                 (hasBackups
-                    ? "A known-good file was found elsewhere in this folder (name contains \"steam_api\").\n\n"
-                    : "No known-good alternate file was found (searched recursively; skipped folders that could not be read).\n\n") +
-                "Yes — Restore and launch\n" +
-                "No — Launch without restoring";
-            var validationResult = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                message,
-                "Steam API Validation",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
-            if (validationResult == DialogResult.Cancel)
+                    ? "A known-good file was found elsewhere in this folder (name contains \"steam_api\")."
+                    : "No known-good alternate file was found.\n" +
+                      "Searched recursively; skipped folders that could not be read.");
+            const int idRestore = 100;
+            const int idLaunchAnyway = 101;
+            AppTaskDialogResult validationResult = AppTaskDialogForm.Show(
+                this,
+                new AppTaskDialogRequest
+                {
+                    Content = message,
+                    Icon = MessageBoxIcon.Warning,
+                    Buttons = new List<AppTaskDialogButton>
+                    {
+                        new AppTaskDialogButton(idRestore, "Restore and launch"),
+                        new AppTaskDialogButton(idLaunchAnyway, "Launch without restoring") { IsDefault = true },
+                        new AppTaskDialogButton(TaskDialogHelper.IdCancel, "Cancel") { IsCancel = true }
+                    }
+                });
+            int validationButton = validationResult.ButtonId;
+            if (validationButton == TaskDialogHelper.IdCancel)
             {
-                Program.LogService?.LogMessage("User cancelled launch due to Steam API validation");
+                Program.LogService?.LogDebug("User cancelled launch due to Steam API validation");
                 return false;
             }
-            if (validationResult == DialogResult.Yes)
+            if (validationButton == idRestore)
             {
                 if (!hasBackups)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this,
+                    AppTaskDialogHelper.ShowOk(
+                        this,
                         "No known-good Steam API file was found in the game folder to restore from.",
-                        "Steam API Validation",
-                        MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
-                    Program.LogService?.LogMessage("User chose restore but no clean backup was found; continuing launch");
+                    Program.LogService?.LogDebug("User chose restore but no clean backup was found; continuing launch");
                 }
                 else
                 {
@@ -2057,7 +3258,7 @@ namespace SmartGoldbergEmu.Forms
                 }
             }
             else
-                Program.LogService?.LogMessage("User chose to launch without restoring Steam API DLLs");
+                Program.LogService?.LogDebug("User chose to launch without restoring Steam API DLLs");
 
             return true;
         }
@@ -2100,9 +3301,12 @@ namespace SmartGoldbergEmu.Forms
         {
             try
             {
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
                 Program.LogService?.LogDebug($"MainForm: LaunchGameInternalAsync called for {game?.AppName} (AppId: {game?.AppId}), useEmulator: {useEmulator}");
+
+                if (!TryEnsureGameExecutablePresent(game))
+                    return;
 
                 if (_gameLaunchService.IsGameRunning(game.AppId, game))
                 {
@@ -2115,42 +3319,65 @@ namespace SmartGoldbergEmu.Forms
                 if (!await TryEnsureEmulatorPrerequisiteForLaunch(game, useEmulator).ConfigureAwait(true))
                     return;
 
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
 
                 if (!TryValidateSteamApiBeforeLaunch(game, useEmulator))
                     return;
 
                 Program.LogService?.LogDebug("Checking for launch options...");
-                var launchResult = await _launchOptionService.ShowLaunchOptionsAsync(game, this).ConfigureAwait(true);
-                if (launchResult.Cancelled)
+                var launchResult = await _launchOptionService
+                    .ShowLaunchOptionsAsync(game, this, FormLifetimeToken)
+                    .ConfigureAwait(true);
+                if (launchResult.Cancelled || FormLifetimeToken.IsCancellationRequested)
                 {
-                    Program.LogService?.LogMessage("User cancelled launch options dialog");
+                    Program.LogService?.LogDebug("User cancelled launch options dialog");
                     return;
                 }
 
                 LaunchOption launchOption = launchResult.SkipLauncher ? null : launchResult.LaunchOption;
                 Program.LogService?.LogDebug($"Launch option selected: {(launchOption != null ? launchOption.Description ?? launchOption.Executable : "None (default)")}, SkipLauncher: {launchResult.SkipLauncher}");
 
+                string launchExecutablePath = TryResolveLaunchExecutableForStubCheck(game, launchOption);
+                if (!await OfferSteamStubRemovalIfNeededAsync(launchExecutablePath, game.AppId, game.AppName).ConfigureAwait(true))
+                {
+                    Program.LogService?.LogDebug("User cancelled SteamStub prompt; launch aborted");
+                    return;
+                }
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
+                    return;
+
                 Program.LogService?.LogDebug("Calling GameLaunchService.LaunchGame...");
                 var launchGameResult = _gameLaunchService.LaunchGame(game, useEmulator: useEmulator, launchOption: launchOption);
 
                 if (!launchGameResult.IsValid)
                 {
-                    Program.LogService?.LogError($"Launch failed: {launchGameResult.ErrorMessage}");
+                    Program.LogService?.LogError(
+                        $"Launch failed: AppId={game.AppId}, name={game.AppName}, mode={game.LaunchMode}, emu={useEmulator}: {launchGameResult.ErrorMessage}");
                     ShowLaunchErrorMessage(launchGameResult.ErrorMessage);
                 }
                 else
                 {
-                    Program.LogService?.LogDebug("Launch completed successfully from MainForm perspective");
-                    _taskReportService.SetMessageWithAutoClear($"{game.AppName} launched.", TaskReportKind.Info);
+                    Program.LogService?.LogDebug("Launch completed from MainForm perspective");
+                    _taskReportService.SetMessageWithAutoClear($"{game.AppName} launched.");
                 }
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError("Error during game launch", ex);
+                Program.LogService?.LogError($"Error during game launch: AppId={game?.AppId}, name={game?.AppName}", ex);
                 ShowLaunchErrorMessage(ex.Message);
             }
+        }
+
+        private bool TryEnsureGameExecutablePresent(GameConfig game)
+        {
+            if (game != null && GameFolderPathHelper.TryResolveStoredExecutable(game, out _))
+                return true;
+
+            Program.LogService?.LogError(
+                $"Launch aborted: executable not found (AppId={game?.AppId}, name={game?.AppName}, path={game?.Path})");
+            ShowLaunchErrorMessage(GameFolderPathHelper.GetMissingStoredExecutableMessage(game));
+            return false;
         }
 
         private void ShowGameNotFoundMessage(ulong appId)
@@ -2164,10 +3391,9 @@ namespace SmartGoldbergEmu.Forms
 
         private void ShowLaunchErrorMessage(string errorMessage)
         {
-            FormMessageBoxHelper.ShowIfAlive(this,
+            AppTaskDialogHelper.ShowOk(
+                this,
                 $"Failed to launch game: {errorMessage}",
-                "Launch Error",
-                MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
         }
 
@@ -2179,16 +3405,23 @@ namespace SmartGoldbergEmu.Forms
 
             GameEditBundle editBundle = ServiceLocator.GameEditLoader.Load(game);
 
-            using (var gameSettingsForm = new GameSettingsForm(
-                game,
-                isEditMode: true,
-                metadata: null,
-                feedbackService: _taskReportService,
-                onSaveCompleted: RefreshGames,
-                editBundle: editBundle))
+            try
             {
-                if (gameSettingsForm.ShowDialog(this) != DialogResult.OK)
-                    _taskReportService.Clear();
+                using (var gameSettingsForm = new GameSettingsForm(
+                    game,
+                    isEditMode: true,
+                    metadata: null,
+                    feedbackService: _taskReportService,
+                    onSaveCompleted: RefreshGames,
+                    editBundle: editBundle))
+                {
+                    if (gameSettingsForm.ShowDialog(this) != DialogResult.OK)
+                        _taskReportService.Clear();
+                }
+            }
+            finally
+            {
+                editBundle?.ReleaseHeavyRuntimeData();
             }
         }
 
@@ -2220,7 +3453,10 @@ namespace SmartGoldbergEmu.Forms
             game = GetSelectedGame();
             if (game != null && game.AppId > 0)
                 return true;
-            FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid App ID.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            AppTaskDialogHelper.ShowOk(
+                this,
+                "Please select a game with a valid App ID.",
+                MessageBoxIcon.Information);
             return false;
         }
 
@@ -2244,23 +3480,26 @@ namespace SmartGoldbergEmu.Forms
 
         private async void lstGames_DragDrop(object sender, DragEventArgs e)
         {
-            try
+            using (ServiceLocator.SteamProductInfoService.HoldSession(preWarm: true))
             {
-                string[] files = (string[])e.Data?.GetData(DataFormats.FileDrop);
-                if (files != null && files.Length > 0)
+                try
                 {
-                    string executablePath = files[0];
-                    string ext = System.IO.Path.GetExtension(executablePath).ToLower();
-                    if (ext != ".exe" && ext != ".bat")
-                        return;
-                    await AddGameFromExecutable(executablePath);
+                    string[] files = (string[])e.Data?.GetData(DataFormats.FileDrop);
+                    if (files != null && files.Length > 0)
+                    {
+                        string executablePath = files[0];
+                        string ext = System.IO.Path.GetExtension(executablePath).ToLower();
+                        if (ext != ".exe" && ext != ".bat")
+                            return;
+                        await AddGameFromExecutable(executablePath);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Error in drag-drop add game: {ex.Message}", ex);
-                if (!IsDisposed && !Disposing)
-                    _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogError($"Error in drag-drop add game: {ex.Message}", ex);
+                    if (!IsDisposed && !Disposing)
+                        _taskReportService.SetMessage(ErrorDisplayHelper.SanitizeForUser("Adding game", ex), TaskReportKind.Error);
+                }
             }
         }
 
@@ -2375,6 +3614,7 @@ namespace SmartGoldbergEmu.Forms
             var game = _gameDataService.GetGame(gameGuid);
             if (game == null)
             {
+                _addSaveWaitingForAssetsGuids.Remove(gameGuid);
                 ScheduleRefreshGames(reloadTiles: true);
                 return;
             }
@@ -2384,9 +3624,23 @@ namespace SmartGoldbergEmu.Forms
 
             var viewMode = _appDataService.GetViewMode();
             var tileImageList = GetTileImageListForViewMode(viewMode);
+            string libraryMosaicKey = GameDisplayService.GetMosaicImageKey(game);
+
+            if (reloadMosaic)
+                _addSaveWaitingForAssetsGuids.Remove(gameGuid);
+
             var item = GameDisplayService.FindListItemByGameGuid(lstGames, gameGuid);
             if (item != null)
             {
+                bool libraryKeySeeded = false;
+                if (IsMosaicViewMode(viewMode)
+                    && !reloadMosaic
+                    && _addSaveWaitingForAssetsGuids.Contains(gameGuid)
+                    && !string.IsNullOrEmpty(libraryMosaicKey))
+                {
+                    libraryKeySeeded = TrySeedMosaicKeyWithWaitingPlaceholder(libraryMosaicKey, viewMode);
+                }
+
                 _gameDisplayService.UpdateListViewItem(
                     item,
                     game,
@@ -2394,17 +3648,35 @@ namespace SmartGoldbergEmu.Forms
                     tileImageList ?? _largeImageList,
                     tileImageList ?? _smallImageList,
                     GetImportPendingPredicate(),
-                    GetAddPendingPredicate());
+                    GetAddPendingPredicate(),
+                    GetUpdatePendingPredicate());
 
                 if (IsMosaicViewMode(viewMode))
                 {
-                    if (!string.IsNullOrEmpty(priorMosaicKey)
-                        && !string.Equals(priorMosaicKey, GameDisplayService.GetMosaicImageKey(game), StringComparison.Ordinal))
+                    bool libraryKeyReady = !string.IsNullOrEmpty(libraryMosaicKey)
+                        && tileImageList != null
+                        && tileImageList.Images.ContainsKey(libraryMosaicKey);
+
+                    // If the AppId key is not ready yet, keep pointing at pending-* art so Save does not blank the tile.
+                    if (!reloadMosaic
+                        && !libraryKeyReady
+                        && !string.IsNullOrEmpty(priorMosaicKey)
+                        && tileImageList != null
+                        && tileImageList.Images.ContainsKey(priorMosaicKey))
+                    {
+                        item.ImageKey = priorMosaicKey;
+                    }
+                    else if (!string.IsNullOrEmpty(priorMosaicKey)
+                        && priorMosaicKey.StartsWith("pending-", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(priorMosaicKey, libraryMosaicKey, StringComparison.Ordinal)
+                        && (reloadMosaic || libraryKeySeeded || libraryKeyReady))
                     {
                         RemoveMosaicImageKey(priorMosaicKey);
                     }
 
                     if (reloadMosaic)
+                        _ = UpsertMosaicTileForGameAsync(game, viewMode).ForgetFaults(Program.LogService, nameof(UpsertMosaicTileForGameAsync));
+                    else if (!libraryKeyReady && _addSaveWaitingForAssetsGuids.Contains(gameGuid))
                         _ = UpsertMosaicTileForGameAsync(game, viewMode).ForgetFaults(Program.LogService, nameof(UpsertMosaicTileForGameAsync));
                 }
 
@@ -2435,7 +3707,8 @@ namespace SmartGoldbergEmu.Forms
                     GetImportPendingPredicate(),
                     GetAddPendingPredicate(),
                     GetGamesForListDisplay(),
-                    applySort);
+                    applySort,
+                    GetUpdatePendingPredicate());
             }
             finally
             {
@@ -2562,15 +3835,20 @@ namespace SmartGoldbergEmu.Forms
                 {
                     try
                     {
+                        CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
+                        ct.ThrowIfCancellationRequested();
                         var result = await _appDataService.EnsureGlobalConfigFilesExistAsync().ConfigureAwait(false);
                         if (!result.IsValid)
                             Program.LogService?.LogWarning($"Deferred config setup: {result.ErrorMessage}");
+                    }
+                    catch (OperationCanceledException)
+                    {
                     }
                     catch (Exception ex)
                     {
                         Program.LogService?.LogError($"Deferred config setup failed: {ex.Message}", ex);
                     }
-                }).ForgetFaults(Program.LogService, "DeferredEnsureGlobalConfigFiles");
+                }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(Program.LogService, "DeferredEnsureGlobalConfigFiles");
 
                 if (_appDataService.IsFirstRun())
                 {
@@ -2594,7 +3872,7 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to load form state: {ex.Message}");
+                Program.LogService?.LogError("Failed to load form state", ex);
             }
         }
 
@@ -2607,8 +3885,76 @@ namespace SmartGoldbergEmu.Forms
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to save window state: {ex.Message}");
+                Program.LogService?.LogError("Failed to save window state", ex);
             }
+
+            if (_closeAfterDisposeReady)
+                return;
+
+            CancelFormLifetime();
+
+            // Forced exits cannot cancel FormClosing; tear down synchronously (Steam dispose interrupts waiters).
+            if (e.CloseReason == CloseReason.WindowsShutDown
+                || e.CloseReason == CloseReason.TaskManagerClosing
+                || e.CloseReason == CloseReason.ApplicationExitCall)
+            {
+                if (!_closeDisposeStarted)
+                {
+                    _closeDisposeStarted = true;
+                    try
+                    {
+                        ServiceLocator.DisposeApplicationResources();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                _closeAfterDisposeReady = true;
+                return;
+            }
+
+            e.Cancel = true;
+            if (_closeDisposeStarted)
+                return;
+
+            _closeDisposeStarted = true;
+            Enabled = false;
+            UseWaitCursor = true;
+
+            _ = Task.Run(() =>
+            {
+                ServiceLocator.DisposeApplicationResources();
+            }).ContinueWith(_ =>
+            {
+                void FinishClose()
+                {
+                    _closeAfterDisposeReady = true;
+                    if (!IsDisposed && !Disposing)
+                        Close();
+                }
+
+                if (IsDisposed || Disposing)
+                    return;
+
+                try
+                {
+                    if (InvokeRequired)
+                    {
+                        if (IsHandleCreated)
+                            BeginInvoke(new Action(FinishClose));
+                        return;
+                    }
+
+                    FinishClose();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            }, TaskScheduler.Default).ForgetFaults(Program.LogService, "DisposeApplicationResourcesThenClose");
         }
 
         private void RestoreWindowState()
@@ -2625,28 +3971,11 @@ namespace SmartGoldbergEmu.Forms
         {
             try
             {
-                if (!_apiKeyService.HasApiKey())
-                {
-                    var result = FormMessageBoxHelper.ShowDialogIfAlive(this,
-                        "Enhance your SmartGoldbergEmu experience with a Steam Web API key!\n\n" +
-                        "With an API key, you can:\n" +
-                        "• Automatically generate achievements from Steam\n" +
-                        "• Automatically generate inventory items from Steam\n\n" +
-                        "The API key is free and only requires a Steam account.\n\n" +
-                        "Would you like to configure an API key now?",
-                        "Steam Web API Key — Optional Feature",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Information);
-
-                    if (result == DialogResult.Yes)
-                        OpenSettingsDialog(0);
-                }
-
                 _appDataService.CompleteFirstRun();
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogError($"Failed to handle first run: {ex.Message}");
+                Program.LogService?.LogError("Failed to handle first run", ex);
                 _appDataService.CompleteFirstRun();
             }
         }

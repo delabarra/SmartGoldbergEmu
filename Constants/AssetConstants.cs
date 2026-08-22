@@ -17,19 +17,21 @@ namespace SmartGoldbergEmu.Constants
         public const string GithubRawBaseUrl = "https://raw.githubusercontent.com/Detanup01/gbe_fork/refs/heads/dev/post_build/steam_settings.EXAMPLE";
 
         /// <summary>
-        /// Default account avatar image URL.
+        /// Inner zip path for Steam's desktop toast sound.
+        /// Mapped to overlay_achievement_notification.wav.
         /// </summary>
-        public const string DefaultAvatarUrl = GithubRawBaseUrl + "/account_avatar.EXAMPLE.jpg";
+        public const string SteamClientAchievementSoundInnerPath = "steamui/sounds/desktop_toast_default.wav";
 
         /// <summary>
-        /// Sound file: achievement notification.
+        /// Inner zip path for Steam's recording highlight sound.
+        /// Mapped to overlay_friend_notification.wav.
         /// </summary>
-        public const string SoundAchievementUrl = GithubBaseUrl + "/sounds.EXAMPLE/overlay_achievement_notification.wav";
+        public const string SteamClientFriendSoundInnerPath = "steamui/sounds/recording_highlight.wav";
 
         /// <summary>
-        /// Sound file: friend notification.
+        /// Default account avatar from gbe_fork steam_settings.EXAMPLE.
         /// </summary>
-        public const string SoundFriendUrl = GithubBaseUrl + "/sounds.EXAMPLE/overlay_friend_notification.wav";
+        public const string AccountAvatarUrl = GithubBaseUrl + "/account_avatar.jpg";
 
         /// <summary>
         /// Font file: Roboto-Medium.

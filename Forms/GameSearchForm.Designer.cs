@@ -13,7 +13,9 @@ namespace SmartGoldbergEmu.Forms
             this.ctxList = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.miCopyAppId = new System.Windows.Forms.ToolStripMenuItem();
             this.miCopyName = new System.Windows.Forms.ToolStripMenuItem();
+            this.lblSelectedAppId = new System.Windows.Forms.Label();
             this.lblStatus = new System.Windows.Forms.Label();
+            this.lblSelectedName = new System.Windows.Forms.Label();
             this.btnOK = new System.Windows.Forms.Button();
             this.btnCancel = new System.Windows.Forms.Button();
             this.toolTip = new System.Windows.Forms.ToolTip(this.components);
@@ -81,26 +83,49 @@ namespace SmartGoldbergEmu.Forms
             this.miCopyName.Text = "Copy name";
             this.miCopyName.Click += new System.EventHandler(this.OnCopyName_Click);
             // 
+            // lblSelectedAppId
+            // 
+            this.lblSelectedAppId.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.lblSelectedAppId.AutoEllipsis = true;
+            this.lblSelectedAppId.Location = new System.Drawing.Point(12, 232);
+            this.lblSelectedAppId.Name = "lblSelectedAppId";
+            this.lblSelectedAppId.Size = new System.Drawing.Size(260, 13);
+            this.lblSelectedAppId.TabIndex = 3;
+            this.lblSelectedAppId.TabStop = false;
+            this.lblSelectedAppId.Text = "";
+            // 
             // lblStatus
             // 
-            this.lblStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
+            this.lblStatus.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.lblStatus.AutoEllipsis = true;
-            this.lblStatus.Location = new System.Drawing.Point(12, 236);
+            this.lblStatus.Location = new System.Drawing.Point(278, 232);
             this.lblStatus.Name = "lblStatus";
-            this.lblStatus.Size = new System.Drawing.Size(408, 36);
-            this.lblStatus.TabIndex = 3;
+            this.lblStatus.Size = new System.Drawing.Size(142, 13);
+            this.lblStatus.TabIndex = 4;
             this.lblStatus.TabStop = false;
-            this.lblStatus.Text = "Ready";
+            this.lblStatus.Text = "";
+            this.lblStatus.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+            // 
+            // lblSelectedName
+            // 
+            this.lblSelectedName.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.lblSelectedName.AutoEllipsis = true;
+            this.lblSelectedName.Location = new System.Drawing.Point(12, 247);
+            this.lblSelectedName.Name = "lblSelectedName";
+            this.lblSelectedName.Size = new System.Drawing.Size(408, 13);
+            this.lblSelectedName.TabIndex = 5;
+            this.lblSelectedName.TabStop = false;
+            this.lblSelectedName.Text = "";
             // 
             // btnOK
             // 
             this.btnOK.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.btnOK.DialogResult = System.Windows.Forms.DialogResult.OK;
-            this.btnOK.Location = new System.Drawing.Point(261, 278);
+            this.btnOK.Location = new System.Drawing.Point(261, 276);
             this.btnOK.Name = "btnOK";
             this.btnOK.Size = new System.Drawing.Size(75, 23);
-            this.btnOK.TabIndex = 4;
+            this.btnOK.TabIndex = 6;
             this.btnOK.Text = "OK";
             this.btnOK.UseVisualStyleBackColor = true;
             this.btnOK.Click += new System.EventHandler(this.OnOk_Click);
@@ -109,10 +134,10 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.btnCancel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.btnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            this.btnCancel.Location = new System.Drawing.Point(345, 278);
+            this.btnCancel.Location = new System.Drawing.Point(345, 276);
             this.btnCancel.Name = "btnCancel";
             this.btnCancel.Size = new System.Drawing.Size(75, 23);
-            this.btnCancel.TabIndex = 5;
+            this.btnCancel.TabIndex = 7;
             this.btnCancel.Text = "Cancel";
             this.btnCancel.UseVisualStyleBackColor = true;
             this.btnCancel.Click += new System.EventHandler(this.OnCancel_Click);
@@ -123,13 +148,15 @@ namespace SmartGoldbergEmu.Forms
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.CancelButton = this.btnCancel;
-            this.ClientSize = new System.Drawing.Size(432, 313);
+            this.ClientSize = new System.Drawing.Size(432, 311);
             this.Controls.Add(this.lblSearch);
             this.Controls.Add(this.txtSearch);
             this.Controls.Add(this.lstResults);
+            this.Controls.Add(this.lblSelectedAppId);
+            this.Controls.Add(this.lblStatus);
+            this.Controls.Add(this.lblSelectedName);
             this.Controls.Add(this.btnOK);
             this.Controls.Add(this.btnCancel);
-            this.Controls.Add(this.lblStatus);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
@@ -145,7 +172,9 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.TextBox txtSearch;
         private System.Windows.Forms.ListBox lstResults;
         private System.Windows.Forms.Label lblSearch;
+        private System.Windows.Forms.Label lblSelectedAppId;
         private System.Windows.Forms.Label lblStatus;
+        private System.Windows.Forms.Label lblSelectedName;
         private System.Windows.Forms.Button btnOK;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.ToolTip toolTip;

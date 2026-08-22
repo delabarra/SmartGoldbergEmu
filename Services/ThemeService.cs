@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Reflection;
 using System.Windows.Forms;
@@ -16,12 +17,14 @@ namespace SmartGoldbergEmu.Services
         private const string SoundPreviewPlayStopButtonTag = "SoundPreviewPlayStop";
         internal const string LaunchDialogButtonTag = "LaunchDialogButton";
         private const string ThemedTextBoxTag = "ThemedTextBox";
+        private const string ThemedTabControlTag = "ThemedTabControl";
 
         private ThemeMode _currentTheme;
         private bool _isSystemDarkMode;
         private RegistryKey _registryKey;
         private Timer _systemThemeWatcher;
         private bool _disposed;
+        private readonly List<TabControlChromeWindow> _tabChromeWindows = new List<TabControlChromeWindow>();
 
         public event EventHandler<ThemeChangedEventArgs> ThemeChanged;
 
@@ -76,41 +79,72 @@ namespace SmartGoldbergEmu.Services
 
             ThemeMode effectiveTheme = EffectiveTheme;
             ThemeColors colors = GetThemeColors(effectiveTheme);
-            form.BackColor = colors.Background;
-            form.ForeColor = colors.Foreground;
-            ApplyThemeToControls(form.Controls, colors, effectiveTheme);
-            ApplyThemeToMenus(form, colors, effectiveTheme);
-            ScheduleLinkColorRefreshOnLoad(form, colors);
+            form.SuspendLayout();
+            try
+            {
+                WinFormsThemePaintHelper.EnableDoubleBuffer(form);
+                form.BackColor = colors.Background;
+                form.ForeColor = colors.Foreground;
+                ApplyThemeToControls(form.Controls, colors, effectiveTheme);
+                ApplyThemeToMenus(form, colors, effectiveTheme);
+                // LinkLabel restores the system hyperlink blue after native handle init; re-apply after that.
+                ScheduleLinkColorRefresh(form);
+            }
+            finally
+            {
+                form.ResumeLayout(false);
+            }
         }
 
-        private void ScheduleLinkColorRefreshOnLoad(Form form, ThemeColors colors)
+        private void ScheduleLinkColorRefresh(Form form)
         {
-            if (form.IsHandleCreated)
+            if (form == null || form.IsDisposed || form.Disposing)
                 return;
-            EventHandler handler = null;
-            handler = (s, e) =>
+
+            if (form.IsHandleCreated)
             {
-                var f = (Form)s;
-                f.Load -= handler;
-                if (_disposed || f.IsDisposed || f.Disposing)
-                    return;
-                ApplyLinkColorsRecursive(f.Controls, GetThemeColors(EffectiveTheme));
+                try
+                {
+                    form.BeginInvoke(new Action(() => ApplyLinkColorsIfAlive(form)));
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                return;
+            }
+
+            EventHandler onLoad = null;
+            onLoad = (s, e) =>
+            {
+                form.Load -= onLoad;
+                ApplyLinkColorsIfAlive(form);
             };
-            form.Load += handler;
+            form.Load += onLoad;
+        }
+
+        private void ApplyLinkColorsIfAlive(Form form)
+        {
+            if (_disposed || form == null || form.IsDisposed || form.Disposing)
+                return;
+            ApplyLinkColorsRecursive(form.Controls, GetThemeColors(EffectiveTheme));
         }
 
         private static void ApplyLinkColorsRecursive(Control.ControlCollection controls, ThemeColors colors)
         {
-            foreach (Control c in controls)
+            if (controls == null)
+                return;
+
+            foreach (Control control in controls)
             {
-                if (c is LinkLabel link)
+                if (control is LinkLabel link)
                 {
                     link.LinkColor = colors.LinkColor;
                     link.ActiveLinkColor = colors.LinkColor;
                     link.VisitedLinkColor = colors.VisitedLinkColor;
                 }
-                if (c.HasChildren)
-                    ApplyLinkColorsRecursive(c.Controls, colors);
+
+                if (control.HasChildren)
+                    ApplyLinkColorsRecursive(control.Controls, colors);
             }
         }
 
@@ -138,34 +172,35 @@ namespace SmartGoldbergEmu.Services
             {
                 case ThemeMode.Light:
                 {
-                                       return new ThemeColors
+                    return new ThemeColors
                     {
                         Background = SystemColors.Control,
                         Foreground = SystemColors.ControlText,
-                        FieldBackground = SystemColors.Control,
+                        FieldBackground = SystemColors.Window,
+                        FieldForeground = SystemColors.WindowText,
                         ControlBackground = SystemColors.Control,
                         ControlForeground = SystemColors.ControlText,
                         MenuBackground = SystemColors.Control,
                         MenuForeground = SystemColors.ControlText,
                         StatusStripBackground = SystemColors.Control,
                         StatusStripForeground = SystemColors.ControlText,
-                        StatusTextSecondary = Color.FromArgb(80, 80, 80),
-                        StatusTextAccent = Color.FromArgb(0, 120, 215),
-                        ListViewBackground = SystemColors.Control,
-                        ListViewForeground = SystemColors.ControlText,
-                        ListViewAlternate = SystemColors.Control,
-                        ListViewColumnHeaderBackground = DarkenRgb(SystemColors.Control, 15),
+                        StatusTextSecondary = SystemColors.GrayText,
+                        StatusTextAccent = SystemColors.Highlight,
+                        ListViewBackground = SystemColors.Window,
+                        ListViewForeground = SystemColors.WindowText,
+                        ListViewAlternate = SystemColors.Window,
+                        ListViewColumnHeaderBackground = SystemColors.Control,
                         Border = SystemColors.ControlDark,
-                        Highlight = Color.FromArgb(0, 120, 215),
-                        HighlightText = Color.White,
-                        LinkColor = Color.FromArgb(0, 102, 204),
-                        ImageMarginBackground = LightenRgb(SystemColors.Control, 8),
+                        Highlight = SystemColors.Highlight,
+                        HighlightText = SystemColors.HighlightText,
+                        LinkColor = SystemColors.HotTrack,
+                        ImageMarginBackground = SystemColors.ControlLight,
                         DisabledBackground = SystemColors.Control,
                         DisabledForeground = SystemColors.GrayText,
                         SuccessColor = Color.FromArgb(0, 150, 0),
                         ErrorColor = Color.FromArgb(200, 0, 0),
                         WarningColor = Color.FromArgb(255, 140, 0),
-                        InfoColor = Color.FromArgb(0, 102, 204),
+                        InfoColor = SystemColors.HotTrack,
                         VisitedLinkColor = Color.FromArgb(128, 0, 128)
                     };
                 }
@@ -173,21 +208,23 @@ namespace SmartGoldbergEmu.Services
                 case ThemeMode.Dark:
                 {
                     Color darkControl = Color.FromArgb(37, 37, 38);
+                    Color darkText = Color.FromArgb(240, 240, 240);
                     return new ThemeColors
                     {
                         Background = Color.FromArgb(30, 30, 30),
-                        Foreground = Color.FromArgb(240, 240, 240),
+                        Foreground = darkText,
                         FieldBackground = Color.FromArgb(30, 30, 30),
+                        FieldForeground = darkText,
                         ControlBackground = darkControl,
-                        ControlForeground = Color.FromArgb(240, 240, 240),
+                        ControlForeground = darkText,
                         MenuBackground = darkControl,
-                        MenuForeground = Color.FromArgb(240, 240, 240),
+                        MenuForeground = darkText,
                         StatusStripBackground = darkControl,
                         StatusStripForeground = Color.FromArgb(255, 255, 255),
                         StatusTextSecondary = Color.FromArgb(200, 200, 200),
                         StatusTextAccent = Color.FromArgb(150, 175, 205),
                         ListViewBackground = darkControl,
-                        ListViewForeground = Color.FromArgb(240, 240, 240),
+                        ListViewForeground = darkText,
                         ListViewAlternate = Color.FromArgb(45, 45, 48),
                         ListViewColumnHeaderBackground = DarkenRgb(darkControl, 5),
                         Border = Color.FromArgb(63, 63, 70),
@@ -213,16 +250,9 @@ namespace SmartGoldbergEmu.Services
         public void GetFallbackMosaicArtColors(ThemeMode effectiveTheme, out Color background, out Color foreground)
         {
             EnsureNotDisposed();
-            if (effectiveTheme == ThemeMode.Light)
-            {
-                background = Color.FromArgb(240, 240, 240);
-                foreground = Color.FromArgb(64, 64, 64);
-                return;
-            }
-
-            var c = GetThemeColors(effectiveTheme);
-            background = c.ListViewBackground;
-            foreground = c.ListViewForeground;
+            ThemeColors colors = GetThemeColors(effectiveTheme);
+            background = colors.ListViewBackground;
+            foreground = colors.ListViewForeground;
         }
 
         public bool IsSystemDarkMode()
@@ -276,6 +306,9 @@ namespace SmartGoldbergEmu.Services
                 }
                 _registryKey?.Dispose();
                 _registryKey = null;
+                for (int i = 0; i < _tabChromeWindows.Count; i++)
+                    _tabChromeWindows[i].Dispose();
+                _tabChromeWindows.Clear();
             }
             _disposed = true;
         }
@@ -347,6 +380,178 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        private void EnsureTabControlOwnerDraw(TabControl tabControl)
+        {
+            if (tabControl.Tag?.ToString() == ThemedTabControlTag)
+                return;
+            tabControl.Tag = ThemedTabControlTag;
+            tabControl.DrawMode = TabDrawMode.OwnerDrawFixed;
+            tabControl.SizeMode = TabSizeMode.Normal;
+            tabControl.DrawItem += TabControl_DrawItem;
+            _tabChromeWindows.Add(new TabControlChromeWindow(this, tabControl));
+        }
+
+        private void TabControl_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (_disposed)
+                return;
+            var tabControl = sender as TabControl;
+            if (tabControl == null || e.Index < 0 || e.Index >= tabControl.TabCount)
+                return;
+
+            ThemeColors colors = GetThemeColors(EffectiveTheme);
+            Graphics g = e.Graphics;
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            Color back = selected ? colors.Background : colors.ControlBackground;
+            Color fore = colors.Foreground;
+
+            Rectangle tabBounds = e.Bounds;
+            if (selected && tabControl.Alignment == TabAlignment.Top)
+                tabBounds = new Rectangle(e.Bounds.X, e.Bounds.Y, e.Bounds.Width, e.Bounds.Height + 1);
+
+            using (var brush = new SolidBrush(back))
+                g.FillRectangle(brush, tabBounds);
+
+            using (var pen = new Pen(colors.Border))
+            {
+                int left = tabBounds.Left;
+                int top = tabBounds.Top;
+                int right = tabBounds.Right - 1;
+                int bottom = tabBounds.Bottom - 1;
+                g.DrawLine(pen, left, bottom, left, top);
+                g.DrawLine(pen, left, top, right, top);
+                g.DrawLine(pen, right, top, right, bottom);
+                if (!selected)
+                    g.DrawLine(pen, left, bottom, right, bottom);
+            }
+
+            string text = tabControl.TabPages[e.Index].Text;
+            TextRenderer.DrawText(
+                g,
+                text,
+                tabControl.Font,
+                e.Bounds,
+                fore,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        // Runs after native WM_PAINT so empty header strip and frame borders cover system chrome.
+        private void PaintTabControlChromeOverlay(TabControl tabControl)
+        {
+            if (_disposed || tabControl == null || tabControl.IsDisposed || !tabControl.IsHandleCreated)
+                return;
+
+            ThemeColors colors = GetThemeColors(EffectiveTheme);
+            Rectangle client = tabControl.ClientRectangle;
+            Rectangle page = tabControl.DisplayRectangle;
+
+            using (Graphics g = Graphics.FromHwnd(tabControl.Handle))
+            {
+                using (var brush = new SolidBrush(colors.ControlBackground))
+                {
+                    if (tabControl.Alignment == TabAlignment.Top)
+                    {
+                        int headerHeight = Math.Max(0, page.Top);
+                        if (tabControl.TabCount == 0)
+                        {
+                            g.FillRectangle(brush, 0, 0, client.Width, headerHeight);
+                        }
+                        else
+                        {
+                            Rectangle first = tabControl.GetTabRect(0);
+                            Rectangle last = tabControl.GetTabRect(tabControl.TabCount - 1);
+                            if (first.Left > 0)
+                                g.FillRectangle(brush, 0, 0, first.Left, headerHeight);
+                            if (last.Right < client.Width)
+                                g.FillRectangle(brush, last.Right, 0, client.Width - last.Right, headerHeight);
+                            if (last.Bottom < page.Top)
+                                g.FillRectangle(brush, 0, last.Bottom, client.Width, page.Top - last.Bottom);
+                        }
+                    }
+                    else if (tabControl.Alignment == TabAlignment.Bottom)
+                    {
+                        g.FillRectangle(brush, 0, page.Bottom, client.Width, Math.Max(0, client.Height - page.Bottom));
+                    }
+                    else if (tabControl.Alignment == TabAlignment.Left)
+                    {
+                        g.FillRectangle(brush, 0, 0, Math.Max(0, page.Left), client.Height);
+                    }
+                    else
+                    {
+                        g.FillRectangle(brush, page.Right, 0, Math.Max(0, client.Width - page.Right), client.Height);
+                    }
+                }
+
+                using (var pen = new Pen(colors.Border))
+                {
+                    g.DrawRectangle(pen, 0, 0, client.Width - 1, client.Height - 1);
+                    g.DrawRectangle(pen, page.X - 1, page.Y - 1, page.Width + 1, page.Height + 1);
+                }
+            }
+        }
+
+        private sealed class TabControlChromeWindow : NativeWindow, IDisposable
+        {
+            private const int WmPaint = 0x000F;
+            private readonly ThemeService _owner;
+            private readonly TabControl _tab;
+            private bool _disposed;
+
+            public TabControlChromeWindow(ThemeService owner, TabControl tab)
+            {
+                _owner = owner;
+                _tab = tab;
+                _tab.HandleCreated += OnHandleCreated;
+                _tab.HandleDestroyed += OnHandleDestroyed;
+                if (_tab.IsHandleCreated)
+                    AssignHandle(_tab.Handle);
+            }
+
+            private void OnHandleCreated(object sender, EventArgs e)
+            {
+                if (!_disposed && _tab.IsHandleCreated)
+                    AssignHandle(_tab.Handle);
+            }
+
+            private void OnHandleDestroyed(object sender, EventArgs e)
+            {
+                if (Handle != IntPtr.Zero)
+                    ReleaseHandle();
+            }
+
+            protected override void WndProc(ref Message m)
+            {
+                if (_disposed)
+                {
+                    base.WndProc(ref m);
+                    return;
+                }
+
+                if (m.Msg == WinFormsThemePaintHelper.WmEraseBkgnd)
+                {
+                    ThemeColors colors = _owner.GetThemeColors(_owner.EffectiveTheme);
+                    WinFormsThemePaintHelper.FillEraseBackground(m.WParam, _tab.ClientRectangle, colors.ControlBackground);
+                    m.Result = (IntPtr)1;
+                    return;
+                }
+
+                base.WndProc(ref m);
+                if (m.Msg == WmPaint)
+                    _owner.PaintTabControlChromeOverlay(_tab);
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                    return;
+                _disposed = true;
+                _tab.HandleCreated -= OnHandleCreated;
+                _tab.HandleDestroyed -= OnHandleDestroyed;
+                if (Handle != IntPtr.Zero)
+                    ReleaseHandle();
+            }
+        }
+
         private static void ApplyThemeToDataGridView(DataGridView dgv, ThemeColors colors)
         {
             if (dgv == null)
@@ -392,6 +597,8 @@ namespace SmartGoldbergEmu.Services
 
         private void ApplyThemeToControl(Control control, ThemeColors colors, ThemeMode effectiveTheme)
         {
+            WinFormsThemePaintHelper.EnableDoubleBuffer(control);
+            bool dark = effectiveTheme == ThemeMode.Dark;
             if (control is MenuStrip menuStrip)
             {
                 menuStrip.Renderer = ThemedToolStripRendererFactory.GetRenderer(effectiveTheme, colors);
@@ -408,17 +615,23 @@ namespace SmartGoldbergEmu.Services
             {
                 tabControl.BackColor = colors.ControlBackground;
                 tabControl.ForeColor = colors.ControlForeground;
+                EnsureTabControlOwnerDraw(tabControl);
+                WinFormsThemePaintHelper.ApplyDisabledVisualStyles(tabControl, dark);
             }
             else if (control is TabPage tabPage)
             {
+                tabPage.UseVisualStyleBackColor = false;
                 tabPage.BackColor = colors.Background;
                 tabPage.ForeColor = colors.Foreground;
+                WinFormsThemePaintHelper.ApplyDisabledVisualStyles(tabPage, dark);
             }
             else if (control is ListView listView)
             {
                 listView.BackColor = colors.ListViewBackground;
                 listView.ForeColor = colors.ListViewForeground;
                 listView.BorderStyle = BorderStyle.FixedSingle;
+                ListViewColumnHelper.ReducePaintFlicker(listView);
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(listView, dark);
             }
             else if (control is DataGridView dataGridView)
             {
@@ -428,8 +641,9 @@ namespace SmartGoldbergEmu.Services
             else if (control is ListBox listBox)
             {
                 listBox.BackColor = colors.FieldBackground;
-                listBox.ForeColor = colors.Foreground;
+                listBox.ForeColor = colors.FieldForeground;
                 listBox.BorderStyle = BorderStyle.FixedSingle;
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(listBox, dark);
             }
             else if (control is Panel panel)
             {
@@ -441,6 +655,7 @@ namespace SmartGoldbergEmu.Services
                 groupBox.BackColor = colors.ControlBackground;
                 groupBox.ForeColor = colors.ControlForeground;
                 groupBox.FlatStyle = FlatStyle.Flat;
+                WinFormsThemePaintHelper.ApplyDisabledVisualStyles(groupBox, dark);
             }
             else if (control is Label label)
             {
@@ -496,7 +711,7 @@ namespace SmartGoldbergEmu.Services
                 if (richTextBox.ReadOnly || richTextBox.Enabled)
                 {
                     richTextBox.BackColor = colors.FieldBackground;
-                    richTextBox.ForeColor = colors.Foreground;
+                    richTextBox.ForeColor = colors.FieldForeground;
                 }
                 else
                 {
@@ -504,6 +719,7 @@ namespace SmartGoldbergEmu.Services
                     richTextBox.ForeColor = colors.DisabledForeground;
                 }
                 richTextBox.BorderStyle = BorderStyle.FixedSingle;
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(richTextBox, dark);
             }
             else if (control is TextBox textBox)
             {
@@ -512,7 +728,7 @@ namespace SmartGoldbergEmu.Services
                     if (textBox.Enabled)
                     {
                         textBox.BackColor = colors.FieldBackground;
-                        textBox.ForeColor = colors.Foreground;
+                        textBox.ForeColor = colors.FieldForeground;
                     }
                     else
                     {
@@ -520,6 +736,7 @@ namespace SmartGoldbergEmu.Services
                         textBox.ForeColor = colors.DisabledForeground;
                     }
                     textBox.BorderStyle = BorderStyle.FixedSingle;
+                    WinFormsThemePaintHelper.ApplyExplorerWindowTheme(textBox, dark);
                     if (textBox.Tag?.ToString() != ThemedTextBoxTag)
                     {
                         textBox.Tag = ThemedTextBoxTag;
@@ -529,18 +746,20 @@ namespace SmartGoldbergEmu.Services
                 else
                 {
                     textBox.BorderStyle = BorderStyle.FixedSingle;
+                    WinFormsThemePaintHelper.ApplyExplorerWindowTheme(textBox, dark);
                 }
             }
             else if (control is ComboBox comboBox)
             {
                 comboBox.BackColor = colors.FieldBackground;
-                comboBox.ForeColor = colors.Foreground;
+                comboBox.ForeColor = colors.FieldForeground;
                 comboBox.FlatStyle = FlatStyle.Flat;
+                WinFormsThemePaintHelper.ApplyExplorerWindowTheme(comboBox, dark);
             }
             else if (control is NumericUpDown numericUpDown)
             {
                 numericUpDown.BackColor = colors.FieldBackground;
-                numericUpDown.ForeColor = colors.Foreground;
+                numericUpDown.ForeColor = colors.FieldForeground;
                 numericUpDown.BorderStyle = BorderStyle.FixedSingle;
             }
             else if (control is CheckBox checkBox)
@@ -683,7 +902,7 @@ namespace SmartGoldbergEmu.Services
                 if (textBox.Enabled)
                 {
                     textBox.BackColor = colors.FieldBackground;
-                    textBox.ForeColor = colors.Foreground;
+                    textBox.ForeColor = colors.FieldForeground;
                 }
                 else
                 {

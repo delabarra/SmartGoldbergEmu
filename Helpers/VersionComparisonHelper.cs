@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // Semantic version comparison (v-prefix, MAJOR.MINOR.PATCH, optional -suffix).
+        // Version comparison (v-prefix, MAJOR.MINOR.PATCH, optional .hotfix revision, optional -suffix).
     public static class VersionComparisonHelper
     {
         // True when latest is newer than current.

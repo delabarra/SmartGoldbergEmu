@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
@@ -12,18 +13,14 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Generators
 {
-    /// <summary>
-    /// Generates Goldberg <c>steam_settings/items.json</c>, <c>default_items.json</c>, and <c>items_note.txt</c> via Steam Web API.
-    /// </summary>
+    // Generates Goldberg steam_settings/items.json, default_items.json, and items_note.txt via AppDataKit.
     public sealed class ItemGenerator
     {
         private readonly ITaskReportService _taskReportService;
-        private readonly SteamApiKeyService _steamApiKeyService;
 
-        public ItemGenerator(ITaskReportService taskReportService = null, SteamApiKeyService steamApiKeyService = null)
+        public ItemGenerator(ITaskReportService taskReportService = null)
         {
             _taskReportService = taskReportService;
-            _steamApiKeyService = steamApiKeyService ?? ServiceLocator.SteamApiKeyService;
         }
 
         public async Task<ItemGeneratorResult> GenerateAndSaveAsync(
@@ -34,9 +31,6 @@ namespace SmartGoldbergEmu.Generators
         {
             if (game == null || game.AppId == 0)
                 return ItemGeneratorResult.Fail("Invalid game or App ID.");
-
-            if (!_steamApiKeyService.TryGetValidFormatKey(out string apiKey))
-                return ItemGeneratorResult.Fail("A valid Steam Web API key is required (Settings).");
 
             var emulatorConfig = ServiceLocator.EmulatorConfigService;
             if (emulatorConfig == null)
@@ -52,36 +46,32 @@ namespace SmartGoldbergEmu.Generators
             {
                 if (showProgress && !friendlyProgressMessages)
                 {
-                    _taskReportService?.SetMessage("Fetching item definition metadataâ€¦");
+                    _taskReportService?.SetMessage("Fetching item definitions…");
                     _taskReportService?.SetProgress(0, 100);
                 }
 
-                var meta = await SteamWebApiService.GetItemMetaAsync(appIdStr, apiKey).ConfigureAwait(false);
+                ItemsSection section = await ServiceLocator.AppDataKitBridgeService
+                    .FetchItemsAsync(game.AppId, cancellationToken)
+                    .ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (meta == null || !meta.Success || string.IsNullOrEmpty(meta.Digest))
+                if (section == null || string.IsNullOrWhiteSpace(section.ArchiveJson))
                 {
+                    string failMessage = string.IsNullOrWhiteSpace(section?.Error)
+                        ? "No item definitions available for this app."
+                        : section.Error;
                     if (showProgress && !friendlyProgressMessages)
-                        ReportFinishedStatus("No item definitions available for this app.", TaskReportKind.Info);
-                    return ItemGeneratorResult.Fail("No item definitions available for this app.");
+                    {
+                        ReportFinishedStatus(
+                            failMessage,
+                            section != null && section.Status == SnapshotSectionStatus.Error
+                                ? TaskReportKind.Error
+                                : TaskReportKind.Info);
+                    }
+                    return ItemGeneratorResult.Fail(failMessage);
                 }
 
-                if (showProgress && !friendlyProgressMessages)
-                {
-                    _taskReportService?.SetMessage("Downloading item definition archiveâ€¦");
-                    _taskReportService?.SetProgress(15, 100);
-                }
-
-                string archiveJson = await SteamWebApiService.GetItemDefArchiveJsonAsync(appIdStr, meta.Digest).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (string.IsNullOrWhiteSpace(archiveJson))
-                {
-                    if (showProgress && !friendlyProgressMessages)
-                        ReportFinishedStatus("Failed to download item archive.", TaskReportKind.Error);
-                    return ItemGeneratorResult.Fail("Failed to download item definition archive.");
-                }
-
+                string archiveJson = section.ArchiveJson;
                 JsonObject map;
                 string parseDetail;
                 if (!TryBuildItemDefinitionMap(archiveJson, out map, out parseDetail))
@@ -106,7 +96,7 @@ namespace SmartGoldbergEmu.Generators
                 else if (showProgress)
                 {
                     _taskReportService?.SetProgress(99, 100);
-                    _taskReportService?.SetMessage(string.Format("Writing {0} item definition(s)â€¦", map.Count));
+                    _taskReportService?.SetMessage(string.Format("Writing {0} item definition(s)…", map.Count));
                 }
 
                 Directory.CreateDirectory(steamSettingsPath);
@@ -144,7 +134,7 @@ namespace SmartGoldbergEmu.Generators
                     ReportFinishedStatus("Items generated successfully.");
                 }
 
-                Program.LogService?.LogMessage(string.Format("ItemGenerator: wrote {0} item(s) for {1} ({2})", map.Count, game.AppName, game.AppId));
+                Program.LogService?.LogDebug(string.Format("ItemGenerator: wrote {0} item(s) for {1} ({2})", map.Count, game.AppName, game.AppId));
                 return ItemGeneratorResult.Ok(map.Count);
             }
             catch (OperationCanceledException)
@@ -162,10 +152,7 @@ namespace SmartGoldbergEmu.Generators
 
         private void ReportFinishedStatus(string message, TaskReportKind kind = TaskReportKind.Info)
         {
-            _taskReportService?.SetMessageWithAutoClear(
-                message,
-                kind,
-                AddGameStatusMessages.StatusAutoClearDelayMs);
+            _taskReportService?.SetMessageWithAutoClear(message, kind);
         }
 
         private static bool TryBuildItemDefinitionMap(string archiveJson, out JsonObject map, out string errorDetail)
@@ -174,7 +161,7 @@ namespace SmartGoldbergEmu.Generators
             errorDetail = null;
 
             string trimmed = archiveJson.Trim();
-            string preview = trimmed.Length <= 400 ? trimmed : trimmed.Substring(0, 400) + "â€¦";
+            string preview = trimmed.Length <= 400 ? trimmed : trimmed.Substring(0, 400) + "…";
 
             JsonValue root;
             try
@@ -313,7 +300,7 @@ namespace SmartGoldbergEmu.Generators
                 return false;
 
             File.WriteAllText(path, defaultMap.ToJsonString(JsonFormatting.Indented), Encoding.UTF8);
-            ServiceLocator.LogService.LogMessage(
+            ServiceLocator.LogService.LogDebug(
                 $"Generated {PathConstants.GoldbergDefaultItemsJsonFileName} with {defaultMap.Count} starting item(s) for app {appId}");
             return true;
         }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
@@ -11,8 +12,6 @@ namespace SmartGoldbergEmu.Generators
 {
     public class StatsGenerator
     {
-        private const int HttpTimeoutSeconds = 10;
-
         private static readonly string[] GlobalFallbackPropertyNames = { "max", "default", "defaultvalue" };
 
         private readonly string _gamesDirectory;
@@ -41,7 +40,7 @@ namespace SmartGoldbergEmu.Generators
                 return false;
 
             File.WriteAllText(statsPath, FormatStatsJsonIndented(goldbergStatsJson));
-            ServiceLocator.LogService.LogMessage($"Generated {PathConstants.GoldbergStatsJsonFileName} for app {appId}");
+            ServiceLocator.LogService.LogDebug($"Generated {PathConstants.GoldbergStatsJsonFileName} for app {appId}");
             return true;
         }
 
@@ -49,28 +48,30 @@ namespace SmartGoldbergEmu.Generators
         {
             try
             {
-                if (string.IsNullOrEmpty(apiKey))
+                if (string.IsNullOrEmpty(apiKey) || !ulong.TryParse(appId, out ulong id) || id == 0)
                     return null;
 
-                var url = string.Format(AchievementConstants.SteamUserStatsApiUrl, language, apiKey, appId);
-                var responseContent = await HttpGetBodyAsync(url, requireSuccessStatusCode: false).ConfigureAwait(false);
-                if (string.IsNullOrEmpty(responseContent))
-                    return null;
-
-                var root = JsonObject.Parse(responseContent);
-                var availableGameStats = root["game"]?["availableGameStats"];
-                if (availableGameStats?["stats"] == null)
+                StatsSection section = await ServiceLocator.AppDataKitBridgeService
+                    .FetchStatsAsync(id, language)
+                    .ConfigureAwait(false);
+                if (section == null
+                    || section.Status != SnapshotSectionStatus.Ok
+                    || section.Items == null
+                    || section.Items.Count == 0)
                     return null;
 
                 var statsList = new List<object>();
-                foreach (JsonValue stat in (JsonArray)(availableGameStats["stats"] ?? new JsonArray()))
+                foreach (StatSchemaEntry stat in section.Items)
                 {
+                    if (stat == null || string.IsNullOrWhiteSpace(stat.Name))
+                        continue;
+
                     statsList.Add(new Dictionary<string, object>
                     {
-                        ["name"] = stat["name"]?.ToString() ?? "",
-                        ["type"] = NormalizeGoldbergStatType(stat["type"]?.ToString()),
-                        ["default"] = stat["defaultvalue"]?.ToString() ?? "0",
-                        ["global"] = stat["max"]?.ToString() ?? "0"
+                        ["name"] = stat.Name,
+                        ["type"] = NormalizeGoldbergStatType(stat.Type),
+                        ["default"] = string.IsNullOrEmpty(stat.DefaultValue) ? "0" : stat.DefaultValue,
+                        ["global"] = "0"
                     });
                 }
 
@@ -92,8 +93,9 @@ namespace SmartGoldbergEmu.Generators
 
             try
             {
-                var url = string.Format(ApplicationConstants.GamesInfosDatasSteamStatsDbUrlFormat, appId);
-                var body = await HttpGetBodyAsync(url, requireSuccessStatusCode: true).ConfigureAwait(false);
+                var body = await GamesInfosDatasHelper
+                    .TryGetSteamFileBodyAsync(appId, PathConstants.GoldbergStatsDbJsonFileName)
+                    .ConfigureAwait(false);
                 return body == null ? null : ConvertStatsDbJsonToGoldbergFormat(body);
             }
             catch (Exception)
@@ -136,26 +138,6 @@ namespace SmartGoldbergEmu.Generators
             }
 
             return outArr.Count == 0 ? null : outArr.ToJsonString(JsonFormatting.Indented);
-        }
-
-        private static async Task<string> HttpGetBodyAsync(string url, bool requireSuccessStatusCode)
-        {
-            try
-            {
-                using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
-                {
-                    using (var response = await httpService.GetAsync(url).ConfigureAwait(false))
-                    {
-                        if (requireSuccessStatusCode && !response.IsSuccessStatusCode)
-                            return null;
-                        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                return null;
-            }
         }
 
         private static string FormatStatsJsonIndented(string json)

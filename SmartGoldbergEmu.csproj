@@ -57,12 +57,15 @@
     <Reference Include="PresentationCore" />
     <Reference Include="WindowsBase" />
     <Reference Include="System.IO.Compression" />
-    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Forms\ThemedForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Forms\AboutForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -98,17 +101,11 @@
     <Compile Include="Forms\ProgressForm.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Forms\UpdateChangelogForm.cs">
+    <Compile Include="Forms\ChangelogForm.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Forms\UpdateChangelogForm.Designer.cs">
-      <DependentUpon>UpdateChangelogForm.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Forms\RemovesGameForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\RemovesGameForm.Designer.cs">
-      <DependentUpon>RemovesGameForm.cs</DependentUpon>
+    <Compile Include="Forms\ChangelogForm.Designer.cs">
+      <DependentUpon>ChangelogForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Forms\ProgressForm.Designer.cs">
       <DependentUpon>ProgressForm.cs</DependentUpon>
@@ -131,27 +128,23 @@
     <Compile Include="Forms\LaunchOptionsForm.Designer.cs">
       <DependentUpon>LaunchOptionsForm.cs</DependentUpon>
     </Compile>
-    <Compile Include="Forms\SteamlessOptionsForm.cs">
+    <Compile Include="Forms\AppTaskDialogForm.cs">
       <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\SteamlessOptionsForm.Designer.cs">
-      <DependentUpon>SteamlessOptionsForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Models\AchievementExceptions.cs" />
     <Compile Include="Models\AchievementModels.cs" />
-    <Compile Include="Models\AchievementSchema.cs" />
     <Compile Include="Models\ApiKeyStatus.cs" />
     <Compile Include="Models\AppSearchResult.cs" />
     <Compile Include="Models\ApplicationSettings.cs" />
     <Compile Include="Models\GoldbergForkSource.cs" />
+    <Compile Include="Models\GoldbergReleaseChannel.cs" />
     <Compile Include="Models\GoldbergLaunchMode.cs" />
-    <Compile Include="Models\GoldbergLaunchModeAvailability.cs" />
     <Compile Include="Models\CAchievement.cs" />
-    <Compile Include="Models\CSteamGameSchema.cs" />
     <Compile Include="Models\GameConfig.cs" />
-    <Compile Include="Models\SteamlessApplyOutcome.cs" />
-    <Compile Include="Models\SteamlessApplyResult.cs" />
-    <Compile Include="Models\SteamlessCliOptions.cs" />
+    <Compile Include="Models\AppCatalogSnapshot.cs" />
+    <Compile Include="Models\StubExecutableTarget.cs" />
+    <Compile Include="Models\StubKitApplyOutcome.cs" />
+    <Compile Include="Models\StubKitApplyResult.cs" />
     <Compile Include="Models\LegacyConfig.cs" />
     <Compile Include="Models\GameSettingsSaveModels.cs" />
     <Compile Include="Models\GameSettingsSnapshot.cs" />
@@ -166,7 +159,6 @@
     <Compile Include="Models\PendingAddGameSave.cs" />
     <Compile Include="Models\PendingListSyncResult.cs" />
     <Compile Include="Models\GlobalSettings.cs" />
-    <Compile Include="Models\ItemMeta.cs" />
     <Compile Include="Models\ItemGeneratorResult.cs" />
     <Compile Include="Models\IniDocument.cs" />
     <Compile Include="Models\LaunchOption.cs" />
@@ -174,9 +166,10 @@
     <Compile Include="Models\LoggingConfiguration.cs" />
     <Compile Include="Models\OnlineAppData.cs" />
     <Compile Include="Models\SaveResult.cs" />
+    <Compile Include="Models\SteamApiFinding.cs" />
     <Compile Include="Models\SteamApiStatus.cs" />
     <Compile Include="Models\UpdateCheckResult.cs" />
-    <Compile Include="Models\UpdateChangelogDialogContent.cs" />
+    <Compile Include="Models\ChangelogDialogContent.cs" />
     <Compile Include="Models\UpdateException.cs" />
     <Compile Include="Models\UriParseResult.cs" />
     <Compile Include="Models\ValidationResult.cs" />
@@ -184,6 +177,7 @@
     <Compile Include="Models\ThemeColors.cs" />
     <Compile Include="Models\ThemeChangedEventArgs.cs" />
     <Compile Include="Models\SteamProductInfoModels.cs" />
+    <Compile Include="Models\SteamStaticCdnPreferences.cs" />
     <Compile Include="Models\WindowState.cs" />
     <Compile Include="Constants\SteamAppManifestAcfKeys.cs" />
     <Compile Include="Constants\SteamClientRegistryKeyPaths.cs" />
@@ -197,8 +191,10 @@
     <Compile Include="Constants\AssetConstants.cs" />
     <Compile Include="Constants\GoldbergInstallLayout.cs" />
     <Compile Include="Constants\PathConstants.cs" />
+    <Compile Include="Constants\SteamStaticCdnConstants.cs" />
     <Compile Include="Constants\SteamPicsKeyNames.cs" />
     <Compile Include="Abstractions\ITaskReportService.cs" />
+    <Compile Include="Abstractions\TaskReportDefaults.cs" />
     <Compile Include="Abstractions\IHttpService.cs" />
     <Compile Include="Abstractions\ILogService.cs" />
     <Compile Include="Abstractions\IRegistryService.cs" />
@@ -208,13 +204,18 @@
     <Compile Include="Generators\StatsGenerator.cs" />
     <Compile Include="Validation\SteamApiValidator.cs" />
     <Compile Include="Helpers\AchievementPreviewHelper.cs" />
+    <Compile Include="Helpers\GamesInfosDatasHelper.cs" />
     <Compile Include="Helpers\ApiKeyStatusIndicatorHelper.cs" />
     <Compile Include="Helpers\ErrorDisplayHelper.cs" />
     <Compile Include="Helpers\ControlInvokeAsyncHelper.cs" />
     <Compile Include="Helpers\FormMessageBoxHelper.cs" />
+    <Compile Include="Helpers\AppTaskDialogHelper.cs" />
+    <Compile Include="Helpers\TaskDialogHelper.cs" />
+    <Compile Include="Helpers\FileDialogBrowseHelper.cs" />
     <Compile Include="Helpers\IniParseHelper.cs" />
     <Compile Include="Helpers\DirectoryJunctionHelper.cs" />
-    <Compile Include="Helpers\DuplicateExecutableDialogHelper.cs" />
+    <Compile Include="Helpers\DuplicateGameDialogHelper.cs" />
+    <Compile Include="Helpers\RemoveGamesDialogHelper.cs" />
     <Compile Include="Helpers\LoadDllsArchFilter.cs" />
     <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
@@ -232,17 +233,23 @@
     <Compile Include="Helpers\ProcessImagePathHelper.cs" />
     <Compile Include="Helpers\SteamIdHelper.cs" />
     <Compile Include="Helpers\SteamInstallationPathHelper.cs" />
+    <Compile Include="Helpers\SteamClientManifestHelper.cs" />
     <Compile Include="Helpers\SteamLanguageDisplayHelper.cs" />
+    <Compile Include="Helpers\AppInfoKeyValueHelper.cs" />
     <Compile Include="Helpers\SteamPicsKeyValueHelper.cs" />
     <Compile Include="Helpers\ListViewColumnHelper.cs" />
+    <Compile Include="Helpers\WinFormsThemePaintHelper.cs" />
     <Compile Include="Helpers\LogRedactionHelper.cs" />
     <Compile Include="Helpers\MarkdownToRichTextHelper.cs" />
     <Compile Include="Helpers\MenuCheckMarkHelper.cs" />
     <Compile Include="Helpers\MosaicViewHelper.cs" />
+    <Compile Include="Helpers\ApngAnimationDecoder.cs" />
+    <Compile Include="Helpers\ImageListOwnedImages.cs" />
     <Compile Include="Helpers\GameFolderPathHelper.cs" />
     <Compile Include="Helpers\PathValidationHelper.cs" />
     <Compile Include="Helpers\ShellFolderHelper.cs" />
     <Compile Include="Helpers\HttpHelpers.cs" />
+    <Compile Include="Helpers\LargeObjectHeapHelper.cs" />
     <Compile Include="Helpers\PlaceholderTextBoxHelper.cs" />
     <Compile Include="Helpers\ThemedToolStripRenderer.cs" />
     <Compile Include="Helpers\ThemedToolStripRendererFactory.cs" />
@@ -286,6 +293,7 @@
     <Compile Include="Services\LaunchOptionService.cs" />
     <Compile Include="Services\LogService.cs" />
     <Compile Include="Services\SteamGameSearchService.cs" />
+    <Compile Include="Services\GameSearchFilterConnection.cs" />
     <Compile Include="Services\ServiceLocator.cs" />
     <Compile Include="Services\ShortcutService.cs" />
     <Compile Include="Services\TaskReportService.cs" />
@@ -296,9 +304,25 @@
     <Compile Include="Services\RegistryService.cs" />
     <Compile Include="Services\UriProtocolRegistryService.cs" />
     <Compile Include="Services\UriProtocolService.cs" />
+    <Compile Include="Services\AppDataKitBridgeService.cs" />
+    <Compile Include="Services\AppCatalogSnapshotStore.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
-    <Compile Include="Services\SteamlessFeedback.cs" />
-    <Compile Include="Services\SteamlessService.cs" />
+    <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
+    <Compile Include="Services\StubKitFeedback.cs" />
+    <Compile Include="Services\StubKitService.cs" />
+    <Compile Include="AppDataKit\AppDataJson.cs" />
+    <Compile Include="AppDataKit\AppDataService.cs" />
+    <Compile Include="AppDataKit\AppInfoClient.cs" />
+    <Compile Include="AppDataKit\AppInfoJsonConverter.cs" />
+    <Compile Include="AppDataKit\AppInfoKeyValue.cs" />
+    <Compile Include="AppDataKit\AppSnapshotTypes.cs" />
+    <Compile Include="AppDataKit\CdnTypes.cs" />
+    <Compile Include="AppDataKit\DepotParser.cs" />
+    <Compile Include="AppDataKit\DlcResolver.cs" />
+    <Compile Include="AppDataKit\GameAssetParser.cs" />
+    <Compile Include="AppDataKit\JsonUtil.cs" />
+    <Compile Include="AppDataKit\SteamWebApiClient.cs" />
+    <Compile Include="AppDataKit\StoreAppDetailsClient.cs" />
     <Compile Include="JsonKit\JsonArray.cs" />
     <Compile Include="JsonKit\JsonConvert.cs" />
     <Compile Include="JsonKit\JsonFormatting.cs" />
@@ -310,11 +334,60 @@
     <Compile Include="JsonKit\JsonValueExtensions.cs" />
     <Compile Include="JsonKit\JsonValueKind.cs" />
     <Compile Include="JsonKit\JsonWriter.cs" />
+    <Compile Include="StubKit\BindFinish.cs" />
+    <Compile Include="StubKit\ByteMask.cs" />
+    <Compile Include="StubKit\DrmpFieldReader.cs" />
+    <Compile Include="StubKit\EpImmediateScanner.cs" />
+    <Compile Include="StubKit\HeaderSchemas.cs" />
+    <Compile Include="StubKit\PeImage.cs" />
+    <Compile Include="StubKit\SteamStub.cs" />
+    <Compile Include="StubKit\StubCiphers.cs" />
+    <Compile Include="StubKit\StubClassifier.cs" />
+    <Compile Include="StubKit\StubUnpackInfo.cs" />
+    <Compile Include="StubKit\TlsOep.cs" />
+    <Compile Include="StubKit\UnpackSession.cs" />
+    <Compile Include="StubKit\VariantV10.cs" />
+    <Compile Include="StubKit\VariantV20.cs" />
+    <Compile Include="StubKit\VariantV21.cs" />
+    <Compile Include="ExtractKit\ArchiveEntry.cs" />
+    <Compile Include="ExtractKit\ArchiveExtractProgress.cs" />
+    <Compile Include="ExtractKit\ArchiveExtractSession.cs" />
+    <Compile Include="ExtractKit\ArchiveExtractor.cs" />
+    <Compile Include="ExtractKit\ArchiveFormatSniffer.cs" />
+    <Compile Include="ExtractKit\ExtractKit.cs" />
+    <Compile Include="ExtractKit\ArchivePath.cs" />
+    <Compile Include="ExtractKit\ArchiveReader.cs" />
+    <Compile Include="ExtractKit\ExtractKitException.cs" />
+    <Compile Include="ExtractKit\UnsupportedArchiveFormatException.cs" />
+    <Compile Include="ExtractKit\Internal\Adler32.cs" />
+    <Compile Include="ExtractKit\Internal\Bcj2.cs" />
+    <Compile Include="ExtractKit\Internal\Bra.cs" />
+    <Compile Include="ExtractKit\Internal\Bra86.cs" />
+    <Compile Include="ExtractKit\Internal\CpuArch.cs" />
+    <Compile Include="ExtractKit\Internal\Delta.cs" />
+    <Compile Include="ExtractKit\Internal\EntryPath.cs" />
+    <Compile Include="ExtractKit\Internal\Lzma2Dec.cs" />
+    <Compile Include="ExtractKit\Internal\LzmaDec.cs" />
+    <Compile Include="ExtractKit\Internal\VZipArchive.cs" />
+    <Compile Include="ExtractKit\Internal\SevenZipArchiveCore.cs" />
+    <Compile Include="ExtractKit\Internal\Sz7zArcIn.cs" />
+    <Compile Include="ExtractKit\Internal\Sz7zDec.cs" />
+    <Compile Include="ExtractKit\Internal\Sz7zTypes.cs" />
+    <Compile Include="ExtractKit\Internal\SzAlloc.cs" />
+    <Compile Include="ExtractKit\Internal\SzBuf.cs" />
+    <Compile Include="ExtractKit\Internal\SzCrc.cs" />
+    <Compile Include="ExtractKit\Internal\SzLookInStream.cs" />
+    <Compile Include="ExtractKit\Internal\SzRes.cs" />
+    <Compile Include="ExtractKit\Internal\SzStream.cs" />
+    <Compile Include="ExtractKit\Internal\SzTypes.cs" />
+    <Compile Include="ExtractKit\Internal\ZipArchiveCore.cs" />
+    <Compile Include="ExtractKit\Internal\ZipDeflateDecoder.cs" />
     <Compile Include="SteamKit\ClientMsgProtobuf.cs" />
     <Compile Include="SteamKit\Crc32Util.cs" />
     <Compile Include="SteamKit\KeyDictionary.cs" />
     <Compile Include="SteamKit\NetFilterEncryptionWithHMAC.cs" />
     <Compile Include="SteamKit\SteamClient.cs" />
+    <Compile Include="SteamKit\SteamCmDirectory.cs" />
     <Compile Include="SteamKit\SteamLogonWaitResult.cs" />
     <Compile Include="SteamKit\Types.cs" />
     <Compile Include="Models\PersistedLaunchSession.cs" />
@@ -342,14 +415,11 @@
     <EmbeddedResource Include="Forms\ProgressForm.resx">
       <DependentUpon>ProgressForm.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="Forms\UpdateChangelogForm.resx">
-      <DependentUpon>UpdateChangelogForm.cs</DependentUpon>
+    <EmbeddedResource Include="Forms\ChangelogForm.resx">
+      <DependentUpon>ChangelogForm.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\ForkSelectForm.resx">
       <DependentUpon>ForkSelectForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\RemovesGameForm.resx">
-      <DependentUpon>RemovesGameForm.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\GameSettingsForm.resx">
       <DependentUpon>GameSettingsForm.cs</DependentUpon>
@@ -359,9 +429,6 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\LaunchOptionsForm.resx">
       <DependentUpon>LaunchOptionsForm.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\SteamlessOptionsForm.resx">
-      <DependentUpon>SteamlessOptionsForm.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

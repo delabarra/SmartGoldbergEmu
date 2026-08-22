@@ -14,6 +14,7 @@ namespace SmartGoldbergEmu.Models
         public GameSettingsSnapshot SettingsSnapshot { get; set; }
         public string CustomStatsRawJson { get; set; }
         public bool CredentialsTouched { get; set; }
+        public bool IsUpdateOfExisting { get; set; }
         public GoldbergFilesService.AdditionalFilesSaveRequest AdditionalFilesSaveRequest { get; set; }
         public Action SaveDlcAndPaths { get; set; }
         public Action OnAssetsDownloaded { get; set; }

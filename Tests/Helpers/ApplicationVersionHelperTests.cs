@@ -6,11 +6,13 @@ namespace SmartGoldbergEmu.Tests.Helpers
     public sealed class ApplicationVersionHelperTests
     {
         [Theory]
-        [InlineData(2, 4, 0, "2.4")]
-        [InlineData(2, 4, 1, "2.4.1")]
-        public void FormatVersionLabel_omits_zero_patch(int major, int minor, int patch, string expected)
+        [InlineData(2, 4, 0, 0, "2.4")]
+        [InlineData(2, 4, 1, 0, "2.4.1")]
+        [InlineData(2, 4, 2, 1, "2.4.2.1")]
+        [InlineData(2, 4, 0, 1, "2.4.0.1")]
+        public void FormatVersionLabel_omits_trailing_zeros(int major, int minor, int patch, int revision, string expected)
         {
-            Assert.Equal(expected, ApplicationVersionHelper.FormatVersionLabel(major, minor, patch));
+            Assert.Equal(expected, ApplicationVersionHelper.FormatVersionLabel(major, minor, patch, revision));
         }
 
         [Theory]
@@ -26,6 +28,19 @@ namespace SmartGoldbergEmu.Tests.Helpers
             Assert.Equal(expected, ApplicationVersionHelper.FormatDisplayVersion(major, minor, patch, build, previewLabel));
         }
 
+        [Theory]
+        [InlineData("2.4.1", "v2.4.1")]
+        [InlineData("2.4", "v2.4")]
+        [InlineData("2.4.1 (build 16, preview)", "v2.4.1 (build 16, preview)")]
+        [InlineData("v2.4.1", "v2.4.1")]
+        [InlineData("V2.4.1", "V2.4.1")]
+        [InlineData("unknown", "unknown")]
+        [InlineData("latest", "latest")]
+        public void EnsureReleaseTagPrefix_matches_github_tag_style(string input, string expected)
+        {
+            Assert.Equal(expected, ApplicationVersionHelper.EnsureReleaseTagPrefix(input));
+        }
+
         [Fact]
         public void GetWindowTitle_includes_base_title_and_version_segment()
         {
@@ -36,6 +51,9 @@ namespace SmartGoldbergEmu.Tests.Helpers
         }
 
         [Theory]
+        [InlineData("v2.4.2.1", "2.4.2.1")]
+        [InlineData("2.4.2.1", "2.4.2.1")]
+        [InlineData("v2.4.2.0", "2.4.2")]
         [InlineData("v2.4.1-preview+build.16", "2.4.1 (build 16, preview)")]
         [InlineData("v2.4.1+build.16-preview", "2.4.1 (build 16, preview)")]
         [InlineData("v2.4.1+build.16", "2.4.1")]
@@ -48,10 +66,11 @@ namespace SmartGoldbergEmu.Tests.Helpers
                 out int major,
                 out int minor,
                 out int patch,
+                out int revision,
                 out int build,
                 out string previewLabel));
 
-            Assert.Equal(expected, ApplicationVersionHelper.FormatDisplayVersion(major, minor, patch, build, previewLabel));
+            Assert.Equal(expected, ApplicationVersionHelper.FormatDisplayVersion(major, minor, patch, revision, build, previewLabel));
         }
     }
 }

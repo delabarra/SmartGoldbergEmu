@@ -1,4 +1,4 @@
-// Visual styling: ThemeService.ApplyTheme is invoked from EmulatorForkSelectionForm.cs (same pattern as AboutForm).
+// Visual styling: ThemeService.ApplyTheme is invoked from ForkSelectForm.cs (same pattern as AboutForm).
 
 namespace SmartGoldbergEmu.Forms
 {
@@ -18,6 +18,10 @@ namespace SmartGoldbergEmu.Forms
         private void InitializeComponent()
         {
             this.grpFork = new System.Windows.Forms.GroupBox();
+            this.rbAlexUpstream = new System.Windows.Forms.RadioButton();
+            this.rbAlexRepack = new System.Windows.Forms.RadioButton();
+            this.rbDetanupUpstream = new System.Windows.Forms.RadioButton();
+            this.rbDetanupRepack = new System.Windows.Forms.RadioButton();
             this.rbAlex = new System.Windows.Forms.RadioButton();
             this.rbDetanup = new System.Windows.Forms.RadioButton();
             this.btnOK = new System.Windows.Forms.Button();
@@ -28,6 +32,10 @@ namespace SmartGoldbergEmu.Forms
             // 
             // grpFork
             // 
+            this.grpFork.Controls.Add(this.rbAlexUpstream);
+            this.grpFork.Controls.Add(this.rbAlexRepack);
+            this.grpFork.Controls.Add(this.rbDetanupUpstream);
+            this.grpFork.Controls.Add(this.rbDetanupRepack);
             this.grpFork.Controls.Add(this.rbAlex);
             this.grpFork.Controls.Add(this.rbDetanup);
             this.grpFork.Location = new System.Drawing.Point(12, 12);
@@ -35,17 +43,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpFork.Size = new System.Drawing.Size(294, 80);
             this.grpFork.TabIndex = 0;
             this.grpFork.TabStop = false;
-            this.grpFork.Text = "Emulator Fork";
-            // 
-            // rbAlex
-            // 
-            this.rbAlex.AutoSize = true;
-            this.rbAlex.Location = new System.Drawing.Point(16, 47);
-            this.rbAlex.Name = "rbAlex";
-            this.rbAlex.Size = new System.Drawing.Size(240, 17);
-            this.rbAlex.TabIndex = 1;
-            this.rbAlex.Text = "Alex47exe - (github.com/alex47exe/gse_fork)";
-            this.rbAlex.UseVisualStyleBackColor = true;
+            this.grpFork.Text = "Select Fork";
             // 
             // rbDetanup
             // 
@@ -57,6 +55,60 @@ namespace SmartGoldbergEmu.Forms
             this.rbDetanup.TabStop = true;
             this.rbDetanup.Text = "Detanup01 - (github.com/Detanup01/gbe_fork)";
             this.rbDetanup.UseVisualStyleBackColor = true;
+            // 
+            // rbAlex
+            // 
+            this.rbAlex.AutoSize = true;
+            this.rbAlex.Location = new System.Drawing.Point(16, 47);
+            this.rbAlex.Name = "rbAlex";
+            this.rbAlex.Size = new System.Drawing.Size(240, 17);
+            this.rbAlex.TabIndex = 1;
+            this.rbAlex.Text = "Alex47exe - (github.com/alex47exe/gse_fork)";
+            this.rbAlex.UseVisualStyleBackColor = true;
+            // 
+            // rbDetanupRepack
+            // 
+            this.rbDetanupRepack.AutoSize = true;
+            this.rbDetanupRepack.Location = new System.Drawing.Point(16, 22);
+            this.rbDetanupRepack.Name = "rbDetanupRepack";
+            this.rbDetanupRepack.Size = new System.Drawing.Size(160, 17);
+            this.rbDetanupRepack.TabIndex = 0;
+            this.rbDetanupRepack.Text = "Detanup01 — Repack";
+            this.rbDetanupRepack.UseVisualStyleBackColor = true;
+            this.rbDetanupRepack.Visible = false;
+            // 
+            // rbDetanupUpstream
+            // 
+            this.rbDetanupUpstream.AutoSize = true;
+            this.rbDetanupUpstream.Location = new System.Drawing.Point(16, 47);
+            this.rbDetanupUpstream.Name = "rbDetanupUpstream";
+            this.rbDetanupUpstream.Size = new System.Drawing.Size(170, 17);
+            this.rbDetanupUpstream.TabIndex = 1;
+            this.rbDetanupUpstream.Text = "Detanup01 — Upstream";
+            this.rbDetanupUpstream.UseVisualStyleBackColor = true;
+            this.rbDetanupUpstream.Visible = false;
+            // 
+            // rbAlexRepack
+            // 
+            this.rbAlexRepack.AutoSize = true;
+            this.rbAlexRepack.Location = new System.Drawing.Point(16, 72);
+            this.rbAlexRepack.Name = "rbAlexRepack";
+            this.rbAlexRepack.Size = new System.Drawing.Size(150, 17);
+            this.rbAlexRepack.TabIndex = 2;
+            this.rbAlexRepack.Text = "alex47exe — Repack";
+            this.rbAlexRepack.UseVisualStyleBackColor = true;
+            this.rbAlexRepack.Visible = false;
+            // 
+            // rbAlexUpstream
+            // 
+            this.rbAlexUpstream.AutoSize = true;
+            this.rbAlexUpstream.Location = new System.Drawing.Point(16, 97);
+            this.rbAlexUpstream.Name = "rbAlexUpstream";
+            this.rbAlexUpstream.Size = new System.Drawing.Size(160, 17);
+            this.rbAlexUpstream.TabIndex = 3;
+            this.rbAlexUpstream.Text = "alex47exe — Upstream";
+            this.rbAlexUpstream.UseVisualStyleBackColor = true;
+            this.rbAlexUpstream.Visible = false;
             // 
             // btnOK
             // 
@@ -108,7 +160,7 @@ namespace SmartGoldbergEmu.Forms
             this.MinimizeBox = false;
             this.Name = "ForkSelectForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-            this.Text = "Emulator Fork";
+            this.Text = "Emulator Fork Select";
             this.grpFork.ResumeLayout(false);
             this.grpFork.PerformLayout();
             this.ResumeLayout(false);
@@ -121,6 +173,10 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.GroupBox grpFork;
         private System.Windows.Forms.RadioButton rbDetanup;
         private System.Windows.Forms.RadioButton rbAlex;
+        private System.Windows.Forms.RadioButton rbDetanupRepack;
+        private System.Windows.Forms.RadioButton rbDetanupUpstream;
+        private System.Windows.Forms.RadioButton rbAlexRepack;
+        private System.Windows.Forms.RadioButton rbAlexUpstream;
         private System.Windows.Forms.Button btnOK;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.CheckBox chkUpdateFilesOnOk;

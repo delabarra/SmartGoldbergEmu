@@ -25,8 +25,6 @@ namespace SmartGoldbergEmu.JsonKit
                 return (T)(object)DeserializeStringDictionary(json);
             if (typeof(T) == typeof(List<CAchievement>))
                 return (T)(object)DeserializeAchievementList(json);
-            if (typeof(T) == typeof(CSteamGameSchema))
-                return (T)(object)DeserializeSteamGameSchema(json);
 
             var root = JsonValue.Parse(json);
             return (T)DeserializeReflection(root, typeof(T));
@@ -84,43 +82,6 @@ namespace SmartGoldbergEmu.JsonKit
                 list.Add(ReadAchievement(obj));
             }
             return list;
-        }
-
-        public static CSteamGameSchema DeserializeSteamGameSchema(string json)
-        {
-            var root = JsonValue.Parse(json) as JsonObject;
-            if (root == null)
-                return null;
-
-            var gameToken = root["game"] as JsonObject;
-            if (gameToken == null)
-                return null;
-
-            var statsToken = gameToken["availableGameStats"] as JsonObject;
-            if (statsToken == null)
-                return new CSteamGameSchema { game = new CGame { availableGameStats = null } };
-
-            var achievementsArray = statsToken["achievements"] as JsonArray;
-            var achievements = new List<CAchievement>();
-            if (achievementsArray != null)
-            {
-                foreach (var item in achievementsArray)
-                {
-                    if (item is JsonObject achievementObj)
-                        achievements.Add(ReadAchievement(achievementObj));
-                }
-            }
-
-            return new CSteamGameSchema
-            {
-                game = new CGame
-                {
-                    availableGameStats = new CAvailableGameStats
-                    {
-                        achievements = achievements
-                    }
-                }
-            };
         }
 
         internal static CAchievement ReadAchievement(JsonObject obj)

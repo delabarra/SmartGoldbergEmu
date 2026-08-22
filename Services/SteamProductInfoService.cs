@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
+using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
@@ -19,8 +21,8 @@ namespace SmartGoldbergEmu.Services
         private static readonly Encoding Utf8WithoutBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         private static readonly TimeSpan[] SessionEstablishAttemptBudgets =
         {
-            TimeSpan.FromSeconds(25),
-            TimeSpan.FromSeconds(22),
+            TimeSpan.FromSeconds(12),
+            TimeSpan.FromSeconds(10),
         };
         private const int MaxLinkedPackagesToFetch = 32;
 
@@ -31,22 +33,51 @@ namespace SmartGoldbergEmu.Services
         };
 
         private readonly SemaphoreSlim _sessionLock = new SemaphoreSlim(1, 1);
+        private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
+        private int _sessionHoldCount;
         private bool _disposed;
 
         private SteamClient _client;
         private bool _loggedOn;
+        // After one failed connect during a HoldSession, skip further 12s+ retries (package PICS, launch options).
+        private int _sessionEstablishFailed;
 
-        public void Dispose()
+        // Upper bound for Dispose waiting on an in-flight PICS/connect that should already be cancelled.
+        private static readonly TimeSpan DisposeSessionLockWait = TimeSpan.FromSeconds(8);
+
+        // Keeps the anonymous CM session up for a user task (Add Game, PICS fetch, etc.).
+        // Dispose on finish or cancel; when the last hold is released the connection is dropped.
+        public IDisposable HoldSession(bool preWarm = false)
+        {
+            if (_disposed)
+                return NoOpSessionHold.Instance;
+
+            Interlocked.Increment(ref _sessionHoldCount);
+            CancellationTokenSource preWarmCts = null;
+            if (preWarm)
+            {
+                preWarmCts = new CancellationTokenSource();
+                CancellationToken token = preWarmCts.Token;
+                _ = PreWarmAndDropIfUnheldAsync(token)
+                    .ForgetFaults(ServiceLocator.LogService, nameof(PreWarmAndDropIfUnheldAsync));
+            }
+
+            return new SessionHold(this, preWarmCts);
+        }
+
+        // Drops the CM session immediately (also used when the last HoldSession is released).
+        public void TeardownSession()
         {
             if (_disposed)
                 return;
-            _disposed = true;
 
             try
             {
                 _sessionLock.Wait();
                 try
                 {
+                    if (Volatile.Read(ref _sessionHoldCount) == 0)
+                        ClearSessionEstablishFailed();
                     TeardownClient();
                 }
                 finally
@@ -65,7 +96,68 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
+                ServiceLocator.LogService?.LogWarning($"SteamProductInfoService teardown: {ex.Message}");
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            Interlocked.Exchange(ref _sessionHoldCount, 0);
+
+            try
+            {
+                _lifetimeCts.Cancel();
+            }
+            catch
+            {
+            }
+
+            // Drop the socket first so connect/PICS waiters release _sessionLock instead of blocking close.
+            InterruptClient();
+
+            try
+            {
+                if (_sessionLock.Wait(DisposeSessionLockWait))
+                {
+                    try
+                    {
+                        TeardownClient();
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            _sessionLock.Release();
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                else
+                {
+                    InterruptClient();
+                    ServiceLocator.LogService?.LogWarning(
+                        "SteamProductInfoService dispose: session lock wait timed out after cancel.");
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (Exception ex)
+            {
                 ServiceLocator.LogService?.LogWarning($"SteamProductInfoService dispose: {ex.Message}");
+            }
+
+            try
+            {
+                _lifetimeCts.Dispose();
+            }
+            catch
+            {
             }
 
             try
@@ -77,58 +169,230 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public async Task<bool> IsAppDataAvailableAsync(string appId, CancellationToken ct = default)
-        {
-            return await GetAppPicsRootOrFetchAsync(appId, null, ct).ConfigureAwait(false) != null;
-        }
-
         public async Task<KeyValue> GetAppKeyValueAsync(string appId, CancellationToken ct = default)
         {
-            if (!uint.TryParse(appId, out uint id) || id == 0)
+            if (_disposed || !uint.TryParse(appId, out uint id) || id == 0)
                 return null;
 
-            await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (!await EnsureLoggedOnAsync(ct).ConfigureAwait(false))
-                    return null;
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
+                using (HoldSession())
+                {
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        if (!await EnsureLoggedOnAsync(opCt).ConfigureAwait(false))
+                            return null;
 
-                PICSProductInfoResult pics = await _client.RequestProductInfo(id, 0, ct).ConfigureAwait(false);
-                return PicsAppResultToKeyValue(id, pics);
+                        PICSProductInfoResult pics = await _client.RequestProductInfo(id, 0, opCt).ConfigureAwait(false);
+                        KeyValue kv = PicsAppResultToKeyValue(id, pics);
+                        // One retry for transient empty/timeout PICS responses on a live session.
+                        if (kv == null && _loggedOn && _client != null && _client.IsConnected && !opCt.IsCancellationRequested)
+                        {
+                            pics = await _client.RequestProductInfo(id, 0, opCt).ConfigureAwait(false);
+                            kv = PicsAppResultToKeyValue(id, pics);
+                        }
+
+                        return kv;
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
+                }
             }
-            finally
+            catch (OperationCanceledException)
             {
-                _sessionLock.Release();
+                return null;
             }
         }
 
-        // In-memory root, then on-disk VDF export (games/{appId}/resources/{appId}.vdf), then live Steam PICS.
-        public async Task<KeyValue> GetAppPicsRootOrFetchAsync(string appId, KeyValue picsAppRoot, CancellationToken ct = default)
+        // In-memory → catalog JSON → on-disk resources/{appId}.vdf → live Steam PICS (converted once).
+        public async Task<AppInfoKeyValue> GetAppInfoOrFetchAsync(string appId, AppInfoKeyValue existingAppInfo, CancellationToken ct = default)
         {
-            if (picsAppRoot != null)
-                return picsAppRoot;
+            if (existingAppInfo != null)
+                return existingAppInfo;
 
-            if (ulong.TryParse(appId, out ulong appIdNum) && appIdNum != 0)
+            if (ulong.TryParse(appId, out ulong appIdNum) && appIdNum != 0
+                && AppCatalogSnapshotStore.TryLoad(appIdNum, out AppCatalogSnapshot catalog)
+                && catalog.AppInfo != null)
             {
-                KeyValue cached = SteamPicsKeyValueHelper.TryLoadExportedAppPicsFromValveFile(
-                    PathConstants.GamesDirectory,
-                    appIdNum);
-                if (cached != null)
-                    return cached;
+                return catalog.AppInfo;
             }
 
-            return await GetAppKeyValueAsync(appId, ct).ConfigureAwait(false);
+            // Pre-catalog installs still have launch data in the Valve text export beside resources/.
+            if (TryLoadAppInfoFromValveDataFile(appId, out AppInfoKeyValue fromVdf) && fromVdf != null)
+                return fromVdf;
+
+            KeyValue kv = await GetAppKeyValueAsync(appId, ct).ConfigureAwait(false);
+            return AppDataKitBridgeService.ConvertFromSteamKit(kv);
         }
 
-        public async Task<KeyValue> WarmGameConfigAppPicsRootAsync(GameConfig game, CancellationToken ct = default)
+        // common.type for leftover search apps: one PICS batch (local catalog already checked by the caller).
+        public async Task<Dictionary<uint, string>> GetAppCommonTypesAsync(
+            IReadOnlyCollection<uint> appIds,
+            CancellationToken ct = default(CancellationToken))
+        {
+            var types = new Dictionary<uint, string>();
+            if (_disposed || appIds == null || appIds.Count == 0)
+                return types;
+
+            var needPics = new List<uint>();
+            var seen = new HashSet<uint>();
+            foreach (uint id in appIds)
+            {
+                if (id == 0 || !seen.Add(id))
+                    continue;
+                needPics.Add(id);
+            }
+
+            if (needPics.Count == 0)
+                return types;
+
+            try
+            {
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
+                using (HoldSession())
+                {
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        if (!await EnsureLoggedOnAsync(opCt).ConfigureAwait(false))
+                        {
+                            ServiceLocator.LogService?.LogWarning(
+                                $"PICS type check skipped: Steam session not ready ({needPics.Count} apps queued).");
+                            return types;
+                        }
+
+                        PICSProductInfoResult pics = await _client
+                            .RequestProductInfo(needPics, null, opCt)
+                            .ConfigureAwait(false);
+                        if ((pics == null || pics.Apps.Count == 0) &&
+                            _loggedOn && _client != null && _client.IsConnected && !opCt.IsCancellationRequested)
+                        {
+                            pics = await _client
+                                .RequestProductInfo(needPics, null, opCt)
+                                .ConfigureAwait(false);
+                        }
+
+                        MergePicsAppTypes(pics, types);
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return types;
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogDebug(
+                    $"PICS type check failed for {needPics.Count} apps: {ex.Message}");
+                return types;
+            }
+
+            return types;
+        }
+
+        private static void MergePicsAppTypes(PICSProductInfoResult pics, Dictionary<uint, string> types)
+        {
+            if (pics == null || pics.Apps == null || types == null)
+                return;
+
+            foreach (PICSProductInfoItem item in pics.Apps)
+            {
+                if (item == null || item.ID == 0 || item.Buffer == null || item.Buffer.Length == 0)
+                    continue;
+                if (pics.UnknownAppIds != null && pics.UnknownAppIds.Contains(item.ID))
+                    continue;
+
+                KeyValue kv = item.ToKeyValue();
+                string type;
+                if (SteamPicsKeyValueHelper.TryGetAppType(kv, out type))
+                    types[item.ID] = type;
+            }
+        }
+
+        // Reads games/{appId}/resources/{appId}.vdf when catalog JSON is missing (legacy / export-only installs).
+        public bool TryLoadAppInfoFromValveDataFile(string appId, out AppInfoKeyValue appInfo, string gamesDirectoryRoot = null)
+        {
+            appInfo = null;
+            if (string.IsNullOrWhiteSpace(appId))
+                return false;
+
+            try
+            {
+                string root = string.IsNullOrWhiteSpace(gamesDirectoryRoot)
+                    ? PathConstants.GamesDirectory
+                    : gamesDirectoryRoot;
+                string path = PathConstants.CombineGamesPerAppValveDataFilePath(root, appId.Trim());
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return false;
+
+                KeyValue kv = KeyValue.ParseVdf(File.ReadAllBytes(path));
+                if (kv == null)
+                    return false;
+
+                appInfo = AppDataKitBridgeService.ConvertFromSteamKit(kv);
+                return appInfo != null;
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning(
+                    "Failed to load game assets VDF for app " + appId + ": " + ex.Message);
+                appInfo = null;
+                return false;
+            }
+        }
+
+        public async Task<AppInfoKeyValue> WarmGameConfigAppInfoAsync(GameConfig game, CancellationToken ct = default)
         {
             if (game == null || game.AppId == 0)
                 return null;
             string appId = game.AppId.ToString();
-            KeyValue kv = await GetAppPicsRootOrFetchAsync(appId, game.AppPicsKeyValue, ct).ConfigureAwait(false);
-            if (kv != null)
-                game.AppPicsKeyValue = kv;
-            return game.AppPicsKeyValue;
+            AppInfoKeyValue info = await GetAppInfoOrFetchAsync(appId, game.AppInfo, ct).ConfigureAwait(false);
+            if (info != null)
+                game.AppInfo = info;
+            return game.AppInfo;
+        }
+
+        // Returns true when an anonymous Steam CM session is ready for PICS.
+        public async Task<bool> TryEnsureSessionAsync(CancellationToken ct = default)
+        {
+            if (_disposed)
+                return false;
+
+            try
+            {
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
+                {
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        return await EnsureLoggedOnAsync(opCt).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                ServiceLocator.LogService?.LogWarning($"Steam session ensure failed: {ex.Message}");
+                return false;
+            }
         }
 
         public async Task PreWarmSessionAsync(CancellationToken ct = default)
@@ -138,24 +402,29 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
-                try
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
                 {
-                    if (!ct.IsCancellationRequested)
-                        await EnsureLoggedOnAsync(ct).ConfigureAwait(false);
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        if (!opCt.IsCancellationRequested)
+                            await EnsureLoggedOnAsync(opCt).ConfigureAwait(false);
 
-                    // Drop anything we just opened if the caller backed out mid-connect.
-                    if (ct.IsCancellationRequested)
-                        TeardownClient();
-                }
-                finally
-                {
-                    _sessionLock.Release();
+                        // Drop anything we just opened if the caller backed out mid-connect.
+                        if (opCt.IsCancellationRequested)
+                            TeardownClient();
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
                 }
             }
             catch (OperationCanceledException)
             {
-                // Cancelled before the lock was held; the connect attempt tears itself down.
+                // Cancelled before the lock was held; drop any partial connect under the lock.
+                TeardownSession();
             }
             catch (Exception ex)
             {
@@ -163,46 +432,35 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public async Task CloseSessionAsync()
-        {
-            if (_disposed)
-                return;
-
-            try
-            {
-                await _sessionLock.WaitAsync().ConfigureAwait(false);
-                try
-                {
-                    TeardownClient();
-                }
-                finally
-                {
-                    _sessionLock.Release();
-                }
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService?.LogWarning($"Steam session close failed: {ex.Message}");
-            }
-        }
-
         public async Task<KeyValue> GetPackageKeyValueAsync(string packageId, CancellationToken ct = default)
         {
-            if (!uint.TryParse(packageId, out uint pkgId) || pkgId == 0)
+            if (_disposed || !uint.TryParse(packageId, out uint pkgId) || pkgId == 0)
                 return null;
 
-            await _sessionLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (!await EnsureLoggedOnAsync(ct).ConfigureAwait(false))
-                    return null;
+                using (CancellationTokenSource linked = LinkWithLifetime(ct))
+                using (HoldSession())
+                {
+                    CancellationToken opCt = linked.Token;
+                    await _sessionLock.WaitAsync(opCt).ConfigureAwait(false);
+                    try
+                    {
+                        if (!await EnsureLoggedOnAsync(opCt).ConfigureAwait(false))
+                            return null;
 
-                PICSProductInfoResult pics = await _client.RequestProductInfo(0, pkgId, ct).ConfigureAwait(false);
-                return PicsPackageResultToKeyValue(pkgId, pics);
+                        PICSProductInfoResult pics = await _client.RequestProductInfo(0, pkgId, opCt).ConfigureAwait(false);
+                        return PicsPackageResultToKeyValue(pkgId, pics);
+                    }
+                    finally
+                    {
+                        _sessionLock.Release();
+                    }
+                }
             }
-            finally
+            catch (OperationCanceledException)
             {
-                _sessionLock.Release();
+                return null;
             }
         }
 
@@ -236,10 +494,16 @@ namespace SmartGoldbergEmu.Services
             return item.ToKeyValue();
         }
 
+        private bool HasLiveSession => _client != null && _loggedOn && _client.IsConnected;
+
+        private bool SessionEstablishAlreadyFailed => Volatile.Read(ref _sessionEstablishFailed) != 0;
+
         private async Task<bool> EnsureLoggedOnAsync(CancellationToken ct)
         {
-            if (_client != null && _loggedOn && _client.IsConnected)
+            if (HasLiveSession)
                 return true;
+            if (SessionEstablishAlreadyFailed)
+                return false;
 
             return await ReconnectAsync(ct).ConfigureAwait(false);
         }
@@ -255,7 +519,10 @@ namespace SmartGoldbergEmu.Services
                 (bool success, uint outcome) = await TryConnectAndLogOnAsync(ct, SessionEstablishAttemptBudgets[attempt])
                     .ConfigureAwait(false);
                 if (success)
+                {
+                    ClearSessionEstablishFailed();
                     return true;
+                }
 
                 lastOutcome = outcome;
                 if (ct.IsCancellationRequested)
@@ -267,6 +534,7 @@ namespace SmartGoldbergEmu.Services
                 break;
             }
 
+            MarkSessionEstablishFailed();
             ServiceLocator.LogService.LogWarning(
                 $"Steam game assets: session establishment failed ({DescribeSessionEstablishFailure(lastOutcome)}).");
             return false;
@@ -328,6 +596,38 @@ namespace SmartGoldbergEmu.Services
             return $"Steam EResult {code}";
         }
 
+        private CancellationTokenSource LinkWithLifetime(CancellationToken ct)
+        {
+            return CancellationTokenSource.CreateLinkedTokenSource(
+                ct,
+                _lifetimeCts.Token,
+                ServiceLocator.ApplicationLifetimeToken);
+        }
+
+        private void MarkSessionEstablishFailed()
+        {
+            Interlocked.Exchange(ref _sessionEstablishFailed, 1);
+        }
+
+        private void ClearSessionEstablishFailed()
+        {
+            Interlocked.Exchange(ref _sessionEstablishFailed, 0);
+        }
+
+        // Disconnect without taking _sessionLock so Dispose can unblock in-flight waiters.
+        private void InterruptClient()
+        {
+            _loggedOn = false;
+            SteamClient client = _client;
+            try
+            {
+                client?.Disconnect();
+            }
+            catch
+            {
+            }
+        }
+
         private void TeardownClient()
         {
             _loggedOn = false;
@@ -342,115 +642,149 @@ namespace SmartGoldbergEmu.Services
             _client = null;
         }
 
-        public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, CancellationToken ct = default)
+        private async Task PreWarmAndDropIfUnheldAsync(CancellationToken ct)
         {
-            KeyValue appRoot = await GetAppPicsRootOrFetchAsync(appId, null, ct).ConfigureAwait(false);
-            return await ExtractPackageDataForAppAsync(appId, appRoot, ct).ConfigureAwait(false);
-        }
-
-        // Uses an in-memory app PICS root when supplied to avoid a duplicate app product-info fetch.
-        public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, KeyValue existingAppRoot, CancellationToken ct = default)
-        {
-            var result = new PackageExtractionResult();
             try
             {
-                if (existingAppRoot == null)
-                    return result;
-
-                List<uint> packageIds = CollectLinkedPackageIds(existingAppRoot);
-                int n = 0;
-                foreach (uint pkg in packageIds)
-                {
-                    if (++n > MaxLinkedPackagesToFetch)
-                        break;
-
-                    KeyValue pkgData = await GetPackageKeyValueAsync(pkg.ToString(), ct).ConfigureAwait(false);
-                    if (pkgData?.Children == null || pkgData.Children.Count == 0)
-                        continue;
-
-                    foreach (string d in ExtractDepotsFromPackage(pkgData))
-                    {
-                        if (!result.Depots.Contains(d))
-                            result.Depots.Add(d);
-                    }
-
-                    foreach (PackageBranchInfo b in ExtractBranchesFromPackage(pkgData))
-                    {
-                        if (!result.Branches.Any(x => x.Name == b.Name))
-                            result.Branches.Add(b);
-                    }
-
-                    foreach (string aid in ExtractAppIdsFromPackage(pkgData))
-                    {
-                        if (!result.AppIds.Contains(aid))
-                            result.AppIds.Add(aid);
-                    }
-                }
+                await PreWarmSessionAsync(ct).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            finally
             {
-                ServiceLocator.LogService.LogError($"Error extracting game assets package data for app {appId}", ex);
+                // Task cancelled or hold released while connecting: do not leave a live session.
+                if (Volatile.Read(ref _sessionHoldCount) == 0)
+                    TeardownSession();
             }
-
-            return result;
         }
 
-        // Game settings add-mode: merge app + linked-package depot ids, sorted numerically when parseable (CPU work off caller's sync context).
-        public async Task<List<string>> BuildOrderedDepotIdsFromPicsAsync(string appId, KeyValue cachedAppRoot, CancellationToken ct = default)
+        private void ReleaseSessionHold()
         {
-            if (string.IsNullOrEmpty(appId))
-                return null;
-
-            KeyValue kv = await GetAppPicsRootOrFetchAsync(appId, cachedAppRoot, ct).ConfigureAwait(false);
-            if (kv == null)
-                return null;
-
-            PackageExtractionResult pkgData = await ExtractPackageDataForAppAsync(appId, kv, ct).ConfigureAwait(false);
-
-            return await Task.Run(() =>
+            if (Interlocked.Decrement(ref _sessionHoldCount) == 0)
             {
-                AppDataExtractionResult appData = ExtractAppDataFromAppRoot(kv, appId);
-                var ids = new HashSet<string>(StringComparer.Ordinal);
-                if (appData.Depots != null)
-                {
-                    foreach (string d in appData.Depots)
-                    {
-                        if (!string.IsNullOrWhiteSpace(d))
-                            ids.Add(d.Trim());
-                    }
-                }
-                if (pkgData?.Depots != null)
-                {
-                    foreach (string d in pkgData.Depots)
-                    {
-                        if (!string.IsNullOrWhiteSpace(d))
-                            ids.Add(d.Trim());
-                    }
-                }
-                if (ids.Count == 0)
-                    return null;
-                return ids
-                    .Select(x => ulong.TryParse(x, out ulong u) ? (Key: u, Text: x) : (Key: ulong.MaxValue, Text: x))
-                    .OrderBy(t => t.Key)
-                    .Select(t => t.Text)
-                    .ToList();
-            }).ConfigureAwait(false);
+                ClearSessionEstablishFailed();
+                TeardownSession();
+            }
         }
 
-        private static List<uint> CollectLinkedPackageIds(KeyValue appRoot)
+        public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, CancellationToken ct = default)
+        {
+            AppInfoKeyValue appInfo = await GetAppInfoOrFetchAsync(appId, null, ct).ConfigureAwait(false);
+            return await ExtractPackageDataForAppAsync(appId, appInfo, ct).ConfigureAwait(false);
+        }
+
+        // Uses an in-memory catalog app root when supplied to avoid a duplicate app product-info fetch.
+        public async Task<PackageExtractionResult> ExtractPackageDataForAppAsync(string appId, AppInfoKeyValue existingAppInfo, CancellationToken ct = default)
+        {
+            using (HoldSession())
+            {
+                var result = new PackageExtractionResult();
+                try
+                {
+                    if (existingAppInfo == null)
+                        return result;
+
+                    List<uint> packageIds = CollectLinkedPackageIds(existingAppInfo);
+                    int n = 0;
+                    foreach (uint pkg in packageIds)
+                    {
+                        if (++n > MaxLinkedPackagesToFetch)
+                            break;
+
+                        KeyValue pkgData = await GetPackageKeyValueAsync(pkg.ToString(), ct).ConfigureAwait(false);
+                        if (pkgData?.Children == null || pkgData.Children.Count == 0)
+                            continue;
+
+                        foreach (string d in ExtractDepotsFromPackage(pkgData))
+                        {
+                            if (!result.Depots.Contains(d))
+                                result.Depots.Add(d);
+                        }
+
+                        foreach (PackageBranchInfo b in ExtractBranchesFromPackage(pkgData))
+                        {
+                            if (!result.Branches.Any(x => x.Name == b.Name))
+                                result.Branches.Add(b);
+                        }
+
+                        foreach (string aid in ExtractAppIdsFromPackage(pkgData))
+                        {
+                            if (!result.AppIds.Contains(aid))
+                                result.AppIds.Add(aid);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ServiceLocator.LogService.LogError($"Error extracting game assets package data for app {appId}", ex);
+                }
+
+                return result;
+            }
+        }
+
+        private sealed class SessionHold : IDisposable
+        {
+            private SteamProductInfoService _owner;
+            private CancellationTokenSource _preWarmCts;
+
+            public SessionHold(SteamProductInfoService owner, CancellationTokenSource preWarmCts)
+            {
+                _owner = owner;
+                _preWarmCts = preWarmCts;
+            }
+
+            public void Dispose()
+            {
+                SteamProductInfoService owner = Interlocked.Exchange(ref _owner, null);
+                if (owner == null)
+                    return;
+
+                CancellationTokenSource cts = Interlocked.Exchange(ref _preWarmCts, null);
+                if (cts != null)
+                {
+                    try
+                    {
+                        cts.Cancel();
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
+                        cts.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                owner.ReleaseSessionHold();
+            }
+        }
+
+        private sealed class NoOpSessionHold : IDisposable
+        {
+            public static readonly NoOpSessionHold Instance = new NoOpSessionHold();
+
+            public void Dispose()
+            {
+            }
+        }
+
+        private static List<uint> CollectLinkedPackageIds(AppInfoKeyValue appRoot)
         {
             var ids = new HashSet<uint>();
-            KeyValue target = SteamPicsKeyValueHelper.ResolveAppInfoTarget(appRoot) ?? appRoot;
+            AppInfoKeyValue target = AppInfoKeyValueHelper.ResolveAppInfoTarget(appRoot) ?? appRoot;
             CollectPackageSectionsRecursive(target, ids, 0);
             return ids.OrderBy(x => x).ToList();
         }
 
-        private static void CollectPackageSectionsRecursive(KeyValue node, HashSet<uint> ids, int depth)
+        private static void CollectPackageSectionsRecursive(AppInfoKeyValue node, HashSet<uint> ids, int depth)
         {
             if (node?.Children == null || depth > 28)
                 return;
 
-            foreach (KeyValue child in node.Children)
+            foreach (AppInfoKeyValue child in node.Children)
             {
                 if (child == null || string.IsNullOrEmpty(child.Name))
                     continue;
@@ -465,12 +799,12 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void AddNumericKeysAsPackageIds(KeyValue section, HashSet<uint> ids)
+        private static void AddNumericKeysAsPackageIds(AppInfoKeyValue section, HashSet<uint> ids)
         {
             if (section?.Children == null)
                 return;
 
-            foreach (KeyValue c in section.Children)
+            foreach (AppInfoKeyValue c in section.Children)
             {
                 if (c != null && uint.TryParse(c.Name, out uint pkg) && pkg > 0)
                     ids.Add(pkg);
@@ -833,21 +1167,21 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        public bool ExportAppPicsToValveTextFile(string appId, KeyValue picsData)
+        public bool ExportAppPicsToValveTextFile(string appId, AppInfoKeyValue appInfo)
         {
-            if (string.IsNullOrEmpty(appId) || picsData == null)
+            if (string.IsNullOrEmpty(appId) || appInfo == null)
                 return false;
-            return ExportAppPicsToValveTextFile(appId, picsData, GetDefaultAppPicsExportFilePath(appId));
+            return ExportAppPicsToValveTextFile(appId, appInfo, GetDefaultAppPicsExportFilePath(appId));
         }
 
-        public bool ExportAppPicsToValveTextFile(string appId, KeyValue picsData, string outputPath)
+        public bool ExportAppPicsToValveTextFile(string appId, AppInfoKeyValue appInfo, string outputPath)
         {
             try
             {
-                if (string.IsNullOrEmpty(appId) || picsData == null || string.IsNullOrEmpty(outputPath))
+                if (string.IsNullOrEmpty(appId) || appInfo == null || string.IsNullOrEmpty(outputPath))
                     return false;
 
-                return ExportAppPicsToValveTextFileCore(appId, picsData, outputPath);
+                return ExportAppInfoToValveTextFileCore(appId, appInfo, outputPath);
             }
             catch (Exception ex)
             {
@@ -856,18 +1190,18 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static bool ExportAppPicsToValveTextFileCore(string appId, KeyValue picsData, string outputPath)
+        private static bool ExportAppInfoToValveTextFileCore(string appId, AppInfoKeyValue appInfo, string outputPath)
         {
             try
             {
-                if (picsData == null)
+                if (appInfo == null)
                     return false;
 
                 string directory = Path.GetDirectoryName(outputPath);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                     Directory.CreateDirectory(directory);
 
-                string text = SerializeKeyValueAsValveText(picsData, appId);
+                string text = SerializeAppInfoAsValveText(appInfo, appId);
                 File.WriteAllText(outputPath, text, Utf8WithoutBom);
                 return true;
             }
@@ -878,7 +1212,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static string SerializeKeyValueAsValveText(KeyValue node, string id)
+        private static string SerializeAppInfoAsValveText(AppInfoKeyValue node, string id)
         {
             if (node == null)
                 return string.Empty;
@@ -891,11 +1225,11 @@ namespace SmartGoldbergEmu.Services
                 {
                     sb.AppendLine($"\"{EscapeValveTextString(id)}\"");
                     sb.AppendLine("{");
-                    foreach (KeyValue child in node.Children)
+                    foreach (AppInfoKeyValue child in node.Children)
                     {
                         if (child == null)
                             continue;
-                        string childText = SerializeKeyValueNodeAsValveText(child, child.Name, 1);
+                        string childText = SerializeAppInfoNodeAsValveText(child, child.Name, 1);
                         if (!string.IsNullOrEmpty(childText))
                             sb.Append(childText);
                     }
@@ -904,11 +1238,11 @@ namespace SmartGoldbergEmu.Services
                 }
                 else
                 {
-                    foreach (KeyValue child in node.Children)
+                    foreach (AppInfoKeyValue child in node.Children)
                     {
                         if (child == null)
                             continue;
-                        string childText = SerializeKeyValueNodeAsValveText(child, child.Name, 0);
+                        string childText = SerializeAppInfoNodeAsValveText(child, child.Name, 0);
                         if (!string.IsNullOrEmpty(childText))
                             sb.Append(childText);
                     }
@@ -918,7 +1252,7 @@ namespace SmartGoldbergEmu.Services
             return sb.ToString();
         }
 
-        private static string SerializeKeyValueNodeAsValveText(KeyValue node, string name, int indentLevel)
+        private static string SerializeAppInfoNodeAsValveText(AppInfoKeyValue node, string name, int indentLevel)
         {
             if (node == null)
                 return string.Empty;
@@ -931,11 +1265,11 @@ namespace SmartGoldbergEmu.Services
                 sb.AppendLine($"{indent}\"{EscapeValveTextString(name)}\"");
                 sb.AppendLine($"{indent}{{");
 
-                foreach (KeyValue child in node.Children)
+                foreach (AppInfoKeyValue child in node.Children)
                 {
                     if (child == null)
                         continue;
-                    string childText = SerializeKeyValueNodeAsValveText(child, child.Name, indentLevel + 1);
+                    string childText = SerializeAppInfoNodeAsValveText(child, child.Name, indentLevel + 1);
                     if (!string.IsNullOrEmpty(childText))
                         sb.Append(childText);
                 }

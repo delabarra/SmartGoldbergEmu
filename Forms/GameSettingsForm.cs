@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -16,11 +16,11 @@ using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 using SmartGoldbergEmu.Validation;
-using SteamKit;
+using AppDataKit;
 
 namespace SmartGoldbergEmu.Forms
 {
-    public partial class GameSettingsForm : Form
+    public partial class GameSettingsForm : ThemedForm
     {
         private readonly GameConfig _gameConfig;
         private readonly bool _isEditMode;
@@ -28,14 +28,13 @@ namespace SmartGoldbergEmu.Forms
         private readonly GameEditBundle _editBundle;
         private bool _editSidecarsApplied;
         public PendingAddGameSave PendingAddSave { get; private set; }
-        public Guid EditExistingGameGuid { get; private set; }
+        private readonly bool _isUpdateOfExisting;
         private string _initialCredentialTicket = string.Empty;
         private string _initialCredentialAlt = string.Empty;
         private OnlineAppData _metadata;
         private readonly GameDataService _gameDataService;
         private readonly EmulatorConfigService _emulatorConfigService;
         private readonly ThemeService _themeService;
-        private readonly DlcService _dlcService;
         private readonly GameSettingsSaveService _gameSettingsSaveService;
         private readonly GameSaveWriter _gameSaveWriter;
         private readonly Action _onSaveCompleted;
@@ -63,7 +62,6 @@ namespace SmartGoldbergEmu.Forms
             GameDataService gameDataService = null,
             EmulatorConfigService emulatorConfigService = null,
             ThemeService themeService = null,
-            DlcService dlcService = null,
             ITaskReportService feedbackService = null,
             AchievementService achievementService = null,
             GameSettingsSaveService gameSettingsSaveService = null,
@@ -72,6 +70,7 @@ namespace SmartGoldbergEmu.Forms
             GameSaveWriter gameSaveWriter = null,
             GameEditBundle editBundle = null,
             SteamApiKeyService steamApiKeyService = null)
+            : base(themeService ?? ServiceLocator.ThemeService)
         {
             InitializeComponent();
 
@@ -79,11 +78,11 @@ namespace SmartGoldbergEmu.Forms
             _isEditMode = isEditMode;
             _addBundle = addBundle;
             _editBundle = editBundle;
+            _isUpdateOfExisting = !isEditMode && addBundle != null && addBundle.IsUpdateOfExisting;
             _metadata = metadata;
             _gameDataService = gameDataService ?? ServiceLocator.GameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
             _emulatorConfigService = emulatorConfigService ?? ServiceLocator.EmulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
             _themeService = themeService ?? ServiceLocator.ThemeService ?? throw new ArgumentNullException(nameof(themeService));
-            _dlcService = dlcService ?? ServiceLocator.DlcService ?? throw new ArgumentNullException(nameof(dlcService));
             _taskReportService = feedbackService;
             _gameSettingsSaveService = gameSettingsSaveService ?? ServiceLocator.GameSettingsSaveService ?? throw new ArgumentNullException(nameof(gameSettingsSaveService));
             _gameSaveWriter = gameSaveWriter ?? ServiceLocator.GameSaveWriter ?? throw new ArgumentNullException(nameof(gameSaveWriter));
@@ -95,15 +94,16 @@ namespace SmartGoldbergEmu.Forms
             if (DesignTimeHelper.IsDesignTime)
                 return;
 
-            _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor);
+            _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
             WireAchievementsPreviewListEvents();
             WireModsSummaryListEvents();
             WireInventoryListEvents();
 
-            Text = isEditMode ? $"Edit Game - {game?.AppName ?? "Unknown"}" : $"Add Game - {game?.AppName ?? "Unknown"}";
-
-            ApplyTheme();
-            _themeService.ThemeChanged += ThemeService_ThemeChanged;
+            Text = isEditMode
+                ? $"Edit Game - {game?.AppName ?? "Unknown"}"
+                : _isUpdateOfExisting
+                    ? $"Update Game - {game?.AppName ?? "Unknown"}"
+                    : $"Add Game - {game?.AppName ?? "Unknown"}";
 
             if (txtGameFolder != null)
                 txtGameFolder.TextChanged += TxtGameFolder_TextChanged;
@@ -197,7 +197,7 @@ namespace SmartGoldbergEmu.Forms
                 if (txtAppID != null)
                 {
                     SetTextBoxText(txtAppID, _gameConfig.AppId.ToString());
-                    if (_isEditMode)
+                    if (_isEditMode || _isUpdateOfExisting)
                     {
                         txtAppID.ReadOnly = true;
                         txtAppID.TabStop = false;
@@ -220,8 +220,6 @@ namespace SmartGoldbergEmu.Forms
                     SetTextBoxText(txtCustomIcon, _gameConfig.CustomIcon);
 
                 SelectLaunchModeUi(_gameConfig.LaunchMode);
-
-                ApplyLaunchModeAvailability();
 
                 if (txtGameName != null)
                 {
@@ -303,7 +301,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 LogErrorWithExceptionMessage("Error loading game config", ex);
-                FormMessageBoxHelper.ShowIfAlive(this, $"Error loading game configuration: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, $"Error loading game configuration: {ex.Message}", "Load Game Configuration", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -357,6 +355,7 @@ namespace SmartGoldbergEmu.Forms
             if (!string.IsNullOrEmpty(_addBundle.AchievementsPreviewJson))
             {
                 _achievementsRawJson = _addBundle.AchievementsPreviewJson;
+                _addBundle.AchievementsPreviewJson = null;
                 RefreshAchievementsPreview();
             }
 
@@ -481,8 +480,6 @@ namespace SmartGoldbergEmu.Forms
             BindNum(numIconsPerIteration, v => main.PaginatedAchievementsIcons = v);
             BindCheck(chkRecordPlaytime, v => main.RecordPlaytime = v);
             BindCheck(chkAchievementsBypass, v => main.AchievementsBypass = v);
-            if (txtSteamGameStatsReportsDir != null)
-                main.SteamGameStatsReportsDir = txtSteamGameStatsReportsDir.Text.Trim();
         }
 
         private void LoadStatsAchievementsMainToForm(MainSettings main)
@@ -505,7 +502,6 @@ namespace SmartGoldbergEmu.Forms
             }
             LoadCheck(chkRecordPlaytime, main.RecordPlaytime);
             LoadCheck(chkAchievementsBypass, main.AchievementsBypass);
-            LoadText(txtSteamGameStatsReportsDir, main.SteamGameStatsReportsDir);
         }
 
         private void LoadSettingsToForm(GameSettingsSnapshot snapshot, bool loadPerGamePersistedGoldbergFiles = true)
@@ -572,8 +568,15 @@ namespace SmartGoldbergEmu.Forms
         private System.Drawing.Color GetThemeForegroundColor()
         {
             return _themeService != null
-                ? _themeService.GetThemeColors(_themeService.EffectiveTheme).Foreground
-                : System.Drawing.SystemColors.ControlText;
+                ? _themeService.GetThemeColors(_themeService.EffectiveTheme).FieldForeground
+                : System.Drawing.SystemColors.WindowText;
+        }
+
+        private System.Drawing.Color GetThemePlaceholderColor()
+        {
+            return _themeService != null
+                ? _themeService.GetThemeColors(_themeService.EffectiveTheme).DisabledForeground
+                : System.Drawing.SystemColors.GrayText;
         }
 
         private void LoadDlcListAndAppPaths()
@@ -655,13 +658,13 @@ namespace SmartGoldbergEmu.Forms
         {
             if (txtAppID == null || string.IsNullOrEmpty(txtAppID.Text))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please enter an App ID first.", "App ID Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "Please enter an App ID first.", MessageBoxIcon.Warning);
                 return;
             }
 
             if (!ulong.TryParse(txtAppID.Text.Trim(), out ulong appId) || appId == 0)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please enter a valid App ID.", "Invalid App ID", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "Please enter a valid App ID.", MessageBoxIcon.Warning);
                 return;
             }
 
@@ -675,17 +678,26 @@ namespace SmartGoldbergEmu.Forms
         {
             try
             {
-                var fetchResult = await ServiceLocator.GameSetupService
-                    .FetchPicsMetadataWithRootAsync(appId, _gameConfig?.AppPicsKeyValue)
+                if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
+                    return;
+
+                AppCatalogSnapshot snapshot = await ServiceLocator.AppDataKitBridgeService
+                    .FetchMetadataSnapshotAsync(
+                        appIdNum,
+                        _gameConfig?.AppInfo,
+                        cancellationToken: ServiceLocator.ApplicationLifetimeToken)
                     .ConfigureAwait(false);
 
-                if (IsDisposed || Disposing)
+                if (IsDisposed || Disposing || ServiceLocator.ApplicationLifetimeToken.IsCancellationRequested)
                     return;
 
                 if (InvokeRequired)
-                    Invoke(new Action(() => ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.PicsRoot)));
+                    Invoke(new Action(() => ApplyFetchedCatalogSnapshot(snapshot)));
                 else
-                    ApplyFetchedAppMetadata(fetchResult.Metadata, fetchResult.PicsRoot);
+                    ApplyFetchedCatalogSnapshot(snapshot);
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (Exception ex)
             {
@@ -693,15 +705,29 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void ApplyFetchedAppMetadata(OnlineAppData metadata, KeyValue picsRoot = null)
+        private void ApplyFetchedCatalogSnapshot(AppCatalogSnapshot snapshot)
+        {
+            if (IsDisposed || Disposing || snapshot == null)
+                return;
+
+            if (_gameConfig != null && snapshot.Failure == AppMetadataFetchFailure.None && snapshot.IsUsable)
+            {
+                _gameConfig.Catalog = snapshot;
+                _gameConfig.PreFetchedDlcData = snapshot.ToDlcDictionary();
+            }
+
+            ApplyFetchedAppMetadata(snapshot.Online, snapshot.AppInfo);
+        }
+
+        private void ApplyFetchedAppMetadata(OnlineAppData metadata, AppInfoKeyValue appInfo = null)
         {
             if (IsDisposed || Disposing)
                 return;
             if (metadata == null)
                 return;
 
-            if (picsRoot != null && _gameConfig != null)
-                _gameConfig.AppPicsKeyValue = picsRoot;
+            if (appInfo != null && _gameConfig != null)
+                _gameConfig.AppInfo = appInfo;
 
             if (_metadata == null)
                 _metadata = metadata;
@@ -731,7 +757,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (_metadata != null && !string.IsNullOrWhiteSpace(_metadata.InstallDir))
                 return _metadata.InstallDir.Trim();
-            if (_gameConfig?.AppPicsKeyValue != null && SteamPicsKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.AppPicsKeyValue, out string fromPics))
+            if (_gameConfig?.AppInfo != null && AppInfoKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.AppInfo, out string fromPics))
                 return fromPics;
             return null;
         }
@@ -774,14 +800,19 @@ namespace SmartGoldbergEmu.Forms
             {
                 folderDialog.Description = "Select Game Folder";
                 folderDialog.ShowNewFolderButton = false;
-                
-                if (!string.IsNullOrEmpty(txtGameFolder?.Text))
-                {
-                    folderDialog.SelectedPath = txtGameFolder.Text;
-                }
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    folderDialog,
+                    FileDialogBrowseHelper.Purpose.GameFolder,
+                    txtGameFolder?.Text);
 
                 if (folderDialog.ShowDialog() == DialogResult.OK)
                 {
+                    FileDialogBrowseHelper.RememberDirectory(
+                        FileDialogBrowseHelper.Purpose.GameFolder,
+                        folderDialog.SelectedPath);
+                    FileDialogBrowseHelper.RememberDirectory(
+                        FileDialogBrowseHelper.Purpose.GameExecutable,
+                        folderDialog.SelectedPath);
                     if (txtGameFolder != null)
                         SetTextBoxText(txtGameFolder, folderDialog.SelectedPath);
                     // Validate Steam API DLLs after folder selection
@@ -801,7 +832,7 @@ namespace SmartGoldbergEmu.Forms
 
             if (appId == 0)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Please select a game with a valid App ID.", "No Game Selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Please select a game with a valid App ID.", MessageBoxIcon.Information);
                 return;
             }
 
@@ -819,7 +850,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (!PathValidationHelper.IsSafeUrl(url))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "Invalid URL format detected.", "Invalid URL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -830,7 +861,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError(logErrorMessage + ": " + ex.Message, ex);
-                FormMessageBoxHelper.ShowIfAlive(this, userErrorMessage, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, userErrorMessage, "Could Not Open Link", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -840,25 +871,34 @@ namespace SmartGoldbergEmu.Forms
             {
                 openFileDialog.Filter = "Executable Files (*.exe;*.bat)|*.exe;*.bat|All Files (*.*)|*.*";
                 openFileDialog.FilterIndex = 1;
-                openFileDialog.RestoreDirectory = true;
                 openFileDialog.Title = "Select Game Executable";
 
-                if (!string.IsNullOrEmpty(txtGameExecutable?.Text))
+                string seedDirectory = null;
+                string seedFileName = null;
+                if (GameFolderPathHelper.TryResolveExecutableDialogSeed(
+                    txtGameFolder?.Text,
+                    txtGameExecutable?.Text,
+                    out string initialDirectory,
+                    out string fileName))
                 {
-                    if (GameFolderPathHelper.TryResolveExecutableDialogSeed(
-                        txtGameFolder?.Text,
-                        txtGameExecutable.Text,
-                        out string initialDirectory,
-                        out string fileName))
-                    {
-                        openFileDialog.InitialDirectory = initialDirectory;
-                        openFileDialog.FileName = fileName;
-                    }
+                    seedDirectory = initialDirectory;
+                    seedFileName = fileName;
                 }
+
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.GameExecutable,
+                    seedDirectory,
+                    txtGameFolder?.Text);
+                if (!string.IsNullOrEmpty(seedFileName))
+                    openFileDialog.FileName = seedFileName;
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     string selected = Path.GetFullPath(openFileDialog.FileName);
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.GameExecutable,
+                        selected);
 
                     string installDirFolder = GetSteamInstallDirFolderNameForForm();
                     if (!string.IsNullOrEmpty(installDirFolder) &&
@@ -916,10 +956,11 @@ namespace SmartGoldbergEmu.Forms
                 folderDialog.ShowNewFolderButton = false;
 
                 string initial = PathValidationHelper.TryResolveWorkingDirectoryTextToFullPath(txtWorkingDirectory?.Text, gameBase);
-                if (!string.IsNullOrEmpty(initial) && Directory.Exists(initial))
-                    folderDialog.SelectedPath = initial;
-                else
-                    folderDialog.SelectedPath = gameBase;
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    folderDialog,
+                    FileDialogBrowseHelper.Purpose.WorkingDirectory,
+                    initial,
+                    gameBase);
 
                 if (folderDialog.ShowDialog(this) != DialogResult.OK || txtWorkingDirectory == null)
                     return;
@@ -927,6 +968,10 @@ namespace SmartGoldbergEmu.Forms
                 string selected = folderDialog.SelectedPath;
                 if (string.IsNullOrEmpty(selected))
                     return;
+
+                FileDialogBrowseHelper.RememberDirectory(
+                    FileDialogBrowseHelper.Purpose.WorkingDirectory,
+                    selected);
 
                 if (!PathValidationHelper.TryMakePathRelativeToDirectory(gameBase, selected, out string relativeWorkingDir))
                 {
@@ -974,17 +1019,35 @@ namespace SmartGoldbergEmu.Forms
             {
                 openFileDialog.Filter = "Icon Files (*.exe;*.bat;*.ico)|*.exe;*.bat;*.ico|Executable Files (*.exe;*.bat)|*.exe;*.bat|Icon Files (*.ico)|*.ico|All Files (*.*)|*.*";
                 openFileDialog.FilterIndex = 1;
-                openFileDialog.RestoreDirectory = true;
                 openFileDialog.Title = "Select Custom Icon";
 
+                string iconDirectory = null;
+                string iconFileName = null;
                 if (!string.IsNullOrEmpty(txtCustomIcon?.Text))
                 {
-                    openFileDialog.InitialDirectory = System.IO.Path.GetDirectoryName(txtCustomIcon.Text);
-                    openFileDialog.FileName = System.IO.Path.GetFileName(txtCustomIcon.Text);
+                    try
+                    {
+                        iconDirectory = Path.GetDirectoryName(txtCustomIcon.Text);
+                        iconFileName = Path.GetFileName(txtCustomIcon.Text);
+                    }
+                    catch
+                    {
+                    }
                 }
+
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    openFileDialog,
+                    FileDialogBrowseHelper.Purpose.CustomIcon,
+                    iconDirectory,
+                    txtGameFolder?.Text);
+                if (!string.IsNullOrEmpty(iconFileName))
+                    openFileDialog.FileName = iconFileName;
 
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.CustomIcon,
+                        openFileDialog.FileName);
                     if (txtCustomIcon != null)
                         SetTextBoxText(txtCustomIcon, openFileDialog.FileName);
                 }
@@ -1000,7 +1063,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (!HasCurrentGameWithValidAppId())
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "App ID is required to find DLCs.", "App ID Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "App ID is required to find DLCs.", MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1015,10 +1078,9 @@ namespace SmartGoldbergEmu.Forms
                     ClearTextBox(txtDLCList);
                 }
 
-                var dlcData = await _dlcService.GetDlcDataAsync(
-                    _gameConfig.AppId.ToString(),
-                    existingDlcData: null,
-                    picsAppRoot: _gameConfig.AppPicsKeyValue);
+                var dlcData = await ServiceLocator.AppDataKitBridgeService
+                    .FetchDlcAsync(_gameConfig.AppId)
+                    .ConfigureAwait(false);
 
                 if (IsDisposed || Disposing)
                     return;
@@ -1036,6 +1098,14 @@ namespace SmartGoldbergEmu.Forms
                     foreach (var kvp in dlcData)
                     {
                         _gameConfig.PreFetchedDlcData[kvp.Key] = kvp.Value;
+                    }
+
+                    _gameConfig.Catalog?.ApplyDlcDictionary(_gameConfig.PreFetchedDlcData);
+
+                    if (_gameConfig.Catalog != null && _isEditMode
+                        && Directory.Exists(PathConstants.CombineGameFolder(PathConstants.GamesDirectory, _gameConfig.AppId.ToString())))
+                    {
+                        AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
                     }
 
                     // Populate DLC list textbox
@@ -1075,29 +1145,6 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void OnBrowseSteamGameStatsReportsDir_Click(object sender, EventArgs e)
-        {
-            BrowseFolderIntoTextBox(txtSteamGameStatsReportsDir, "Select Steam Game Stats Reports Directory", true);
-        }
-
-        private void BrowseFolderIntoTextBox(TextBox targetTextBox, string description, bool showNewFolderButton)
-        {
-            using (var folderDialog = new FolderBrowserDialog())
-            {
-                folderDialog.Description = description;
-                folderDialog.ShowNewFolderButton = showNewFolderButton;
-                if (!string.IsNullOrEmpty(targetTextBox?.Text))
-                {
-                    folderDialog.SelectedPath = targetTextBox.Text;
-                }
-                if (folderDialog.ShowDialog() == DialogResult.OK)
-                {
-                    if (targetTextBox != null)
-                        targetTextBox.Text = folderDialog.SelectedPath;
-                }
-            }
-        }
-
         private void OnRefreshAchievements_Click(object sender, EventArgs e)
         {
             if (!HasCurrentGameWithValidAppId())
@@ -1133,42 +1180,18 @@ namespace SmartGoldbergEmu.Forms
         private void LogAndShowErrorWithExceptionMessage(string messagePrefix, Exception ex)
         {
             Program.LogService?.LogError(messagePrefix + ": " + ex.Message, ex);
-            FormMessageBoxHelper.ShowIfAlive(this, messagePrefix + ": " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            FormMessageBoxHelper.ShowIfAlive(this, messagePrefix + ": " + ex.Message, messagePrefix, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
-        private void ApplyTheme()
+        protected override void OnThemeApplied()
         {
-            if (_themeService != null)
-            {
-                _themeService.ApplyTheme(this);
-                // Always apply DLC textbox theme (handles both enabled and disabled states)
-                ApplyDlcTextBoxTheme();
-                ApplyAchievementsPreviewTheme();
-                ApplyModsTabTheme();
-                ApplyInventoryTabTheme();
-                UpdateGameFolderInstallDirHintVisibility();
-            }
-        }
-
-        private void ThemeService_ThemeChanged(object sender, ThemeChangedEventArgs e)
-        {
-            if (IsDisposed || Disposing)
-                return;
-            if (InvokeRequired)
-            {
-                Invoke(new Action(() => 
-                {
-                    ApplyTheme();
-                    UpdatePlaceholderTextColors();
-                    UpdateLanguageComboBoxPlaceholder();
-                }));
-            }
-            else
-            {
-                ApplyTheme();
-                UpdatePlaceholderTextColors();
-                UpdateLanguageComboBoxPlaceholder();
-            }
+            ApplyDlcTextBoxTheme();
+            ApplyAchievementsPreviewTheme();
+            ApplyModsTabTheme();
+            ApplyInventoryTabTheme();
+            UpdateGameFolderInstallDirHintVisibility();
+            UpdatePlaceholderTextColors();
+            UpdateLanguageComboBoxPlaceholder();
         }
 
         private void UpdatePlaceholderTextColors()
@@ -1180,10 +1203,13 @@ namespace SmartGoldbergEmu.Forms
         {
             CancelModsListResolve();
             StopAndDisposeRestoreMessageHideTimer();
-            if (_themeService != null)
-            {
-                _themeService.ThemeChanged -= ThemeService_ThemeChanged;
-            }
+            ClearSteamApiFindingLabels();
+            // Designer ImageList.Dispose owns remaining Depth32Bit originals.
+            _achievementPreviewOwnedImages.ReleaseOwnership();
+            _achievementPreviewOwnedImages.Dispose();
+            _achievementsRawJson = null;
+            _achievementsPreviewListCache = null;
+            _addBundle?.ReleaseHeavyRuntimeData();
             base.OnFormClosed(e);
         }
 
@@ -1345,11 +1371,13 @@ namespace SmartGoldbergEmu.Forms
                 chkImmediateGameserverStats, chkMatchmakingServerListActualType, chkMatchmakingServerDetailsViaSourceQuery,
                 chkDisableLanOnly, chkDisableNetworking, chkOffline,
                 chkDisableSharingStatsWithGameserver, chkDisableSourceQuery, chkShareLeaderboardsOverNetwork,
-                chkDisableLobbyCreation, chkDownloadSteamhttpRequests
+                chkDisableLobbyCreation, chkDownloadSteamhttpRequests,
+                chkDisableLeaderboardsCreateUnknown, chkAllowUnknownStats, chkStatAchievementProgressFunctionality,
+                chkSaveOnlyHigherStatAchievementProgress, chkRecordPlaytime, chkAchievementsBypass
             })
                 WireChecked(chk);
 
-            foreach (var nud in new[] { numForcePort, numOldP2PPacketSharingMode, numAltSteamIdCount })
+            foreach (var nud in new[] { numForcePort, numOldP2PPacketSharingMode, numAltSteamIdCount, numIconsPerIteration })
                 WireValueChanged(nud);
 
             WireCheckedWithSecondary(chkUnlockAllDLC, ChkUnlockAllDLC_CheckedChanged);
@@ -1403,7 +1431,7 @@ namespace SmartGoldbergEmu.Forms
             else
             {
                 txtDLCList.BackColor = colors.FieldBackground;
-                txtDLCList.ForeColor = colors.Foreground;
+                txtDLCList.ForeColor = colors.FieldForeground;
             }
         }
 
@@ -1412,6 +1440,7 @@ namespace SmartGoldbergEmu.Forms
         private bool _achievementsPreviewSortApplied;
         private int _achievementsPreviewSortColumn;
         private bool _achievementsPreviewSortAscending = true;
+        private readonly ImageListOwnedImages _achievementPreviewOwnedImages = new ImageListOwnedImages();
         private const string AchievementsPreviewColumnAchievement = "Achievement";
         private const string AchievementsPreviewColumnDescription = "Description";
         private bool _balancingAchievementsColumns;
@@ -1594,7 +1623,7 @@ namespace SmartGoldbergEmu.Forms
                 try
                 {
                     lstAchievementsPreview.Items.Clear();
-                    imgAchievementsPreview.Images.Clear();
+                    _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
                 }
                 finally
                 {
@@ -1618,7 +1647,7 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 lstAchievementsPreview.Items.Clear();
-                imgAchievementsPreview.Images.Clear();
+                _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
 
                 int imageIndex = 0;
                 foreach (int srcIdx in indices)
@@ -1628,7 +1657,9 @@ namespace SmartGoldbergEmu.Forms
                     if (string.IsNullOrWhiteSpace(iconPath))
                         iconPath = achievement.IconPath;
 
-                    imgAchievementsPreview.Images.Add(_achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize));
+                    Image previewIcon = _achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize);
+                    string imageKey = imageIndex.ToString(CultureInfo.InvariantCulture);
+                    _achievementPreviewOwnedImages.Set(imgAchievementsPreview, imageKey, previewIcon);
 
                     var preview = _achievementService.BuildAchievementPreviewText(
                         ToAchievementPreviewData(achievement),
@@ -1878,7 +1909,7 @@ namespace SmartGoldbergEmu.Forms
 
             if (txtAchievementsFilter != null)
             {
-                txtAchievementsFilter.ForeColor = colors.Foreground;
+                txtAchievementsFilter.ForeColor = colors.FieldForeground;
                 txtAchievementsFilter.BackColor = colors.FieldBackground;
             }
 
@@ -1948,7 +1979,7 @@ namespace SmartGoldbergEmu.Forms
                 if (txtInventoryRaw.Enabled)
                 {
                     txtInventoryRaw.BackColor = colors.FieldBackground;
-                    txtInventoryRaw.ForeColor = colors.Foreground;
+                    txtInventoryRaw.ForeColor = colors.FieldForeground;
                 }
                 else
                 {
@@ -1966,7 +1997,7 @@ namespace SmartGoldbergEmu.Forms
                 if (_inventoryInlineEditor != null && _inventoryInlineEditor.Visible)
                 {
                     _inventoryInlineEditor.BackColor = colors.FieldBackground;
-                    _inventoryInlineEditor.ForeColor = colors.Foreground;
+                    _inventoryInlineEditor.ForeColor = colors.FieldForeground;
                 }
             }
         }
@@ -1994,36 +2025,19 @@ namespace SmartGoldbergEmu.Forms
         private Models.SteamApiStatus _currentApiStatus;
         private DateTime _restoreMessageVisibleUntilUtc = DateTime.MinValue;
         private System.Windows.Forms.Timer _restoreMessageHideTimer;
+        private readonly List<Label> _steamApiFindingLabels = new List<Label>();
 
-        private const string SteamApiDisplayCheckMark = "\u2714\uFE0F";
-        private const string SteamApiDisplayQuestionMark = "\u2753";
-        private const string SteamApiDisplayWarningMark = "\u26A0\uFE0F";
-        private const string SteamApiMessageSuccessPrefix = "\u2713";
-        private const string SteamApiMessageErrorPrefix = "\u274C";
         private const int SteamApiStatusRowGap = 2;
         private const int LaunchModeToSteamApiGap = 6;
         private const int SteamApiBlockGap = 4;
-        private const int SteamApiHealthMaxLinesWhenNoStatus = 2;
-        private const string SteamApiHealthNoDllsFoundHeadline =
-            SteamApiMessageErrorPrefix + " No Steamworks API file was found (steam_api.dll / steam_api64.dll).";
-        private const string SteamApiHealthNoDllsFoundNote =
-            "Some games may require the Steam.dll launch mode; others may not require the use of Steamworks at all.";
-        private const string SteamApiHealthGoodHeadline = "Valid Steamworks DLLs found.";
-        private const string SteamApiHealthModifiedHeadline = "No valid Steamworks DLLs found.";
-        private const string SteamApiHealthValidBackupFoundFormat = "Valid {0} ({1}) found.";
-        private const string SteamApiHealthValidBackupFoundNoVersionFormat = "Valid Steamworks DLL ({0}) found.";
-        private const string SteamApiStatusValidUnknownVersion =
-            "Valid Steamworks DLL, unknown version ({0})";
-        private const string SteamApiStatusValidKnownHash =
-            "Valid Steamworks DLL ({0})";
-        private const string SteamApiStatusModified =
-            "Modified Steamworks DLL ({0})";
+        private const string SteamApiNoDllsFoundMessage =
+            "No Steamworks files found.";
         private const string SteamApiRestoreOpApplied =
-            SteamApiMessageSuccessPrefix + " Valid Steamworks DLLs were restored.";
+            "Steamworks DLLs were restored.";
         private const string SteamApiRestoreOpNoBackups =
-            SteamApiMessageErrorPrefix + " No matching valid backup DLLs were found.";
+            "No backup files were found.";
         private const string SteamApiRestoreOpNoMatchBackup =
-            SteamApiMessageErrorPrefix + " Could not restore valid Steamworks DLLs from backup.";
+            "Could not restore Steamworks files from backup.";
 
         private void ValidateSteamApiDlls()
         {
@@ -2032,12 +2046,10 @@ namespace SmartGoldbergEmu.Forms
                 string gameFolder = txtGameFolder?.Text?.Trim();
                 if (string.IsNullOrEmpty(gameFolder) || !Directory.Exists(gameFolder))
                 {
-                    UpdateSteamApiStatusLabels(
-                        null,
-                        null,
-                        SteamApiDisplaySeverity.Neutral,
-                        SteamApiDisplaySeverity.Neutral);
-                    ClearSteamApiHealth();
+                    ClearSteamApiFindingLabels();
+                    HideAndClearLabel(lblSteamAPIStatusX32Value);
+                    HideAndClearLabel(lblSteamAPIStatusX64Value);
+                    ClearSteamApiHint();
                     ClearExpiredPatchOpMessage();
                     UpdateRestoreDllsButton(canRestore: false);
                     ReflowSteamApiPanels();
@@ -2047,35 +2059,30 @@ namespace SmartGoldbergEmu.Forms
                 var apiStatus = SteamApiValidator.DetectAndValidateSteamApi(gameFolder);
                 _currentApiStatus = apiStatus;
 
-                string x32Text = null;
-                string x64Text = null;
-                SteamApiDisplaySeverity x32Severity = SteamApiDisplaySeverity.Neutral;
-                SteamApiDisplaySeverity x64Severity = SteamApiDisplaySeverity.Neutral;
+                List<SteamApiFinding> findings = apiStatus.Findings;
+                bool hasFindings = findings != null && findings.Count > 0;
 
-                if (!apiStatus.X32Found && !apiStatus.X64Found)
+                if (!hasFindings)
                 {
-                    x32Text = SteamApiHealthNoDllsFoundHeadline;
-                    x32Severity = SteamApiDisplaySeverity.Error;
+                    ClearSteamApiFindingLabels();
+                    HideAndClearLabel(lblSteamAPIStatusX64Value);
+                    SetSteamApiStatusLabel(lblSteamAPIStatusX32Value, SteamApiNoDllsFoundMessage, SteamApiDisplaySeverity.Neutral);
+                    ClearSteamApiHint();
                 }
                 else
                 {
-                    if (apiStatus.X32Found)
-                        x32Text = BuildSteamApiDisplayLine("x32", SteamApiValidator.SteamApiDll32, apiStatus.X32Path, apiStatus.X32IsClean, out x32Severity);
-                    if (apiStatus.X64Found)
-                        x64Text = BuildSteamApiDisplayLine("x64", SteamApiValidator.SteamApiDll64, apiStatus.X64Path, apiStatus.X64IsClean, out x64Severity);
+                    ClearSteamApiHint();
+                    HideAndClearLabel(lblSteamAPIStatusX32Value);
+                    HideAndClearLabel(lblSteamAPIStatusX64Value);
+                    RebuildSteamApiFindingLabels(findings);
                 }
 
-                UpdateSteamApiStatusLabels(x32Text, x64Text, x32Severity, x64Severity);
-
-                bool canRestore = (apiStatus.X32Found && !apiStatus.X32IsClean && apiStatus.CleanBackups.Count > 0) ||
-                                 (apiStatus.X64Found && !apiStatus.X64IsClean && apiStatus.CleanBackups.Count > 0);
-
-                UpdateRestoreDllsButton(canRestore: canRestore);
-
-                UpdateSteamApiHealthFromStatus(apiStatus, canRestore);
+                bool canRestore = SteamApiValidator.HasDirtySteamApi(apiStatus) &&
+                                  apiStatus.CleanBackups != null &&
+                                  apiStatus.CleanBackups.Count > 0;
+                UpdateRestoreDllsButton(canRestore);
 
                 ClearExpiredPatchOpMessage();
-
                 ReflowSteamApiPanels();
             }
             catch (Exception ex)
@@ -2084,41 +2091,51 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void UpdateSteamApiHealthFromStatus(SteamApiStatus apiStatus, bool canRestore)
+        private void RebuildSteamApiFindingLabels(IList<SteamApiFinding> findings)
         {
-            if (apiStatus == null)
-            {
-                ClearSteamApiHealth();
+            ClearSteamApiFindingLabels();
+            if (findings == null || grpBasicInfo == null)
                 return;
+
+            foreach (SteamApiFinding finding in findings)
+            {
+                if (finding == null || string.IsNullOrEmpty(finding.Path))
+                    continue;
+
+                string architecture = finding.Is64Bit ? "x64" : "x32";
+                SteamApiDisplaySeverity severity;
+                string text = BuildSteamApiDisplayLine(architecture, finding.Path, finding.IsClean, out severity);
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                Label label = new Label
+                {
+                    AutoSize = false,
+                    Name = "lblSteamApiFinding" + _steamApiFindingLabels.Count.ToString(),
+                    Text = text,
+                    Visible = true
+                };
+                ApplySteamApiStatusColor(label, severity);
+                grpBasicInfo.Controls.Add(label);
+                _steamApiFindingLabels.Add(label);
+            }
+        }
+
+        private void ClearSteamApiFindingLabels()
+        {
+            if (_steamApiFindingLabels.Count == 0)
+                return;
+
+            foreach (Label label in _steamApiFindingLabels)
+            {
+                if (label == null)
+                    continue;
+                if (grpBasicInfo != null)
+                    grpBasicInfo.Controls.Remove(label);
+                label.Dispose();
             }
 
-            if (!apiStatus.X32Found && !apiStatus.X64Found)
-            {
-                UpdateSteamApiHealthForNoDlls(canRestore);
-                return;
-            }
-
-            if (canRestore)
-            {
-                UpdateSteamApiHealthLabel(
-                    BuildSteamApiRestoreAvailableHealthMessage(apiStatus),
-                    SteamApiDisplaySeverity.Success);
-                return;
-            }
-
-            if (IsSteamApiInGoodStatusForRecoveryHint(apiStatus))
-            {
-                UpdateSteamApiHealthLabel(SteamApiHealthGoodHeadline, SteamApiDisplaySeverity.Success);
-                return;
-            }
-
-            if (apiStatus.X32Found || apiStatus.X64Found)
-            {
-                UpdateSteamApiHealthLabel(SteamApiHealthModifiedHeadline, SteamApiDisplaySeverity.Warning);
-                return;
-            }
-
-            ClearSteamApiHealth();
+            _steamApiFindingLabels.Clear();
         }
 
         private void UpdateRestoreDllsButton(bool canRestore)
@@ -2131,144 +2148,38 @@ namespace SmartGoldbergEmu.Forms
             btnRestoreDlls.Enabled = canRestore;
         }
 
-        private void UpdateSteamApiHealthForNoDlls(bool canRestore)
+        private void ClearSteamApiHint()
         {
-            HideAndClearLabel(lblSteamApiHealthValue);
-
-            if (!canRestore)
-            {
-                if (lblSteamApiHealthNote == null)
-                    return;
-
-                lblSteamApiHealthNote.Text = SteamApiHealthNoDllsFoundNote;
-                lblSteamApiHealthNote.Visible = true;
-                ApplySteamApiStatusColor(lblSteamApiHealthNote, SteamApiDisplaySeverity.Warning);
-                return;
-            }
-
-            HideAndClearLabel(lblSteamApiHealthNote);
+            HideAndClearLabel(lblSteamApiHint);
         }
 
-        private void ClearSteamApiHealth()
+        private void SetSteamApiHint(string text, SteamApiDisplaySeverity severity)
         {
-            HideAndClearLabel(lblSteamApiHealthValue);
-            HideAndClearLabel(lblSteamApiHealthNote);
-        }
-
-        private void UpdateSteamApiHealthTwoLine(
-            string headline,
-            SteamApiDisplaySeverity headlineSeverity,
-            string note,
-            SteamApiDisplaySeverity noteSeverity)
-        {
-            if (lblSteamApiHealthValue == null)
+            if (lblSteamApiHint == null)
                 return;
 
-            lblSteamApiHealthValue.Text = headline ?? string.Empty;
-            lblSteamApiHealthValue.Visible = !string.IsNullOrWhiteSpace(headline);
-            if (lblSteamApiHealthValue.Visible)
-                ApplySteamApiStatusColor(lblSteamApiHealthValue, headlineSeverity);
-            else
-                lblSteamApiHealthValue.Height = 0;
-
-            if (lblSteamApiHealthNote == null)
-                return;
-
-            if (string.IsNullOrWhiteSpace(note))
-            {
-                HideAndClearLabel(lblSteamApiHealthNote);
-                return;
-            }
-
-            lblSteamApiHealthNote.Text = note;
-            lblSteamApiHealthNote.Visible = true;
-            ApplySteamApiStatusColor(lblSteamApiHealthNote, noteSeverity);
-        }
-
-        private void UpdateSteamApiHealthLabel(string text, SteamApiDisplaySeverity severity)
-        {
             if (string.IsNullOrWhiteSpace(text))
             {
-                ClearSteamApiHealth();
+                ClearSteamApiHint();
                 return;
             }
 
-            UpdateSteamApiHealthTwoLine(text, severity, null, SteamApiDisplaySeverity.Neutral);
-        }
-
-        private static bool IsSteamApiInGoodStatusForRecoveryHint(SteamApiStatus status)
-        {
-            if (status == null)
-                return false;
-            if (!SteamApiArchAcceptableForGoodHint(status.X32Found, status.X32IsClean, status.X32Path))
-                return false;
-            if (!SteamApiArchAcceptableForGoodHint(status.X64Found, status.X64IsClean, status.X64Path))
-                return false;
-            return true;
-        }
-
-        private static bool SteamApiArchAcceptableForGoodHint(bool found, bool isClean, string path)
-        {
-            if (!found)
-                return true;
-            if (isClean)
-                return true;
-            string productName = SteamApiValidator.GetFileProductName(path);
-            if (string.IsNullOrWhiteSpace(productName))
-                return false;
-            return productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string BuildSteamApiRestoreAvailableHealthMessage(SteamApiStatus status)
-        {
-            if (status == null)
-                return string.Empty;
-
-            var lines = new List<string>();
-            TryAddRestoreAvailableHealthLine(status, targetIs64Bit: false, SteamApiValidator.SteamApiDll32, "x32", lines);
-            TryAddRestoreAvailableHealthLine(status, targetIs64Bit: true, SteamApiValidator.SteamApiDll64, "x64", lines);
-
-            if (lines.Count == 0)
-                return "Valid Steamworks DLL backup found.";
-
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        private static void TryAddRestoreAvailableHealthLine(
-            SteamApiStatus status,
-            bool targetIs64Bit,
-            string canonicalDllName,
-            string architecture,
-            List<string> lines)
-        {
-            bool found = targetIs64Bit ? status.X64Found : status.X32Found;
-            bool isClean = targetIs64Bit ? status.X64IsClean : status.X32IsClean;
-            if (!found || isClean)
-                return;
-
-            string backupPath = SteamApiValidator.FindCleanBackupPathForBitness(status.CleanBackups, targetIs64Bit);
-            if (string.IsNullOrEmpty(backupPath))
-                return;
-
-            string fileArch = $"{canonicalDllName} {architecture}";
-            if (SteamApiValidator.TryGetWindowsSteamworksVersionLabel(backupPath, out string steamworksVersion) &&
-                !string.IsNullOrWhiteSpace(steamworksVersion))
-            {
-                lines.Add(string.Format(SteamApiHealthValidBackupFoundFormat, steamworksVersion, fileArch));
-                return;
-            }
-
-            lines.Add(string.Format(SteamApiHealthValidBackupFoundNoVersionFormat, fileArch));
+            lblSteamApiHint.Text = text;
+            lblSteamApiHint.Visible = true;
+            ApplySteamApiStatusColor(lblSteamApiHint, severity);
         }
 
         private static string BuildSteamApiDisplayLine(
             string architecture,
-            string fileName,
             string filePath,
             bool isCleanKnownHash,
             out SteamApiDisplaySeverity severity)
         {
-            string fileArch = $"{fileName} {architecture}";
+            string fileVersion = SteamApiValidator.GetFileVersion(filePath);
+            string productName = SteamApiValidator.GetFileProductName(filePath);
+            string fileVersionPart = string.IsNullOrWhiteSpace(fileVersion)
+                ? string.Empty
+                : $" - {fileVersion}";
 
             if (isCleanKnownHash)
             {
@@ -2276,36 +2187,40 @@ namespace SmartGoldbergEmu.Forms
                 if (SteamApiValidator.TryGetWindowsSteamworksVersionLabel(filePath, out string steamworksVersion) &&
                     !string.IsNullOrWhiteSpace(steamworksVersion))
                 {
-                    return $"{SteamApiDisplayCheckMark} {steamworksVersion} ({fileArch})";
+                    string signName = ResolveSteamApiSignDisplayName(productName);
+                    return $"{steamworksVersion.Trim()} {architecture}{fileVersionPart}{FormatSteamApiSignPart(signName)}";
                 }
 
-                return $"{SteamApiDisplayCheckMark} {string.Format(SteamApiStatusValidKnownHash, fileArch)}";
+                return $"Steamworks {architecture} (unknown ver.){fileVersionPart}{FormatSteamApiSignPart("Steam signed")}";
             }
 
-            string productName = SteamApiValidator.GetFileProductName(filePath);
-            if (string.IsNullOrWhiteSpace(productName))
-                productName = "Unknown Product";
-
-            if (productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(productName) &&
+                productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase))
             {
                 severity = SteamApiDisplaySeverity.Success;
-                return $"{SteamApiDisplayQuestionMark} {string.Format(SteamApiStatusValidUnknownVersion, fileArch)}";
+                return $"Steamworks {architecture} (unknown ver.){fileVersionPart}{FormatSteamApiSignPart("Steam signed")}";
             }
 
             severity = SteamApiDisplaySeverity.Warning;
-            return $"{SteamApiDisplayWarningMark} {string.Format(SteamApiStatusModified, fileArch)} â€” {productName}";
+            string patchedSign = ResolveSteamApiSignDisplayName(productName);
+            return $"Patched Steamworks {architecture}{fileVersionPart}{FormatSteamApiSignPart(patchedSign)}";
         }
 
-        private void UpdateSteamApiStatusLabels(
-            string x32Text,
-            string x64Text,
-            SteamApiDisplaySeverity x32Severity,
-            SteamApiDisplaySeverity x64Severity)
+        // Steam Client API → "Steam"; otherwise the PE ProductName (or empty).
+        private static string ResolveSteamApiSignDisplayName(string productName)
         {
-            SetSteamApiStatusLabel(lblSteamAPIStatusX32Value, x32Text, x32Severity);
-            SetSteamApiStatusLabel(lblSteamAPIStatusX64Value, x64Text, x64Severity);
+            if (string.IsNullOrWhiteSpace(productName))
+                return string.Empty;
+            if (productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase))
+                return "Steam";
+            return productName.Trim();
+        }
 
-            ReflowSteamApiPanels();
+        private static string FormatSteamApiSignPart(string signName)
+        {
+            if (string.IsNullOrWhiteSpace(signName))
+                return string.Empty;
+            return $" - ({signName.Trim()})";
         }
 
         private void SetSteamApiStatusLabel(Label label, string text, SteamApiDisplaySeverity severity)
@@ -2358,55 +2273,57 @@ namespace SmartGoldbergEmu.Forms
             if (lblSteamAPIStatus != null)
                 lblSteamAPIStatus.Top = statusRowY;
 
-            int statusAnchorY = statusRowY;
+            // Keep btnRestoreDlls.Location from the designer; only use Left above to reserve label width.
 
-            bool hasX32 = SteamApiLabelHasContent(lblSteamAPIStatusX32Value);
-            bool hasX64 = SteamApiLabelHasContent(lblSteamAPIStatusX64Value);
-            bool hasStatus = hasX32 || hasX64;
+            int y = statusRowY;
+            bool laidOutFinding = false;
 
-            int y = statusAnchorY;
+            if (_steamApiFindingLabels.Count > 0)
+            {
+                foreach (Label findingLabel in _steamApiFindingLabels)
+                {
+                    if (!SteamApiLabelHasContent(findingLabel))
+                        continue;
+                    if (laidOutFinding)
+                        y += SteamApiStatusRowGap;
+                    y = LayoutSteamApiLabelAt(findingLabel, statusLeft, y, right, 0);
+                    laidOutFinding = true;
+                }
 
-            if (hasX32)
-                y = LayoutSteamApiLabelAt(lblSteamAPIStatusX32Value, statusLeft, y, right, 0);
-            else
                 CollapseSteamApiLabelHeight(lblSteamAPIStatusX32Value);
-
-            if (hasX64)
-            {
-                if (hasX32)
-                    y += SteamApiStatusRowGap;
-                y = LayoutSteamApiLabelAt(lblSteamAPIStatusX64Value, statusLeft, y, right, 0);
-            }
-            else
                 CollapseSteamApiLabelHeight(lblSteamAPIStatusX64Value);
-
-            int healthLeft = lblSteamApiHealthValue != null ? lblSteamApiHealthValue.Left : statusLeft;
-            int healthDesignerY = lblSteamApiHealthValue != null ? lblSteamApiHealthValue.Top : y;
-            int healthY = hasStatus ? Math.Max(y + SteamApiBlockGap, healthDesignerY) : healthDesignerY;
-            int healthMaxLines = hasStatus ? 0 : SteamApiHealthMaxLinesWhenNoStatus;
-
-            if (SteamApiLabelHasContent(lblSteamApiHealthValue))
-                y = LayoutSteamApiLabelAt(lblSteamApiHealthValue, healthLeft, healthY, right, healthMaxLines);
+            }
             else
             {
-                CollapseSteamApiLabelHeight(lblSteamApiHealthValue);
-                y = healthY;
+                bool hasX32 = SteamApiLabelHasContent(lblSteamAPIStatusX32Value);
+                bool hasX64 = SteamApiLabelHasContent(lblSteamAPIStatusX64Value);
+
+                if (hasX32)
+                {
+                    y = LayoutSteamApiLabelAt(lblSteamAPIStatusX32Value, statusLeft, y, right, 0);
+                    laidOutFinding = true;
+                }
+                else
+                    CollapseSteamApiLabelHeight(lblSteamAPIStatusX32Value);
+
+                if (hasX64)
+                {
+                    if (laidOutFinding)
+                        y += SteamApiStatusRowGap;
+                    y = LayoutSteamApiLabelAt(lblSteamAPIStatusX64Value, statusLeft, y, right, 0);
+                    laidOutFinding = true;
+                }
+                else
+                    CollapseSteamApiLabelHeight(lblSteamAPIStatusX64Value);
             }
 
-            if (SteamApiLabelHasContent(lblSteamApiHealthNote))
-                y = LayoutSteamApiLabelAt(lblSteamApiHealthNote, healthLeft, y + SteamApiStatusRowGap, right, 0);
+            if (SteamApiLabelHasContent(lblSteamApiHint))
+                y = LayoutSteamApiLabelAt(lblSteamApiHint, statusLeft, y + SteamApiBlockGap, right, 0);
             else
-                CollapseSteamApiLabelHeight(lblSteamApiHealthNote);
-
-            int patchLeft = lblPatchOpMessage != null ? lblPatchOpMessage.Left : healthLeft;
-            bool hasHealthContent = SteamApiLabelHasContent(lblSteamApiHealthValue) ||
-                                    SteamApiLabelHasContent(lblSteamApiHealthNote);
-            int patchY = hasHealthContent
-                ? y + SteamApiStatusRowGap
-                : (lblPatchOpMessage != null ? lblPatchOpMessage.Top : y);
+                CollapseSteamApiLabelHeight(lblSteamApiHint);
 
             if (SteamApiLabelHasContent(lblPatchOpMessage))
-                LayoutSteamApiLabelAt(lblPatchOpMessage, patchLeft, patchY, right, 0);
+                LayoutSteamApiLabelAt(lblPatchOpMessage, statusLeft, y + SteamApiStatusRowGap, right, 0);
             else
                 CollapseSteamApiLabelHeight(lblPatchOpMessage);
         }
@@ -2442,7 +2359,7 @@ namespace SmartGoldbergEmu.Forms
             HideAndClearLabel(lblPatchOpMessage);
         }
 
-        // Uses designer Left; Top is stacked for status rows or designer-based anchors for health/patch.
+        // Uses designer Left; Top is stacked under launch mode for status / hint / patch rows.
         private static int LayoutSteamApiLabelAt(Label label, int left, int top, int rightEdge, int maxLines)
         {
             if (label == null)
@@ -2490,7 +2407,7 @@ namespace SmartGoldbergEmu.Forms
                     label.ForeColor = colors?.ErrorColor ?? Color.Red;
                     break;
                 case SteamApiDisplaySeverity.Disabled:
-                    label.ForeColor = colors?.DisabledForeground ?? Color.Gray;
+                    label.ForeColor = colors?.DisabledForeground ?? SystemColors.GrayText;
                     break;
                 default:
                     label.ForeColor = colors?.Foreground ?? SystemColors.ControlText;
@@ -2526,7 +2443,7 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("Error restoring Steam API DLLs", ex);
-                ShowRestoreOpMessage(SteamApiMessageErrorPrefix + " " + ex.Message, SteamApiDisplaySeverity.Error);
+                ShowRestoreOpMessage(ex.Message, SteamApiDisplaySeverity.Error);
             }
         }
 
@@ -2547,7 +2464,7 @@ namespace SmartGoldbergEmu.Forms
             else
             {
                 ShowRestoreOpMessage(
-                    string.IsNullOrEmpty(errorMessage) ? SteamApiRestoreOpNoMatchBackup : SteamApiMessageErrorPrefix + " " + errorMessage,
+                    string.IsNullOrEmpty(errorMessage) ? SteamApiRestoreOpNoMatchBackup : errorMessage,
                     SteamApiDisplaySeverity.Error);
             }
         }
@@ -2669,10 +2586,21 @@ namespace SmartGoldbergEmu.Forms
                 List<LaunchOption> all;
                 try
                 {
-                    all = await ServiceLocator.LaunchOptionService.ExtractLaunchOptionsIncludingUserIniAsync(launchConfig).ConfigureAwait(true);
+                    all = await ServiceLocator.LaunchOptionService
+                        .ExtractLaunchOptionsIncludingUserIniAsync(launchConfig, ServiceLocator.ApplicationLifetimeToken)
+                        .ConfigureAwait(true);
 
                     if (IsDisposed || Disposing || mySeq != Volatile.Read(ref _steamLaunchComboRefreshSeq))
                         return;
+                }
+                catch (OperationCanceledException)
+                {
+                    if (IsDisposed || Disposing || mySeq != Volatile.Read(ref _steamLaunchComboRefreshSeq))
+                        return;
+                    cmbSteamLaunchOptions.Items.Clear();
+                    cmbSteamLaunchOptions.Enabled = false;
+                    cmbSteamLaunchOptions.SelectedIndexChanged += CmbSteamLaunchOptions_SelectedIndexChanged;
+                    return;
                 }
                 catch (Exception ex)
                 {
@@ -2855,7 +2783,7 @@ namespace SmartGoldbergEmu.Forms
                     txtUserLaunchOptionName.Text != null ? txtUserLaunchOptionName.Text : string.Empty);
                 if (string.IsNullOrWhiteSpace(customName))
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, "Please enter a name for the custom launch option.", "Missing name", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(this, "Please enter a name for the custom launch option.", MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -3046,7 +2974,7 @@ namespace SmartGoldbergEmu.Forms
             var colors = _themeService.GetThemeColors(_themeService.EffectiveTheme);
             _inventoryInlineEditor.Font = lstInventoryItems.Font;
             _inventoryInlineEditor.BackColor = colors.FieldBackground;
-            _inventoryInlineEditor.ForeColor = colors.Foreground;
+            _inventoryInlineEditor.ForeColor = colors.FieldForeground;
             _inventoryInlineEditor.Text = _inventoryEditingOriginalText;
 
             Rectangle r = bounds;
@@ -3425,8 +3353,17 @@ namespace SmartGoldbergEmu.Forms
             {
                 ofd.Multiselect = true;
                 ofd.Title = "Copy files into mods folder";
+                FileDialogBrowseHelper.ApplyInitialDirectory(
+                    ofd,
+                    FileDialogBrowseHelper.Purpose.ModsCopyFiles,
+                    modsDir,
+                    txtGameFolder?.Text);
                 if (ofd.ShowDialog(this) != DialogResult.OK)
                     return;
+                if (ofd.FileNames != null && ofd.FileNames.Length > 0)
+                    FileDialogBrowseHelper.RememberFile(
+                        FileDialogBrowseHelper.Purpose.ModsCopyFiles,
+                        ofd.FileNames[0]);
                 try
                 {
                     var result = ServiceLocator.GoldbergFilesService.CopyFilesToMods(_gameConfig.AppId, ofd.FileNames);
@@ -3449,11 +3386,19 @@ namespace SmartGoldbergEmu.Forms
             using (var fbd = new FolderBrowserDialog())
             {
                 fbd.Description = "Select a folder to copy into mods. A subfolder with the same name will be created under mods.";
+                FileDialogBrowseHelper.ApplySelectedPath(
+                    fbd,
+                    FileDialogBrowseHelper.Purpose.ModsCopyFolder,
+                    modsDir,
+                    txtGameFolder?.Text);
                 if (fbd.ShowDialog(this) != DialogResult.OK)
                     return;
                 string srcRoot = fbd.SelectedPath;
                 if (string.IsNullOrEmpty(srcRoot))
                     return;
+                FileDialogBrowseHelper.RememberDirectory(
+                    FileDialogBrowseHelper.Purpose.ModsCopyFolder,
+                    srcRoot);
                 string folderName = Path.GetFileName(srcRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 if (string.IsNullOrEmpty(folderName))
                 {
@@ -3542,7 +3487,8 @@ namespace SmartGoldbergEmu.Forms
             if (string.IsNullOrEmpty(apiKey) || idsToResolve.Count == 0)
                 return;
 
-            _modsListResolveCts = new CancellationTokenSource();
+            _modsListResolveCts = CancellationTokenSource.CreateLinkedTokenSource(
+                ServiceLocator.ApplicationLifetimeToken);
             CancellationToken token = _modsListResolveCts.Token;
 
             _ = Task.Run(async () =>
@@ -3567,44 +3513,6 @@ namespace SmartGoldbergEmu.Forms
                     LogWarningWithExceptionMessage("Workshop GetDetails failed for mods list", ex);
                 }
             }, token).ForgetFaults(Program.LogService, nameof(RefreshModsSummaryList));
-        }
-
-        private const string LaunchExperimentalModeUnavailableToolTipText =
-            "Experimental steam_api DLLs are missing under goldberg\\experimental.\r\n\r\nRun Goldberg Update or repair the emulator, then reopen this dialog.";
-
-        private const string LaunchSteamClientUnavailableToolTipText =
-            "Goldberg Steam client files are missing under goldberg\\steamclient_experimental.\r\n\r\nRun Goldberg Update or repair the emulator.";
-
-        private const string LaunchSteamDllUnavailableToolTipText =
-            "Steam.dll is missing from goldberg\\steam_old.\r\n\r\nRun Goldberg Update or repair the emulator, then reopen this dialog.";
-
-        private void ApplyLaunchModeAvailability()
-        {
-            if (rdoLaunchSteamClient == null || rdoLaunchExperimentalMode == null || rdoLaunchSteamDll == null || rdoLaunchNoEmulation == null)
-                return;
-
-            GoldbergLaunchModeAvailability availability = _gameLaunchService.GetLaunchModeAvailability(_gameConfig);
-
-            rdoLaunchSteamClient.Enabled = availability.SteamClientAvailable;
-            if (!availability.SteamClientAvailable && toolTip != null)
-                toolTip.SetToolTip(rdoLaunchSteamClient, LaunchSteamClientUnavailableToolTipText);
-
-            rdoLaunchExperimentalMode.Enabled = availability.StandardSteamApiAvailable;
-            if (!availability.StandardSteamApiAvailable && toolTip != null)
-                toolTip.SetToolTip(rdoLaunchExperimentalMode, LaunchExperimentalModeUnavailableToolTipText);
-
-            rdoLaunchSteamDll.Enabled = availability.SteamDllBesideExeAvailable;
-            if (!availability.SteamDllBesideExeAvailable && toolTip != null)
-                toolTip.SetToolTip(rdoLaunchSteamDll, LaunchSteamDllUnavailableToolTipText);
-
-            GoldbergLaunchMode preferred = _gameConfig?.LaunchMode ?? GoldbergLaunchMode.SteamClient;
-            GoldbergLaunchMode resolved = availability.ResolveAvailable(preferred);
-            if (resolved != preferred)
-            {
-                SelectLaunchModeUi(resolved);
-                if (_gameConfig != null)
-                    _gameConfig.LaunchMode = resolved;
-            }
         }
 
         private void SelectLaunchModeUi(GoldbergLaunchMode mode)
@@ -3722,13 +3630,13 @@ namespace SmartGoldbergEmu.Forms
             string groupId = txtSubscribedGroupIdEntry?.Text?.Trim();
             if (string.IsNullOrEmpty(groupId))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Enter a Steam group ID.", "Subscribed Groups", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Enter a Steam group ID.", MessageBoxIcon.Information);
                 return;
             }
 
             if (!IsValidSteamGroupId(groupId))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Group ID must be a numeric Steam group ID.", "Subscribed Groups", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, "Group ID must be a numeric Steam group ID.", MessageBoxIcon.Warning);
                 return;
             }
 
@@ -3754,13 +3662,13 @@ namespace SmartGoldbergEmu.Forms
             string entry = txtSubscribedGroupClanEntry?.Text?.Trim();
             if (string.IsNullOrEmpty(entry))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "Enter a clan line (group ID, name, and tag).", "Subscribed Clan Groups", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppTaskDialogHelper.ShowOk(this, "Enter a clan line (group ID, name, and tag).", MessageBoxIcon.Information);
                 return;
             }
 
             if (!TryFormatSubscribedGroupClanLine(entry, out string formattedLine, out string errorMessage))
             {
-                FormMessageBoxHelper.ShowIfAlive(this, errorMessage, "Subscribed Clan Groups", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                AppTaskDialogHelper.ShowOk(this, errorMessage, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -4025,7 +3933,7 @@ namespace SmartGoldbergEmu.Forms
 
                 string invalidJsonMessage = GoldbergFilesService.GetInvalidJsonMessageForAdditionalFile(failure.Key);
                 if (!string.IsNullOrEmpty(invalidJsonMessage))
-                    FormMessageBoxHelper.ShowIfAlive(messageOwner, invalidJsonMessage, "Invalid JSON", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(messageOwner, invalidJsonMessage, MessageBoxIcon.Warning);
             }
 
             if (failures.Count > 0)
@@ -4052,7 +3960,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (_gameConfig == null)
             {
-                FormMessageBoxHelper.ShowIfAlive(this, "No game configuration loaded.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                FormMessageBoxHelper.ShowIfAlive(this, "No game configuration loaded.", "Save Game", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -4063,7 +3971,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 if (txtAppID == null || !ulong.TryParse(txtAppID.Text.Trim(), out ulong appId) || appId == 0)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, "Please enter a valid non-zero Steam App ID.", "Invalid App ID", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(this, "Please enter a valid non-zero Steam App ID.", MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -4084,22 +3992,13 @@ namespace SmartGoldbergEmu.Forms
                 _gameConfig.AppId = appId;
                 ApplyLaunchModeFromUiToGameConfig();
 
-                GoldbergLaunchModeAvailability launchModeAvailability = _gameLaunchService.GetLaunchModeAvailability(_gameConfig);
-                if (!launchModeAvailability.IsAvailable(_gameConfig.LaunchMode))
-                {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        "The selected Goldberg launch mode is not available. Run Goldberg Update or choose another mode.",
-                        "Launch Mode Unavailable",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-
                 var validation = _gameDataService.ValidateGameConfig(_gameConfig);
                 if (!validation.IsValid)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(this, $"Validation failed: {validation.ErrorMessage}", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    AppTaskDialogHelper.ShowOk(
+                        this,
+                        "Validation failed: " + validation.ErrorMessage,
+                        MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -4135,49 +4034,61 @@ namespace SmartGoldbergEmu.Forms
                         OnSuccessfulSaveCompleted = _onSaveCompleted
                     };
 
-                    var editPostSaveResult = await _gameSaveWriter.SaveEditAsync(new GameSaveEditRequest
+                    using (ServiceLocator.SteamProductInfoService.HoldSession())
                     {
-                        GameConfig = _gameConfig,
-                        InitialGameConfig = _initialGameConfig,
-                        FormSaveRequest = editFormSaveRequest,
-                        CredentialsTouched = HaveCredentialsChanged(),
-                        OnSuccessfulSaveCompleted = _onSaveCompleted
-                    }).ConfigureAwait(true);
-
-                    if (IsDisposed || Disposing)
-                        return;
-
-                    if (!editPostSaveResult.IsSuccess)
-                    {
-                        if (editPostSaveResult.HasCustomStatsJsonError)
+                        var editPostSaveResult = await _gameSaveWriter.SaveEditAsync(new GameSaveEditRequest
                         {
-                            FormMessageBoxHelper.ShowIfAlive(this, "Custom stats contain invalid JSON. Please fix the format before saving.", "Invalid JSON", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        }
-                        else if (!string.IsNullOrWhiteSpace(editPostSaveResult.ErrorMessage))
+                            GameConfig = _gameConfig,
+                            InitialGameConfig = _initialGameConfig,
+                            FormSaveRequest = editFormSaveRequest,
+                            CredentialsTouched = HaveCredentialsChanged(),
+                            OnSuccessfulSaveCompleted = _onSaveCompleted
+                        }).ConfigureAwait(true);
+
+                        if (IsDisposed || Disposing)
+                            return;
+
+                        if (!editPostSaveResult.IsSuccess)
                         {
-                            FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save game: {editPostSaveResult.ErrorMessage}", "Save Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            if (editPostSaveResult.HasCustomStatsJsonError)
+                            {
+                                AppTaskDialogHelper.ShowOk(
+                                    this,
+                                    "Custom stats contain invalid JSON.\n" +
+                                    "Please fix the format before saving.",
+                                    MessageBoxIcon.Warning);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(editPostSaveResult.ErrorMessage))
+                            {
+                                FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save game: {editPostSaveResult.ErrorMessage}", "Save Game", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            }
+                            return;
                         }
+
+                        (_taskReportService as TaskReportService)?.Clear();
+                        StoreInitialState();
+                        btnSave.Enabled = false;
+                        restoreSaveButtonState = false;
+                        this.DialogResult = DialogResult.OK;
+                        this.Close();
                         return;
                     }
-
-                    (_taskReportService as TaskReportService)?.Clear();
-                    StoreInitialState();
-                    btnSave.Enabled = false;
-                    restoreSaveButtonState = false;
-                    this.DialogResult = DialogResult.OK;
-                    this.Close();
-                    return;
                 }
 
-                if (!TryConfirmNoDuplicateNewEntry())
-                {
-                    if (EditExistingGameGuid != Guid.Empty)
-                        restoreSaveButtonState = false;
-                    return;
-                }
+                // Hide first so MainForm's status strip is visible, then show immediate add feedback
+                // before BuildPendingAddSave (snapshot capture) which can take a noticeable moment.
+                HideFormForSaveIfVisible(ref formHiddenForSave);
+                string addDisplayName = !string.IsNullOrWhiteSpace(_gameConfig.AppName)
+                    ? _gameConfig.AppName.Trim()
+                    : "Game";
+                _taskReportService?.SetMessage(
+                    _isUpdateOfExisting
+                        ? AddGameStatusMessages.UpdatingInLibrary(addDisplayName)
+                        : AddGameStatusMessages.AddingToLibrary(addDisplayName));
+                if (Owner != null && Owner.IsHandleCreated && !Owner.IsDisposed)
+                    Owner.Update();
 
                 PendingAddSave = BuildPendingAddSave();
-                HideFormForSaveIfVisible(ref formHiddenForSave);
                 restoreSaveButtonState = false;
                 this.DialogResult = DialogResult.OK;
                 this.Close();
@@ -4221,47 +4132,6 @@ namespace SmartGoldbergEmu.Forms
             this.Close();
         }
 
-        private bool TryConfirmNoDuplicateNewEntry()
-        {
-            if (string.IsNullOrWhiteSpace(_gameConfig?.Path))
-                return true;
-
-            GameConfig duplicatePath = _gameDataService.FindDuplicateByExecutable(_gameConfig);
-            if (duplicatePath != null)
-                return HandleDuplicatePrompt(DuplicateExecutableDialogHelper.Show(this, duplicatePath), duplicatePath.GameGuid);
-
-            if (_gameConfig.AppId > 0)
-            {
-                GameConfig duplicateAppId = _gameDataService.GetGameByAppIdAndPath(_gameConfig.AppId, _gameConfig.Path);
-                if (duplicateAppId != null)
-                    return HandleDuplicatePrompt(ShowDuplicateAppIdDialog(duplicateAppId, _gameConfig.AppId), duplicateAppId.GameGuid);
-            }
-
-            return true;
-        }
-
-        private bool HandleDuplicatePrompt(DialogResult result, Guid gameGuid)
-        {
-            if (result == DialogResult.Yes)
-            {
-                EditExistingGameGuid = gameGuid;
-                DialogResult = DialogResult.Retry;
-                Close();
-            }
-
-            return false;
-        }
-
-        private DialogResult ShowDuplicateAppIdDialog(GameConfig duplicateGame, ulong appId)
-        {
-            return FormMessageBoxHelper.ShowDialogIfAlive(
-                this,
-                $"A game with App ID {appId} already exists:\n\n{duplicateGame.AppName}\n\nWould you like to edit the existing game instead?",
-                "Duplicate App ID",
-                MessageBoxButtons.YesNoCancel,
-                MessageBoxIcon.Warning);
-        }
-
         private PendingAddGameSave BuildPendingAddSave()
         {
             GameSettingsSnapshot snapshot = GetSettingsFromForm();
@@ -4280,6 +4150,7 @@ namespace SmartGoldbergEmu.Forms
                 SettingsSnapshot = snapshot,
                 CustomStatsRawJson = _customStatsRawJson ?? string.Empty,
                 CredentialsTouched = HaveCredentialsChanged(),
+                IsUpdateOfExisting = _isUpdateOfExisting,
                 AdditionalFilesSaveRequest = BuildAdditionalFilesSaveRequest(),
                 SaveDlcAndPaths = () =>
                 {
@@ -4479,21 +4350,23 @@ namespace SmartGoldbergEmu.Forms
 
             if (selectedText == SteamLanguageDisplayHelper.UseGlobalSettingOption && !string.IsNullOrEmpty(_globalLanguagePlaceholder))
             {
+                ThemeColors colors = _themeService != null
+                    ? _themeService.GetThemeColors(_themeService.EffectiveTheme)
+                    : null;
                 using (var brush = new SolidBrush(cmbForceLanguage.BackColor))
                     e.Graphics.FillRectangle(brush, e.ClipRectangle);
 
-                ControlPaint.DrawBorder(e.Graphics, e.ClipRectangle,
-                    cmbForceLanguage.Enabled ? SystemColors.WindowFrame : SystemColors.ControlDark,
-                    ButtonBorderStyle.Solid);
+                Color border = cmbForceLanguage.Enabled
+                    ? (colors != null ? colors.Border : SystemColors.WindowFrame)
+                    : (colors != null ? colors.DisabledForeground : SystemColors.ControlDark);
+                ControlPaint.DrawBorder(e.Graphics, e.ClipRectangle, border, ButtonBorderStyle.Solid);
 
                 var buttonRect = new Rectangle(cmbForceLanguage.Width - 17, 0, 17, cmbForceLanguage.Height);
                 ControlPaint.DrawComboButton(e.Graphics, buttonRect,
                     cmbForceLanguage.Enabled ? ButtonState.Normal : ButtonState.Inactive);
 
                 var textRect = new Rectangle(3, 0, cmbForceLanguage.Width - 20, cmbForceLanguage.Height);
-                var placeholderColor = _themeService != null
-                    ? _themeService.GetThemeColors(_themeService.EffectiveTheme).DisabledForeground
-                    : Color.Gray;
+                Color placeholderColor = colors != null ? colors.DisabledForeground : SystemColors.GrayText;
                 TextRenderer.DrawText(e.Graphics, _globalLanguagePlaceholder, cmbForceLanguage.Font, textRect,
                     placeholderColor,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
@@ -4514,7 +4387,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 var placeholderColor = _themeService != null
                     ? _themeService.GetThemeColors(_themeService.EffectiveTheme).DisabledForeground
-                    : Color.Gray;
+                    : SystemColors.GrayText;
                 using (var placeholderBrush = new SolidBrush(placeholderColor))
                     e.Graphics.DrawString(_globalLanguagePlaceholder, e.Font, placeholderBrush, e.Bounds.X, e.Bounds.Y);
             }

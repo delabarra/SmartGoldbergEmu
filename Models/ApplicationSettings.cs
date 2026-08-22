@@ -60,15 +60,13 @@ namespace SmartGoldbergEmu.Models
         /// </summary>
         public bool FullLaunchOptions { get; set; }
 
+        // When true, removable SteamStub is unpacked automatically on add/launch without a confirm dialog.
+        public bool AutoHandleSteamStubs { get; set; }
+
         /// <summary>
         /// Gets or sets whether Logos view tiles use a drop shadow in the ImageList (display only).
         /// </summary>
         public bool LogosViewDropShadow { get; set; }
-
-        /// <summary>
-        /// Full path to the user-selected Steamless.CLI.exe (optional).
-        /// </summary>
-        public string SteamlessCliPath { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the ApplicationSettings class with default values.
@@ -85,6 +83,7 @@ namespace SmartGoldbergEmu.Models
             DetailsColumnOrder = ApplicationConstants.DefaultColumnOrder;
             DetailsColumnWidths = ApplicationConstants.DefaultDetailsColumnWidths;
             FullLaunchOptions = false; // Default: filter beta branches and restricted types; use game executable if none left
+            AutoHandleSteamStubs = false;
             LogosViewDropShadow = true;
         }
     }

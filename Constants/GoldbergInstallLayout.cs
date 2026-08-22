@@ -15,8 +15,13 @@ namespace SmartGoldbergEmu.Constants
         public const string ExperimentalX32ArchiveFolderName = "x32";
         public const string SteamClientExperimentalFolderName = "steamclient_experimental";
         public const string SteamOldFolderName = "steam_old";
-        public const string SteamClientExtraDllsFolderName = "steamclient_extra_dlls";
+        // User drop folder under steamclient_experimental (staged into per-game steam_settings/load_dlls at launch).
+        public const string SteamClientExperimentalExtraDllsFolderName = "extra_dlls";
+        // Former top-level drop folder; migrated into steamclient_experimental/extra_dlls.
+        public const string LegacySteamClientExtraDllsFolderName = "steamclient_extra_dlls";
         public const string GoldbergReadmeFileName = "readme.txt";
+        public const string ShippedSteamClientExtraDll32FileName = "steamclient_extra_x86.dll";
+        public const string ShippedSteamClientExtraDll64FileName = "steamclient_extra_x64.dll";
 
         private static readonly GoldbergInstallFile[] ReleaseFiles =
         {
@@ -40,7 +45,6 @@ namespace SmartGoldbergEmu.Constants
             new GoldbergInstallFile("steamclient_experimental/steamclient64.dll", PathConstants.GoldbergSteamClientDll64),
             new GoldbergInstallFile("steamclient_experimental/GameOverlayRenderer.dll", PathConstants.GoldbergGameOverlayRendererDll32),
             new GoldbergInstallFile("steamclient_experimental/GameOverlayRenderer64.dll", PathConstants.GoldbergGameOverlayRendererDll64),
-            new GoldbergInstallFile("steam_old_lib/Steam.dll", PathConstants.GoldbergSteamDllFileName, SteamOldFolderName),
         };
 
         // Flat DLLs from older installs at goldberg\ root (pre-subfolder layout).
@@ -109,34 +113,95 @@ namespace SmartGoldbergEmu.Constants
             }
         }
 
+        public static string GetSteamClientExperimentalExtraDllsDirectory(string goldbergRootDirectory)
+        {
+            if (string.IsNullOrEmpty(goldbergRootDirectory))
+                throw new ArgumentException("Goldberg root directory is required.", nameof(goldbergRootDirectory));
+
+            return Path.Combine(
+                goldbergRootDirectory,
+                SteamClientExperimentalFolderName,
+                SteamClientExperimentalExtraDllsFolderName);
+        }
+
         public static void WriteGoldbergReadmeFile(string goldbergRootDirectory)
         {
             if (string.IsNullOrEmpty(goldbergRootDirectory))
                 return;
 
             Directory.CreateDirectory(goldbergRootDirectory);
-            Directory.CreateDirectory(Path.Combine(goldbergRootDirectory, SteamClientExtraDllsFolderName));
-            string readmePath = Path.Combine(goldbergRootDirectory, GoldbergReadmeFileName);
+            string extraDllsDir = GetSteamClientExperimentalExtraDllsDirectory(goldbergRootDirectory);
+            Directory.CreateDirectory(extraDllsDir);
+            string readmePath = Path.Combine(extraDllsDir, GoldbergReadmeFileName);
             File.WriteAllText(readmePath, BuildGoldbergReadmeText(), Encoding.UTF8);
         }
 
         public static string BuildGoldbergReadmeText()
         {
-            return "Optional extra DLLs — the only way SmartGoldbergEmu loads DLLs besides emulator files and Steam.dll mode."
+            return "Optional extra DLLs for Goldberg steam_settings/load_dlls."
                 + "\r\n\r\n"
-                + "Place .dll files here. At launch they are copied into each game's steam_settings/load_dlls folder; Goldberg loads them from there when the game starts. The per-game load_dlls folder is removed when the game exits. Do not use inject tools or put DLLs beside the game exe for extras."
+                + "Experimental Goldberg builds load every .dll in steam_settings/load_dlls with LoadLibraryW when the emulator DLL attaches. At launch this folder is copied into each game's steam_settings/load_dlls (matching architecture only). That per-game folder is removed when the game exits."
+                + "\r\n\r\n"
+                + "Place .dll files here (goldberg/steamclient_experimental/extra_dlls), in this folder only (not in subfolders). Goldberg's load_dlls scan is not recursive."
+                + "\r\n\r\n"
+                + "This launcher does not inject. Do not put steamclient_extra_x86.dll or steamclient_extra_x64.dll here. Those Goldberg samples belong to an upstream startup-inject workflow; putting them in load_dlls can cause a large FPS drop."
                 + "\r\n\r\n"
                 + "Architecture in the file name:"
                 + "\r\n\r\n"
-                + "32-bit only: name must contain x32 (example: steamclient_extra_x32.dll)"
+                + "32-bit only: name must contain x32 or x86 (example: plugin_x32.dll)"
                 + "\r\n"
-                + "64-bit only: name must contain x64 (example: steamclient_extra_x64.dll)"
+                + "64-bit only: name must contain x64 (example: plugin_x64.dll)"
                 + "\r\n"
-                + "Both 32-bit and 64-bit: name has neither x32 nor x64 (example: steamclient_extra.dll)"
-                + "\r\n\r\n"
-                + "Optional load_order.txt in this folder is copied when the game has none yet."
+                + "Both 32-bit and 64-bit: name has neither x32, x86, nor x64 (example: plugin.dll)"
                 + "\r\n\r\n"
                 + "Do not put these DLLs directly in steam_settings/load_dlls inside a game; use this folder instead.";
+        }
+
+        public static bool IsShippedSteamClientExtraDll(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName))
+                return false;
+
+            string name = Path.GetFileName(fileName);
+            return string.Equals(name, ShippedSteamClientExtraDll32FileName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, ShippedSteamClientExtraDll64FileName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Moves legacy drop folders into goldberg/steamclient_experimental/extra_dlls when found.
+        public static void TryMigrateLegacySteamClientExtraDlls(string goldbergRootDirectory)
+        {
+            if (string.IsNullOrEmpty(goldbergRootDirectory) || !Directory.Exists(goldbergRootDirectory))
+                return;
+
+            string destDir = GetSteamClientExperimentalExtraDllsDirectory(goldbergRootDirectory);
+            TryMigrateDirectoryInto(Path.Combine(goldbergRootDirectory, LegacySteamClientExtraDllsFolderName), destDir);
+            // Brief mistaken path from an earlier build; fold into extra_dlls if present.
+            TryMigrateDirectoryInto(
+                Path.Combine(goldbergRootDirectory, SteamClientExperimentalFolderName, PathConstants.GoldbergLoadDllsFolderName),
+                destDir);
+        }
+
+        private static void TryMigrateDirectoryInto(string sourceDirectory, string destinationDirectory)
+        {
+            if (!Directory.Exists(sourceDirectory))
+                return;
+
+            string sourceFull = Path.GetFullPath(sourceDirectory);
+            string destFull = Path.GetFullPath(destinationDirectory);
+            if (string.Equals(sourceFull, destFull, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            Directory.CreateDirectory(destinationDirectory);
+
+            try
+            {
+                MoveDirectoryContentsPreferringDestination(sourceDirectory, destinationDirectory);
+            }
+            catch
+            {
+            }
+
+            TryDeleteDirectory(sourceDirectory);
         }
 
         public static void RemoveLegacyFlatDllsFromGoldbergRoot(string goldbergRootDirectory)
@@ -164,8 +229,8 @@ namespace SmartGoldbergEmu.Constants
             if (string.IsNullOrEmpty(goldbergRootDirectory) || !Directory.Exists(goldbergRootDirectory))
                 return;
 
+            TryMigrateLegacySteamClientExtraDlls(goldbergRootDirectory);
             TryDeleteDirectory(Path.Combine(goldbergRootDirectory, "steam_old_lib"));
-            TryDeleteDirectory(Path.Combine(goldbergRootDirectory, SteamClientExperimentalFolderName, "extra_dlls"));
             TryDeleteDirectory(Path.Combine(goldbergRootDirectory, ExperimentalFolderName, "x86"));
             TryDeleteDirectory(Path.Combine(goldbergRootDirectory, ExperimentalFolderName, "x64"));
             TryDeleteDirectory(Path.Combine(goldbergRootDirectory, ExperimentalFolderName, ExperimentalX32ArchiveFolderName));
@@ -174,11 +239,11 @@ namespace SmartGoldbergEmu.Constants
 
         private static void RemoveShippedSteamClientExtraDlls(string goldbergRootDirectory)
         {
-            string extraDir = Path.Combine(goldbergRootDirectory, SteamClientExtraDllsFolderName);
+            string extraDir = GetSteamClientExperimentalExtraDllsDirectory(goldbergRootDirectory);
             if (!Directory.Exists(extraDir))
                 return;
 
-            foreach (string fileName in new[] { "steamclient_extra_x86.dll", "steamclient_extra_x64.dll" })
+            foreach (string fileName in new[] { ShippedSteamClientExtraDll32FileName, ShippedSteamClientExtraDll64FileName })
             {
                 string path = Path.Combine(extraDir, fileName);
                 if (!File.Exists(path))
@@ -186,6 +251,47 @@ namespace SmartGoldbergEmu.Constants
                 try
                 {
                     File.Delete(path);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        // Moves files/dirs from source into dest; when a dest path already exists, keep dest and drop the source copy.
+        private static void MoveDirectoryContentsPreferringDestination(string sourceDirectory, string destinationDirectory)
+        {
+            foreach (string sourceFile in Directory.GetFiles(sourceDirectory))
+            {
+                string name = Path.GetFileName(sourceFile);
+                try
+                {
+                    if (IsShippedSteamClientExtraDll(name))
+                    {
+                        File.Delete(sourceFile);
+                        continue;
+                    }
+
+                    string destFile = Path.Combine(destinationDirectory, name);
+                    if (File.Exists(destFile))
+                        File.Delete(sourceFile);
+                    else
+                        File.Move(sourceFile, destFile);
+                }
+                catch
+                {
+                }
+            }
+
+            foreach (string sourceSubDir in Directory.GetDirectories(sourceDirectory))
+            {
+                string name = Path.GetFileName(sourceSubDir);
+                string destSubDir = Path.Combine(destinationDirectory, name);
+                try
+                {
+                    Directory.CreateDirectory(destSubDir);
+                    MoveDirectoryContentsPreferringDestination(sourceSubDir, destSubDir);
+                    TryDeleteDirectory(sourceSubDir);
                 }
                 catch
                 {

@@ -58,13 +58,17 @@ namespace SmartGoldbergEmu.Services
         public static string GetInvalidJsonMessageForAdditionalFile(string key)
         {
             if (string.Equals(key, "branches", StringComparison.Ordinal))
-                return $"{PathConstants.GoldbergBranchesJsonFileName} contains invalid JSON. Please fix the format before saving.";
+                return PathConstants.GoldbergBranchesJsonFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             if (string.Equals(key, "achievements", StringComparison.Ordinal))
-                return $"{AchievementConstants.AchievementsFileName} contains invalid JSON. Please fix the format before saving.";
+                return AchievementConstants.AchievementsFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             if (string.Equals(key, "items", StringComparison.Ordinal))
-                return $"{PathConstants.GoldbergItemsJsonFileName} contains invalid JSON. Please fix the format before saving.";
+                return PathConstants.GoldbergItemsJsonFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             if (string.Equals(key, "default_items", StringComparison.Ordinal))
-                return $"{PathConstants.GoldbergDefaultItemsJsonFileName} contains invalid JSON. Please fix the format before saving.";
+                return PathConstants.GoldbergDefaultItemsJsonFileName
+                    + " contains invalid JSON.\nPlease fix the format before saving.";
             return null;
         }
 
@@ -1148,17 +1152,10 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                return Directory.GetFiles(dir, "*.dll", SearchOption.AllDirectories)
-                    .Select(path =>
-                    {
-                        string fullDir = Path.GetFullPath(dir);
-                        if (!fullDir.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
-                            fullDir += Path.DirectorySeparatorChar;
-                        string fullPath = Path.GetFullPath(path);
-                        return fullPath.StartsWith(fullDir, StringComparison.OrdinalIgnoreCase)
-                            ? fullPath.Substring(fullDir.Length)
-                            : Path.GetFileName(path);
-                    })
+                // Top-level only: staging and Goldberg load_dlls are flat.
+                return Directory.GetFiles(dir, "*.dll", SearchOption.TopDirectoryOnly)
+                    .Select(path => Path.GetFileName(path))
+                    .Where(name => !GoldbergInstallLayout.IsShippedSteamClientExtraDll(name))
                     .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
@@ -1187,6 +1184,8 @@ namespace SmartGoldbergEmu.Services
 
                     string name = Path.GetFileName(src);
                     if (string.IsNullOrEmpty(name))
+                        continue;
+                    if (GoldbergInstallLayout.IsShippedSteamClientExtraDll(name))
                         continue;
 
                     File.Copy(src, Path.Combine(destDir, name), true);

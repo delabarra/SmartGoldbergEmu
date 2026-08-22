@@ -193,11 +193,6 @@ namespace SmartGoldbergEmu.Constants
         public const string SettingKeyLogosViewDropShadow = "logos_view_drop_shadow";
 
         /// <summary>
-        /// INI file key for the saved Steamless.CLI.exe path.
-        /// </summary>
-        public const string SettingKeySteamlessCliPath = "steamless_cli_path";
-
-        /// <summary>
         /// INI file key for theme mode (Light, Dark, System).
         /// </summary>
         public const string SettingKeyThemeMode = "theme_mode";
@@ -223,14 +218,12 @@ namespace SmartGoldbergEmu.Constants
         public const string SettingKeyWindowState = "state";
 
         /// <summary>
-        /// Open file dialog filter for selecting Steamless.CLI.exe.
-        /// </summary>
-        public const string SteamlessCliFileDialogFilter = "Steamless CLI (Steamless.CLI.exe)|Steamless.CLI.exe|Executable (*.exe)|*.exe";
-
-        /// <summary>
         /// INI file section name for application settings.
         /// </summary>
         public const string SettingSectionApplication = "application";
+
+        // Last OpenFileDialog / FolderBrowserDialog directories per FileDialogBrowseHelper.Purpose (ui_settings.ini).
+        public const string SettingSectionBrowseFolders = "browse_folders";
 
         #endregion
 
@@ -308,11 +301,6 @@ namespace SmartGoldbergEmu.Constants
 
         #region Windows system registry (optional reads)
 
-        // 7-Zip official installer — path value lives under HKLM and sometimes HKCU.
-        public const string SevenZipRegistrySubKey = @"SOFTWARE\7-Zip";
-
-        public const string SevenZipRegistryInstallPathValueName = "Path";
-
         // AppsUseLightTheme and related values (system vs app light/dark).
         public const string WindowsCurrentUserThemesPersonalizeRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 
@@ -348,28 +336,28 @@ namespace SmartGoldbergEmu.Constants
 
         #region Online app metadata URLs
 
-        public const string SteamAppListArchiveAppListJsonUrl =
-            "https://raw.githubusercontent.com/delabarra/ISteamApps-GetAppList-v2-Archive/refs/heads/main/appList.json";
-
-        public const string SteamStoreAppDetailsApiUrlFormat = "https://store.steampowered.com/api/appdetails?appids={0}";
         public const string SteamWebApiKeyRegistrationUrl = "https://steamcommunity.com/dev/apikey";
         public const string SteamUserStatsSchemaApiUrlFormat = "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?l={0}&key={1}&appid={2}";
+        // Nemirtingas/games-infos-datas: steam/{appId}/{fileName} (achievements_db, stats_db, inventory_db, …).
+        public const string GamesInfosDatasSteamFileUrlFormat =
+            "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/{1}";
         public static readonly string GamesInfosDatasSteamStatsDbUrlFormat =
             "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/" + PathConstants.GoldbergStatsDbJsonFileName;
         public const string SteamCommunityLeaderboardsXmlUrlFormat = "https://steamcommunity.com/stats/{0}/leaderboards/?xml=1";
-        public const string SteamInventoryItemDefMetaApiUrlFormat = "https://api.steampowered.com/IInventoryService/GetItemDefMeta/v1?key={0}&appid={1}";
-        public const string SteamGameInventoryItemDefArchiveApiUrlFormat = "https://api.steampowered.com/IGameInventory/GetItemDefArchive/v0001?appid={0}&digest={1}";
         public const string SteamPublishedFileDetailsApiUrlPrefix = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=";
+        // Steam ranks CMs for this client (IP/load). GetCMList is a global TCP dump if ForConnect has no netfilter.
         public const string SteamDirectoryGetCmListForConnectUrl =
-            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=50";
+            "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=200";
+        public const string SteamDirectoryGetCmListUrl =
+            "https://api.steampowered.com/ISteamDirectory/GetCMList/v1/?cellid=0";
+        // Store catalog search (games / Windows). Packages/bundles are skipped when parsing; delisted apps use SteamSearchGamesApiUrlFormat.
+        public const string SteamStoreSearchCatalogUrlFormat =
+            "https://store.steampowered.com/search/results/?term={0}&category1=998&os=win&cc=US&l=english&start=0&count=50";
         public const string SteamSearchGamesApiUrlFormat = "https://steam-search.vercel.app/api/games?search={0}";
-        public const string SevenZipStandaloneExeDownloadUrl = "https://www.7-zip.org/a/7zr.exe";
         public const string SteamStoreAppUrlFormat = "https://store.steampowered.com/app/{0}";
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";
         public const string SteamCommunityWorkshopUrlFormat = "https://steamcommunity.com/app/{0}/workshop/";
 
-        public const string SteamStoreAssetFileUrlFormat = "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{0}/{1}";
-        public const string SteamCommunityAssetsClientIconIcoUrlFormat = "https://shared.fastly.steamstatic.com/community_assets/images/apps/{0}/{1}.ico";
         public const string SteamDbAppUrlFormat = "https://steamdb.info/app/{0}";
         public const string SteamDbDepotsUrlFormat = "https://steamdb.info/app/{0}/depots/";
         public const string SteamDbConfigUrlFormat = "https://steamdb.info/app/{0}/config/";

@@ -1,17 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using AppDataKit;
 using SmartGoldbergEmu;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Forms;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
-using SteamKit;
+using SmartGoldbergEmu.Validation;
 
 namespace SmartGoldbergEmu.Services
 {
@@ -53,20 +53,21 @@ namespace SmartGoldbergEmu.Services
             };
 
         private readonly GameDataService _gameDataService;
-        private readonly SteamProductInfoService _steamProductInfo;
-        private readonly DlcService _dlcService;
+        private readonly AppDataKitBridgeService _appDataKitBridge;
         private readonly ITaskReportService _taskReportService;
 
         public GameSetupService()
-            : this(ServiceLocator.GameDataService, ServiceLocator.SteamProductInfoService, ServiceLocator.DlcService, null)
+            : this(ServiceLocator.GameDataService, ServiceLocator.AppDataKitBridgeService, null)
         {
         }
 
-        public GameSetupService(GameDataService gameDataService, SteamProductInfoService steamProductInfo, DlcService dlcService = null, ITaskReportService feedbackService = null)
+        public GameSetupService(
+            GameDataService gameDataService,
+            AppDataKitBridgeService appDataKitBridge = null,
+            ITaskReportService feedbackService = null)
         {
             _gameDataService = gameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
-            _steamProductInfo = steamProductInfo ?? throw new ArgumentNullException(nameof(steamProductInfo));
-            _dlcService = dlcService ?? ServiceLocator.DlcService;
+            _appDataKitBridge = appDataKitBridge ?? ServiceLocator.AppDataKitBridgeService;
             _taskReportService = feedbackService;
         }
 
@@ -102,108 +103,23 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        // Upper bound for Steam PICS on add-game collect (session lock, connect, product info).
-        private static readonly TimeSpan PicsMetadataTimeout = TimeSpan.FromSeconds(5);
-
-        private static readonly TimeSpan PicsSettingsLookupTimeout = TimeSpan.FromSeconds(30);
-
-        public async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchPicsMetadataWithRootAsync(
+        // AppDataKit-first (steamcmd → PICS); returns metadata plus the catalog AppInfoKeyValue root.
+        public async Task<(OnlineAppData Metadata, AppInfoKeyValue AppInfo)> FetchMetadataWithRootAsync(
             string appId,
-            KeyValue existingPicsRoot = null,
-            ITaskReportService feedback = null)
+            AppInfoKeyValue existingAppInfo = null,
+            ITaskReportService feedback = null,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
-                return (null, existingPicsRoot);
+                return (null, existingAppInfo);
 
-            return await FetchPicsMetadataCoreAsync(appIdNum, existingPicsRoot, PicsSettingsLookupTimeout, feedback).ConfigureAwait(false);
-        }
+            AppCatalogSnapshot snapshot = await _appDataKitBridge
+                .FetchMetadataSnapshotAsync(appIdNum, existingAppInfo, feedback, cancellationToken)
+                .ConfigureAwait(false);
+            if (snapshot == null || snapshot.Failure != AppMetadataFetchFailure.None || snapshot.Online == null)
+                return (null, snapshot?.AppInfo ?? existingAppInfo);
 
-        public async Task<OnlineAppData> FetchMetadataAsync(ulong appId, IWin32Window owner = null, ITaskReportService feedback = null)
-        {
-            var (metadata, _) = await FetchMetadataAndPicsAsync(appId, owner, feedback).ConfigureAwait(false);
-            return metadata;
-        }
-
-        private async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchMetadataAndPicsAsync(
-            ulong appId,
-            IWin32Window owner = null,
-            ITaskReportService feedback = null)
-        {
-            if (appId == 0)
-                return (null, null);
-
-            ITaskReportService fb = feedback ?? _taskReportService;
-            return await FetchPicsMetadataCoreAsync(appId, null, PicsMetadataTimeout, fb).ConfigureAwait(false);
-        }
-
-        private async Task<(OnlineAppData Metadata, KeyValue PicsRoot)> FetchPicsMetadataCoreAsync(
-            ulong appId,
-            KeyValue existingPicsRoot,
-            TimeSpan timeout,
-            ITaskReportService fb)
-        {
-            try
-            {
-                using (var cts = new CancellationTokenSource())
-                {
-                    cts.CancelAfter(timeout);
-                    fb?.SetMessage("Fetching game assets...");
-
-                    KeyValue picsRoot = existingPicsRoot;
-                    if (picsRoot == null)
-                    {
-                        var picsHolder = new GameConfig { AppId = appId };
-                        picsRoot = await _steamProductInfo.WarmGameConfigAppPicsRootAsync(picsHolder, cts.Token).ConfigureAwait(false);
-                    }
-
-                    if (picsRoot == null)
-                        return (null, null);
-
-                    var metadata = new OnlineAppData
-                    {
-                        AppId = appId.ToString(),
-                        DataSources = "Steam (game assets)"
-                    };
-                    SteamPicsKeyValueHelper.PopulateMetadataFromAppRoot(picsRoot, metadata);
-                    return (metadata, picsRoot);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                Program.LogService?.LogWarning(
-                    $"Steam game assets timed out after {(int)timeout.TotalSeconds}s (busy or unreachable) for app {appId}.");
-                fb?.SetMessage("Steam game assets request timed out.", TaskReportKind.Error);
-                return (null, null);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Error fetching game assets metadata: {ex.Message}", ex);
-                fb?.SetMessage("Could not fetch app metadata from Steam.", TaskReportKind.Error);
-                return (null, null);
-            }
-        }
-
-        public async Task<Dictionary<long, string>> FetchDlcNamesAsync(
-            OnlineAppData metadata,
-            ITaskReportService feedbackService = null,
-            KeyValue picsAppRoot = null)
-        {
-            if (metadata == null)
-                return new Dictionary<long, string>();
-
-            try
-            {
-                DlcService dlcService = feedbackService != null
-                    ? new DlcService(_steamProductInfo, null, feedbackService)
-                    : _dlcService;
-
-                return await dlcService.GetDlcDataAsync(metadata.AppId, picsAppRoot: picsAppRoot).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Error fetching DLC names: {ex.Message}", ex);
-                return new Dictionary<long, string>();
-            }
+            return (snapshot.Online, snapshot.AppInfo);
         }
 
         public async Task<GameSetupResult> SetupGameFromExecutable(string executablePath, IWin32Window owner = null, ITaskReportService feedbackService = null)
@@ -240,25 +156,51 @@ namespace SmartGoldbergEmu.Services
             }
 
             OnlineAppData metadata = null;
-            KeyValue picsRoot = null;
+            AppInfoKeyValue appInfo = null;
+            Dictionary<long, string> prefetchedDlc = null;
+            AppCatalogSnapshot catalog = null;
             if (appId > 0)
             {
-                feedbackService?.SetMessage(AddGameStatusMessages.LookingUpData(appId));
-                feedbackService?.SetProgress(0, 2);
+                feedbackService?.SetMessage(AddGameStatusMessages.FetchingMetadata(appId, gameName));
+                // Add-collect: suppress intermediate chatter; full catalog captures metadata, DLC, assets, achievements, stats, and items in one pass.
                 ITaskReportService metadataFeedback = restrictStatusToAddGameCollect ? null : feedbackService;
-                (metadata, picsRoot) = await FetchMetadataAndPicsAsync(appId, owner, metadataFeedback).ConfigureAwait(false);
+                catalog = await _appDataKitBridge
+                    .FetchFullSnapshotAsync(appId, metadataFeedback)
+                    .ConfigureAwait(false);
+                metadata = catalog?.Online;
+                appInfo = catalog?.AppInfo;
+                prefetchedDlc = catalog?.ToDlcDictionary();
+                AppMetadataFetchFailure failure = catalog?.Failure ?? AppMetadataFetchFailure.Unavailable;
                 if (metadata == null)
+                {
+                    Program.LogService?.LogWarning(
+                        $"Could not fetch Steam metadata for App ID {appId} ({failure}).");
+                    if (restrictStatusToAddGameCollect)
+                    {
+                        feedbackService?.SetMessage(
+                            failure == AppMetadataFetchFailure.TimedOut
+                                ? AddGameStatusMessages.MetadataFetchTimedOut
+                                : AddGameStatusMessages.MetadataFetchFailed,
+                            TaskReportKind.Error);
+                    }
+
                     return new GameSetupResult { Cancelled = true, MetadataFetchFailed = true };
+                }
+
+                // Drop the busy "Fetching metadata…" text as soon as the catalog is in hand.
+                feedbackService?.SetMessage(string.Empty);
 
                 if (!string.IsNullOrEmpty(metadata.Name))
                 {
                     gameName = metadata.Name;
-                    Program.LogService?.LogMessage($"Using fetched game name: {gameName}");
+                    Program.LogService?.LogDebug($"Using fetched game name: {gameName}");
                 }
                 else
                 {
                     Program.LogService?.LogWarning($"Metadata has no name for App ID {appId}, using filename: {gameName}");
                 }
+
+                Program.LogService?.LogMessage($"Catalog for AppId {appId} retrieved.");
             }
 
             return new GameSetupResult
@@ -266,7 +208,9 @@ namespace SmartGoldbergEmu.Services
                 AppId = appId,
                 GameName = gameName,
                 Metadata = metadata,
-                AppPicsKeyValue = picsRoot,
+                AppInfo = appInfo,
+                PreFetchedDlcData = prefetchedDlc,
+                Catalog = catalog,
                 Cancelled = false
             };
         }
@@ -277,16 +221,20 @@ namespace SmartGoldbergEmu.Services
                 return null;
 
             ITaskReportService fb = feedbackService ?? _taskReportService;
-            var (metadata, picsRoot) = await FetchMetadataAndPicsAsync(game.AppId, null, fb).ConfigureAwait(false);
-            game.AppPicsKeyValue = picsRoot;
+            AppCatalogSnapshot snapshot = await _appDataKitBridge
+                .FetchMetadataSnapshotAsync(game.AppId, game.AppInfo, fb)
+                .ConfigureAwait(false);
+            OnlineAppData metadata = snapshot?.Online;
+            AppInfoKeyValue appInfo = snapshot?.AppInfo ?? game.AppInfo;
+            game.AppInfo = appInfo;
+            game.Catalog = snapshot;
 
             if (metadata != null && !string.IsNullOrEmpty(metadata.Name))
                 game.AppName = metadata.Name;
 
             if (game.AppId != 0)
             {
-                var metadataForDlc = metadata ?? new OnlineAppData { AppId = game.AppId.ToString() };
-                game.PreFetchedDlcData = await FetchDlcNamesAsync(metadataForDlc, fb, picsRoot).ConfigureAwait(false);
+                game.PreFetchedDlcData = snapshot?.ToDlcDictionary() ?? new Dictionary<long, string>();
                 game.DlcCheckPerformed = true;
             }
 
@@ -307,7 +255,7 @@ namespace SmartGoldbergEmu.Services
                 : setupResult.GameName;
 
             if (!string.IsNullOrEmpty(setupResult.Metadata?.Name))
-                Program.LogService?.LogMessage($"CreateGameConfig: Using metadata name: {gameName}");
+                Program.LogService?.LogDebug($"CreateGameConfig: Using metadata name: {gameName}");
             else
                 Program.LogService?.LogWarning($"CreateGameConfig: No metadata name available, using: {gameName}");
 
@@ -328,13 +276,26 @@ namespace SmartGoldbergEmu.Services
                 StartFolder = startFolder,
                 Parameters = string.Empty,
                 GameGuid = _gameDataService.GenerateGameGuid(),
-                AppPicsKeyValue = setupResult.AppPicsKeyValue
+                AppInfo = setupResult.AppInfo,
+                Catalog = setupResult.Catalog
             };
+
+            // No steam_api in the install tree → Steam.dll beside exe (common for older titles).
+            if (!SteamApiValidator.HasPrimarySteamApiDll(startFolder))
+                gameConfig.LaunchMode = GoldbergLaunchMode.SteamDllBesideExe;
 
             if (fetchDlc && setupResult.AppId != 0)
             {
-                var metadataForDlc = setupResult.Metadata ?? new OnlineAppData { AppId = setupResult.AppId.ToString() };
-                gameConfig.PreFetchedDlcData = await FetchDlcNamesAsync(metadataForDlc, feedbackService, setupResult.AppPicsKeyValue).ConfigureAwait(false);
+                if (setupResult.PreFetchedDlcData != null)
+                {
+                    gameConfig.PreFetchedDlcData = setupResult.PreFetchedDlcData;
+                }
+                else
+                {
+                    gameConfig.PreFetchedDlcData = await _appDataKitBridge
+                        .FetchDlcAsync(setupResult.AppId)
+                        .ConfigureAwait(false);
+                }
                 gameConfig.DlcCheckPerformed = true;
             }
 
@@ -344,7 +305,8 @@ namespace SmartGoldbergEmu.Services
             return gameConfig;
         }
 
-        private static List<string> ConvertSteamLanguageStringToCodes(string languageString)
+        // Public: reused by GoldbergArtifactService when refreshing catalog-derived supported languages.
+        public static List<string> ConvertSteamLanguageStringToCodes(string languageString)
         {
             if (string.IsNullOrWhiteSpace(languageString))
                 return new List<string>();

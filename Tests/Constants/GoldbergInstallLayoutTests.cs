@@ -11,10 +11,10 @@ namespace SmartGoldbergEmu.Tests.Constants
         public void GetReleaseInstallFiles_maps_expected_archive_entries()
         {
             var files = GoldbergInstallLayout.GetReleaseInstallFiles();
-            Assert.Equal(9, files.Count);
+            Assert.Equal(8, files.Count);
             Assert.Contains(files, f => f.ArchivePath == "release/experimental/x32/steam_api.dll");
             Assert.Contains(files, f => f.ArchivePath == "release/experimental/x64/steam_api64.dll");
-            Assert.Contains(files, f => f.ArchivePath == "release/steam_old_lib/Steam.dll");
+            Assert.DoesNotContain(files, f => f.ArchivePath == "release/steam_old_lib/Steam.dll");
 
             var x32SteamApi = files.First(f => f.FileName == PathConstants.GoldbergStandardSteamApiDll32);
             Assert.Equal(GoldbergInstallLayout.ExperimentalFolderName, x32SteamApi.InstallRelativeDirectory);
@@ -96,8 +96,167 @@ namespace SmartGoldbergEmu.Tests.Constants
         {
             string text = GoldbergInstallLayout.BuildGoldbergReadmeText();
             Assert.Contains("x32", text);
+            Assert.Contains("x86", text);
             Assert.Contains("x64", text);
             Assert.Contains("load_dlls", text);
+            Assert.Contains("LoadLibraryW", text);
+            Assert.Contains("steamclient_experimental/extra_dlls", text);
+            Assert.Contains("not in subfolders", text);
+            Assert.Contains(GoldbergInstallLayout.ShippedSteamClientExtraDll32FileName, text);
+            Assert.Contains(GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName, text);
+            Assert.DoesNotContain("load_order", text);
+        }
+
+        [Theory]
+        [InlineData("steamclient_extra_x86.dll", true)]
+        [InlineData("steamclient_extra_x64.dll", true)]
+        [InlineData("STEAMCLIENT_EXTRA_X64.DLL", true)]
+        [InlineData("plugin_x64.dll", false)]
+        [InlineData(null, false)]
+        [InlineData("", false)]
+        public void IsShippedSteamClientExtraDll_matches_upstream_inject_samples(string fileName, bool expected)
+        {
+            Assert.Equal(expected, GoldbergInstallLayout.IsShippedSteamClientExtraDll(fileName));
+        }
+
+        [Fact]
+        public void TryMigrateLegacySteamClientExtraDlls_moves_content_and_removes_legacy_folder()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "sge-goldberg-migrate-" + Path.GetRandomFileName());
+            try
+            {
+                string legacyDir = Path.Combine(root, GoldbergInstallLayout.LegacySteamClientExtraDllsFolderName);
+                Directory.CreateDirectory(legacyDir);
+                File.WriteAllBytes(Path.Combine(legacyDir, "plugin_x64.dll"), new byte[] { 1 });
+                Directory.CreateDirectory(Path.Combine(legacyDir, "nested"));
+                File.WriteAllBytes(Path.Combine(legacyDir, "nested", "helper.dll"), new byte[] { 2 });
+                File.WriteAllText(Path.Combine(legacyDir, "notes.txt"), "plugin_x64.dll");
+
+                string existingDest = GoldbergInstallLayout.GetSteamClientExperimentalExtraDllsDirectory(root);
+                Directory.CreateDirectory(existingDest);
+                File.WriteAllBytes(Path.Combine(existingDest, "keep_me.dll"), new byte[] { 9 });
+
+                GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(root);
+
+                Assert.False(Directory.Exists(legacyDir));
+                Assert.True(File.Exists(Path.Combine(existingDest, "plugin_x64.dll")));
+                Assert.True(File.Exists(Path.Combine(existingDest, "nested", "helper.dll")));
+                Assert.True(File.Exists(Path.Combine(existingDest, "notes.txt")));
+                Assert.True(File.Exists(Path.Combine(existingDest, "keep_me.dll")));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void TryMigrateLegacySteamClientExtraDlls_prefers_existing_destination_file()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "sge-goldberg-migrate-" + Path.GetRandomFileName());
+            try
+            {
+                string legacyDir = Path.Combine(root, GoldbergInstallLayout.LegacySteamClientExtraDllsFolderName);
+                Directory.CreateDirectory(legacyDir);
+                File.WriteAllBytes(Path.Combine(legacyDir, "shared.dll"), new byte[] { 1 });
+
+                string destDir = GoldbergInstallLayout.GetSteamClientExperimentalExtraDllsDirectory(root);
+                Directory.CreateDirectory(destDir);
+                File.WriteAllBytes(Path.Combine(destDir, "shared.dll"), new byte[] { 7 });
+
+                GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(root);
+
+                Assert.False(Directory.Exists(legacyDir));
+                Assert.Equal(new byte[] { 7 }, File.ReadAllBytes(Path.Combine(destDir, "shared.dll")));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void TryMigrateLegacySteamClientExtraDlls_folds_mistaken_experimental_load_dlls()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "sge-goldberg-migrate-" + Path.GetRandomFileName());
+            try
+            {
+                string mistakenDir = Path.Combine(
+                    root,
+                    GoldbergInstallLayout.SteamClientExperimentalFolderName,
+                    PathConstants.GoldbergLoadDllsFolderName);
+                Directory.CreateDirectory(mistakenDir);
+                File.WriteAllBytes(Path.Combine(mistakenDir, "from_load_dlls.dll"), new byte[] { 3 });
+
+                GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(root);
+
+                string destDir = GoldbergInstallLayout.GetSteamClientExperimentalExtraDllsDirectory(root);
+                Assert.False(Directory.Exists(mistakenDir));
+                Assert.True(File.Exists(Path.Combine(destDir, "from_load_dlls.dll")));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void TryMigrateLegacySteamClientExtraDlls_drops_shipped_inject_samples()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "sge-goldberg-migrate-skip-" + Path.GetRandomFileName());
+            try
+            {
+                string legacyDir = Path.Combine(root, GoldbergInstallLayout.LegacySteamClientExtraDllsFolderName);
+                Directory.CreateDirectory(legacyDir);
+                File.WriteAllBytes(Path.Combine(legacyDir, "plugin_x64.dll"), new byte[] { 1 });
+                File.WriteAllBytes(
+                    Path.Combine(legacyDir, GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName),
+                    new byte[] { 2 });
+
+                GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(root);
+
+                string destDir = GoldbergInstallLayout.GetSteamClientExperimentalExtraDllsDirectory(root);
+                Assert.False(Directory.Exists(legacyDir));
+                Assert.True(File.Exists(Path.Combine(destDir, "plugin_x64.dll")));
+                Assert.False(File.Exists(Path.Combine(destDir, GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName)));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void RemoveLegacyGoldbergSubfolders_strips_shipped_inject_samples()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "sge-goldberg-strip-" + Path.GetRandomFileName());
+            try
+            {
+                string extraDir = GoldbergInstallLayout.GetSteamClientExperimentalExtraDllsDirectory(root);
+                Directory.CreateDirectory(extraDir);
+                File.WriteAllBytes(Path.Combine(extraDir, "plugin_x64.dll"), new byte[] { 1 });
+                File.WriteAllBytes(
+                    Path.Combine(extraDir, GoldbergInstallLayout.ShippedSteamClientExtraDll32FileName),
+                    new byte[] { 2 });
+                File.WriteAllBytes(
+                    Path.Combine(extraDir, GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName),
+                    new byte[] { 3 });
+
+                GoldbergInstallLayout.RemoveLegacyGoldbergSubfolders(root);
+
+                Assert.True(File.Exists(Path.Combine(extraDir, "plugin_x64.dll")));
+                Assert.False(File.Exists(Path.Combine(extraDir, GoldbergInstallLayout.ShippedSteamClientExtraDll32FileName)));
+                Assert.False(File.Exists(Path.Combine(extraDir, GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName)));
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
         }
     }
 }

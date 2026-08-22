@@ -37,11 +37,6 @@ namespace SmartGoldbergEmu.Constants
         public const string LauncherUpdateExtractFolderName = "extracted";
 
         /// <summary>
-        /// Steamless install subfolder containing API plugins (see <see cref="SteamlessApiPluginRelativePath"/>).
-        /// </summary>
-        public const string SteamlessPluginsFolderName = "Plugins";
-
-        /// <summary>
         /// Legacy dev-tool folder beside the launcher (generate_interfaces cleanup after Goldberg update).
         /// Not the repository <c>tools/</c> dev-scripts folder.
         /// </summary>
@@ -74,12 +69,24 @@ namespace SmartGoldbergEmu.Constants
 
         // Filenames under games/{appId}/resources/ (Steam CDN / library artwork contract).
         public const string SteamGameResourcesHeaderImageFileName = "header.jpg";
+        public const string SteamGameResourcesLibraryHeaderImageFileName = "library_header.jpg";
+        public const string SteamGameResourcesLibraryHeader2xImageFileName = "library_header_2x.jpg";
         public const string SteamGameResourcesCapsuleCoverImageFileName = "cover.jpg";
         public const string SteamGameResourcesLibraryLogoImageFileName = "logo.png";
+        public const string SteamGameResourcesLibraryLogo2xImageFileName = "logo_2x.png";
         public const string SteamGameResourcesClientIconFileExtension = ".ico";
+        public const string SteamGameResourcesLibraryCapsuleImageFileName = "library_capsule.jpg";
+        public const string SteamGameResourcesLibraryCapsule2xImageFileName = "library_capsule_2x.jpg";
         public const string SteamGameResourcesLegacyLibraryCapsuleImageFileName = "library_600x900.jpg";
+        public const string SteamGameResourcesLegacyLibraryCapsule2xImageFileName = "library_600x900_2x.jpg";
+        public const string SteamGameResourcesLibraryHeroImageFileName = "library_hero.jpg";
+        public const string SteamGameResourcesLibraryHero2xImageFileName = "library_hero_2x.jpg";
+        public const string SteamGameResourcesLibraryHeroBlurImageFileName = "library_hero_blur.jpg";
+        public const string SteamGameResourcesLibraryLogoPicsImageFileName = "library_logo.png";
+        public const string SteamGameResourcesLibraryLogoPics2xImageFileName = "library_logo_2x.png";
         public const string SteamGameResourcesCapsuleImageFileName = "capsule.jpg";
         public const string SteamGameResourcesSmallCapsuleImageFileName = "capsule_231x87.jpg";
+        public const string SteamGameResourcesLargeCapsuleImageFileName = "capsule_616x353.jpg";
         public const string SteamGameResourcesMissingAssetsNoteFileName = "missing_assets.txt";
 
         /// <summary>
@@ -93,33 +100,14 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergDirectoryFolderName = "goldberg";
 
         /// <summary>
-        /// Steamless command-line executable name (release layout).
+        /// Suffix appended to the input executable for the temporary unpacked output (e.g. game.exe.unpacked.exe).
         /// </summary>
-        public const string SteamlessCliExecutableName = "Steamless.CLI.exe";
-
-        public const string SteamlessCliQuietFlag = "--quiet";
-        public const string SteamlessCliKeepBindFlag = "--keepbind";
-        public const string SteamlessCliKeepStubFlag = "--keepstub";
-        public const string SteamlessCliDumpPayloadFlag = "--dumppayload";
-        public const string SteamlessCliDumpDrmpFlag = "--dumpdrmp";
-        public const string SteamlessCliRealignFlag = "--realign";
-        public const string SteamlessCliRecalcChecksumFlag = "--recalcchecksum";
-        public const string SteamlessCliExperimentalFlag = "--exp";
+        public const string StubUnpackedExecutableSuffix = ".unpacked.exe";
 
         /// <summary>
-        /// Relative path to the Steamless API plugin required by the CLI.
+        /// Infix before the extension for the original executable backed up before stub replace (e.g. game.exe → game_o.exe).
         /// </summary>
-        public const string SteamlessApiPluginRelativePath = "Plugins\\Steamless.API.dll";
-
-        /// <summary>
-        /// Suffix Steamless appends to the input executable file name for the unpacked output.
-        /// </summary>
-        public const string SteamlessUnpackedExecutableSuffix = ".unpacked.exe";
-
-        /// <summary>
-        /// Infix before the extension for the original executable backed up before Steamless replace (e.g. game.exe → game_o.exe).
-        /// </summary>
-        public const string SteamlessOriginalExecutableBackupInfix = "_o";
+        public const string StubOriginalExecutableBackupInfix = "_o";
 
         /// <summary>
         /// Folder name for Goldberg global INI and overlay assets under %AppData%\GSE Saves\ (Goldberg contract).
@@ -164,11 +152,6 @@ namespace SmartGoldbergEmu.Constants
             return string.Equals(fileName, SteamClientUiAchievementNotificationWav, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(fileName, SteamClientUiFriendNotificationWav, StringComparison.OrdinalIgnoreCase);
         }
-
-        /// <summary>
-        /// 7-Zip reduced standalone executable name used during emulator updates.
-        /// </summary>
-        public const string LauncherSevenZipReducedExecutableName = "7zr.exe";
 
         /// <summary>
         /// Bundled placeholder and shipped documentation file names next to the launcher.
@@ -216,6 +199,8 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergLeaderboardsFileName = "leaderboards.txt";
         public const string GoldbergStatsJsonFileName = "stats.json";
         public const string GoldbergStatsDbJsonFileName = "stats_db.json";
+        public const string GoldbergAchievementsDbJsonFileName = "achievements_db.json";
+        public const string GoldbergInventoryDbJsonFileName = "inventory_db.json";
 
         public const string GoldbergBranchesJsonFileName = "branches.json";
         public const string GoldbergDepotsFileName = "depots.txt";
@@ -272,7 +257,9 @@ namespace SmartGoldbergEmu.Constants
             Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamOldFolderName);
 
         public static string GoldbergSteamClientExtraDllsDirectory =>
-            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamClientExtraDllsFolderName);
+            Path.Combine(
+                GoldbergSteamClientExperimentalDirectory,
+                GoldbergInstallLayout.SteamClientExperimentalExtraDllsFolderName);
 
         public static string CombineGoldbergExperimentalSteamApiPath(bool useX64) =>
             Path.Combine(
@@ -315,8 +302,6 @@ namespace SmartGoldbergEmu.Constants
         /// </summary>
         public const string GoldbergLoadDllsFolderName = "load_dlls";
 
-        public const string GoldbergLoadDllsLoadOrderFileName = "load_order.txt";
-
         public static string CombineGameSteamSettingsLoadDllsDirectory(ulong appId) =>
             Path.Combine(GetGameSteamSettingsPath(appId), GoldbergLoadDllsFolderName);
 
@@ -339,6 +324,7 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamLibraryFoldersVdfPathKey = "path";
 
         public const string SteamProductInfoValveKeyValuesFileExtension = ".vdf";
+        public const string SteamProductInfoCatalogJsonFileExtension = ".json";
         public const string SteamApiRedistributableDllSearchPattern = "steam_api*.dll";
 
         // App backup sidecar beside steam_api / steam_api64 (our .bkp-style copy before swap or Goldberg deploy).
@@ -352,11 +338,17 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamAppsCommonDirectoryName = "common";
         public const string SteamClientSteamUiFolderName = "steamui";
         public const string SteamClientUiSoundsFolderName = GoldbergGlobalSoundsFolderName;
+        public const string SteamClientClientUiFolderName = "clientui";
+        public const string SteamClientClientUiImagesFolderName = "images";
+
+        // Hashed Steam clientui image cached under %LocalAppData%\SmartGoldbergEmu\ (self-heal: Steam → CDN).
+        public const string SteamClientUiHashedImageFileName = "8669e97b288da32670e77181618c3dfb.png";
 
         /// <summary>
         /// Default Steam client folder name under Program Files (x86) when probing library VDF.
         /// </summary>
         public const string SteamClientRelativeRootFolderName = "Steam";
+        public const string SteamClientExecutableFileName = "steam.exe";
 
         public const string SteamUserDataFolderName = "userdata";
 
@@ -391,6 +383,21 @@ namespace SmartGoldbergEmu.Constants
             return Path.Combine(root, SteamClientSteamUiFolderName, SteamClientUiSoundsFolderName);
         }
 
+        // {steamInstallationRoot}\clientui\images
+        public static string CombineSteamClientUiImagesPath(string steamInstallationRoot)
+        {
+            if (string.IsNullOrWhiteSpace(steamInstallationRoot))
+                return null;
+            string root = steamInstallationRoot.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (root.Length == 0)
+                return null;
+            return Path.Combine(root, SteamClientClientUiFolderName, SteamClientClientUiImagesFolderName);
+        }
+
+        // %LocalAppData%\SmartGoldbergEmu\8669e97b288da32670e77181618c3dfb.png
+        public static string LocalAppDataSteamClientUiHashedImagePath =>
+            Path.Combine(LocalAppDataPerUserDirectory, SteamClientUiHashedImageFileName);
+
         // Program Files (x86)\Steam when registry does not yield a path.
         public static string GetProgramFilesX86DefaultSteamInstallationRoot()
         {
@@ -423,12 +430,20 @@ namespace SmartGoldbergEmu.Constants
             return Path.Combine(CombineGameFolder(gamesDirectoryRoot, appIdFolderName), GamesPerAppResourcesFolderName);
         }
 
-        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.vdf (PICS export written on game save)
+        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.vdf (PICS Valve-text export; read fallback when catalog JSON is missing)
         public static string CombineGamesPerAppValveDataFilePath(string gamesDirectoryRoot, string appIdFolderName)
         {
             return Path.Combine(
                 CombineGamesPerAppResourcesDirectory(gamesDirectoryRoot, appIdFolderName),
                 appIdFolderName + SteamProductInfoValveKeyValuesFileExtension);
+        }
+
+        // {gamesDirectoryRoot}\{appIdFolder}\resources\{appId}.json (catalog snapshot SoT)
+        public static string CombineGamesPerAppCatalogJsonFilePath(string gamesDirectoryRoot, string appIdFolderName)
+        {
+            return Path.Combine(
+                CombineGamesPerAppResourcesDirectory(gamesDirectoryRoot, appIdFolderName),
+                appIdFolderName + SteamProductInfoCatalogJsonFileExtension);
         }
 
         public static string GetSteamGameResourcesClientIconFileName(ulong appId)
@@ -520,24 +535,7 @@ namespace SmartGoldbergEmu.Constants
         /// </summary>
         public static string GamesDirectory => Path.Combine(AppBaseDirectory, GamesDirectoryFolderName);
 
-        /// <summary>
-        /// Full path to the Steamless API plugin under a user-provided install root.
-        /// </summary>
-        public static string CombineSteamlessApiPluginPath(string steamlessInstallRoot)
-        {
-            if (string.IsNullOrWhiteSpace(steamlessInstallRoot))
-                return null;
-            return Path.Combine(steamlessInstallRoot.Trim(), SteamlessPluginsFolderName, "Steamless.API.dll");
-        }
-
-        public static string CombineSteamlessPluginsDirectory(string steamlessInstallRoot)
-        {
-            if (string.IsNullOrWhiteSpace(steamlessInstallRoot))
-                return null;
-            return Path.Combine(steamlessInstallRoot.Trim(), SteamlessPluginsFolderName);
-        }
-
-        public static string BuildSteamlessOriginalBackupPath(string executablePath)
+        public static string BuildStubOriginalBackupPath(string executablePath)
         {
             if (string.IsNullOrWhiteSpace(executablePath))
                 return null;
@@ -549,7 +547,7 @@ namespace SmartGoldbergEmu.Constants
 
             string extension = Path.GetExtension(fileName);
             string baseName = Path.GetFileNameWithoutExtension(fileName);
-            string backupFileName = baseName + SteamlessOriginalExecutableBackupInfix + extension;
+            string backupFileName = baseName + StubOriginalExecutableBackupInfix + extension;
 
             return string.IsNullOrEmpty(directory)
                 ? backupFileName
@@ -622,11 +620,23 @@ namespace SmartGoldbergEmu.Constants
         public const string UiSettingsIniFileName = "ui_settings.ini";
 
         /// <summary>
+        /// Cached ranked Steam static CDN mirror preferences.
+        /// </summary>
+        public const string SteamStaticCdnPreferencesFileName = SteamStaticCdnConstants.PreferencesCacheFileName;
+
+        /// <summary>
         /// Per-user UI settings (theme, main window size/position/state).
         /// Location: %LocalAppData%\SmartGoldbergEmu\ui_settings.ini
         /// </summary>
         public static string UiSettingsFilePath =>
             Path.Combine(LocalAppDataPerUserDirectory, UiSettingsIniFileName);
+
+        /// <summary>
+        /// Ranked Steam static CDN mirror preferences cache.
+        /// Location: %LocalAppData%\SmartGoldbergEmu\steam_static_cdn_preferences.json
+        /// </summary>
+        public static string SteamStaticCdnPreferencesFilePath =>
+            Path.Combine(LocalAppDataPerUserDirectory, SteamStaticCdnPreferencesFileName);
 
         /// <summary>
         /// Former per-user config path (pre–exe-only layout). Used for one-time migration and legacy XML import lookup only.
@@ -636,7 +646,8 @@ namespace SmartGoldbergEmu.Constants
             Path.Combine(LocalAppDataPerUserDirectory, LegacyConfigFileName);
 
         /// <summary>
-        /// Goldberg emulator binaries root (subfolders: experimental, steamclient_experimental, steamclient_extra_dlls, steam_old).
+        /// Goldberg emulator binaries root (subfolders: experimental, steamclient_experimental, steam_old).
+        /// Extra DLLs for Goldberg load_dlls live under steamclient_experimental/extra_dlls.
         /// Location: {AppBaseDirectory}\goldberg\
         /// </summary>
         public static string GoldbergDirectory => Path.Combine(AppBaseDirectory, GoldbergDirectoryFolderName);

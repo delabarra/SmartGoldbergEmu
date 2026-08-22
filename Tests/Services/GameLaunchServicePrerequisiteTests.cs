@@ -82,27 +82,6 @@ namespace SmartGoldbergEmu.Tests.Services
             }
         }
 
-        [Fact]
-        public void ResolveAvailableLaunchMode_returns_first_available_when_preferred_is_missing()
-        {
-            StageSteamDllOnly();
-            try
-            {
-                var service = CreateService();
-                var game = new GameConfig
-                {
-                    AppId = 480,
-                    LaunchMode = GoldbergLaunchMode.StandardSteamApi,
-                };
-
-                Assert.Equal(GoldbergLaunchMode.SteamDllBesideExe, service.ResolveAvailableLaunchMode(game));
-            }
-            finally
-            {
-                CleanupStaged();
-            }
-        }
-
         private static GameLaunchService CreateService()
         {
             string gamesRoot = TestFileHelper.CreateTempDirectory("sge-games-");
@@ -119,12 +98,6 @@ namespace SmartGoldbergEmu.Tests.Services
                 PathConstants.CombineGoldbergSteamClientDllPath(true),
                 PathConstants.CombineGoldbergGameOverlayRendererPath(false),
                 PathConstants.CombineGoldbergGameOverlayRendererPath(true));
-        }
-
-        private void StageSteamDllOnly()
-        {
-            GoldbergTestLayoutHelper.StageSteamDllInGoldbergFolder();
-            Track(PathConstants.CombineGoldbergSteamDllPath());
         }
 
         private void Track(params string[] paths)

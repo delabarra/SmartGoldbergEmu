@@ -185,7 +185,7 @@ namespace SmartGoldbergEmu.Services
             if (IsProcessAlive(session.GameProcessId))
                 return;
 
-            _logger.LogMessage(
+            _logger.LogDebug(
                 $"Cleaning stale launch session for AppId {appId} (PID {session.GameProcessId} is not running) before deploy.");
             TryExecuteCleanup(manifestPath, null);
         }
@@ -204,7 +204,7 @@ namespace SmartGoldbergEmu.Services
                 if (IsProcessAlive(session.GameProcessId))
                     continue;
 
-                _logger.LogMessage(
+                _logger.LogDebug(
                     $"Cleaning orphaned launch session for AppId {session.AppId} (PID {session.GameProcessId} is not running).");
                 TryExecuteCleanup(manifestPath, null);
             }
@@ -321,7 +321,7 @@ namespace SmartGoldbergEmu.Services
 
             int watchedProcessId = session.GameProcessId;
             string watchedGeneration = session.SessionGeneration;
-            _logger.LogMessage(
+            _logger.LogDebug(
                 $"Launch cleanup watcher waiting for game PID {watchedProcessId} (AppId {session.AppId}, generation {watchedGeneration}).");
 
             Task.Run(async () =>
@@ -358,7 +358,7 @@ namespace SmartGoldbergEmu.Services
                 return;
             }
 
-            _logger.LogMessage(
+            _logger.LogDebug(
                 $"Launch cleanup watcher running file and registry cleanup for AppId {current.AppId} (library: {current.GameLibraryFolder}).");
             TryExecuteCleanup(manifestPath, null);
         }
@@ -401,7 +401,7 @@ namespace SmartGoldbergEmu.Services
                 }
             }
 
-            _logger.LogMessage(
+            _logger.LogDebug(
                 $"Launch session cleanup for AppId {session.AppId}: "
                 + $"{deployFileCount} beside-exe file(s), library={session.GameLibraryFolder}, load_dlls={session.LoadDllsFolder}, "
                 + $"restoreActiveProcess={session.RestoreActiveProcessRegistry}.");
@@ -473,7 +473,7 @@ namespace SmartGoldbergEmu.Services
                     string json = JsonConvert.SerializeObject(current, JsonFormatting.Indented);
                     File.WriteAllText(manifestPath, json);
 
-                    _logger.LogMessage(
+                    _logger.LogDebug(
                         $"Restored Steam registry after {ApplicationConstants.LaunchRegistryRedirectDurationMs / 1000}s load window "
                         + $"for AppId {current.AppId} (PID {current.GameProcessId}).");
                 }
@@ -558,11 +558,16 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
-                    if (file.HadOriginal && !string.IsNullOrEmpty(file.BackupPath) && File.Exists(file.BackupPath))
+                    if (file.HadOriginal)
                     {
-                        File.Copy(file.BackupPath, file.TargetPath, overwrite: true);
-                        File.Delete(file.BackupPath);
-                        _logger.LogDebug($"Restored original file: {file.TargetPath}");
+                        // Restore from backup when present. If the backup is already gone, a prior cleanup
+                        // likely restored the original — do not delete the target.
+                        if (!string.IsNullOrEmpty(file.BackupPath) && File.Exists(file.BackupPath))
+                        {
+                            File.Copy(file.BackupPath, file.TargetPath, overwrite: true);
+                            File.Delete(file.BackupPath);
+                            _logger.LogDebug($"Restored original file: {file.TargetPath}");
+                        }
                     }
                     else
                     {
@@ -627,7 +632,10 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Failed to cleanup game library files for AppId {session.AppId}: {ex.Message}", ex);
+                _logger.LogError(
+                    $"Failed to cleanup game library files for AppId {session.AppId} "
+                    + $"(library={session.GameLibraryFolder}, load_dlls={session.LoadDllsFolder})",
+                    ex);
             }
         }
 

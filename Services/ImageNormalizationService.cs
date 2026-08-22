@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using SmartGoldbergEmu;
+using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 
 namespace SmartGoldbergEmu.Services
@@ -46,7 +47,7 @@ namespace SmartGoldbergEmu.Services
         {
             return EnsureImageFileNormalized(
                 tileFilePath,
-                new Size(MosaicViewHelper.TileViewImageWidth, MosaicViewHelper.TileViewImageHeight),
+                MosaicViewHelper.TileViewImageSize,
                 trimTransparentPadding: false,
                 imageKind: "tile",
                 resizeStrategy: ResizeStrategy.FixWidthCropHeight);
@@ -56,21 +57,68 @@ namespace SmartGoldbergEmu.Services
         {
             return EnsureImageFileNormalized(
                 compactTileFilePath,
-                new Size(MosaicViewHelper.CompactTilesViewImageWidth, MosaicViewHelper.CompactTilesViewImageHeight),
+                MosaicViewHelper.CompactTilesViewImageSize,
                 trimTransparentPadding: false,
                 imageKind: "compact tile",
                 resizeStrategy: ResizeStrategy.FixHeightCropWidth);
         }
 
-        public Bitmap CreateCompactTileDisplayBitmapFromImage(Image source)
+        // Single path for Store Banner / Library Cover / Logos mosaic ImageList bitmaps.
+        public Bitmap CreateMosaicDisplayBitmap(Image source, string viewMode, bool logosDropShadow = false)
+        {
+            return CreateMosaicDisplayBitmap(source, viewMode, logosDropShadow, waitingPlaceholder: false, waitingDropShadow: false);
+        }
+
+        public Bitmap CreateMosaicDisplayBitmap(
+            Image source,
+            string viewMode,
+            bool logosDropShadow,
+            bool waitingPlaceholder,
+            bool waitingDropShadow = false)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
 
-            return CreateBitmapWithResizeStrategy(
+            if (viewMode == ApplicationConstants.ViewModeTile)
+                return CreateStoreBannerDisplayBitmap(source, waitingPlaceholder, waitingPlaceholder && waitingDropShadow);
+            if (viewMode == ApplicationConstants.ViewModeLogos)
+                return MosaicViewHelper.CreateLogoViewDisplayBitmap(source, logosDropShadow);
+            return CreateLibraryCoverDisplayBitmap(source, waitingPlaceholder && waitingDropShadow);
+        }
+
+        // Store Banner: width-fixed / height-cropped. Waiting art uses a narrower rect (more of the square visible).
+        public Bitmap CreateStoreBannerDisplayBitmap(
+            Image source,
+            bool waitingPlaceholder = false,
+            bool dropShadow = false)
+        {
+            if (source == null)
+                throw new ArgumentNullException(nameof(source));
+
+            Size artworkSize = waitingPlaceholder
+                ? MosaicViewHelper.TileViewWaitingArtworkSize
+                : MosaicViewHelper.TileViewImageSize;
+
+            return CreateCenteredArtworkBitmap(
                 source,
-                new Size(MosaicViewHelper.CompactTilesViewImageWidth, MosaicViewHelper.CompactTilesViewImageHeight),
-                ResizeStrategy.FixHeightCropWidth);
+                artworkSize,
+                MosaicViewHelper.TileViewImageSize,
+                ResizeStrategy.FixWidthCropHeight,
+                dropShadow);
+        }
+
+        // Library Cover: height-fixed / width-cropped into the ImageList cell.
+        public Bitmap CreateLibraryCoverDisplayBitmap(Image source, bool dropShadow = false)
+        {
+            if (source == null)
+                throw new ArgumentNullException(nameof(source));
+
+            return CreateCenteredArtworkBitmap(
+                source,
+                MosaicViewHelper.CompactTilesArtworkSize,
+                MosaicViewHelper.CompactTilesViewImageSize,
+                ResizeStrategy.FixHeightCropWidth,
+                dropShadow);
         }
 
         public Bitmap CreateFallbackLogoDisplayBitmapForLogosView(Image source)
@@ -84,6 +132,66 @@ namespace SmartGoldbergEmu.Services
         public bool EnsureHeaderFileNormalizedForSteamBounds(string headerFilePath)
         {
             return EnsureImageFitsWithinMaxSize(headerFilePath, HeaderMaxSize, "header");
+        }
+
+        private static Bitmap CreateCenteredArtworkBitmap(
+            Image source,
+            Size artworkSize,
+            Size cellSize,
+            ResizeStrategy resizeStrategy,
+            bool dropShadow = false)
+        {
+            if (artworkSize.Width <= 0 || artworkSize.Height <= 0)
+                throw new ArgumentOutOfRangeException(nameof(artworkSize));
+            if (cellSize.Width <= 0 || cellSize.Height <= 0)
+                throw new ArgumentOutOfRangeException(nameof(cellSize));
+
+            var artwork = CreateBitmapWithResizeStrategy(source, artworkSize, resizeStrategy);
+            Bitmap cellBitmap = null;
+            try
+            {
+                if (artwork.Width == cellSize.Width && artwork.Height == cellSize.Height)
+                {
+                    cellBitmap = artwork;
+                    artwork = null;
+                }
+                else
+                {
+                    cellBitmap = new Bitmap(cellSize.Width, cellSize.Height, PixelFormat.Format32bppArgb);
+                    using (var graphics = Graphics.FromImage(cellBitmap))
+                    {
+                        graphics.Clear(Color.Transparent);
+                        graphics.CompositingQuality = CompositingQuality.HighQuality;
+                        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        graphics.SmoothingMode = SmoothingMode.HighQuality;
+                        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        int x = (cellSize.Width - artwork.Width) / 2;
+                        int y = (cellSize.Height - artwork.Height) / 2;
+                        // Keep silhouette shadow inside the cell (offset is bottom-right).
+                        if (dropShadow)
+                        {
+                            x = Math.Max(0, Math.Min(x, cellSize.Width - artwork.Width - MosaicViewHelper.WaitingMosaicShadowOffsetX));
+                            y = Math.Max(0, Math.Min(y, cellSize.Height - artwork.Height - MosaicViewHelper.WaitingMosaicShadowOffsetY));
+                        }
+                        graphics.DrawImageUnscaled(artwork, x, y);
+                    }
+                }
+
+                if (!dropShadow)
+                {
+                    var result = cellBitmap;
+                    cellBitmap = null;
+                    return result;
+                }
+
+                Bitmap shadowed = MosaicViewHelper.CompositeWaitingMosaicSilhouetteDropShadow(cellBitmap);
+                return shadowed;
+            }
+            finally
+            {
+                artwork?.Dispose();
+                cellBitmap?.Dispose();
+            }
         }
 
         private bool EnsureImageFileNormalized(

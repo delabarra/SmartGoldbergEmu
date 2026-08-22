@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
 using Microsoft.Win32;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Abstractions;
@@ -15,6 +16,7 @@ using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Validation;
+using SteamKit;
 
 namespace SmartGoldbergEmu.Services
 {
@@ -742,8 +744,8 @@ namespace SmartGoldbergEmu.Services
         {
             ulong appId = gameConfig.AppId;
             var steam = ServiceLocator.SteamProductInfoService;
-            await steam.WarmGameConfigAppPicsRootAsync(gameConfig, cancellationToken).ConfigureAwait(false);
-            var packageData = await steam.ExtractPackageDataForAppAsync(appId.ToString(), gameConfig.AppPicsKeyValue, cancellationToken).ConfigureAwait(false);
+            await steam.WarmGameConfigAppInfoAsync(gameConfig, cancellationToken).ConfigureAwait(false);
+            var packageData = await steam.ExtractPackageDataForAppAsync(appId.ToString(), gameConfig.AppInfo, cancellationToken).ConfigureAwait(false);
             ServiceLocator.LogService.LogDebug($"Package extraction (game assets) for app {appId}: Depots={packageData.Depots?.Count ?? 0}, Branches={packageData.Branches?.Count ?? 0}, AppIds={packageData.AppIds?.Count ?? 0}");
             return packageData;
         }
@@ -751,8 +753,21 @@ namespace SmartGoldbergEmu.Services
         private async Task<AppDataExtractionResult> ExtractAppDataWithAppPicsRootAsync(GameConfig gameConfig, CancellationToken cancellationToken)
         {
             ulong appId = gameConfig.AppId;
-            await ServiceLocator.SteamProductInfoService.WarmGameConfigAppPicsRootAsync(gameConfig, cancellationToken).ConfigureAwait(false);
-            return ServiceLocator.SteamProductInfoService.ExtractAppDataFromAppRoot(gameConfig.AppPicsKeyValue, appId.ToString());
+
+            // Catalog already carries depot ids parsed from Metadata.AppInfo — skip the PICS warm round-trip when no root is cached yet.
+            if (gameConfig.AppInfo == null && gameConfig.Catalog?.AppDepotIds != null && gameConfig.Catalog.AppDepotIds.Count > 0)
+            {
+                return new AppDataExtractionResult
+                {
+                    Depots = gameConfig.Catalog.AppDepotIds.Select(id => id.ToString()).ToList()
+                };
+            }
+
+            await ServiceLocator.SteamProductInfoService.WarmGameConfigAppInfoAsync(gameConfig, cancellationToken).ConfigureAwait(false);
+            // ExtractAppDataFromAppRoot still walks SteamKit KeyValue (stats/depots/leaderboards/achievements extraction is package-PICS-shaped);
+            // convert once at this boundary rather than migrating that large extractor.
+            KeyValue appRootForExtraction = AppDataKitBridgeService.ConvertToSteamKit(gameConfig.AppInfo);
+            return ServiceLocator.SteamProductInfoService.ExtractAppDataFromAppRoot(appRootForExtraction, appId.ToString());
         }
 
         public async Task<bool> TryEnsureStatsJsonAsync(GameConfig gameConfig, CancellationToken cancellationToken = default)
@@ -1175,7 +1190,11 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
-                    var leaderboards = await SteamWebApiService.GetLeaderboardsFromCommunityAsync(gameConfig.AppId.ToString());
+                    CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
+                    ct.ThrowIfCancellationRequested();
+                    var leaderboards = await SteamWebApiService
+                        .GetLeaderboardsFromCommunityAsync(gameConfig.AppId.ToString(), ct)
+                        .ConfigureAwait(false);
                     if (leaderboards == null || leaderboards.Count == 0)
                         return;
                     if (File.Exists(leaderboardsPath))
@@ -1184,11 +1203,14 @@ namespace SmartGoldbergEmu.Services
                     File.WriteAllLines(leaderboardsPath, leaderboards);
                     ServiceLocator.LogService.LogDebug($"Generated {PathConstants.GoldbergLeaderboardsFileName} from community fallback with {leaderboards.Count} leaderboard(s) for app {gameConfig.AppId}");
                 }
+                catch (OperationCanceledException)
+                {
+                }
                 catch (Exception ex)
                 {
                     ServiceLocator.LogService.LogError($"Failed to fetch leaderboards fallback for app {gameConfig.AppId}", ex);
                 }
-            }).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchLeaderboardsOnlineIfMissing));
+            }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchLeaderboardsOnlineIfMissing));
         }
 
         private static void WriteSteamInterfacesIfSourceAvailable(string steamSettingsPath, GameConfig gameConfig, ref bool anyFileGenerated)
@@ -1276,39 +1298,62 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             string language = GetLanguageForAchievements(gameConfig.AppId);
-            if (!_steamApiKeyService.TryGetValidFormatKey(out string apiKey))
-                return;
 
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements from online API for app {gameConfig.AppId}");
-                    var achievementSchema = await SteamWebApiService.GetAchievementsAsync(gameConfig.AppId.ToString(), language, apiKey);
-                    if (achievementSchema == null || !achievementSchema.Success || achievementSchema.Achievements == null || achievementSchema.Achievements.Count == 0)
+                    CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
+                    ct.ThrowIfCancellationRequested();
+                    ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements for app {gameConfig.AppId}");
+                    AchievementsSection section = await ServiceLocator.AppDataKitBridgeService
+                        .FetchAchievementsAsync(gameConfig.AppId, language, ct)
+                        .ConfigureAwait(false);
+                    if (section == null
+                        || section.Status != SnapshotSectionStatus.Ok
+                        || section.Items == null
+                        || section.Items.Count == 0)
                         return;
 
-                    var achievementsList = achievementSchema.Achievements.Select(a => new
-                    {
-                        name = a.Name,
-                        displayName = a.DisplayName,
-                        description = a.Description,
-                        icon = a.Icon,
-                        icongray = a.IconGray,
-                        hidden = a.Hidden ? 1 : 0
-                    }).ToList();
+                    var achievementsList = section.Items
+                        .Where(a => a != null && !string.IsNullOrWhiteSpace(a.Name))
+                        .Select(a => new
+                        {
+                            name = a.Name,
+                            displayName = a.DisplayName,
+                            description = a.Description,
+                            icon = ExtractAchievementIconFileName(a.IconUrl),
+                            icongray = ExtractAchievementIconFileName(a.IconGrayUrl),
+                            hidden = a.Hidden ? 1 : 0
+                        }).ToList();
 
-                    if (File.Exists(achievementsPath))
+                    if (achievementsList.Count == 0 || File.Exists(achievementsPath))
                         return;
 
                     File.WriteAllText(achievementsPath, JsonConvert.SerializeObject(achievementsList, JsonFormatting.Indented));
-                    ServiceLocator.LogService.LogDebug($"Generated {AchievementConstants.AchievementsFileName} from online API with {achievementsList.Count} achievement(s) for app {gameConfig.AppId}");
+                    ServiceLocator.LogService.LogDebug($"Generated {AchievementConstants.AchievementsFileName} from AppDataKit with {achievementsList.Count} achievement(s) for app {gameConfig.AppId}");
+                }
+                catch (OperationCanceledException)
+                {
                 }
                 catch (Exception ex)
                 {
-                    ServiceLocator.LogService.LogError($"Failed to fetch achievements from online API for app {gameConfig.AppId}", ex);
+                    ServiceLocator.LogService.LogError($"Failed to fetch achievements from AppDataKit for app {gameConfig.AppId}", ex);
                 }
-            }).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchAchievementsOnlineIfMissing));
+            }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchAchievementsOnlineIfMissing));
+        }
+
+        // Schema writes expect the CDN file name (hash.jpg), not a full URL.
+        private static string ExtractAchievementIconFileName(string iconUrlOrName)
+        {
+            if (string.IsNullOrWhiteSpace(iconUrlOrName))
+                return string.Empty;
+
+            string trimmed = iconUrlOrName.Trim();
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out Uri uri))
+                return Path.GetFileName(uri.AbsolutePath) ?? string.Empty;
+
+            return Path.GetFileName(trimmed.Replace('\\', '/')) ?? trimmed;
         }
 
         private static void CopyDefaultItemsIfSourceAvailable(string steamSettingsPath, GameConfig gameConfig, ref bool anyFileGenerated)

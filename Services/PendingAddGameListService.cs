@@ -10,8 +10,11 @@ namespace SmartGoldbergEmu.Services
     public sealed class PendingAddGameListService
     {
         private GameConfig _draft;
+        private bool _isUpdateDraft;
 
         public bool HasDraft => _draft != null;
+
+        public bool IsUpdateDraft => _isUpdateDraft && _draft != null;
 
         public GameConfig GetDraft() => _draft;
 
@@ -22,14 +25,21 @@ namespace SmartGoldbergEmu.Services
             return game.GameGuid != Guid.Empty && game.GameGuid == _draft.GameGuid;
         }
 
-        public void SetDraft(GameConfig game)
+        public bool IsPendingUpdate(GameConfig game)
+        {
+            return IsUpdateDraft && IsPendingGame(game);
+        }
+
+        public void SetDraft(GameConfig game, bool isUpdate = false)
         {
             _draft = game;
+            _isUpdateDraft = isUpdate && game != null;
         }
 
         public void Clear()
         {
             _draft = null;
+            _isUpdateDraft = false;
         }
 
         public static GameConfig CreateDraftFromExecutable(string executablePath)
@@ -53,6 +63,26 @@ namespace SmartGoldbergEmu.Services
                 StartFolder = startFolder,
                 WorkingDirectory = startFolder,
                 Parameters = string.Empty
+            };
+        }
+
+        // Same library GUID so SyncPendingAdd updates the existing list row instead of appending a second one.
+        public static GameConfig CreateUpdateDraft(GameConfig existing)
+        {
+            if (existing == null)
+                throw new ArgumentNullException(nameof(existing));
+
+            return new GameConfig
+            {
+                GameGuid = existing.GameGuid,
+                AppName = existing.AppName ?? string.Empty,
+                AppId = existing.AppId,
+                Path = existing.Path ?? string.Empty,
+                StartFolder = existing.StartFolder ?? string.Empty,
+                WorkingDirectory = existing.WorkingDirectory ?? string.Empty,
+                Parameters = existing.Parameters ?? string.Empty,
+                CustomIcon = existing.CustomIcon ?? string.Empty,
+                LaunchMode = existing.LaunchMode
             };
         }
 

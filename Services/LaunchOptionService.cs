@@ -6,11 +6,11 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using AppDataKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Forms;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
-using SteamKit;
 
 namespace SmartGoldbergEmu.Services
 {
@@ -471,25 +471,48 @@ namespace SmartGoldbergEmu.Services
         }
 
         // Async PICS fetch so callers can await without blocking the WinForms message pump.
+        // Prefer catalog / in-memory / on-disk JSON, then resources/{appId}.vdf, then live PICS.
         public async Task<List<LaunchOption>> ExtractLaunchOptionsAsync(GameConfig game, CancellationToken cancellationToken = default)
         {
             if (TryGetEmptyListIfInvalidGame(game, out List<LaunchOption> early))
                 return early;
 
-            try
+            using (_steamProductInfo.HoldSession())
             {
-                KeyValue kv = await _steamProductInfo.WarmGameConfigAppPicsRootAsync(game, cancellationToken).ConfigureAwait(false);
-                return FinishExtractLaunchOptions(game, kv);
+                try
+                {
+                    AppInfoKeyValue appInfo = ResolveExistingAppInfo(game)
+                        ?? await _steamProductInfo.WarmGameConfigAppInfoAsync(game, cancellationToken).ConfigureAwait(false);
+                    return FinishExtractLaunchOptions(game, appInfo);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    ServiceLocator.LogService.LogError($"Failed to extract launch options for app {game.AppId}: {ex.Message}", ex);
+                    return new List<LaunchOption>();
+                }
             }
-            catch (OperationCanceledException)
+        }
+
+        private static AppInfoKeyValue ResolveExistingAppInfo(GameConfig game)
+        {
+            if (game.Catalog?.AppInfo != null)
+                return game.Catalog.AppInfo;
+
+            if (game.AppInfo != null)
+                return game.AppInfo;
+
+            if (game.AppId != 0
+                && AppCatalogSnapshotStore.TryLoad(game.AppId, out AppCatalogSnapshot snapshot)
+                && snapshot?.AppInfo != null)
             {
-                throw;
+                return snapshot.AppInfo;
             }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService.LogError($"Failed to extract launch options for app {game.AppId}: {ex.Message}", ex);
-                return new List<LaunchOption>();
-            }
+
+            return null;
         }
 
         // Same Steam/PICS extraction plus user.launch.options.ini merge as used before LaunchOptionsForm.
@@ -526,48 +549,48 @@ namespace SmartGoldbergEmu.Services
             return false;
         }
 
-        private List<LaunchOption> FinishExtractLaunchOptions(GameConfig game, KeyValue kv)
+        private List<LaunchOption> FinishExtractLaunchOptions(GameConfig game, AppInfoKeyValue appInfo)
         {
-            if (kv == null)
+            if (appInfo == null)
             {
-                ServiceLocator.LogService.LogWarning($"ExtractLaunchOptions: game assets KeyValue root is null for app {game.AppId}");
+                ServiceLocator.LogService.LogWarning($"ExtractLaunchOptions: game assets AppInfoKeyValue root is null for app {game.AppId}");
                 return new List<LaunchOption>();
             }
 
-            var options = ExtractLaunchOptionsFromKeyValue(kv);
-            ServiceLocator.LogService.LogMessage(
+            var options = ExtractLaunchOptionsFromAppInfo(appInfo);
+            ServiceLocator.LogService.LogDebug(
                 $"ExtractLaunchOptions: app {game.AppId} ({game.AppName}) -> {options.Count} Windows launch option(s)");
             return options;
         }
 
-        private List<LaunchOption> ExtractLaunchOptionsFromKeyValue(KeyValue root)
+        private List<LaunchOption> ExtractLaunchOptionsFromAppInfo(AppInfoKeyValue root)
         {
             var launchOptions = new List<LaunchOption>();
             if (!HasKvChildren(root))
                 return launchOptions;
 
-            KeyValue appInfo = FindKvChild(root, SteamPicsKeyNames.AppInfo);
-            KeyValue targetNode = HasKvChildren(appInfo) ? appInfo : root;
+            AppInfoKeyValue appInfoNode = FindKvChild(root, SteamPicsKeyNames.AppInfo);
+            AppInfoKeyValue targetNode = HasKvChildren(appInfoNode) ? appInfoNode : root;
 
             if (!HasKvChildren(targetNode))
                 return launchOptions;
 
-            ResolveLaunchNode(targetNode, out KeyValue launchNode, out string launchPath);
+            ResolveLaunchNode(targetNode, out AppInfoKeyValue launchNode, out string launchPath);
             if (launchNode == null || !HasKvChildren(launchNode))
                 return launchOptions;
 
-            foreach (KeyValue entry in launchNode.Children)
+            foreach (AppInfoKeyValue entry in launchNode.Children)
                 TryAddLaunchOptionFromEntry(entry, launchPath, launchOptions);
 
             return launchOptions;
         }
 
-        private void ResolveLaunchNode(KeyValue targetNode, out KeyValue launchNode, out string launchPath)
+        private void ResolveLaunchNode(AppInfoKeyValue targetNode, out AppInfoKeyValue launchNode, out string launchPath)
         {
             launchNode = null;
             launchPath = string.Empty;
 
-            KeyValue configNode = FindKvChild(targetNode, SteamPicsKeyNames.Config);
+            AppInfoKeyValue configNode = FindKvChild(targetNode, SteamPicsKeyNames.Config);
             if (HasKvChildren(configNode))
             {
                 launchNode = FindKvChild(configNode, SteamPicsKeyNames.LaunchOverride);
@@ -584,7 +607,7 @@ namespace SmartGoldbergEmu.Services
                 }
             }
 
-            KeyValue commonNode = FindKvChild(targetNode, PathConstants.SteamAppsCommonDirectoryName);
+            AppInfoKeyValue commonNode = FindKvChild(targetNode, PathConstants.SteamAppsCommonDirectoryName);
             if (HasKvChildren(commonNode))
             {
                 launchNode = FindKvChild(commonNode, SteamPicsKeyNames.Launch);
@@ -600,7 +623,7 @@ namespace SmartGoldbergEmu.Services
                 launchPath = "root/launch";
         }
 
-        private void TryAddLaunchOptionFromEntry(KeyValue launchOptionNode, string launchPath, List<LaunchOption> launchOptions)
+        private void TryAddLaunchOptionFromEntry(AppInfoKeyValue launchOptionNode, string launchPath, List<LaunchOption> launchOptions)
         {
             if (!HasKvChildren(launchOptionNode))
                 return;
@@ -616,10 +639,10 @@ namespace SmartGoldbergEmu.Services
             };
 
             bool isWindows = true;
-            KeyValue cfg = FindKvChild(launchOptionNode, SteamPicsKeyNames.Config);
+            AppInfoKeyValue cfg = FindKvChild(launchOptionNode, SteamPicsKeyNames.Config);
             if (HasKvChildren(cfg))
             {
-                KeyValue oslistNode = FindKvChild(cfg, SteamPicsKeyNames.OsList);
+                AppInfoKeyValue oslistNode = FindKvChild(cfg, SteamPicsKeyNames.OsList);
                 if (oslistNode != null)
                 {
                     string oslist = oslistNode.Value ?? string.Empty;
@@ -653,21 +676,21 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static string KvValueOrAlternateKey(KeyValue parent, string primaryKey, string fallbackKey)
+        private static string KvValueOrAlternateKey(AppInfoKeyValue parent, string primaryKey, string fallbackKey)
         {
-            KeyValue primary = FindKvChild(parent, primaryKey);
+            AppInfoKeyValue primary = FindKvChild(parent, primaryKey);
             if (primary != null)
                 return primary.Value;
             return FindKvChild(parent, fallbackKey)?.Value;
         }
 
-        private static bool HasKvChildren(KeyValue k) => k?.Children != null && k.Children.Count > 0;
+        private static bool HasKvChildren(AppInfoKeyValue k) => k?.Children != null && k.Children.Count > 0;
 
-        private static KeyValue FindKvChild(KeyValue parent, string name)
+        private static AppInfoKeyValue FindKvChild(AppInfoKeyValue parent, string name)
         {
             if (parent?.Children == null || string.IsNullOrEmpty(name))
                 return null;
-            foreach (KeyValue c in parent.Children)
+            foreach (AppInfoKeyValue c in parent.Children)
             {
                 if (c != null && string.Equals(c.Name, name, StringComparison.Ordinal))
                     return c;
@@ -675,11 +698,11 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        private static string GetKvChildStringCaseInsensitive(KeyValue parent, string keyName)
+        private static string GetKvChildStringCaseInsensitive(AppInfoKeyValue parent, string keyName)
         {
             if (parent?.Children == null || string.IsNullOrEmpty(keyName))
                 return null;
-            foreach (KeyValue c in parent.Children)
+            foreach (AppInfoKeyValue c in parent.Children)
             {
                 if (c != null && c.Name.Equals(keyName, StringComparison.OrdinalIgnoreCase))
                 {
@@ -935,6 +958,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // Steam shows 32-bit options on 64-bit Windows (WoW64). Only 64-bit-only and arm64-only entries are host-gated.
         private static bool HostMatchesLaunchOsArch(string osArchFromVdf)
         {
             if (string.IsNullOrWhiteSpace(osArchFromVdf))
@@ -950,7 +974,7 @@ namespace SmartGoldbergEmu.Services
                 return osIs64Bit;
 
             if (s == "32" || s == "win32" || s == "x86" || s == "i386")
-                return !osIs64Bit;
+                return true;
 
             if (s.IndexOf("arm64", StringComparison.Ordinal) >= 0 || s.IndexOf("aarch64", StringComparison.Ordinal) >= 0)
                 return HostCpuIsArm64();
@@ -960,7 +984,7 @@ namespace SmartGoldbergEmu.Services
             if (has64 && !has32)
                 return osIs64Bit;
             if (has32 && !has64)
-                return !osIs64Bit;
+                return true;
 
             return true;
         }

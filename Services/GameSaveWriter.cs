@@ -51,9 +51,26 @@ namespace SmartGoldbergEmu.Services
             ITaskReportService taskReport = formRequest.TaskReportService ?? ServiceLocator.TaskReportService;
             string displayName = GetLibraryGameDisplayName(gameConfig);
 
-            ValidationResult addResult = _gameDataService.AddGame(gameConfig);
-            if (!addResult.IsValid)
-                return GameSettingsSaveResult.Failure(addResult.ErrorMessage);
+            // Immediate strip feedback before library write / silent asset download.
+            taskReport?.SetMessage(
+                request.IsUpdateOfExisting
+                    ? AddGameStatusMessages.UpdatingInLibrary(displayName)
+                    : AddGameStatusMessages.AddingToLibrary(displayName));
+            taskReport?.SetProgress(0, 0);
+
+            ValidationResult libraryResult;
+            if (request.IsUpdateOfExisting)
+            {
+                libraryResult = _gameDataService.UpdateGame(gameConfig);
+                if (!libraryResult.IsValid)
+                    return GameSettingsSaveResult.Failure(libraryResult.ErrorMessage);
+            }
+            else
+            {
+                libraryResult = _gameDataService.AddGame(gameConfig);
+                if (!libraryResult.IsValid)
+                    return GameSettingsSaveResult.Failure(libraryResult.ErrorMessage);
+            }
 
             // Promote the in-memory list row as soon as games.ini is committed (UI thread via MainForm).
             TryRunCallback(request.OnSuccessfulSaveCompleted);
@@ -82,14 +99,19 @@ namespace SmartGoldbergEmu.Services
             }
 
             taskReport?.SetMessageWithAutoClear(
-                AddGameStatusMessages.AddedToLibrary(displayName),
-                delayMs: AddGameStatusMessages.StatusAutoClearDelayMs);
+                request.IsUpdateOfExisting
+                    ? AddGameStatusMessages.UpdatedInLibrary(displayName)
+                    : AddGameStatusMessages.AddedToLibrary(displayName));
 
             if (request.CredentialsTouched)
                 PersistCredentialsFromForm(formRequest, gameConfig.AppId);
 
             if (!assetsDownloaded)
                 TryRunCallback(request.OnAssetsDownloaded);
+
+            // Catalog/AppInfo are on disk (and list Tag is thin); drop the draft graphs so add/remove cycles do not retain them.
+            gameConfig.ReleaseHeavyRuntimeData();
+            formRequest.Metadata = null;
 
             return GameSettingsSaveResult.Success();
         }

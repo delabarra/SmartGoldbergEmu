@@ -8,6 +8,7 @@ namespace SmartGoldbergEmu.Constants
     {
         public const string IniSection = "emulator";
         public const string IniKeyFork = "goldberg_fork";
+        public const string IniKeyReleaseChannel = "goldberg_release_channel";
         public const string IniKeyVersion = "goldberg_version";
 
         public const string RepackReleasesApiUrl = "https://api.github.com/repos/delabarra/GoldbergEmu-Forks-Repacked/releases/latest";
@@ -57,6 +58,17 @@ namespace SmartGoldbergEmu.Constants
         public static string GetUpstreamReleasesApiUrl(GoldbergForkSource fork)
         {
             return fork == GoldbergForkSource.Alex ? ReleasesApiUrlAlex : ReleasesApiUrlDetanup;
+        }
+
+        public static string GetRepositoryWebUrl(GoldbergForkSource fork)
+        {
+            return fork == GoldbergForkSource.Alex ? RepositoryWebUrlAlex : RepositoryWebUrlDetanup;
+        }
+
+        // Browser page for emu-win-release.7z (and other release assets).
+        public static string GetReleasesWebUrl(GoldbergForkSource fork)
+        {
+            return GetRepositoryWebUrl(fork).TrimEnd('/') + "/releases";
         }
 
         public static string GetReleasesApiUrl(GoldbergForkSource fork)
