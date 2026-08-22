@@ -43,6 +43,7 @@ Resources/Embedded/SmartGoldbergEmu.LauncherUpdate.exe
 
 # --- Local dev only (wrappers, certs, build helpers; canonical scripts in .github/scripts/) ---
 /batch/
+/tools/
 /scripts/
 .github/certs/*.pfx
 publish-release.bat
