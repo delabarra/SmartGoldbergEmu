@@ -16,12 +16,10 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamClientExperimentalFolderName = "steamclient_experimental";
         public const string SteamOldFolderName = "steam_old";
         // User drop folder under steamclient_experimental (staged into per-game steam_settings/load_dlls at launch).
-        // Not Goldberg's inject extra_dlls: those samples must not go in load_dlls.
         public const string SteamClientExperimentalExtraDllsFolderName = "extra_dlls";
         // Former top-level drop folder; migrated into steamclient_experimental/extra_dlls.
         public const string LegacySteamClientExtraDllsFolderName = "steamclient_extra_dlls";
         public const string GoldbergReadmeFileName = "readme.txt";
-        // Upstream steamclient_experimental/extra_dlls samples for ColdClientLoader inject only.
         public const string ShippedSteamClientExtraDll32FileName = "steamclient_extra_x86.dll";
         public const string ShippedSteamClientExtraDll64FileName = "steamclient_extra_x64.dll";
 
@@ -146,7 +144,7 @@ namespace SmartGoldbergEmu.Constants
                 + "\r\n\r\n"
                 + "Place .dll files here (goldberg/steamclient_experimental/extra_dlls), in this folder only (not in subfolders). Goldberg's load_dlls scan is not recursive."
                 + "\r\n\r\n"
-                + "This is not ColdClientLoader injection. Do not put steamclient_extra_x86.dll or steamclient_extra_x64.dll here. Those Goldberg samples are for startup injection only; putting them in load_dlls can cause a large FPS drop, and this launcher does not inject."
+                + "This launcher does not inject. Do not put steamclient_extra_x86.dll or steamclient_extra_x64.dll here. Those Goldberg samples belong to an upstream startup-inject workflow; putting them in load_dlls can cause a large FPS drop."
                 + "\r\n\r\n"
                 + "Architecture in the file name:"
                 + "\r\n\r\n"

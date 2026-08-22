@@ -195,10 +195,10 @@ namespace SmartGoldbergEmu.Services
                     new AppTaskDialogRequest
                     {
                         Content =
-                            "ColdLoaderLauncher executables are flagged by Windows Defender and trigger false positives due to their injection-related behavior. They are not required by SmartGoldbergEmu.\n\n" +
+                            "Some executables in the fork archive are flagged by Windows Defender as false positives because of upstream inject-related tooling. They are not required by SmartGoldbergEmu.\n\n" +
                             "Flagged files:\n" +
-                            "- steamclient_loader_x32.exe\n" +
-                            "- steamclient_loader_x64.exe\n\n" +
+                            "- steamclient loader (32-bit EXE)\n" +
+                            "- steamclient loader (64-bit EXE)\n\n" +
                             "Note: A temporary Windows Defender exclusion is required to complete the installation. The downloaded archive and the exclusion will be automatically removed after extraction and installation are complete.\n\n" +
                             "Exclusion target:\n" +
                             "- " + GoldbergForkConstants.UpstreamWinReleaseAssetName + "\n\n" +
