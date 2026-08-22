@@ -1,0 +1,103 @@
+name: merge-dev
+
+# Build/test origin/dev, then point main at that exact snapshot.
+# No pull request. Diverged history is resolved by taking the dev tree
+# (main's files become the files on the pinned dev SHA).
+# The update is authored as the person who clicked Run workflow, not
+# github-actions[bot] or an AI account. Start this from the Actions tab
+# on the branch that contains this file (usually dev).
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Branch whose code is copied onto the target
+        type: string
+        default: dev
+      target_branch:
+        description: Branch to update
+        type: string
+        default: main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: smartgoldbergemu-merge-${{ github.repository }}-${{ inputs.target_branch }}
+  cancel-in-progress: false
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.meta.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_branch }}
+          fetch-depth: 1
+
+      - name: Record source SHA
+        id: meta
+        shell: pwsh
+        run: |
+          "sha=$(git rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+          Write-Host "Pinned ${{ inputs.source_branch }} @ $(git rev-parse HEAD)"
+
+  compliance:
+    needs: pin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.pin.outputs.sha }}
+      - run: ./.github/scripts/check-rules.ps1
+        shell: pwsh
+
+  build:
+    needs: pin
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.pin.outputs.sha }}
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+          cache: true
+          cache-dependency-path: |
+            Tests/Tests.csproj
+            SmartGoldbergEmu.LauncherUpdate/SmartGoldbergEmu.LauncherUpdate.csproj
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild) { throw 'MSBuild not found.' }
+          & $msbuild SmartGoldbergEmu.csproj /t:Build /p:Configuration=Release /p:Platform=x64 /m /v:m /nologo
+
+      - name: Unit tests
+        shell: pwsh
+        run: dotnet test Tests\Tests.csproj -c Release -p:Platform=x64 -v minimal
+
+  merge:
+    needs: [pin, compliance, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.target_branch }}
+          fetch-depth: 0
+
+      - name: Publish ${{ inputs.source_branch }} onto ${{ inputs.target_branch }}
+        shell: pwsh
+        env:
+          GIT_TERMINAL_PROMPT: 0
+        run: |
+          & ./.github/scripts/merge-branch.ps1 `
+            -SourceSha '${{ needs.pin.outputs.sha }}' `
+            -SourceBranch '${{ inputs.source_branch }}' `
+            -TargetBranch '${{ inputs.target_branch }}' `
+            -AuthorName '${{ github.triggering_actor }}' `
+            -AuthorEmail '${{ github.actor_id }}+${{ github.triggering_actor }}@users.noreply.github.com'
