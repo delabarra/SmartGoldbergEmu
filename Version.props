@@ -2,8 +2,8 @@
   <PropertyGroup>
     <VersionPrefix>2.4.3</VersionPrefix>
     <VersionSuffix></VersionSuffix>
-    <!-- 4th FileVersion digit for hotfix releases (2.4.4.1). Leave 0 for patch/minor/major. -->
-    <VersionRevision Condition="'$(VersionRevision)' == ''">0</VersionRevision>
+    <!-- 4th FileVersion digit for hotfix releases (2.4.3.1). Leave 0 for patch/minor/major. -->
+    <VersionRevision Condition="'$(VersionRevision)' == ''">1</VersionRevision>
     <VersionBuild Condition="'$(VersionBuild)' == ''">0</VersionBuild>
     <VersionBuildSuffix Condition="'$(VersionSuffix)' == '-preview' and '$(VersionBuild)' != '0'">+build.$(VersionBuild)</VersionBuildSuffix>
     <VersionBuildSuffix Condition="'$(VersionSuffix)' != '-preview' or '$(VersionBuild)' == '0'"></VersionBuildSuffix>

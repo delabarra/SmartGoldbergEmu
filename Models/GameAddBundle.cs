@@ -34,6 +34,7 @@ namespace SmartGoldbergEmu.Models
         }
 
         // Drop collect-time Steam trees and preview JSON once the dialog/save pipeline no longer needs them.
+        // Do not call while a PendingAddSave still needs Game.AppInfo/Catalog for asset download.
         public void ReleaseHeavyRuntimeData()
         {
             AchievementsPreviewJson = null;

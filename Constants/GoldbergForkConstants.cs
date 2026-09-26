@@ -24,8 +24,35 @@ namespace SmartGoldbergEmu.Constants
         public const string RepositoryWebUrlDetanup = "https://github.com/Detanup01/gbe_fork";
         public const string RepositoryWebUrlAlex = "https://github.com/alex47exe/gse_fork";
 
+        // Legacy bare name (alex upstream; older Detanup). Detanup now uses -vs26 / -vs22 suffixes.
         public const string UpstreamWinReleaseAssetName = "emu-win-release.7z";
-        public const string WinReleaseAssetName = UpstreamWinReleaseAssetName;
+        public const string UpstreamWinReleaseAssetNameVs26 = "emu-win-release-vs26.7z";
+        public const string UpstreamWinReleaseAssetNameVs22 = "emu-win-release-vs22.7z";
+
+        // First match wins: VS2026 primary, then bare legacy, then VS2022.
+        public static readonly string[] UpstreamWinReleaseAssetNamesPreferred =
+        {
+            UpstreamWinReleaseAssetNameVs26,
+            UpstreamWinReleaseAssetName,
+            UpstreamWinReleaseAssetNameVs22
+        };
+
+        public static int TryGetUpstreamWinReleaseAssetPreference(string assetName)
+        {
+            if (string.IsNullOrEmpty(assetName))
+                return -1;
+            for (int i = 0; i < UpstreamWinReleaseAssetNamesPreferred.Length; i++)
+            {
+                if (string.Equals(
+                    assetName,
+                    UpstreamWinReleaseAssetNamesPreferred[i],
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
 
         public static string TryGetRepackWinAssetSuffix(string assetName)
         {
@@ -65,7 +92,7 @@ namespace SmartGoldbergEmu.Constants
             return fork == GoldbergForkSource.Alex ? RepositoryWebUrlAlex : RepositoryWebUrlDetanup;
         }
 
-        // Browser page for emu-win-release.7z (and other release assets).
+        // Browser page for Windows release assets (and other packages).
         public static string GetReleasesWebUrl(GoldbergForkSource fork)
         {
             return GetRepositoryWebUrl(fork).TrimEnd('/') + "/releases";

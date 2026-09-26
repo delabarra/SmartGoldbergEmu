@@ -5,7 +5,7 @@ using System.Text;
 
 namespace SmartGoldbergEmu.Constants
 {
-    // Maps emu-win-release.7z paths under release/ to install paths under goldberg\.
+    // Maps Windows release archive paths under release/ to install paths under goldberg\.
     // Fork archives use experimental/x32 and experimental/x64; we install all DLLs flat under experimental\.
     public static class GoldbergInstallLayout
     {

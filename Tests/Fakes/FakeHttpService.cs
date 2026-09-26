@@ -11,28 +11,38 @@ namespace SmartGoldbergEmu.Tests.Fakes
 {
     internal sealed class FakeHttpService : IHttpService
     {
-        private readonly Dictionary<string, Func<HttpResponseMessage>> _getResponses =
-            new Dictionary<string, Func<HttpResponseMessage>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Func<CancellationToken, Task<HttpResponseMessage>>> _getResponses =
+            new Dictionary<string, Func<CancellationToken, Task<HttpResponseMessage>>>(StringComparer.OrdinalIgnoreCase);
 
         public void SetJsonResponse(string url, string json, HttpStatusCode statusCode = HttpStatusCode.OK)
         {
-            _getResponses[url] = () => new HttpResponseMessage(statusCode)
+            _getResponses[url] = _ => Task.FromResult(new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
-            };
+            });
         }
 
         public void SetResponse(string url, Func<HttpResponseMessage> factory)
         {
-            _getResponses[url] = factory;
+            _getResponses[url] = _ => Task.FromResult(factory());
         }
 
-        public Task<HttpResponseMessage> GetAsync(string uri, CancellationToken cancellationToken = default)
+        // Honors cancellation so hung-host tests can abort without waiting on HttpClient.
+        public void SetDelayedResponse(string url, TimeSpan delay, Func<HttpResponseMessage> factory)
         {
-            if (_getResponses.TryGetValue(uri, out Func<HttpResponseMessage> factory))
-                return Task.FromResult(factory());
+            _getResponses[url] = async cancellationToken =>
+            {
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                return factory();
+            };
+        }
 
-            throw new InvalidOperationException("No fake HTTP response configured for: " + uri);
+        public async Task<HttpResponseMessage> GetAsync(string uri, CancellationToken cancellationToken = default)
+        {
+            if (!_getResponses.TryGetValue(uri, out Func<CancellationToken, Task<HttpResponseMessage>> factory))
+                throw new InvalidOperationException("No fake HTTP response configured for: " + uri);
+
+            return await factory(cancellationToken).ConfigureAwait(false);
         }
 
         public Task<HttpResponseMessage> GetAsync(Uri uri, CancellationToken cancellationToken = default)

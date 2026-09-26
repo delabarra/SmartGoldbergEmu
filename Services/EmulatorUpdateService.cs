@@ -201,7 +201,7 @@ namespace SmartGoldbergEmu.Services
                             "- steamclient loader (64-bit EXE)\n\n" +
                             "Note: A temporary Windows Defender exclusion is required to complete the installation. The downloaded archive and the exclusion will be automatically removed after extraction and installation are complete.\n\n" +
                             "Exclusion target:\n" +
-                            "- " + GoldbergForkConstants.UpstreamWinReleaseAssetName + "\n\n" +
+                            "- " + GetGoldbergDownloadArchiveFileName() + "\n\n" +
                             "Alternatively, you can manually download the fork files from the " + forkName + " releases page:",
                         FooterText = "Do you want to continue?",
                         CustomIcon = SystemIcons.Shield,

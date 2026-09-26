@@ -17,10 +17,25 @@ namespace SmartGoldbergEmu.Services
     public static class SteamGameSearchService
     {
         private const int HttpTimeoutSeconds = 10;
+        private const int DefaultCatalogEnrichTimeoutSeconds = 3;
         private const int SteamCmdTimeoutSeconds = 8;
         private const int SteamCmdConcurrency = 6;
         private const string StoreSource = "Steam Store";
         private const string VercelSource = "Steam Search API";
+
+        private static TimeSpan _catalogEnrichTimeout = TimeSpan.FromSeconds(DefaultCatalogEnrichTimeoutSeconds);
+
+        internal static void SetCatalogEnrichTimeoutForTests(TimeSpan timeout)
+        {
+            _catalogEnrichTimeout = timeout <= TimeSpan.Zero
+                ? TimeSpan.FromSeconds(DefaultCatalogEnrichTimeoutSeconds)
+                : timeout;
+        }
+
+        internal static void ResetCatalogEnrichTimeoutForTests()
+        {
+            _catalogEnrichTimeout = TimeSpan.FromSeconds(DefaultCatalogEnrichTimeoutSeconds);
+        }
 
         private static readonly Regex StoreSearchResultRowRegex = new Regex(
             @"<a\b[^>]*\bsearch_result_row\b[^>]*>.*?</a>",
@@ -67,21 +82,45 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
+                using (var catalogCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
                 {
+                    // Catalog uses a linked token so enrich timeout can cancel vercel only.
+                    Task<List<AppSearchResult>> catalogTask = TrySearchCatalogAsync(
+                        httpService, searchTerm, catalogCts.Token);
                     Task<StoreSearchPass> storeTask = TrySearchStoreAsync(
                         httpService, searchTerm, cancellationToken);
-                    Task<List<AppSearchResult>> catalogTask = TrySearchCatalogAsync(
-                        httpService, searchTerm, cancellationToken);
-                    await Task.WhenAll(storeTask, catalogTask).ConfigureAwait(false);
 
                     StoreSearchPass storeSearch = await storeTask.ConfigureAwait(false);
                     AppSearchResult numericHit = await numericAppTask.ConfigureAwait(false);
-                    List<AppSearchResult> catalogResults = await catalogTask.ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    List<AppSearchResult> primary = ConcatUnique(
+                        numericHit != null ? new List<AppSearchResult> { numericHit } : null,
+                        storeSearch.Results);
+
+                    List<AppSearchResult> visible = await RevealEligibleAppsAsync(
+                        primary,
+                        storeSearch.TypesByAppId,
+                        storeSearch.Results,
+                        numericTerm ? numericAppId : 0UL,
+                        progress,
+                        filterConnection,
+                        cancellationToken).ConfigureAwait(false);
+
+                    if (!catalogTask.IsCompleted)
+                        catalogCts.CancelAfter(_catalogEnrichTimeout);
+
+                    List<AppSearchResult> catalogResults = await AwaitCatalogEnrichmentAsync(
+                        catalogTask, cancellationToken).ConfigureAwait(false);
+                    if (catalogResults == null || catalogResults.Count == 0)
+                        return visible;
+
+                    List<AppSearchResult> merged = ConcatUnique(primary, catalogResults);
+                    if (merged.Count == primary.Count)
+                        return visible;
 
                     return await RevealEligibleAppsAsync(
-                        ConcatUnique(
-                            numericHit != null ? new List<AppSearchResult> { numericHit } : null,
-                            ConcatUnique(storeSearch.Results, catalogResults)),
+                        merged,
                         storeSearch.TypesByAppId,
                         storeSearch.Results,
                         numericTerm ? numericAppId : 0UL,
@@ -99,6 +138,23 @@ namespace SmartGoldbergEmu.Services
                 feedbackService?.SetMessage("Game search failed.", TaskReportKind.Error);
                 Program.LogService?.LogError($"SearchByNameAsync error: {ex.Message}", ex);
                 throw;
+            }
+        }
+
+        // Soft-fail vercel timeout/cancel so store and AppId results stay usable.
+        private static async Task<List<AppSearchResult>> AwaitCatalogEnrichmentAsync(
+            Task<List<AppSearchResult>> catalogTask,
+            CancellationToken userCancellationToken)
+        {
+            try
+            {
+                return await catalogTask.ConfigureAwait(false) ?? new List<AppSearchResult>();
+            }
+            catch (OperationCanceledException) when (!userCancellationToken.IsCancellationRequested)
+            {
+                Program.LogService?.LogWarning(
+                    "Steam Search API timed out or was cancelled; keeping store results only.");
+                return new List<AppSearchResult>();
             }
         }
 

@@ -5,8 +5,9 @@ namespace SmartGoldbergEmu.Helpers
 {
     public static class GoldbergVersionHelper
     {
+        // Detanup tags/assets use YYYY_MM_DD, or YYYY_MM_DD_N for same-day rebuilds (e.g. 2026_09_16_2).
         private static readonly Regex ForkDateVersionRegex = new Regex(
-            @"(\d{4})_(\d{2})_(\d{2})",
+            @"(\d{4})_(\d{2})_(\d{2})(?:_(\d+))?",
             RegexOptions.Compiled);
 
         public static bool TryNormalizeForkVersion(string raw, out string normalized)
@@ -20,6 +21,8 @@ namespace SmartGoldbergEmu.Helpers
                 return false;
 
             normalized = match.Groups[1].Value + "_" + match.Groups[2].Value + "_" + match.Groups[3].Value;
+            if (match.Groups[4].Success)
+                normalized += "_" + match.Groups[4].Value;
             return true;
         }
 
@@ -47,7 +50,7 @@ namespace SmartGoldbergEmu.Helpers
             int[] leftParts = ParseForkDateParts(left);
             int[] rightParts = ParseForkDateParts(right);
 
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 4; i++)
             {
                 if (leftParts[i] != rightParts[i])
                     return leftParts[i].CompareTo(rightParts[i]);
@@ -59,16 +62,15 @@ namespace SmartGoldbergEmu.Helpers
         private static int[] ParseForkDateParts(string normalized)
         {
             string[] segments = normalized.Split('_');
-            if (segments.Length != 3)
-                return new[] { 0, 0, 0 };
-
-            int[] parts = new int[3];
-            for (int i = 0; i < 3; i++)
+            var parts = new int[4];
+            int count = segments.Length < 4 ? segments.Length : 4;
+            for (int i = 0; i < count; i++)
             {
                 if (!int.TryParse(segments[i], out parts[i]))
                     parts[i] = 0;
             }
 
+            // Bare YYYY_MM_DD sorts as rebuild 0, so YYYY_MM_DD_1 is newer.
             return parts;
         }
     }

@@ -135,16 +135,24 @@ namespace SmartGoldbergEmu.Services
             if (request?.GameConfig == null || request.GameConfig.AppId == 0)
                 return false;
 
-            string displayName = GetLibraryGameDisplayName(request.GameConfig);
+            GameConfig gameConfig = request.GameConfig;
+            string displayName = GetLibraryGameDisplayName(gameConfig);
             try
             {
+                if (gameConfig.AppInfo == null && gameConfig.Catalog?.AppInfo != null)
+                    gameConfig.AppInfo = gameConfig.Catalog.AppInfo;
+
+                // Persist catalog before download so GameImageService can reload AppInfo/assets if memory was cleared.
+                if (gameConfig.Catalog != null)
+                    AppCatalogSnapshotStore.TrySave(gameConfig.Catalog);
+
                 return await DownloadTileAndGameImagesAsync(
-                    request.GameConfig.AppId,
+                    gameConfig.AppId,
                     request.Metadata,
                     request.TaskReportService,
-                    request.GameConfig.AppInfo,
+                    gameConfig.AppInfo,
                     displayName,
-                    catalogAssets: request.GameConfig.Catalog?.Assets).ConfigureAwait(false);
+                    catalogAssets: gameConfig.Catalog?.Assets).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

@@ -69,6 +69,7 @@ namespace SmartGoldbergEmu.Constants
 
         // Filenames under games/{appId}/resources/ (Steam CDN / library artwork contract).
         public const string SteamGameResourcesHeaderImageFileName = "header.jpg";
+        public const string SteamGameResourcesHeader2xImageFileName = "header_2x.jpg";
         public const string SteamGameResourcesLibraryHeaderImageFileName = "library_header.jpg";
         public const string SteamGameResourcesLibraryHeader2xImageFileName = "library_header_2x.jpg";
         public const string SteamGameResourcesCapsuleCoverImageFileName = "cover.jpg";
@@ -86,7 +87,14 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamGameResourcesLibraryLogoPics2xImageFileName = "library_logo_2x.png";
         public const string SteamGameResourcesCapsuleImageFileName = "capsule.jpg";
         public const string SteamGameResourcesSmallCapsuleImageFileName = "capsule_231x87.jpg";
+        public const string SteamGameResourcesSmallCapsule2xImageFileName = "capsule_231x87_2x.jpg";
         public const string SteamGameResourcesLargeCapsuleImageFileName = "capsule_616x353.jpg";
+        public const string SteamGameResourcesLargeCapsule2xImageFileName = "capsule_616x353_2x.jpg";
+        public const string SteamGameResourcesHeroCapsuleImageFileName = "hero_capsule.jpg";
+        public const string SteamGameResourcesHeroCapsule2xImageFileName = "hero_capsule_2x.jpg";
+        public const string SteamGameResourcesPageBackgroundImageFileName = "page_bg_v6.jpg";
+        public const string SteamGameResourcesPageBackgroundRawImageFileName = "page_bg_raw.jpg";
+        public const string SteamGameResourcesLegacyPageBackgroundImageFileName = "page_bg_generated.jpg";
         public const string SteamGameResourcesMissingAssetsNoteFileName = "missing_assets.txt";
 
         /// <summary>
