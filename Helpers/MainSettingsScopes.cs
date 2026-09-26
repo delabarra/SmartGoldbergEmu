@@ -82,6 +82,8 @@ namespace SmartGoldbergEmu.Helpers
                 SaveOnlyHigherStatAchievementProgress = s.SaveOnlyHigherStatAchievementProgress,
                 PaginatedAchievementsIcons = s.PaginatedAchievementsIcons,
                 RecordPlaytime = s.RecordPlaytime,
+                PauseTotalWhenUnfocused = s.PauseTotalWhenUnfocused,
+                PauseSessionWhenUnfocused = s.PauseSessionWhenUnfocused,
                 AchievementsBypass = s.AchievementsBypass,
                 SteamGameStatsReportsDir = s.SteamGameStatsReportsDir
             };
@@ -100,6 +102,8 @@ namespace SmartGoldbergEmu.Helpers
                    a.SaveOnlyHigherStatAchievementProgress == b.SaveOnlyHigherStatAchievementProgress &&
                    a.PaginatedAchievementsIcons == b.PaginatedAchievementsIcons &&
                    a.RecordPlaytime == b.RecordPlaytime &&
+                   a.PauseTotalWhenUnfocused == b.PauseTotalWhenUnfocused &&
+                   a.PauseSessionWhenUnfocused == b.PauseSessionWhenUnfocused &&
                    a.AchievementsBypass == b.AchievementsBypass &&
                    string.Equals(a.SteamGameStatsReportsDir ?? string.Empty, b.SteamGameStatsReportsDir ?? string.Empty, System.StringComparison.Ordinal);
         }

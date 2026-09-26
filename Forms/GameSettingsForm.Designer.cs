@@ -122,6 +122,8 @@ namespace SmartGoldbergEmu.Forms
             this.lblCustomStatsDisplay = new System.Windows.Forms.Label();
             this.btnRefreshStats = new System.Windows.Forms.Button();
             this.grpStatsSettings = new System.Windows.Forms.GroupBox();
+            this.chkPauseSessionWhenUnfocused = new System.Windows.Forms.CheckBox();
+            this.chkPauseTotalWhenUnfocused = new System.Windows.Forms.CheckBox();
             this.chkRecordPlaytime = new System.Windows.Forms.CheckBox();
             this.chkAllowUnknownStats = new System.Windows.Forms.CheckBox();
             this.chkDisableLeaderboardsCreateUnknown = new System.Windows.Forms.CheckBox();
@@ -176,7 +178,6 @@ namespace SmartGoldbergEmu.Forms
             this.colModsSummaryName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.colModsSummaryFiller = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chkShowExtraSteamLaunchOptions = new System.Windows.Forms.CheckBox();
-            this.chkSteamDeck = new System.Windows.Forms.CheckBox();
             this.chkDisableWarningBadAppId = new System.Windows.Forms.CheckBox();
             this.chkEnableSteamPreownedIds = new System.Windows.Forms.CheckBox();
             this.tabAdvancedFeatures = new System.Windows.Forms.TabPage();
@@ -1383,12 +1384,14 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.grpStatsSettings.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpStatsSettings.Controls.Add(this.chkPauseSessionWhenUnfocused);
+            this.grpStatsSettings.Controls.Add(this.chkPauseTotalWhenUnfocused);
             this.grpStatsSettings.Controls.Add(this.chkRecordPlaytime);
             this.grpStatsSettings.Controls.Add(this.chkAllowUnknownStats);
             this.grpStatsSettings.Controls.Add(this.chkDisableLeaderboardsCreateUnknown);
             this.grpStatsSettings.Location = new System.Drawing.Point(8, 151);
             this.grpStatsSettings.Name = "grpStatsSettings";
-            this.grpStatsSettings.Size = new System.Drawing.Size(272, 100);
+            this.grpStatsSettings.Size = new System.Drawing.Size(272, 140);
             this.grpStatsSettings.TabIndex = 1;
             this.grpStatsSettings.TabStop = false;
             this.grpStatsSettings.Text = "Stats options";
@@ -1404,13 +1407,35 @@ namespace SmartGoldbergEmu.Forms
             this.toolTip.SetToolTip(this.chkRecordPlaytime, "Record play time to a playtime.txt file under GSE Saves.\r\n\r\nDefault: off");
             this.chkRecordPlaytime.UseVisualStyleBackColor = true;
             // 
+            // chkPauseTotalWhenUnfocused
+            // 
+            this.chkPauseTotalWhenUnfocused.AutoSize = true;
+            this.chkPauseTotalWhenUnfocused.Location = new System.Drawing.Point(18, 46);
+            this.chkPauseTotalWhenUnfocused.Name = "chkPauseTotalWhenUnfocused";
+            this.chkPauseTotalWhenUnfocused.Size = new System.Drawing.Size(210, 17);
+            this.chkPauseTotalWhenUnfocused.TabIndex = 1;
+            this.chkPauseTotalWhenUnfocused.Text = "Pause total playtime when unfocused";
+            this.toolTip.SetToolTip(this.chkPauseTotalWhenUnfocused, "Pause total playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: off");
+            this.chkPauseTotalWhenUnfocused.UseVisualStyleBackColor = true;
+            // 
+            // chkPauseSessionWhenUnfocused
+            // 
+            this.chkPauseSessionWhenUnfocused.AutoSize = true;
+            this.chkPauseSessionWhenUnfocused.Location = new System.Drawing.Point(18, 69);
+            this.chkPauseSessionWhenUnfocused.Name = "chkPauseSessionWhenUnfocused";
+            this.chkPauseSessionWhenUnfocused.Size = new System.Drawing.Size(222, 17);
+            this.chkPauseSessionWhenUnfocused.TabIndex = 2;
+            this.chkPauseSessionWhenUnfocused.Text = "Pause session playtime when unfocused";
+            this.toolTip.SetToolTip(this.chkPauseSessionWhenUnfocused, "Pause session playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: off");
+            this.chkPauseSessionWhenUnfocused.UseVisualStyleBackColor = true;
+            // 
             // chkAllowUnknownStats
             // 
             this.chkAllowUnknownStats.AutoSize = true;
-            this.chkAllowUnknownStats.Location = new System.Drawing.Point(18, 46);
+            this.chkAllowUnknownStats.Location = new System.Drawing.Point(18, 92);
             this.chkAllowUnknownStats.Name = "chkAllowUnknownStats";
             this.chkAllowUnknownStats.Size = new System.Drawing.Size(127, 17);
-            this.chkAllowUnknownStats.TabIndex = 1;
+            this.chkAllowUnknownStats.TabIndex = 3;
             this.chkAllowUnknownStats.Text = "Allow Unknown Stats";
             this.toolTip.SetToolTip(this.chkAllowUnknownStats, "Allow saving stats that are not listed in stats.json.\r\n\r\nDefault: off");
             this.chkAllowUnknownStats.UseVisualStyleBackColor = true;
@@ -1418,10 +1443,10 @@ namespace SmartGoldbergEmu.Forms
             // chkDisableLeaderboardsCreateUnknown
             // 
             this.chkDisableLeaderboardsCreateUnknown.AutoSize = true;
-            this.chkDisableLeaderboardsCreateUnknown.Location = new System.Drawing.Point(18, 69);
+            this.chkDisableLeaderboardsCreateUnknown.Location = new System.Drawing.Point(18, 115);
             this.chkDisableLeaderboardsCreateUnknown.Name = "chkDisableLeaderboardsCreateUnknown";
             this.chkDisableLeaderboardsCreateUnknown.Size = new System.Drawing.Size(212, 17);
-            this.chkDisableLeaderboardsCreateUnknown.TabIndex = 2;
+            this.chkDisableLeaderboardsCreateUnknown.TabIndex = 4;
             this.chkDisableLeaderboardsCreateUnknown.Text = "Disable Leaderboards Create Unknown";
             this.toolTip.SetToolTip(this.chkDisableLeaderboardsCreateUnknown, "Do not auto-create unknown leaderboards when the game looks them up.\r\n\r\nDefault: " +
         "off");
@@ -2027,17 +2052,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkShowExtraSteamLaunchOptions.UseVisualStyleBackColor = true;
             this.chkShowExtraSteamLaunchOptions.Visible = false;
             // 
-            // chkSteamDeck
-            // 
-            this.chkSteamDeck.AutoSize = true;
-            this.chkSteamDeck.Location = new System.Drawing.Point(323, 27);
-            this.chkSteamDeck.Name = "chkSteamDeck";
-            this.chkSteamDeck.Size = new System.Drawing.Size(85, 17);
-            this.chkSteamDeck.TabIndex = 3;
-            this.chkSteamDeck.Text = "Steam Deck";
-            this.toolTip.SetToolTip(this.chkSteamDeck, "Tell the game it is running on a Steam Deck.\r\n\r\nDefault: off");
-            this.chkSteamDeck.UseVisualStyleBackColor = true;
-            // 
             // chkDisableWarningBadAppId
             // 
             this.chkDisableWarningBadAppId.AutoSize = true;
@@ -2338,7 +2352,6 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.CheckBox chkDisableWarningBadAppId;
         
         // Additional Goldberg per-game controls
-        private System.Windows.Forms.CheckBox chkSteamDeck;
         private System.Windows.Forms.CheckBox chkImmediateGameserverStats;
         private System.Windows.Forms.CheckBox chkMatchmakingServerListActualType;
         private System.Windows.Forms.CheckBox chkMatchmakingServerDetailsViaSourceQuery;
@@ -2347,6 +2360,8 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.CheckBox chkStatAchievementProgressFunctionality;
         private System.Windows.Forms.CheckBox chkSaveOnlyHigherStatAchievementProgress;
         private System.Windows.Forms.CheckBox chkRecordPlaytime;
+        private System.Windows.Forms.CheckBox chkPauseTotalWhenUnfocused;
+        private System.Windows.Forms.CheckBox chkPauseSessionWhenUnfocused;
         private System.Windows.Forms.CheckBox chkDisableLanOnly;
         private System.Windows.Forms.CheckBox chkDisableSharingStatsWithGameserver;
         private System.Windows.Forms.CheckBox chkDisableSourceQuery;

@@ -479,6 +479,8 @@ namespace SmartGoldbergEmu.Forms
             BindCheck(chkSaveOnlyHigherStatAchievementProgress, v => main.SaveOnlyHigherStatAchievementProgress = v);
             BindNum(numIconsPerIteration, v => main.PaginatedAchievementsIcons = v);
             BindCheck(chkRecordPlaytime, v => main.RecordPlaytime = v);
+            BindCheck(chkPauseTotalWhenUnfocused, v => main.PauseTotalWhenUnfocused = v);
+            BindCheck(chkPauseSessionWhenUnfocused, v => main.PauseSessionWhenUnfocused = v);
             BindCheck(chkAchievementsBypass, v => main.AchievementsBypass = v);
         }
 
@@ -501,6 +503,8 @@ namespace SmartGoldbergEmu.Forms
                 LoadNum(numIconsPerIteration, icons);
             }
             LoadCheck(chkRecordPlaytime, main.RecordPlaytime);
+            LoadCheck(chkPauseTotalWhenUnfocused, main.PauseTotalWhenUnfocused);
+            LoadCheck(chkPauseSessionWhenUnfocused, main.PauseSessionWhenUnfocused);
             LoadCheck(chkAchievementsBypass, main.AchievementsBypass);
         }
 
@@ -1380,7 +1384,8 @@ namespace SmartGoldbergEmu.Forms
                 chkDisableSharingStatsWithGameserver, chkDisableSourceQuery, chkShareLeaderboardsOverNetwork,
                 chkDisableLobbyCreation, chkDownloadSteamhttpRequests,
                 chkDisableLeaderboardsCreateUnknown, chkAllowUnknownStats, chkStatAchievementProgressFunctionality,
-                chkSaveOnlyHigherStatAchievementProgress, chkRecordPlaytime, chkAchievementsBypass
+                chkSaveOnlyHigherStatAchievementProgress, chkRecordPlaytime,
+                chkPauseTotalWhenUnfocused, chkPauseSessionWhenUnfocused, chkAchievementsBypass
             })
                 WireChecked(chk);
 

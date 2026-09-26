@@ -73,6 +73,9 @@ namespace SmartGoldbergEmu.Models
         public bool OverlayAlwaysShowFps { get; set; } = false;
         public bool OverlayAlwaysShowFrametime { get; set; } = false;
         public bool OverlayAlwaysShowPlaytime { get; set; } = false;
+        public bool EnableScreenshot { get; set; } = true;
+        public string ScreenshotCombo { get; set; } = "f12";
+        public string OverlayKeyCombo { get; set; } = "shift + tab";
 
         // Appearance settings
         public string FontOverride { get; set; } = string.Empty;
@@ -98,9 +101,17 @@ namespace SmartGoldbergEmu.Models
         public float NotificationDurationAchievement { get; set; } = 7.0f;
         public float NotificationDurationInvitation { get; set; } = 8.0f;
         public float NotificationDurationChat { get; set; } = 4.0f;
+        public float NotificationDurationScreenshot { get; set; } = 1.0f;
+        public float AchievementNotificationDelay { get; set; } = 0f;
 
         // Achievement datetime format
         public string AchievementUnlockDatetimeFormat { get; set; } = "%Y/%m/%d - %H:%M:%S";
+        public string ScreenshotDatetimeFormat { get; set; } = "%Y/%m/%d - %H:%M:%S";
+        public bool ShowNotificationHistory { get; set; } = false;
+        public bool ShowAchievementList { get; set; } = false;
+        public bool UnlockedExpanded { get; set; } = true;
+        public bool LockedExpanded { get; set; } = false;
+        public bool ShowPlaytimeInUserInfo { get; set; } = false;
 
         // Background colors (RGBA)
         public float BackgroundR { get; set; } = 0.12f;
@@ -164,7 +175,9 @@ namespace SmartGoldbergEmu.Models
         public bool NewAppTicket { get; set; } = true;
         public bool GcToken { get; set; } = true;
         public bool BlockUnknownClients { get; set; } = false;
-        public bool SteamDeck { get; set; } = false;
+        public int SteamHardwareType { get; set; } = 0;
+        public int SteamHardwareDefaultConfig { get; set; } = 0;
+        public bool IsUnderProton { get; set; } = false;
         public bool EnableAccountAvatar { get; set; } = false;
         public bool EnableVoiceChat { get; set; } = false;
         public bool ImmediateGameserverStats { get; set; } = false;
@@ -178,6 +191,8 @@ namespace SmartGoldbergEmu.Models
         public bool SaveOnlyHigherStatAchievementProgress { get; set; } = true;
         public int PaginatedAchievementsIcons { get; set; } = 10;
         public bool RecordPlaytime { get; set; } = false;
+        public bool PauseTotalWhenUnfocused { get; set; } = false;
+        public bool PauseSessionWhenUnfocused { get; set; } = false;
 
         // Connectivity settings
         public bool DisableLanOnly { get; set; } = false;

@@ -26,6 +26,37 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void LoadGameSettingsSnapshot_migrates_steam_deck_to_steam_hardware_type()
+        {
+            using (var ctx = new EmulatorConfigTestContext())
+            {
+                ctx.WriteGameMainIni(
+                    TestAppId,
+                    "[main::general]\r\nsteam_deck=1\r\n");
+
+                GameSettingsSnapshot snapshot = ctx.Service.LoadGameSettingsSnapshot(TestAppId);
+
+                Assert.Equal(1, snapshot.Main.SteamHardwareType);
+            }
+        }
+
+        [Fact]
+        public void LoadGameSettingsSnapshot_merges_per_game_pause_playtime_over_global()
+        {
+            using (var ctx = new EmulatorConfigTestContext())
+            {
+                ctx.CfgService.SaveGlobalMainSettings(new MainSettings { PauseTotalWhenUnfocused = false });
+                ctx.WriteGameMainIni(
+                    TestAppId,
+                    "[main::stats]\r\npause_total_when_unfocused=1\r\n");
+
+                GameSettingsSnapshot snapshot = ctx.Service.LoadGameSettingsSnapshot(TestAppId);
+
+                Assert.True(snapshot.Main.PauseTotalWhenUnfocused);
+            }
+        }
+
+        [Fact]
         public void LoadGameSettingsSnapshot_merges_per_game_main_flag_over_global()
         {
             using (var ctx = new EmulatorConfigTestContext())

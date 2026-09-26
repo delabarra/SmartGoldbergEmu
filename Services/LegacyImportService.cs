@@ -179,6 +179,8 @@ namespace SmartGoldbergEmu.Services
                 report?.SetProgress(i + 1, total);
             }
 
+            TryMigrateLegacySteamHardwareFromApps(legacy.Apps);
+
             if (failed == 0)
                 FinalizeLegacyConfigFile(legacyPath);
 
@@ -186,6 +188,41 @@ namespace SmartGoldbergEmu.Services
             Program.LogService?.LogMessage(summary);
             report?.SetMessageWithAutoClear(summary);
             return failed == 0;
+        }
+
+        // Legacy 2.x SteamDeck flag maps to gbe_fork steam_hardware_type=1 on global main settings.
+        private static void TryMigrateLegacySteamHardwareFromApps(IEnumerable<LegacyGameEntry> apps)
+        {
+            if (apps == null)
+                return;
+
+            bool anySteamDeck = false;
+            foreach (LegacyGameEntry entry in apps)
+            {
+                if (entry != null && entry.SteamDeck)
+                {
+                    anySteamDeck = true;
+                    break;
+                }
+            }
+
+            if (!anySteamDeck)
+                return;
+
+            var cfg = ServiceLocator.GoldbergCfgService;
+            if (cfg == null)
+                return;
+
+            MainSettings main = cfg.LoadGlobalMainSettings() ?? new MainSettings();
+            if (main.SteamHardwareType != 0)
+                return;
+
+            main.SteamHardwareType = 1;
+            SaveResult result = cfg.SaveGlobalMainSettings(main);
+            if (!result.IsSuccess)
+                Program.LogService?.LogWarning($"Import: could not set steam_hardware_type from legacy SteamDeck: {result.ErrorMessage}");
+            else
+                Program.LogService?.LogMessage("Import: migrated legacy SteamDeck to steam_hardware_type=1 in global main settings.");
         }
 
         public static bool TryResolveLegacyConfigPath(out string legacyConfigPath)

@@ -22,10 +22,8 @@ namespace SmartGoldbergEmu.Models
         /// </summary>
         public string Language { get; set; }
 
-        /// <summary>
-        /// Gets or sets whether Steam Deck mode is enabled globally.
-        /// </summary>
-        public bool SteamDeck { get; set; }
+        // 0=not on Steam hardware; 1=Steam Deck (see configs.main.EXAMPLE steam_hardware_type).
+        public int SteamHardwareType { get; set; }
 
         /// <summary>
         /// Gets or sets whether account avatar is enabled globally.
@@ -40,7 +38,7 @@ namespace SmartGoldbergEmu.Models
             AccountName = ApplicationConstants.DefaultAccountName;
             AccountSteamId = ApplicationConstants.DefaultSteamId;
             Language = ApplicationConstants.DefaultLanguage;
-            SteamDeck = false;
+            SteamHardwareType = 0;
             EnableAccountAvatar = false;
         }
     }
