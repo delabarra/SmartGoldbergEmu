@@ -29,6 +29,7 @@ namespace SmartGoldbergEmu.Services
 
         private static readonly string[] HeaderImagePreferredFileNames =
         {
+            PathConstants.SteamGameResourcesHeader2xImageFileName,
             PathConstants.SteamGameResourcesHeaderImageFileName
         };
 
@@ -80,12 +81,17 @@ namespace SmartGoldbergEmu.Services
         // Extra store CDN names not always present in PICS (older apps / alternate capsules).
         private static readonly string[] AdditionalStoreAssetFileNames =
         {
+            PathConstants.SteamGameResourcesLargeCapsule2xImageFileName,
             PathConstants.SteamGameResourcesLargeCapsuleImageFileName,
+            PathConstants.SteamGameResourcesSmallCapsule2xImageFileName,
             PathConstants.SteamGameResourcesCapsuleImageFileName,
             "capsule_467x181.jpg",
-            "hero_capsule.jpg",
+            PathConstants.SteamGameResourcesHeroCapsule2xImageFileName,
+            PathConstants.SteamGameResourcesHeroCapsuleImageFileName,
             "header_292x136.jpg",
-            "page_bg_generated.jpg"
+            PathConstants.SteamGameResourcesPageBackgroundImageFileName,
+            PathConstants.SteamGameResourcesPageBackgroundRawImageFileName,
+            PathConstants.SteamGameResourcesLegacyPageBackgroundImageFileName
         };
 
         // Mirrors AppDataKit GameAssetParser community hash assets (correct CDN extensions).

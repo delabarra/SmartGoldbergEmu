@@ -10,6 +10,8 @@ namespace SmartGoldbergEmu.Tests.Helpers
         [InlineData("release-2026_05_19", "2026_05_19", true)]
         [InlineData("2026_02_16", "2026_02_16", true)]
         [InlineData("repack-2026_05_19-2026_02_16-1", "2026_05_19", true)]
+        [InlineData("release-2026_09_16_2", "2026_09_16_2", true)]
+        [InlineData("2026_09_16_2", "2026_09_16_2", true)]
         [InlineData("v1.2.3", null, false)]
         public void TryNormalizeForkVersion_extracts_fork_date(string raw, string expected, bool shouldNormalize)
         {
@@ -24,6 +26,9 @@ namespace SmartGoldbergEmu.Tests.Helpers
         [InlineData("2026_05_19", "2026_05_19", false)]
         [InlineData("2026_05_19", "2026_02_16", false)]
         [InlineData("pre-existent", "2026_05_19", true)]
+        [InlineData("2026_09_16", "2026_09_16_2", true)]
+        [InlineData("2026_09_16_2", "2026_09_16", false)]
+        [InlineData("2026_09_16_2", "2026_09_16_2", false)]
         public void IsNewerGoldbergVersion_compares_fork_dates(string current, string latest, bool expected)
         {
             Assert.Equal(expected, GoldbergVersionHelper.IsNewerGoldbergVersion(current, latest));

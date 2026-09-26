@@ -1209,7 +1209,14 @@ namespace SmartGoldbergEmu.Forms
             _achievementPreviewOwnedImages.Dispose();
             _achievementsRawJson = null;
             _achievementsPreviewListCache = null;
-            _addBundle?.ReleaseHeavyRuntimeData();
+            // PendingAddSave still needs Game.AppInfo/Catalog for post-dialog asset download.
+            if (PendingAddSave == null)
+                _addBundle?.ReleaseHeavyRuntimeData();
+            else if (_addBundle != null)
+            {
+                _addBundle.AchievementsPreviewJson = null;
+                _addBundle.ItemsJson = null;
+            }
             base.OnFormClosed(e);
         }
 
@@ -4141,6 +4148,12 @@ namespace SmartGoldbergEmu.Forms
                 : null;
             if (dlcData == null && _gameConfig.PreFetchedDlcData != null && _gameConfig.PreFetchedDlcData.Count > 0)
                 dlcData = _gameConfig.PreFetchedDlcData;
+
+            // Ensure PICS trees stay on GameConfig for CompletePendingAddSaveAsync asset download.
+            if (_gameConfig.Catalog == null && _addBundle?.Catalog != null)
+                _gameConfig.Catalog = _addBundle.Catalog;
+            if (_gameConfig.AppInfo == null && _gameConfig.Catalog?.AppInfo != null)
+                _gameConfig.AppInfo = _gameConfig.Catalog.AppInfo;
 
             return new PendingAddGameSave
             {

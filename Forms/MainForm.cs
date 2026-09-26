@@ -1539,9 +1539,10 @@ namespace SmartGoldbergEmu.Forms
 
                 ShowPendingAddInList();
 
+                // Stay on the UI sync context: pending-list helpers and GameSettings touch lstGames.
                 GameAddCollectResult collectResult = await ServiceLocator.GameAddCollector
                     .CollectFromExecutableAsync(executablePath, this, _taskReportService, appId)
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(true);
 
                 if (IsDisposed || Disposing)
                     return;
@@ -1750,6 +1751,20 @@ namespace SmartGoldbergEmu.Forms
 
         private void ClearPendingAddListEntry()
         {
+            if (IsDisposed || Disposing)
+                return;
+            if (InvokeRequired)
+            {
+                try
+                {
+                    Invoke(new Action(ClearPendingAddListEntry));
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                return;
+            }
+
             if (!_pendingAddGameListService.HasDraft)
                 return;
 
@@ -1804,6 +1819,20 @@ namespace SmartGoldbergEmu.Forms
 
         private void ShowPendingAddInList()
         {
+            if (IsDisposed || Disposing)
+                return;
+            if (InvokeRequired)
+            {
+                try
+                {
+                    Invoke(new Action(ShowPendingAddInList));
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                return;
+            }
+
             var draft = _pendingAddGameListService.GetDraft();
             if (draft == null)
                 return;
@@ -1832,6 +1861,20 @@ namespace SmartGoldbergEmu.Forms
 
         private void UpdatePendingAddInList()
         {
+            if (IsDisposed || Disposing)
+                return;
+            if (InvokeRequired)
+            {
+                try
+                {
+                    Invoke(new Action(UpdatePendingAddInList));
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                return;
+            }
+
             var draft = _pendingAddGameListService.GetDraft();
             if (draft == null)
                 return;

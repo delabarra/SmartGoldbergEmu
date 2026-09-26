@@ -75,17 +75,28 @@ namespace SmartGoldbergEmu.Helpers
             JsonObject releaseData = JsonObject.Parse(json);
             string tagName = releaseData["tag_name"]?.ToString();
             string downloadUrl = null;
+            string archiveFileName = null;
+            int bestPreference = int.MaxValue;
 
             foreach (JsonObject asset in (JsonArray)releaseData["assets"])
             {
-                if (asset["name"]?.ToString() == GoldbergForkConstants.UpstreamWinReleaseAssetName)
-                {
-                    downloadUrl = asset["browser_download_url"]?.ToString();
+                string name = asset["name"]?.ToString();
+                int preference = GoldbergForkConstants.TryGetUpstreamWinReleaseAssetPreference(name);
+                if (preference < 0 || preference >= bestPreference)
+                    continue;
+
+                string url = asset["browser_download_url"]?.ToString();
+                if (string.IsNullOrEmpty(url))
+                    continue;
+
+                bestPreference = preference;
+                downloadUrl = url;
+                archiveFileName = name;
+                if (preference == 0)
                     break;
-                }
             }
 
-            if (string.IsNullOrEmpty(downloadUrl))
+            if (string.IsNullOrEmpty(downloadUrl) || string.IsNullOrEmpty(archiveFileName))
                 return false;
 
             string latestVersion = tagName;
@@ -95,7 +106,7 @@ namespace SmartGoldbergEmu.Helpers
             result.DownloadUrl = downloadUrl;
             result.LatestVersion = latestVersion;
             result.ReleaseNotes = releaseData["body"]?.ToString();
-            result.ArchiveFileName = GoldbergForkConstants.UpstreamWinReleaseAssetName;
+            result.ArchiveFileName = archiveFileName;
             result.FromRepack = false;
             return true;
         }
