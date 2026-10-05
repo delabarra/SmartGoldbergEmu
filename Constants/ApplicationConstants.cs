@@ -353,7 +353,7 @@ namespace SmartGoldbergEmu.Constants
         // Store catalog search (games / Windows). Packages/bundles are skipped when parsing; delisted apps use SteamSearchGamesApiUrlFormat.
         public const string SteamStoreSearchCatalogUrlFormat =
             "https://store.steampowered.com/search/results/?term={0}&category1=998&os=win&cc=US&l=english&start=0&count=50";
-        public const string SteamSearchGamesApiUrlFormat = "https://steam-search.vercel.app/api/games?search={0}";
+        public const string SteamSearchGamesApiUrlFormat = "https://sgel-app-index.vercel.app/api/games?search={0}";
         public const string SteamStoreAppUrlFormat = "https://store.steampowered.com/app/{0}";
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";
         public const string SteamCommunityWorkshopUrlFormat = "https://steamcommunity.com/app/{0}/workshop/";
