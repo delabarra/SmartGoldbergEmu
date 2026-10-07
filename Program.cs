@@ -116,6 +116,11 @@ namespace SmartGoldbergEmu
                 if (!EmulatorUpdateService.GoldbergFilesCheckSync())
                     EmulatorUpdateService.CheckForUpdatesWithUISync(BootstrapService.LogService, isStartup: true);
 
+                // A modal loop or DoEvents before Application.Run (startup Goldberg download, update prompts) leaves a plain
+                // SynchronizationContext that WinForms does not replace; MainForm awaits would then resume on the thread pool.
+                if (!(SynchronizationContext.Current is WindowsFormsSynchronizationContext))
+                    SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+
                 BootstrapService.LogService.LogMessage("Starting main application form...");
                 var mainForm = new Forms.MainForm();
                 mainForm.PendingAppIdLaunch = appIdToLaunch;
