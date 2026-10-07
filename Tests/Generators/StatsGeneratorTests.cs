@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using AppDataKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Generators;
 using SmartGoldbergEmu.Tests.TestSupport;
@@ -67,6 +68,55 @@ namespace SmartGoldbergEmu.Tests.Generators
             Assert.False(string.IsNullOrEmpty(result));
             Assert.Contains("\"global\"", result);
             Assert.Contains("STAT_THE_MIGHTY_FOOT", result);
+        }
+
+        [Fact]
+        public void TryConvertStatsDbJsonToGoldbergFormat_matches_convert()
+        {
+            string input = TestFileHelper.ReadTestData("stats_db_225140_input.json");
+
+            Assert.Equal(
+                StatsGenerator.ConvertStatsDbJsonToGoldbergFormat(input),
+                StatsGenerator.TryConvertStatsDbJsonToGoldbergFormat(input));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("not json")]
+        public void TryConvertStatsDbJsonToGoldbergFormat_returns_null_for_unusable_body(string body)
+        {
+            Assert.Null(StatsGenerator.TryConvertStatsDbJsonToGoldbergFormat(body));
+        }
+
+        [Fact]
+        public void BuildGoldbergStatsJson_maps_ok_section()
+        {
+            var section = new StatsSection
+            {
+                Status = SnapshotSectionStatus.Ok,
+                Items = new[] { new StatSchemaEntry { Name = "NumGames", Type = "int", DefaultValue = "" } }
+            };
+
+            string result = StatsGenerator.BuildGoldbergStatsJson(section);
+
+            Assert.Contains("\"NumGames\"", result);
+            Assert.Contains("\"default\": \"0\"", result);
+            Assert.Contains("\"global\": \"0\"", result);
+        }
+
+        [Theory]
+        [InlineData(SnapshotSectionStatus.Unavailable)]
+        [InlineData(SnapshotSectionStatus.Error)]
+        public void BuildGoldbergStatsJson_returns_null_unless_ok(SnapshotSectionStatus status)
+        {
+            var section = new StatsSection
+            {
+                Status = status,
+                Items = new[] { new StatSchemaEntry { Name = "NumGames", Type = "int" } }
+            };
+
+            Assert.Null(StatsGenerator.BuildGoldbergStatsJson(section));
         }
     }
 }

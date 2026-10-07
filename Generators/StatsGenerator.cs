@@ -54,36 +54,42 @@ namespace SmartGoldbergEmu.Generators
                 StatsSection section = await ServiceLocator.AppDataKitBridgeService
                     .FetchStatsAsync(id, language)
                     .ConfigureAwait(false);
-                if (section == null
-                    || section.Status != SnapshotSectionStatus.Ok
-                    || section.Items == null
-                    || section.Items.Count == 0)
-                    return null;
-
-                var statsList = new List<object>();
-                foreach (StatSchemaEntry stat in section.Items)
-                {
-                    if (stat == null || string.IsNullOrWhiteSpace(stat.Name))
-                        continue;
-
-                    statsList.Add(new Dictionary<string, object>
-                    {
-                        ["name"] = stat.Name,
-                        ["type"] = NormalizeGoldbergStatType(stat.Type),
-                        ["default"] = string.IsNullOrEmpty(stat.DefaultValue) ? "0" : stat.DefaultValue,
-                        ["global"] = "0"
-                    });
-                }
-
-                if (statsList.Count == 0)
-                    return null;
-
-                return JsonConvert.SerializeObject(statsList, JsonFormatting.Indented);
+                return BuildGoldbergStatsJson(section);
             }
             catch (Exception)
             {
                 return null;
             }
+        }
+
+        // Goldberg stats.json from a GetSchemaForGame stats section (name/type/default are not localized).
+        public static string BuildGoldbergStatsJson(StatsSection section)
+        {
+            if (section == null
+                || section.Status != SnapshotSectionStatus.Ok
+                || section.Items == null
+                || section.Items.Count == 0)
+                return null;
+
+            var statsList = new List<object>();
+            foreach (StatSchemaEntry stat in section.Items)
+            {
+                if (stat == null || string.IsNullOrWhiteSpace(stat.Name))
+                    continue;
+
+                statsList.Add(new Dictionary<string, object>
+                {
+                    ["name"] = stat.Name,
+                    ["type"] = NormalizeGoldbergStatType(stat.Type),
+                    ["default"] = string.IsNullOrEmpty(stat.DefaultValue) ? "0" : stat.DefaultValue,
+                    ["global"] = "0"
+                });
+            }
+
+            if (statsList.Count == 0)
+                return null;
+
+            return JsonConvert.SerializeObject(statsList, JsonFormatting.Indented);
         }
 
         public static async Task<string> TryGetGoldbergStatsJsonFromStatsDbAsync(string appId)
@@ -96,7 +102,22 @@ namespace SmartGoldbergEmu.Generators
                 var body = await GamesInfosDatasHelper
                     .TryGetSteamFileBodyAsync(appId, PathConstants.GoldbergStatsDbJsonFileName)
                     .ConfigureAwait(false);
-                return body == null ? null : ConvertStatsDbJsonToGoldbergFormat(body);
+                return TryConvertStatsDbJsonToGoldbergFormat(body);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        public static string TryConvertStatsDbJsonToGoldbergFormat(string statsDbJson)
+        {
+            if (string.IsNullOrWhiteSpace(statsDbJson))
+                return null;
+
+            try
+            {
+                return ConvertStatsDbJsonToGoldbergFormat(statsDbJson);
             }
             catch (Exception)
             {

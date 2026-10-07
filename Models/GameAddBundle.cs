@@ -25,6 +25,8 @@ namespace SmartGoldbergEmu.Models
 
         public string ItemsJson { get; set; }
 
+        public AddGamePrefetchedSchemas PrefetchedSchemas { get; set; }
+
         public GameAddBundle()
         {
             Game = new GameConfig();
@@ -39,6 +41,7 @@ namespace SmartGoldbergEmu.Models
         {
             AchievementsPreviewJson = null;
             ItemsJson = null;
+            PrefetchedSchemas = null;
             Metadata = null;
             Catalog = null;
             Game?.ReleaseHeavyRuntimeData();

@@ -18,10 +18,8 @@ namespace SmartGoldbergEmu.Models
         public Action OnAssetsDownloaded { get; set; }
         public Action OnSuccessfulSaveCompleted { get; set; }
 
-        /// <summary>
-        /// When true, child save work must not change the status strip (add-game save uses fixed messages only).
-        /// </summary>
-        public bool SuppressStatusMessages { get; set; }
+        // Add-game only; null for import provisioning, which fetches items and achievements live.
+        public AddGamePrefetchedSchemas PrefetchedSchemas { get; set; }
     }
 
     public sealed class GameSettingsSaveResult

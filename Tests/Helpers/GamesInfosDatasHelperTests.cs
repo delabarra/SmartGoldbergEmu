@@ -64,6 +64,16 @@ namespace SmartGoldbergEmu.Tests.Helpers
             Assert.Equal("3", section.Items[0].DefaultValue);
             Assert.Equal("7", section.Items[1].DefaultValue);
             Assert.Equal("int", section.Items[1].Type);
+            Assert.Equal(json, section.StatsDbJson);
+        }
+
+        [Fact]
+        public void ParseStatsDb_keeps_no_raw_body_when_empty()
+        {
+            StatsSection section = GamesInfosDatasHelper.ParseStatsDb("[]");
+
+            Assert.Equal(SnapshotSectionStatus.Unavailable, section.Status);
+            Assert.Null(section.StatsDbJson);
         }
     }
 }

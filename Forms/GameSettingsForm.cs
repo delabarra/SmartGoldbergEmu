@@ -685,10 +685,12 @@ namespace SmartGoldbergEmu.Forms
                 if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
                     return;
 
+                // The offline fallback must never apply another app's tree to the looked-up App ID.
+                AppInfoKeyValue sameAppInfo = GetRuntimeAppDataAppId() == appIdNum ? _gameConfig?.AppInfo : null;
                 AppCatalogSnapshot snapshot = await ServiceLocator.AppDataKitBridgeService
                     .FetchMetadataSnapshotAsync(
                         appIdNum,
-                        _gameConfig?.AppInfo,
+                        sameAppInfo,
                         cancellationToken: ServiceLocator.ApplicationLifetimeToken)
                     .ConfigureAwait(false);
 
@@ -716,24 +718,46 @@ namespace SmartGoldbergEmu.Forms
 
             if (_gameConfig != null && snapshot.Failure == AppMetadataFetchFailure.None && snapshot.IsUsable)
             {
+                // Catalog and AppInfo move together so GetRuntimeAppDataAppId stays accurate.
                 _gameConfig.Catalog = snapshot;
+                _gameConfig.AppInfo = snapshot.AppInfo;
                 _gameConfig.PreFetchedDlcData = snapshot.ToDlcDictionary();
             }
 
-            ApplyFetchedAppMetadata(snapshot.Online, snapshot.AppInfo);
+            ApplyFetchedAppMetadata(snapshot.Online);
         }
 
-        private void ApplyFetchedAppMetadata(OnlineAppData metadata, AppInfoKeyValue appInfo = null)
+        // Lookups attach Catalog/AppInfo for the looked-up app before Save commits that App ID to _gameConfig.AppId.
+        private ulong GetRuntimeAppDataAppId()
+        {
+            if (_gameConfig == null)
+                return 0;
+            return _gameConfig.Catalog != null ? _gameConfig.Catalog.AppId : _gameConfig.AppId;
+        }
+
+        private static bool IsMetadataForApp(OnlineAppData metadata, string appId)
+        {
+            return metadata != null && string.Equals(metadata.AppId, appId, StringComparison.Ordinal);
+        }
+
+        // Save must not hand the previous app's trees or metadata to the pipeline for a new App ID; downstream fetches for the new app instead.
+        private void DropRuntimeAppDataForOtherApp(ulong appId)
+        {
+            if (GetRuntimeAppDataAppId() != appId)
+                _gameConfig.ReleaseHeavyRuntimeData();
+            if (_metadata != null && !IsMetadataForApp(_metadata, appId.ToString()))
+                _metadata = null;
+        }
+
+        private void ApplyFetchedAppMetadata(OnlineAppData metadata)
         {
             if (IsDisposed || Disposing)
                 return;
             if (metadata == null)
                 return;
 
-            if (appInfo != null && _gameConfig != null)
-                _gameConfig.AppInfo = appInfo;
-
-            if (_metadata == null)
+            // Merge only refreshes the same app; a lookup for another App ID must not inherit the old app's fields.
+            if (_metadata == null || !IsMetadataForApp(_metadata, metadata.AppId))
                 _metadata = metadata;
             else
             {
@@ -1220,6 +1244,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 _addBundle.AchievementsPreviewJson = null;
                 _addBundle.ItemsJson = null;
+                _addBundle.PrefetchedSchemas = null;
             }
             base.OnFormClosed(e);
         }
@@ -4001,6 +4026,7 @@ namespace SmartGoldbergEmu.Forms
                     _gameConfig.WorkingDirectory = txtWorkingDirectory.Text.Trim();
                 if (txtCustomIcon != null)
                     _gameConfig.CustomIcon = txtCustomIcon.Text.Trim();
+                DropRuntimeAppDataForOtherApp(appId);
                 _gameConfig.AppId = appId;
                 ApplyLaunchModeFromUiToGameConfig();
 
@@ -4053,7 +4079,7 @@ namespace SmartGoldbergEmu.Forms
                             GameConfig = _gameConfig,
                             InitialGameConfig = _initialGameConfig,
                             FormSaveRequest = editFormSaveRequest,
-                            CredentialsTouched = HaveCredentialsChanged(),
+                            CredentialsTouched = HaveCredentialsChanged(capturedSnapshot),
                             OnSuccessfulSaveCompleted = _onSaveCompleted
                         }).ConfigureAwait(true);
 
@@ -4087,19 +4113,9 @@ namespace SmartGoldbergEmu.Forms
                     }
                 }
 
-                // Hide first so MainForm's status strip is visible, then show immediate add feedback
-                // before BuildPendingAddSave (snapshot capture) which can take a noticeable moment.
                 HideFormForSaveIfVisible(ref formHiddenForSave);
-                string addDisplayName = !string.IsNullOrWhiteSpace(_gameConfig.AppName)
-                    ? _gameConfig.AppName.Trim()
-                    : "Game";
-                _taskReportService?.SetMessage(
-                    _isUpdateOfExisting
-                        ? AddGameStatusMessages.UpdatingInLibrary(addDisplayName)
-                        : AddGameStatusMessages.AddingToLibrary(addDisplayName));
-                if (Owner != null && Owner.IsHandleCreated && !Owner.IsDisposed)
-                    Owner.Update();
-
+                _taskReportService?.SetMessage(AddGameStatusMessages.PreparingSave(
+                    string.IsNullOrWhiteSpace(_gameConfig.AppName) ? "Game" : _gameConfig.AppName.Trim()));
                 PendingAddSave = BuildPendingAddSave();
                 restoreSaveButtonState = false;
                 this.DialogResult = DialogResult.OK;
@@ -4155,7 +4171,7 @@ namespace SmartGoldbergEmu.Forms
                 dlcData = _gameConfig.PreFetchedDlcData;
 
             // Ensure PICS trees stay on GameConfig for CompletePendingAddSaveAsync asset download.
-            if (_gameConfig.Catalog == null && _addBundle?.Catalog != null)
+            if (_gameConfig.Catalog == null && _addBundle?.Catalog != null && _addBundle.Catalog.AppId == _gameConfig.AppId)
                 _gameConfig.Catalog = _addBundle.Catalog;
             if (_gameConfig.AppInfo == null && _gameConfig.Catalog?.AppInfo != null)
                 _gameConfig.AppInfo = _gameConfig.Catalog.AppInfo;
@@ -4165,9 +4181,10 @@ namespace SmartGoldbergEmu.Forms
                 GameConfig = _gameConfig,
                 Metadata = _metadata,
                 AchievementPreview = _addBundle?.AchievementPreview ?? AchievementPreviewKind.NoApiKey,
+                PrefetchedSchemas = _addBundle?.PrefetchedSchemas,
                 SettingsSnapshot = snapshot,
                 CustomStatsRawJson = _customStatsRawJson ?? string.Empty,
-                CredentialsTouched = HaveCredentialsChanged(),
+                CredentialsTouched = HaveCredentialsChanged(snapshot),
                 IsUpdateOfExisting = _isUpdateOfExisting,
                 AdditionalFilesSaveRequest = BuildAdditionalFilesSaveRequest(),
                 SaveDlcAndPaths = () =>
@@ -4231,9 +4248,8 @@ namespace SmartGoldbergEmu.Forms
                 CheckForChanges();
         }
 
-        private bool HaveCredentialsChanged()
+        private bool HaveCredentialsChanged(GameSettingsSnapshot current)
         {
-            GameSettingsSnapshot current = GetSettingsFromForm();
             return !string.Equals(current.User?.Ticket ?? string.Empty, _initialCredentialTicket ?? string.Empty, StringComparison.Ordinal)
                 || !string.Equals(current.User?.AltSteamId ?? string.Empty, _initialCredentialAlt ?? string.Empty, StringComparison.Ordinal);
         }

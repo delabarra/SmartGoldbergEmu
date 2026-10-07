@@ -19,11 +19,13 @@ namespace SmartGoldbergEmu.Tests.Services
         public async Task BuildAddModeAchievementPreviewAsync_returns_no_api_key_when_app_id_zero()
         {
             var service = CreateService(out _);
-            (AchievementPreviewKind kind, string previewJson) = await service.BuildAddModeAchievementPreviewAsync(
-                new GameConfig { AppId = 0 });
+            AchievementAddModePreview preview = await service.BuildAddModeAchievementPreviewAsync(
+                new GameConfig { AppId = 0 },
+                collectCatalog: null);
 
-            Assert.Equal(AchievementPreviewKind.NoApiKey, kind);
-            Assert.False(string.IsNullOrEmpty(previewJson));
+            Assert.Equal(AchievementPreviewKind.NoApiKey, preview.Kind);
+            Assert.False(string.IsNullOrEmpty(preview.PreviewJson));
+            Assert.Null(preview.Schema);
         }
 
         [Fact]
@@ -43,6 +45,7 @@ namespace SmartGoldbergEmu.Tests.Services
 
                 ItemGeneratorResult result = await service.GenerateItemsForAddSaveAsync(
                     game,
+                    prefetchedSchemas: null,
                     report: null,
                     showProgress: false);
 

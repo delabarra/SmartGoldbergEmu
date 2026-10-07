@@ -1,3 +1,5 @@
+using AppDataKit;
+
 namespace SmartGoldbergEmu.Models
 {
     /// <summary>
@@ -9,9 +11,12 @@ namespace SmartGoldbergEmu.Models
         public string ErrorMessage { get; private set; }
         public int ItemCount { get; private set; }
 
-        public static ItemGeneratorResult Ok(int count)
+        // Section items.json was written from, so callers can patch the catalog without fetching again.
+        public ItemsSection Section { get; private set; }
+
+        public static ItemGeneratorResult Ok(int count, ItemsSection section)
         {
-            return new ItemGeneratorResult { Success = true, ItemCount = count };
+            return new ItemGeneratorResult { Success = true, ItemCount = count, Section = section };
         }
 
         public static ItemGeneratorResult Fail(string message)

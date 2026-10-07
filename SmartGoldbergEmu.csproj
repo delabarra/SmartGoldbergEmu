@@ -150,6 +150,8 @@
     <Compile Include="Models\GameSettingsSnapshot.cs" />
     <Compile Include="Models\GameSetupResult.cs" />
     <Compile Include="Models\AchievementPreviewKind.cs" />
+    <Compile Include="Models\AchievementAddModePreview.cs" />
+    <Compile Include="Models\AddGamePrefetchedSchemas.cs" />
     <Compile Include="Models\GameAddBundle.cs" />
     <Compile Include="Models\GameAddCollectResult.cs" />
     <Compile Include="Models\GameEditBundle.cs" />
@@ -271,6 +273,7 @@
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
     <Compile Include="Services\AchievementService.cs" />
+    <Compile Include="Services\AddSaveTaskReport.cs" />
     <Compile Include="Services\GoldbergArtifactService.cs" />
     <Compile Include="Services\AssetDownloadService.cs" />
     <Compile Include="Services\GoldbergFilesService.cs" />

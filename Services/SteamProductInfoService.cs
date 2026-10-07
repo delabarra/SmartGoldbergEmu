@@ -832,10 +832,6 @@ namespace SmartGoldbergEmu.Services
                 KeyValue leaderboardsNode = SteamPicsKeyValueHelper.FindChild(targetNode, SteamPicsKeyNames.Leaderboards);
                 if (leaderboardsNode != null)
                     result.Leaderboards = ExtractLeaderboards(leaderboardsNode);
-
-                KeyValue achievementsNode = SteamPicsKeyValueHelper.FindChild(targetNode, SteamPicsKeyNames.Achievements);
-                if (achievementsNode != null)
-                    result.Achievements = ExtractAchievements(achievementsNode);
             }
             catch (Exception ex)
             {
@@ -1115,56 +1111,6 @@ namespace SmartGoldbergEmu.Services
             }
 
             return leaderboards;
-        }
-
-        private static string ExtractAchievements(KeyValue achievementsNode)
-        {
-            if (achievementsNode == null || achievementsNode.Children == null)
-                return null;
-
-            try
-            {
-                var achievementsList = new List<object>();
-
-                foreach (KeyValue achievementData in achievementsNode.Children)
-                {
-                    if (achievementData == null || string.IsNullOrEmpty(achievementData.Name) || achievementData.Children == null)
-                        continue;
-
-                    var achievementObj = new Dictionary<string, object> { ["name"] = achievementData.Name };
-
-                    foreach (KeyValue prop in achievementData.Children)
-                    {
-                        if (prop == null || string.IsNullOrEmpty(prop.Name))
-                            continue;
-
-                        if (prop.Children != null && prop.Children.Count > 0)
-                            continue;
-
-                        if (string.IsNullOrEmpty(prop.Value))
-                            continue;
-
-                        if (uint.TryParse(prop.Value, out uint u))
-                            achievementObj[prop.Name] = u;
-                        else if (int.TryParse(prop.Value, out int i))
-                            achievementObj[prop.Name] = i;
-                        else
-                            achievementObj[prop.Name] = prop.Value;
-                    }
-
-                    if (achievementObj.Count > 0)
-                        achievementsList.Add(achievementObj);
-                }
-
-                if (achievementsList.Count > 0)
-                    return JsonConvert.SerializeObject(achievementsList, JsonFormatting.Indented);
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService.LogError("Error extracting achievements", ex);
-            }
-
-            return null;
         }
 
         public bool ExportAppPicsToValveTextFile(string appId, AppInfoKeyValue appInfo)

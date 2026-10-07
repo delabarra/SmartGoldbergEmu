@@ -94,11 +94,12 @@ namespace SmartGoldbergEmu.Services
             {
                 taskReport?.SetProgress(0, 0);
 
-                assetsDownloaded = await DownloadAddModeLibraryAssetsAsync(request).ConfigureAwait(false);
+                SaveAddModeCatalogSnapshot(request);
+                assetsDownloaded = await DownloadAddModeLibraryImagesAsync(request).ConfigureAwait(false);
                 if (assetsDownloaded)
                     TryRunSuccessfulSaveCallback(request.OnAssetsDownloaded);
 
-                await RunAddModeGoldbergWorkAsync(request, skipLibraryAssets: true).ConfigureAwait(false);
+                await RunAddModeGoldbergWorkAsync(request).ConfigureAwait(false);
 
                 await RunAddGameAchievementsGenerationAsync(request.GameConfig, taskReport).ConfigureAwait(false);
 
@@ -114,7 +115,8 @@ namespace SmartGoldbergEmu.Services
             if (request.GameConfig.AppId == 0)
                 return GameSettingsSaveResult.Success();
 
-            GameSettingsSaveResult settingsResult = await SaveEmulatorSettingsAsync(request).ConfigureAwait(false);
+            // Runs after the terminal "added" message; step text here would stick on the strip.
+            GameSettingsSaveResult settingsResult = await SaveEmulatorSettingsAsync(request, taskReport: null).ConfigureAwait(false);
             if (!settingsResult.IsSuccess)
                 return settingsResult;
 
@@ -130,29 +132,51 @@ namespace SmartGoldbergEmu.Services
             return gameConfig.AppName.Trim();
         }
 
-        public async Task<bool> DownloadAddModeLibraryAssetsAsync(GameSettingsSaveRequest request)
+        // Run before the image download and RunAddModeGoldbergWorkAsync: both reload AppInfo/assets from this snapshot when memory was cleared.
+        public void SaveAddModeCatalogSnapshot(GameSettingsSaveRequest request)
         {
-            if (request?.GameConfig == null || request.GameConfig.AppId == 0)
-                return false;
+            GameConfig gameConfig = request?.GameConfig;
+            if (gameConfig == null || gameConfig.AppId == 0)
+                return;
 
-            GameConfig gameConfig = request.GameConfig;
-            string displayName = GetLibraryGameDisplayName(gameConfig);
             try
             {
                 if (gameConfig.AppInfo == null && gameConfig.Catalog?.AppInfo != null)
                     gameConfig.AppInfo = gameConfig.Catalog.AppInfo;
 
-                // Persist catalog before download so GameImageService can reload AppInfo/assets if memory was cleared.
                 if (gameConfig.Catalog != null)
+                {
+                    request.TaskReportService?.SetMessage(
+                        AddGameStatusMessages.SavingCatalogSnapshot(GetLibraryGameDisplayName(gameConfig)));
                     AppCatalogSnapshotStore.TrySave(gameConfig.Catalog);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarningWithExceptionMessage("Failed to save catalog snapshot", ex);
+            }
+        }
 
-                return await DownloadTileAndGameImagesAsync(
+        // onImageProgress (completed, total) replaces the image service's own strip messages; never throws.
+        public async Task<bool> DownloadAddModeLibraryImagesAsync(
+            GameSettingsSaveRequest request,
+            Action<int, int> onImageProgress = null)
+        {
+            GameConfig gameConfig = request?.GameConfig;
+            if (gameConfig == null || gameConfig.AppId == 0)
+                return false;
+
+            try
+            {
+                return await _gameImageService.DownloadGameImagesAsync(
                     gameConfig.AppId,
                     request.Metadata,
-                    request.TaskReportService,
-                    gameConfig.AppInfo,
-                    displayName,
-                    catalogAssets: gameConfig.Catalog?.Assets).ConfigureAwait(false);
+                    reportFeedback: onImageProgress == null && request.TaskReportService != null,
+                    steamAppIdForRemoteAssets: null,
+                    appPicsData: gameConfig.AppInfo,
+                    gameDisplayName: GetLibraryGameDisplayName(gameConfig),
+                    catalogAssets: gameConfig.Catalog?.Assets,
+                    onProgress: onImageProgress).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -161,19 +185,15 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public async Task RunAddModeGoldbergWorkAsync(GameSettingsSaveRequest request, bool skipLibraryAssets)
+        // Run SaveAddModeCatalogSnapshot first: this work relies on the persisted catalog snapshot.
+        public async Task RunAddModeGoldbergWorkAsync(GameSettingsSaveRequest request)
         {
             if (request?.GameConfig == null || request.GameConfig.AppId == 0)
                 return;
 
-            ITaskReportService taskReport = request.SuppressStatusMessages ? null : request.TaskReportService;
             try
             {
-                if (!request.SuppressStatusMessages)
-                    taskReport?.SetProgress(0, 0);
-
-                if (!skipLibraryAssets)
-                    await TryExportSteamProductInfoVdfAsync(request.GameConfig, taskReport).ConfigureAwait(false);
+                request.TaskReportService?.SetProgress(0, 0);
 
                 await RunAddGameConfigGenerationAsync(request).ConfigureAwait(false);
                 await RunAddGameItemsGenerationAsync(request).ConfigureAwait(false);
@@ -181,26 +201,31 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 LogErrorWithExceptionMessage("Error creating game files", ex);
-                if (!request.SuppressStatusMessages)
-                    request.TaskReportService?.SetMessage(ErrorDisplayHelper.SanitizeForUser("Creating game files", ex), TaskReportKind.Error);
+                request.TaskReportService?.SetMessage(ErrorDisplayHelper.SanitizeForUser("Creating game files", ex), TaskReportKind.Error);
             }
         }
 
         public async Task<GameSettingsSaveResult> SaveEmulatorSettingsFromRequestAsync(GameSettingsSaveRequest request)
         {
-            return await SaveEmulatorSettingsAsync(request).ConfigureAwait(false);
+            ITaskReportService taskReport = request?.IsEditMode == false ? request.TaskReportService : null;
+            return await SaveEmulatorSettingsAsync(request, taskReport).ConfigureAwait(false);
         }
 
         private async Task RunAddGameConfigGenerationAsync(GameSettingsSaveRequest request)
         {
             try
             {
-                ITaskReportService taskReport = request.SuppressStatusMessages ? null : request.TaskReportService;
+                ITaskReportService taskReport = request.TaskReportService;
+                string displayName = GetLibraryGameDisplayName(request.GameConfig);
+
+                taskReport?.SetMessage(AddGameStatusMessages.CreatingDefaultConfigFiles(displayName));
                 _emulatorConfigService.CreateDefaultConfigFiles(request.GameConfig.AppId);
                 await TryExportSteamProductInfoVdfAsync(request.GameConfig, taskReport).ConfigureAwait(false);
 
                 await Task.Yield();
+                taskReport?.SetMessage(AddGameStatusMessages.GeneratingMetadataFiles(displayName));
                 await _emulatorConfigService.GenerateMetadataFilesAsync(request.GameConfig, request.Metadata).ConfigureAwait(false);
+                taskReport?.SetMessage(AddGameStatusMessages.WritingSteamAppIdFile(displayName));
                 TryEnsureSteamAppIdBesideExecutable(request.GameConfig);
                 Program.LogService?.LogMessage(
                     $"Emulator files for AppId {request.GameConfig?.AppId} generated.");
@@ -223,6 +248,7 @@ namespace SmartGoldbergEmu.Services
                 await ServiceLocator.GoldbergArtifactService.GenerateAchievementsForAddSaveAsync(
                     gameConfig,
                     AchievementPreviewKind.RealList,
+                    prefetchedSchemas: null,
                     taskReport,
                     showProgress: true).ConfigureAwait(false);
             }
@@ -236,12 +262,12 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                ITaskReportService itemReport = request.SuppressStatusMessages ? null : request.TaskReportService;
                 ItemGeneratorResult itemGenResult = await ServiceLocator.GoldbergArtifactService
                     .GenerateItemsForAddSaveAsync(
                         request.GameConfig,
-                        itemReport,
-                        showProgress: !request.SuppressStatusMessages,
+                        request.PrefetchedSchemas,
+                        request.TaskReportService,
+                        showProgress: request.TaskReportService != null,
                         friendlyProgressMessages: true)
                     .ConfigureAwait(false);
                 if (!itemGenResult.Success && itemGenResult.ErrorMessage != "Skipped.")
@@ -263,38 +289,13 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private async Task<bool> DownloadTileAndGameImagesAsync(
-            ulong appId,
-            OnlineAppData metadata,
-            ITaskReportService taskReport,
-            AppInfoKeyValue appPicsData = null,
-            string gameDisplayName = null,
-            bool reportFeedback = false,
-            GameAssetsSection catalogAssets = null)
-        {
-            try
-            {
-                return await _gameImageService.DownloadGameImagesAsync(
-                    appId,
-                    metadata,
-                    reportFeedback: reportFeedback,
-                    steamAppIdForRemoteAssets: null,
-                    appPicsData: appPicsData,
-                    gameDisplayName: gameDisplayName,
-                    catalogAssets: catalogAssets).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                LogWarningWithExceptionMessage("Failed to download game images", ex);
-                return false;
-            }
-        }
-
-        private async Task<GameSettingsSaveResult> SaveEmulatorSettingsAsync(GameSettingsSaveRequest request)
+        private async Task<GameSettingsSaveResult> SaveEmulatorSettingsAsync(GameSettingsSaveRequest request, ITaskReportService taskReport)
         {
             ulong appId = request.GameConfig.AppId;
+            string displayName = GetLibraryGameDisplayName(request.GameConfig);
             try
             {
+                taskReport?.SetMessage(AddGameStatusMessages.SavingEmulatorSettings(displayName));
                 GameSettingsSnapshot snapshot = request.BuildSnapshot();
                 request.ResolveAchievementLanguage(snapshot);
 
@@ -303,10 +304,15 @@ namespace SmartGoldbergEmu.Services
                 else
                     _emulatorConfigService.SaveModifiedGameSettings(appId, snapshot);
 
-                request.SaveDlcAndPaths?.Invoke();
+                if (request.SaveDlcAndPaths != null)
+                {
+                    taskReport?.SetMessage(AddGameStatusMessages.SavingDlcAndPaths(displayName));
+                    request.SaveDlcAndPaths();
+                }
 
                 if (request.IsEditMode || !string.IsNullOrWhiteSpace(request.CustomStatsRawJson))
                 {
+                    taskReport?.SetMessage(AddGameStatusMessages.SavingCustomStats(displayName));
                     SaveResult saveResult = _goldbergFilesService.SaveStats(appId, request.CustomStatsRawJson ?? string.Empty);
                     if (!saveResult.IsSuccess)
                     {
@@ -315,7 +321,11 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                request.SaveAdditionalGoldbergFiles?.Invoke();
+                if (request.SaveAdditionalGoldbergFiles != null)
+                {
+                    taskReport?.SetMessage(AddGameStatusMessages.SavingAdditionalFiles(displayName));
+                    request.SaveAdditionalGoldbergFiles();
+                }
             }
             catch (Exception ex)
             {
@@ -342,32 +352,29 @@ namespace SmartGoldbergEmu.Services
                 }
                 else
                 {
-                    taskReport?.SetMessage("Fetching game assets...");
+                    taskReport?.SetMessage("Fetching app info from Steam…");
                     picsData = await _steamProductInfoService.WarmGameConfigAppInfoAsync(gameConfig).ConfigureAwait(false);
                 }
 
                 if (picsData == null)
                 {
-                    taskReport?.SetMessage("Game assets unavailable.", TaskReportKind.Warning);
+                    taskReport?.SetMessage("App info unavailable; .vdf export skipped.", TaskReportKind.Warning);
                     return;
                 }
 
-                if (gameConfig.Catalog != null)
-                    AppCatalogSnapshotStore.TrySave(gameConfig.Catalog);
-
-                taskReport?.SetMessage("Exporting game assets...");
+                taskReport?.SetMessage("Exporting app info (.vdf)…");
                 bool exported = _steamProductInfoService.ExportAppPicsToValveTextFile(appIdText, picsData);
                 if (exported)
-                    taskReport?.SetMessageWithAutoClear("Game assets exported.");
+                    taskReport?.SetMessageWithAutoClear("App info exported.");
                 else
                 {
-                    taskReport?.SetMessage("Game assets export skipped.", TaskReportKind.Warning);
+                    taskReport?.SetMessage("App info export skipped.", TaskReportKind.Warning);
                     Program.LogService?.LogWarning($"Game assets export skipped for app {gameConfig.AppId}.");
                 }
             }
             catch (Exception ex)
             {
-                taskReport?.SetMessage("Game assets export failed.", TaskReportKind.Warning);
+                taskReport?.SetMessage("App info export failed.", TaskReportKind.Warning);
                 Program.LogService?.LogWarning($"Failed to export game assets .vdf for app {gameConfig.AppId}: {ex.Message}");
             }
         }

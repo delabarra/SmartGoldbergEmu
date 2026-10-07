@@ -11,6 +11,7 @@ namespace SmartGoldbergEmu.Models
         public GameConfig GameConfig { get; set; }
         public OnlineAppData Metadata { get; set; }
         public AchievementPreviewKind AchievementPreview { get; set; }
+        public AddGamePrefetchedSchemas PrefetchedSchemas { get; set; }
         public GameSettingsSnapshot SettingsSnapshot { get; set; }
         public string CustomStatsRawJson { get; set; }
         public bool CredentialsTouched { get; set; }

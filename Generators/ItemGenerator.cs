@@ -23,8 +23,10 @@ namespace SmartGoldbergEmu.Generators
             _taskReportService = taskReportService;
         }
 
+        // prefetchedItems: section already fetched for this app (add collect / catalog refresh); null fetches live.
         public async Task<ItemGeneratorResult> GenerateAndSaveAsync(
             GameConfig game,
+            ItemsSection prefetchedItems = null,
             bool showProgress = true,
             bool friendlyProgressMessages = false,
             CancellationToken cancellationToken = default)
@@ -44,15 +46,20 @@ namespace SmartGoldbergEmu.Generators
 
             try
             {
-                if (showProgress && !friendlyProgressMessages)
+                ItemsSection section = prefetchedItems;
+                if (section == null)
                 {
-                    _taskReportService?.SetMessage("Fetching item definitions…");
-                    _taskReportService?.SetProgress(0, 100);
-                }
+                    if (showProgress)
+                    {
+                        _taskReportService?.SetMessage("Fetching item definitions…");
+                        if (!friendlyProgressMessages)
+                            _taskReportService?.SetProgress(0, 100);
+                    }
 
-                ItemsSection section = await ServiceLocator.AppDataKitBridgeService
-                    .FetchItemsAsync(game.AppId, cancellationToken)
-                    .ConfigureAwait(false);
+                    section = await ServiceLocator.AppDataKitBridgeService
+                        .FetchItemsAsync(game.AppId, cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (section == null || string.IsNullOrWhiteSpace(section.ArchiveJson))
@@ -60,7 +67,7 @@ namespace SmartGoldbergEmu.Generators
                     string failMessage = string.IsNullOrWhiteSpace(section?.Error)
                         ? "No item definitions available for this app."
                         : section.Error;
-                    if (showProgress && !friendlyProgressMessages)
+                    if (showProgress)
                     {
                         ReportFinishedStatus(
                             failMessage,
@@ -77,12 +84,14 @@ namespace SmartGoldbergEmu.Generators
                 if (!TryBuildItemDefinitionMap(archiveJson, out map, out parseDetail))
                 {
                     Program.LogService?.LogWarning("ItemGenerator: could not parse item archive for app " + appIdStr + ". " + parseDetail);
+                    if (showProgress)
+                        ReportFinishedStatus("Could not parse item definitions.", TaskReportKind.Warning);
                     return ItemGeneratorResult.Fail(parseDetail);
                 }
 
                 if (map.Count == 0)
                 {
-                    if (showProgress && !friendlyProgressMessages)
+                    if (showProgress)
                         ReportFinishedStatus("Item archive contained no item definitions.", TaskReportKind.Info);
                     return ItemGeneratorResult.Fail("Item archive contained no item definitions.");
                 }
@@ -135,7 +144,7 @@ namespace SmartGoldbergEmu.Generators
                 }
 
                 Program.LogService?.LogDebug(string.Format("ItemGenerator: wrote {0} item(s) for {1} ({2})", map.Count, game.AppName, game.AppId));
-                return ItemGeneratorResult.Ok(map.Count);
+                return ItemGeneratorResult.Ok(map.Count, section);
             }
             catch (OperationCanceledException)
             {
@@ -144,7 +153,7 @@ namespace SmartGoldbergEmu.Generators
             catch (Exception ex)
             {
                 Program.LogService?.LogError("ItemGenerator failed", ex);
-                if (showProgress && !friendlyProgressMessages)
+                if (showProgress)
                     ReportFinishedStatus("Item generation failed.", TaskReportKind.Error);
                 return ItemGeneratorResult.Fail(ex.Message);
             }

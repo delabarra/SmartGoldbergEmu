@@ -74,6 +74,8 @@ namespace SmartGoldbergEmu.Services
             string display = string.IsNullOrEmpty(prefix) ? message : prefix + message;
             _statusLabel.Text = display;
             _statusLabel.ToolTipText = display;
+            // Paint now: callers on the UI thread may keep it busy (e.g. add-save payload build) before the next pump.
+            _statusLabel.Owner?.Update();
 
             // Terminal warning/error text always uses the shared display timer.
             if (kind == TaskReportKind.Warning || kind == TaskReportKind.Error)

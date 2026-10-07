@@ -33,14 +33,13 @@ namespace SmartGoldbergEmu.Models
     }
 
     /// <summary>
-    /// Result of extracting app-specific data (stats, leaderboards, achievements) from Steam app product info (PICS).
+    /// Result of extracting app-specific data (stats, depots, leaderboards) from Steam app product info (PICS).
     /// </summary>
     public class AppDataExtractionResult
     {
         public string Stats { get; set; }
         public List<string> Depots { get; set; }
         public List<string> Leaderboards { get; set; }
-        public string Achievements { get; set; }
 
         public AppDataExtractionResult()
         {

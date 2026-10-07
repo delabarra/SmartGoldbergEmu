@@ -147,12 +147,13 @@ namespace SmartGoldbergEmu.Services
         {
             var d = new OverlaySettings();
 
-            SetBoolIfNotDefault(iniFile, "overlay::general", "enable_experimental_overlay", settings.EnableExperimentalOverlay, d.EnableExperimentalOverlay);
+            // App defaults differ from Goldberg's (enable_experimental_overlay=0, disable_achievement_progress=1), so omitting these keys would flip them.
+            _iniService.SetValue(iniFile, "overlay::general", "enable_experimental_overlay", IniParseHelper.BoolToString(settings.EnableExperimentalOverlay));
             SetIntIfNotDefault(iniFile, "overlay::general", "hook_delay_sec", settings.HookDelaySec, d.HookDelaySec);
             SetIntIfNotDefault(iniFile, "overlay::general", "renderer_detector_timeout_sec", settings.RendererDetectorTimeoutSec, d.RendererDetectorTimeoutSec);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_achievement_notification", settings.DisableAchievementNotification, d.DisableAchievementNotification);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_friend_notification", settings.DisableFriendNotification, d.DisableFriendNotification);
-            SetBoolIfNotDefault(iniFile, "overlay::general", "disable_achievement_progress", settings.DisableAchievementProgress, d.DisableAchievementProgress);
+            _iniService.SetValue(iniFile, "overlay::general", "disable_achievement_progress", IniParseHelper.BoolToString(settings.DisableAchievementProgress));
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_warning_any", settings.DisableWarningAny, d.DisableWarningAny);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_warning_bad_appid", settings.DisableWarningBadAppId, d.DisableWarningBadAppId);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_warning_local_save", settings.DisableWarningLocalSave, d.DisableWarningLocalSave);

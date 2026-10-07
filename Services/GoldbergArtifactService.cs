@@ -1,17 +1,16 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
+using AppDataKit;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
-using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Generators;
 using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
 {
-    // Single entry point for on-demand achievements/items generation (menu, add-save, metadata) and catalog refresh.
+    // Single entry point for on-demand achievements/items generation (menu, add-save, import) and catalog refresh.
     public class GoldbergArtifactService
     {
         private static readonly string[] RefreshableResourceImageExtensions =
@@ -73,15 +72,14 @@ namespace SmartGoldbergEmu.Services
             if (game == null || game.AppId == 0)
                 return;
 
-            var achievementService = CreateAchievementService(report, game.AppId);
-            await achievementService.GenerateAchievementsAsync(game, showProgress: report != null).ConfigureAwait(false);
-            await TryPatchCatalogAchievementsAsync(game).ConfigureAwait(false);
+            await GenerateAchievementsAndPatchCatalogAsync(game, report, catalogAchievements: null).ConfigureAwait(false);
             game.ReleaseHeavyRuntimeData();
         }
 
         public async Task GenerateAchievementsForAddSaveAsync(
             GameConfig game,
             AchievementPreviewKind previewKind,
+            AddGamePrefetchedSchemas prefetchedSchemas,
             ITaskReportService report,
             bool showProgress = true,
             bool progressOnlyNoMessages = false)
@@ -89,18 +87,30 @@ namespace SmartGoldbergEmu.Services
             if (game == null || game.AppId == 0)
                 return;
 
-            var achievementService = CreateAchievementService(report, game.AppId);
+            // Achievements are generated after the form settings are saved, so this is the language the player picked.
+            string language = GetAchievementLanguage(game.AppId);
+            var achievementService = new AchievementService(report, language);
             await achievementService.GenerateAchievementsForAddSaveAsync(
                 game,
                 previewKind,
+                UnlessErrored(prefetchedSchemas?.GetAchievementsFor(game.AppId, language)),
                 showProgress,
                 progressOnlyNoMessages).ConfigureAwait(false);
         }
 
-        public async Task<(AchievementPreviewKind kind, string previewJson)> BuildAddModeAchievementPreviewAsync(GameConfig game)
+        // collectCatalog: full snapshot from add-game collect; its achievement section is reused when the language allows.
+        public async Task<AchievementAddModePreview> BuildAddModeAchievementPreviewAsync(GameConfig game, AppCatalogSnapshot collectCatalog)
         {
-            var achievementService = CreateAchievementService(null, game?.AppId ?? 0);
-            return await achievementService.BuildAddModePreviewAsync(game).ConfigureAwait(false);
+            ulong appId = game?.AppId ?? 0;
+            string language = GetAchievementLanguage(appId);
+            AchievementsSection catalogAchievements = collectCatalog != null && collectCatalog.AppId == appId
+                ? collectCatalog.Achievements
+                : null;
+
+            var achievementService = new AchievementService(null, language);
+            return await achievementService
+                .BuildAddModePreviewAsync(game, GetReusableCatalogAchievements(catalogAchievements, language))
+                .ConfigureAwait(false);
         }
 
         public async Task<ItemGeneratorResult> GenerateItemsFromMenuAsync(GameConfig game, ITaskReportService report)
@@ -108,16 +118,14 @@ namespace SmartGoldbergEmu.Services
             if (game == null || game.AppId == 0)
                 return ItemGeneratorResult.Fail("Invalid game or App ID.");
 
-            var generator = CreateItemGenerator(report);
-            ItemGeneratorResult result = await generator.GenerateAndSaveAsync(game, showProgress: report != null).ConfigureAwait(false);
-            if (result.Success)
-                await TryPatchCatalogItemsAsync(game).ConfigureAwait(false);
+            ItemGeneratorResult result = await GenerateItemsAndPatchCatalogAsync(game, report, catalogItems: null).ConfigureAwait(false);
             game.ReleaseHeavyRuntimeData();
             return result;
         }
 
         public async Task<ItemGeneratorResult> GenerateItemsForAddSaveAsync(
             GameConfig game,
+            AddGamePrefetchedSchemas prefetchedSchemas,
             ITaskReportService report,
             bool showProgress,
             bool friendlyProgressMessages = true)
@@ -131,6 +139,7 @@ namespace SmartGoldbergEmu.Services
             var generator = CreateItemGenerator(report);
             return await generator.GenerateAndSaveAsync(
                 game,
+                UnlessErrored(prefetchedSchemas?.GetItemsFor(game.AppId)),
                 showProgress,
                 friendlyProgressMessages).ConfigureAwait(false);
         }
@@ -185,8 +194,8 @@ namespace SmartGoldbergEmu.Services
                 ServiceLocator.LogService?.LogWarning($"Failed to regenerate metadata files for app {game.AppId}: {ex.Message}");
             }
 
-            await GenerateAchievementsFromMenuAsync(game, report).ConfigureAwait(false);
-            await GenerateItemsFromMenuAsync(game, report).ConfigureAwait(false);
+            await GenerateAchievementsAndPatchCatalogAsync(game, report, snapshot.Achievements).ConfigureAwait(false);
+            await GenerateItemsAndPatchCatalogAsync(game, report, snapshot.Items).ConfigureAwait(false);
 
             report?.SetMessage("Refreshing game images...");
             DeleteExistingResourceImages(game.AppId);
@@ -211,12 +220,45 @@ namespace SmartGoldbergEmu.Services
             game.ReleaseHeavyRuntimeData();
         }
 
-        // Menu-driven achievement/item generation already wrote the Goldberg sidecar; patch the catalog JSON section too so it stays current.
-        private async Task TryPatchCatalogAchievementsAsync(GameConfig game)
+        // catalogAchievements: section from a catalog already fetched in this operation (null fetches live).
+        // When it is reused the catalog already holds it; otherwise the freshly fetched section is patched into the catalog JSON.
+        private async Task GenerateAchievementsAndPatchCatalogAsync(
+            GameConfig game,
+            ITaskReportService report,
+            AchievementsSection catalogAchievements)
         {
-            if (game == null || game.AppId == 0)
-                return;
+            string language = GetAchievementLanguage(game.AppId);
+            AchievementsSection reusable = GetReusableCatalogAchievements(catalogAchievements, language);
 
+            var achievementService = new AchievementService(report, language);
+            AchievementsSection used = await achievementService
+                .GenerateAchievementsAsync(game, showProgress: report != null, prefetchedSchema: reusable)
+                .ConfigureAwait(false);
+
+            if (reusable == null)
+                TryPatchCatalog(game, catalog => catalog.Achievements = used, "achievements");
+        }
+
+        private async Task<ItemGeneratorResult> GenerateItemsAndPatchCatalogAsync(
+            GameConfig game,
+            ITaskReportService report,
+            ItemsSection catalogItems)
+        {
+            ItemsSection reusable = UnlessErrored(catalogItems);
+
+            var generator = CreateItemGenerator(report);
+            ItemGeneratorResult result = await generator
+                .GenerateAndSaveAsync(game, reusable, showProgress: report != null)
+                .ConfigureAwait(false);
+
+            if (result.Success && reusable == null)
+                TryPatchCatalog(game, catalog => catalog.Items = result.Section, "items");
+            return result;
+        }
+
+        // Generation already wrote the Goldberg sidecar; keep the catalog JSON section in step with it.
+        private static void TryPatchCatalog(GameConfig game, Action<AppCatalogSnapshot> patch, string sectionName)
+        {
             try
             {
                 AppCatalogSnapshot catalog = game.Catalog;
@@ -225,39 +267,28 @@ namespace SmartGoldbergEmu.Services
                 if (catalog == null)
                     return;
 
-                catalog.Achievements = await _appDataKitBridgeService
-                    .FetchAchievementsAsync(game.AppId, GetAchievementLanguage(game.AppId))
-                    .ConfigureAwait(false);
+                patch(catalog);
                 game.Catalog = catalog;
                 AppCatalogSnapshotStore.TrySave(catalog);
             }
             catch (Exception ex)
             {
-                ServiceLocator.LogService?.LogWarning($"Failed to patch catalog achievements for app {game.AppId}: {ex.Message}");
+                ServiceLocator.LogService?.LogWarning($"Failed to patch catalog {sectionName} for app {game.AppId}: {ex.Message}");
             }
         }
 
-        private async Task TryPatchCatalogItemsAsync(GameConfig game)
+        // Catalog snapshots fetch the achievement schema in the kit default language; names and descriptions are localized.
+        private static AchievementsSection GetReusableCatalogAchievements(AchievementsSection catalogAchievements, string language)
         {
-            if (game == null || game.AppId == 0)
-                return;
+            if (!string.Equals(language, ApplicationConstants.DefaultLanguage, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return UnlessErrored(catalogAchievements);
+        }
 
-            try
-            {
-                AppCatalogSnapshot catalog = game.Catalog;
-                if (catalog == null)
-                    AppCatalogSnapshotStore.TryLoad(game.AppId, out catalog);
-                if (catalog == null)
-                    return;
-
-                catalog.Items = await _appDataKitBridgeService.FetchItemsAsync(game.AppId).ConfigureAwait(false);
-                game.Catalog = catalog;
-                AppCatalogSnapshotStore.TrySave(catalog);
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService?.LogWarning($"Failed to patch catalog items for app {game.AppId}: {ex.Message}");
-            }
+        // An Error section may be transient (timeout, HTTP failure), so fetch again instead of writing from it.
+        private static T UnlessErrored<T>(T section) where T : SnapshotSection
+        {
+            return section == null || section.Status == SnapshotSectionStatus.Error ? null : section;
         }
 
         // DownloadGameImagesAsync skips files that already exist; clear stale art first so a refresh actually re-downloads it.
@@ -291,39 +322,6 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public void TryGenerateItemsOnlineIfMissing(GameConfig gameConfig)
-        {
-            if (gameConfig == null || gameConfig.AppId == 0)
-                return;
-
-            if (!_goldbergFilesService.ShouldAutoGenerateItems(gameConfig.AppId))
-                return;
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
-                    ct.ThrowIfCancellationRequested();
-                    await GenerateItemsFromMenuAsync(gameConfig, null).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (Exception ex)
-                {
-                    ServiceLocator.LogService?.LogError(
-                        $"Failed to auto-generate {PathConstants.GoldbergItemsJsonFileName} for app {gameConfig.AppId}",
-                        ex);
-                }
-            }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(ServiceLocator.LogService, nameof(TryGenerateItemsOnlineIfMissing));
-        }
-
-        private AchievementService CreateAchievementService(ITaskReportService report, ulong appId)
-        {
-            return new AchievementService(report, GetAchievementLanguage(appId));
-        }
-
         private ItemGenerator CreateItemGenerator(ITaskReportService report)
         {
             return new ItemGenerator(report);
@@ -331,7 +329,7 @@ namespace SmartGoldbergEmu.Services
 
         private string GetAchievementLanguage(ulong appId)
         {
-            return _emulatorConfigService?.GetLanguageForAchievements(appId) ?? "english";
+            return _emulatorConfigService?.GetLanguageForAchievements(appId) ?? ApplicationConstants.DefaultLanguage;
         }
     }
 }
