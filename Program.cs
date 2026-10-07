@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Forms;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
@@ -37,6 +38,7 @@ namespace SmartGoldbergEmu
         static void Main(string[] args)
         {
             BootstrapService.EnsureLoggingInitialized();
+            InstallGlobalExceptionHandlers();
 
             if (LaunchSessionCleanupService.TryRunWatcherFromCommandLine(args, LogService))
                 return;
@@ -130,6 +132,45 @@ namespace SmartGoldbergEmu
                 _mutex?.ReleaseMutex();
                 _mutex?.Dispose();
             }
+        }
+
+        // Must run before any control is created (SetUnhandledExceptionMode throws afterwards).
+        private static void InstallGlobalExceptionHandlers()
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += OnUiThreadException;
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        }
+
+        private static void OnUiThreadException(object sender, ThreadExceptionEventArgs e)
+        {
+            LogService?.LogError("Unhandled UI exception", e.Exception);
+            try
+            {
+                MessageBox.Show(
+                    ErrorDisplayHelper.SanitizeForUser("The last action", e.Exception) + "\n\nDetails were written to the log.",
+                    Application.ProductName,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            catch
+            {
+            }
+        }
+
+        // Exceptions on non-UI threads still terminate the process; log first so the cause is not lost.
+        private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            LogService?.LogError(
+                $"Unhandled exception (terminating: {e.IsTerminating})",
+                e.ExceptionObject as Exception);
+        }
+
+        private static void OnUnobservedTaskException(object sender, UnobservedTaskExceptionEventArgs e)
+        {
+            LogService?.LogError("Unobserved task exception", e.Exception);
+            e.SetObserved();
         }
 
         private static void TryRestoreSteamClientRegistryForLifecycle()

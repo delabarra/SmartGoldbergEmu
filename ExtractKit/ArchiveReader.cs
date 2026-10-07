@@ -73,9 +73,9 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             if (entry.IsDirectory)
                 return;
 
-            string destPath = flatFileName
-                ? Path.Combine(destinationDirectory, Path.GetFileName(entry.Path))
-                : Path.Combine(destinationDirectory, entry.Path.Replace('/', Path.DirectorySeparatorChar));
+            string destPath = EntryPath.ResolveDestinationPath(
+                destinationDirectory,
+                flatFileName ? Path.GetFileName(entry.Path) : entry.Path);
 
             if (!flatFileName)
             {

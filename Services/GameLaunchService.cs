@@ -53,6 +53,7 @@ namespace SmartGoldbergEmu.Services
         {
             public List<FileDeployment> Files = new List<FileDeployment>();
             public string MirroredSteamSettingsPath;
+            public string SteamSettingsBackupPath;
         }
 
         private sealed class Win32DllDeploymentState
@@ -211,14 +212,16 @@ namespace SmartGoldbergEmu.Services
                     string exeDirectory = !string.IsNullOrEmpty(resolvedLaunch) ? Path.GetDirectoryName(resolvedLaunch) : null;
                     string gameRootFolder = GetBaseFolderForLaunchOptions(game, launchOption);
                     GoldbergLaunchMode launchMode = game.LaunchMode;
+                    win32DeployState = new Win32DllDeploymentState { AppId = game.AppId };
 
                     if (!string.IsNullOrEmpty(exeDirectory))
-                        RemoveStraySteamApiDllsBesideExecutable(exeDirectory, besideExeDeployActive: launchMode != GoldbergLaunchMode.SteamClient);
+                        MoveAsideStraySteamDllsBesideExecutable(
+                            exeDirectory,
+                            besideExeDeployActive: launchMode != GoldbergLaunchMode.SteamClient,
+                            win32DeployState);
 
                     if (launchMode == GoldbergLaunchMode.StandardSteamApi)
                     {
-                        win32DeployState = new Win32DllDeploymentState { AppId = game.AppId };
-
                         RefreshSteamInterfacesForStandardLaunch(game, resolvedLaunch, gameRootFolder, useX64);
 
                         var standardResult = DeployStandardGoldbergReleaseToAllTargets(
@@ -257,7 +260,6 @@ namespace SmartGoldbergEmu.Services
                     }
                     else if (launchMode == GoldbergLaunchMode.SteamDllBesideExe)
                     {
-                        win32DeployState = new Win32DllDeploymentState { AppId = game.AppId };
                         sourceModInstallFolder = exeDirectory;
 
                         var steamDllResult = EnsureSteamDllInGoldbergFolder();
@@ -587,36 +589,62 @@ namespace SmartGoldbergEmu.Services
             return fresh ?? game;
         }
 
-        private void RemoveStraySteamApiDllsBesideExecutable(string exeDirectory, bool besideExeDeployActive)
+        private static readonly string[] SteamClientAndOverlayDllFileNames =
         {
-            if (string.IsNullOrEmpty(exeDirectory) || !Directory.Exists(exeDirectory))
-                return;
+            PathConstants.GoldbergSteamClientDll32,
+            PathConstants.GoldbergSteamClientDll64,
+            PathConstants.GoldbergGameOverlayRendererDll32,
+            PathConstants.GoldbergGameOverlayRendererDll64,
+        };
 
+        // These DLLs may ship with the game (e.g. GoldSrc Steam.dll), so they are moved to .sge and restored at cleanup.
+        private void MoveAsideStraySteamDllsBesideExecutable(
+            string exeDirectory,
+            bool besideExeDeployActive,
+            Win32DllDeploymentState deployState)
+        {
             string[] fileNames = besideExeDeployActive
-                ? new[]
-                {
-                    PathConstants.GoldbergSteamClientDll32,
-                    PathConstants.GoldbergSteamClientDll64,
-                    PathConstants.GoldbergGameOverlayRendererDll32,
-                    PathConstants.GoldbergGameOverlayRendererDll64,
-                }
+                ? SteamClientAndOverlayDllFileNames
                 : new[] { PathConstants.GoldbergSteamDllFileName };
+
+            MoveAsideStrayDlls(exeDirectory, fileNames, () => GetOrCreatePrimaryDeploySite(deployState));
+        }
+
+        private void MoveAsideStrayDlls(string directory, string[] fileNames, Func<StandardDeploySite> getSite)
+        {
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+                return;
 
             foreach (string fileName in fileNames)
             {
-                string path = Path.Combine(exeDirectory, fileName);
+                string path = Path.Combine(directory, fileName);
                 if (!File.Exists(path))
                     continue;
                 try
                 {
-                    File.Delete(path);
-                    _logger?.LogDebug($"Removed stray {fileName} from game folder before launch");
+                    MoveAsideWithBackup(path, getSite());
+                    _logger?.LogDebug($"Moved stray {fileName} aside before launch (restored at cleanup): {path}");
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning($"Could not remove stray {fileName} at {path}: {ex.Message}");
+                    _logger?.LogWarning($"Could not move stray {fileName} aside at {path}: {ex.Message}");
                 }
             }
+        }
+
+        // An existing .sge already holds the original from an unrestored session, so the current file is a stale Goldberg copy.
+        private static void MoveAsideWithBackup(string path, StandardDeploySite site)
+        {
+            if (site == null)
+                throw new ArgumentNullException(nameof(site));
+
+            string backupPath = path + PathConstants.SteamApiBackupSidecarExtension;
+            if (File.Exists(backupPath))
+                File.Delete(path);
+            else
+                File.Move(path, backupPath);
+
+            site.Files.Add(new FileDeployment { TargetPath = path, BackupPath = backupPath, HadOriginal = true });
         }
 
         private ValidationResult EnsureSteamDllInGoldbergFolder()
@@ -772,12 +800,13 @@ namespace SmartGoldbergEmu.Services
 
             foreach (string steamApiDeployPath in targets)
             {
+                // Register before copying so a partial deploy is still restored by failure cleanup.
                 var site = new StandardDeploySite();
+                if (deployState != null)
+                    deployState.Sites.Add(site);
                 var siteResult = DeployStandardGoldbergReleaseToSite(game, useX64, steamApiDeployPath, site);
                 if (!siteResult.IsValid)
                     return siteResult;
-                if (deployState != null)
-                    deployState.Sites.Add(site);
             }
 
             return ValidationResult.Success();
@@ -804,7 +833,7 @@ namespace SmartGoldbergEmu.Services
                     return ValidationResult.Failure("steam_api deployment directory is empty.");
 
                 Directory.CreateDirectory(deployDirectory);
-                RemoveStraySteamClientDllsFromDirectory(deployDirectory);
+                MoveAsideStrayDlls(deployDirectory, SteamClientAndOverlayDllFileNames, () => site);
 
                 CopyWithOptionalBackup(steamApiSrc, steamApiDeployPath, site);
                 _logger?.LogDebug($"Deployed standard Goldberg {steamApiFileName} to {steamApiDeployPath}");
@@ -818,7 +847,7 @@ namespace SmartGoldbergEmu.Services
                 if (Directory.Exists(settingsSource))
                 {
                     string settingsDest = Path.Combine(deployDirectory, PathConstants.SteamSettingsFolderName);
-                    if (TryLinkSteamSettingsJunction(settingsSource, settingsDest, out string junctionError))
+                    if (TryLinkSteamSettingsJunction(settingsSource, settingsDest, site, out string junctionError))
                         site.MirroredSteamSettingsPath = settingsDest;
                     else
                         _logger?.LogWarning(
@@ -836,35 +865,26 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void RemoveStraySteamClientDllsFromDirectory(string directory)
+        private bool TryLinkSteamSettingsJunction(string sourceDir, string destDir, StandardDeploySite site, out string error)
         {
-            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
-                return;
+            DirectoryJunctionHelper.RemoveJunctionIfPresent(destDir);
 
-            foreach (string fileName in new[]
+            // A real folder here belongs to the game (or the user); rename it aside instead of deleting it.
+            string backupDir = destDir + PathConstants.SteamApiBackupSidecarExtension;
+            if (Directory.Exists(destDir))
             {
-                PathConstants.GoldbergSteamClientDll32,
-                PathConstants.GoldbergSteamClientDll64,
-                PathConstants.GoldbergGameOverlayRendererDll32,
-                PathConstants.GoldbergGameOverlayRendererDll64,
-            })
-            {
-                string path = Path.Combine(directory, fileName);
-                if (!File.Exists(path))
-                    continue;
-                try
+                if (Directory.Exists(backupDir) || File.Exists(backupDir))
                 {
-                    File.Delete(path);
+                    error = $"A real {PathConstants.SteamSettingsFolderName} folder exists and {backupDir} is already taken; leaving both in place.";
+                    return false;
                 }
-                catch
-                {
-                }
+
+                Directory.Move(destDir, backupDir);
+                _logger?.LogDebug($"Moved existing {PathConstants.SteamSettingsFolderName} aside (restored at cleanup): {backupDir}");
             }
-        }
 
-        private bool TryLinkSteamSettingsJunction(string sourceDir, string destDir, out string error)
-        {
-            DirectoryJunctionHelper.RemoveLinkIfPresent(destDir);
+            if (Directory.Exists(backupDir))
+                site.SteamSettingsBackupPath = backupDir;
 
             string sourceFull = Path.GetFullPath(sourceDir);
             string destParent = Path.GetDirectoryName(destDir);
@@ -956,25 +976,25 @@ namespace SmartGoldbergEmu.Services
             }
 
             var deployment = new FileDeployment { TargetPath = targetPath };
+            string backupPath = targetPath + PathConstants.SteamApiBackupSidecarExtension;
 
-            if (File.Exists(targetPath))
+            // An existing .sge is the true original left by an unrestored session; never overwrite it with the current file.
+            if (File.Exists(backupPath))
             {
                 deployment.HadOriginal = true;
-                deployment.BackupPath = targetPath + PathConstants.SteamApiBackupSidecarExtension;
-                DeleteLegacySteamApiDeploymentBackup(targetPath);
-                try
-                {
-                    if (File.Exists(deployment.BackupPath))
-                        File.Delete(deployment.BackupPath);
-                }
-                catch
-                {
-                }
-                File.Copy(targetPath, deployment.BackupPath, overwrite: true);
+                deployment.BackupPath = backupPath;
+                _logger?.LogDebug($"Keeping existing original backup: {backupPath}");
+            }
+            else if (File.Exists(targetPath))
+            {
+                deployment.HadOriginal = true;
+                deployment.BackupPath = backupPath;
+                File.Copy(targetPath, backupPath, overwrite: false);
             }
 
-            File.Copy(sourcePath, targetPath, overwrite: true);
+            DeleteLegacySteamApiDeploymentBackup(targetPath);
             site.Files.Add(deployment);
+            File.Copy(sourcePath, targetPath, overwrite: true);
         }
 
         private void CompleteLaunchSessionCleanup(
@@ -1152,6 +1172,7 @@ namespace SmartGoldbergEmu.Services
                 var persistedSite = new PersistedDeploySite
                 {
                     MirroredSteamSettingsPath = site.MirroredSteamSettingsPath,
+                    SteamSettingsBackupPath = site.SteamSettingsBackupPath,
                 };
 
                 if (site.Files != null && site.Files.Count > 0)
@@ -1247,7 +1268,9 @@ namespace SmartGoldbergEmu.Services
 
             // Placeholder until the game process starts: if pid still points at a running Steam.exe,
             // steam_api can spawn the real client before we update pid after Process.Start.
-            int launcherPid = Process.GetCurrentProcess().Id;
+            int launcherPid;
+            using (Process current = Process.GetCurrentProcess())
+                launcherPid = current.Id;
             SteamActiveProcessRegistryHelper.SetActiveProcessPid(launcherPid);
             _logger?.LogDebug($"ActiveProcess pid placeholder = {launcherPid} (launcher, before game start)");
 

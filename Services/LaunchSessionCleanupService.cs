@@ -59,6 +59,18 @@ namespace SmartGoldbergEmu.Services
             string directory = PathConstants.LaunchSessionManifestDirectory;
             Directory.CreateDirectory(directory);
             string path = PathConstants.CombineLaunchSessionManifestPath(session.AppId);
+
+            // Keep unfinished cleanup from an earlier session (process id 0); appended so this session's restores run first.
+            if (TryLoad(path, out PersistedLaunchSession pendingRetry)
+                && pendingRetry.GameProcessId == 0
+                && pendingRetry.DeploySites != null
+                && pendingRetry.DeploySites.Count > 0)
+            {
+                if (session.DeploySites == null)
+                    session.DeploySites = new List<PersistedDeploySite>();
+                session.DeploySites.AddRange(pendingRetry.DeploySites);
+            }
+
             string json = JsonConvert.SerializeObject(session, JsonFormatting.Indented);
             File.WriteAllText(path, json);
             return path;
@@ -230,8 +242,11 @@ namespace SmartGoldbergEmu.Services
                         return;
                     }
 
-                    RunCleanup(session);
-                    TryDeleteManifest(manifestPath);
+                    List<PersistedDeploySite> pendingSites = RunCleanup(session);
+                    if (pendingSites != null)
+                        WritePendingCleanupRetry(session.AppId, manifestPath, pendingSites);
+                    else
+                        TryDeleteManifest(manifestPath);
                 }
                 finally
                 {
@@ -273,7 +288,9 @@ namespace SmartGoldbergEmu.Services
                     WindowStyle = ProcessWindowStyle.Hidden,
                 };
 
-                Process.Start(startInfo);
+                using (Process.Start(startInfo))
+                {
+                }
                 _logger.LogDebug($"Spawned detached launch cleanup watcher for manifest {manifestPath}");
                 return true;
             }
@@ -386,10 +403,47 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private void RunCleanup(PersistedLaunchSession session)
+        // Process id 0 keeps the retry manifest out of live-session checks, so startup or the next launch reconciles it.
+        private void WritePendingCleanupRetry(ulong appId, string manifestPath, List<PersistedDeploySite> pendingSites)
+        {
+            try
+            {
+                string path = manifestPath ?? GetManifestPathForAppId(appId);
+                PersistedLaunchSession retry;
+                if (manifestPath == null && TryLoad(path, out PersistedLaunchSession existing))
+                {
+                    // Another session owns this manifest; append so its cleanup also retries these entries.
+                    retry = existing;
+                    if (retry.DeploySites == null)
+                        retry.DeploySites = new List<PersistedDeploySite>();
+                    retry.DeploySites.AddRange(pendingSites);
+                }
+                else
+                {
+                    retry = new PersistedLaunchSession
+                    {
+                        AppId = appId,
+                        GameProcessId = 0,
+                        SessionGeneration = Guid.NewGuid().ToString("D"),
+                        DeploySites = pendingSites,
+                    };
+                }
+
+                Directory.CreateDirectory(PathConstants.LaunchSessionManifestDirectory);
+                File.WriteAllText(path, JsonConvert.SerializeObject(retry, JsonFormatting.Indented));
+                _logger.LogWarning(
+                    $"Launch session cleanup for AppId {appId} could not restore every file; kept {path} to retry at next startup or launch.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Failed to save pending launch cleanup for AppId {appId}", ex);
+            }
+        }
+
+        private List<PersistedDeploySite> RunCleanup(PersistedLaunchSession session)
         {
             if (session == null)
-                return;
+                return null;
 
             int deployFileCount = 0;
             if (session.DeploySites != null)
@@ -407,11 +461,12 @@ namespace SmartGoldbergEmu.Services
                 + $"restoreActiveProcess={session.RestoreActiveProcessRegistry}.");
 
             RestoreSourceMod(session);
-            CleanupDeploySites(session.DeploySites);
+            List<PersistedDeploySite> pendingSites = CleanupDeploySites(session.DeploySites);
             if (session.RestoreActiveProcessRegistry)
                 RestoreActiveProcessRegistry();
             CleanupGameLibraryFiles(session);
             RestoreBranch(session);
+            return pendingSites;
         }
 
         private void RestoreSourceMod(PersistedLaunchSession session)
@@ -514,78 +569,150 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private void CleanupDeploySites(List<PersistedDeploySite> sites)
+        // Returns the sites that still need work (locked files, junction in use), or null when everything was restored.
+        private List<PersistedDeploySite> CleanupDeploySites(List<PersistedDeploySite> sites)
         {
             if (sites == null)
-                return;
+                return null;
 
+            List<PersistedDeploySite> pendingSites = null;
             foreach (PersistedDeploySite site in sites)
-                CleanupDeploySite(site);
+            {
+                PersistedDeploySite pending = CleanupDeploySite(site);
+                if (pending == null)
+                    continue;
+                if (pendingSites == null)
+                    pendingSites = new List<PersistedDeploySite>();
+                pendingSites.Add(pending);
+            }
+
+            return pendingSites;
         }
 
-        private void CleanupDeploySite(PersistedDeploySite site)
+        private PersistedDeploySite CleanupDeploySite(PersistedDeploySite site)
         {
             if (site == null)
-                return;
+                return null;
 
-            if (!string.IsNullOrEmpty(site.MirroredSteamSettingsPath) && Directory.Exists(site.MirroredSteamSettingsPath))
+            var pending = new PersistedDeploySite();
+            bool hasPending = false;
+
+            if (!TryRemoveSteamSettingsJunction(site.MirroredSteamSettingsPath))
             {
-                try
+                pending.MirroredSteamSettingsPath = site.MirroredSteamSettingsPath;
+                hasPending = true;
+            }
+
+            if (!TryRestoreSteamSettingsBackup(site.SteamSettingsBackupPath))
+            {
+                pending.SteamSettingsBackupPath = site.SteamSettingsBackupPath;
+                hasPending = true;
+            }
+
+            if (site.Files != null)
+            {
+                foreach (PersistedFileDeployment file in site.Files)
                 {
-                    if (!DirectoryJunctionHelper.IsDirectoryReparsePoint(site.MirroredSteamSettingsPath))
-                    {
-                        _logger.LogWarning(
-                            $"Expected a junction at {site.MirroredSteamSettingsPath}; removing folder recursively.");
-                        Directory.Delete(site.MirroredSteamSettingsPath, recursive: true);
-                    }
-                    else
-                    {
-                        Directory.Delete(site.MirroredSteamSettingsPath, recursive: false);
-                        _logger.LogDebug($"Removed {PathConstants.SteamSettingsFolderName} junction: {site.MirroredSteamSettingsPath}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        $"Failed to remove {PathConstants.SteamSettingsFolderName} at {site.MirroredSteamSettingsPath}: {ex.Message}");
+                    if (file == null || TryCleanupDeployedFile(file))
+                        continue;
+                    if (pending.Files == null)
+                        pending.Files = new List<PersistedFileDeployment>();
+                    pending.Files.Add(file);
+                    hasPending = true;
                 }
             }
 
-            if (site.Files == null || site.Files.Count == 0)
-                return;
+            return hasPending ? pending : null;
+        }
 
-            foreach (PersistedFileDeployment file in site.Files)
+        private bool TryRemoveSteamSettingsJunction(string junctionPath)
+        {
+            if (string.IsNullOrEmpty(junctionPath) || !Directory.Exists(junctionPath))
+                return true;
+
+            if (!DirectoryJunctionHelper.IsDirectoryReparsePoint(junctionPath))
             {
-                try
-                {
-                    if (file.HadOriginal)
-                    {
-                        // Restore from backup when present. If the backup is already gone, a prior cleanup
-                        // likely restored the original — do not delete the target.
-                        if (!string.IsNullOrEmpty(file.BackupPath) && File.Exists(file.BackupPath))
-                        {
-                            File.Copy(file.BackupPath, file.TargetPath, overwrite: true);
-                            File.Delete(file.BackupPath);
-                            _logger.LogDebug($"Restored original file: {file.TargetPath}");
-                        }
-                    }
-                    else
-                    {
-                        if (!string.IsNullOrEmpty(file.TargetPath) && File.Exists(file.TargetPath))
-                        {
-                            File.Delete(file.TargetPath);
-                            _logger.LogDebug($"Cleaned deployed file: {file.TargetPath}");
-                        }
+                _logger.LogWarning(
+                    $"Expected a junction at {junctionPath} but found a real folder; leaving it in place.");
+                return true;
+            }
 
-                        if (!string.IsNullOrEmpty(file.BackupPath) && File.Exists(file.BackupPath))
-                            File.Delete(file.BackupPath);
-                        DeleteLegacySteamApiDeploymentBackup(file.TargetPath);
+            try
+            {
+                Directory.Delete(junctionPath, recursive: false);
+                _logger.LogDebug($"Removed {PathConstants.SteamSettingsFolderName} junction: {junctionPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    $"Failed to remove {PathConstants.SteamSettingsFolderName} junction at {junctionPath}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryRestoreSteamSettingsBackup(string backupPath)
+        {
+            if (string.IsNullOrEmpty(backupPath) || !Directory.Exists(backupPath))
+                return true;
+
+            string ext = PathConstants.SteamApiBackupSidecarExtension;
+            if (!backupPath.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            string originalPath = backupPath.Substring(0, backupPath.Length - ext.Length);
+            if (Directory.Exists(originalPath) || File.Exists(originalPath))
+            {
+                _logger.LogWarning(
+                    $"Cannot restore {backupPath}: {originalPath} still exists.");
+                return false;
+            }
+
+            try
+            {
+                Directory.Move(backupPath, originalPath);
+                _logger.LogDebug($"Restored original {PathConstants.SteamSettingsFolderName} folder: {originalPath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to restore {PathConstants.SteamSettingsFolderName} folder from {backupPath}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryCleanupDeployedFile(PersistedFileDeployment file)
+        {
+            try
+            {
+                if (file.HadOriginal)
+                {
+                    // Restore from backup when present. If the backup is already gone, a prior cleanup
+                    // likely restored the original — do not delete the target.
+                    if (!string.IsNullOrEmpty(file.BackupPath) && File.Exists(file.BackupPath))
+                    {
+                        File.Copy(file.BackupPath, file.TargetPath, overwrite: true);
+                        File.Delete(file.BackupPath);
+                        _logger.LogDebug($"Restored original file: {file.TargetPath}");
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogWarning($"Failed to cleanup deployed file {file.TargetPath}: {ex.Message}");
+                    if (!string.IsNullOrEmpty(file.TargetPath) && File.Exists(file.TargetPath))
+                    {
+                        File.Delete(file.TargetPath);
+                        _logger.LogDebug($"Cleaned deployed file: {file.TargetPath}");
+                    }
+
+                    DeleteLegacySteamApiDeploymentBackup(file.TargetPath);
                 }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to cleanup deployed file {file.TargetPath}: {ex.Message}");
+                return false;
             }
         }
 

@@ -13,11 +13,11 @@ namespace SmartGoldbergEmu.Helpers
             return (File.GetAttributes(path) & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint;
         }
 
-        public static void RemoveLinkIfPresent(string linkPath)
+        // Non-recursive delete removes only the junction itself, never the target's contents.
+        public static void RemoveJunctionIfPresent(string junctionPath)
         {
-            if (!Directory.Exists(linkPath))
-                return;
-            Directory.Delete(linkPath, recursive: !IsDirectoryReparsePoint(linkPath));
+            if (IsDirectoryReparsePoint(junctionPath))
+                Directory.Delete(junctionPath, recursive: false);
         }
 
         public static bool TryCreateDirectoryJunction(string junctionPath, string targetPath, out string error)

@@ -88,8 +88,14 @@ namespace SmartGoldbergEmu.Services
                 assetsDownloaded = await imagesTask.ConfigureAwait(false);
             }
 
+            // A new add is already in games.ini, so swap its waiting tile for library art even when file generation failed.
+            // Failed updates restore their draft instead and never show the waiting tile.
             if (!filesResult.IsSuccess)
+            {
+                if (!assetsDownloaded && !request.IsUpdateOfExisting)
+                    TryRunCallback(request.OnAssetsDownloaded);
                 return filesResult;
+            }
 
             taskReport?.SetMessageWithAutoClear(
                 request.IsUpdateOfExisting

@@ -1,8 +1,11 @@
 using System;
+using System.Globalization;
 using System.IO;
+using System.Threading;
 using AppDataKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Generators;
+using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Tests.TestSupport;
 using Xunit;
 
@@ -61,13 +64,41 @@ namespace SmartGoldbergEmu.Tests.Generators
         }
 
         [Fact]
-        public void ConvertStatsDbJsonToGoldbergFormat_adds_global_from_default()
+        public void ConvertStatsDbJsonToGoldbergFormat_writes_string_default_and_global()
         {
             string input = TestFileHelper.ReadTestData("stats_db_225140_input.json");
             string result = StatsGenerator.ConvertStatsDbJsonToGoldbergFormat(input);
-            Assert.False(string.IsNullOrEmpty(result));
-            Assert.Contains("\"global\"", result);
-            Assert.Contains("STAT_THE_MIGHTY_FOOT", result);
+
+            var stat = Assert.IsType<JsonObject>(Assert.Single(JsonArray.Parse(result)));
+            Assert.Equal(4, stat.Count);
+            Assert.Equal("STAT_THE_MIGHTY_FOOT", ((JsonString)stat["name"]).Value);
+            Assert.Equal("int", ((JsonString)stat["type"]).Value);
+            Assert.Equal("0", ((JsonString)stat["default"]).Value);
+            Assert.Equal("0", ((JsonString)stat["global"]).Value);
+        }
+
+        [Fact]
+        public void ConvertStatsDbJsonToGoldbergFormat_uses_invariant_float_and_ignores_max()
+        {
+            const string input = "[{\"name\":\"accuracy\",\"displayName\":\"Accuracy\",\"type\":\"float\",\"default\":0.5,\"max\":100}]";
+            CultureInfo previous = Thread.CurrentThread.CurrentCulture;
+            try
+            {
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
+                string result = StatsGenerator.ConvertStatsDbJsonToGoldbergFormat(input);
+
+                var stat = Assert.IsType<JsonObject>(Assert.Single(JsonArray.Parse(result)));
+                Assert.Equal(4, stat.Count);
+                Assert.Equal("float", ((JsonString)stat["type"]).Value);
+                Assert.Equal("0.5", ((JsonString)stat["default"]).Value);
+                Assert.Equal("0", ((JsonString)stat["global"]).Value);
+                Assert.Null(stat["max"]);
+                Assert.Null(stat["displayName"]);
+            }
+            finally
+            {
+                Thread.CurrentThread.CurrentCulture = previous;
+            }
         }
 
         [Fact]

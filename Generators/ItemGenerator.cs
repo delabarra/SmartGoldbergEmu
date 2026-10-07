@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -164,7 +165,7 @@ namespace SmartGoldbergEmu.Generators
             _taskReportService?.SetMessageWithAutoClear(message, kind);
         }
 
-        private static bool TryBuildItemDefinitionMap(string archiveJson, out JsonObject map, out string errorDetail)
+        internal static bool TryBuildItemDefinitionMap(string archiveJson, out JsonObject map, out string errorDetail)
         {
             map = null;
             errorDetail = null;
@@ -197,7 +198,9 @@ namespace SmartGoldbergEmu.Generators
                 }
                 if (allValuesAreObjects)
                 {
-                    map = (JsonObject)asObj.DeepClone();
+                    map = new JsonObject();
+                    foreach (var p in asObj.Properties())
+                        AddGoldbergItemDefinition(map, p.Name, (JsonObject)p.Value);
                     return true;
                 }
             }
@@ -249,20 +252,49 @@ namespace SmartGoldbergEmu.Generators
                 if (item == null)
                     continue;
 
-                string itemId = item["itemdefid"]?.ToString();
-                if (string.IsNullOrEmpty(itemId))
-                    itemId = "item_" + i;
-
-                map[itemId] = item;
+                AddGoldbergItemDefinition(map, item["itemdefid"]?.ToString(), item);
             }
 
             if (map.Count == 0)
             {
-                errorDetail = "The archive array had no JSON objects with item definitions. Preview: " + preview;
+                errorDetail = "The archive array had no item definitions with a numeric itemdefid. Preview: " + preview;
                 return false;
             }
 
             return true;
+        }
+
+        // gbe_fork calls std::stoi on every items.json key without try/catch, so non-numeric ids must not be written.
+        private static void AddGoldbergItemDefinition(JsonObject map, string itemDefId, JsonObject item)
+        {
+            if (!int.TryParse(itemDefId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+                return;
+
+            map[itemDefId] = ToGoldbergItemDefinition(item);
+        }
+
+        // gbe_fork GetItemDefinitionProperty reads attributes with get<std::string>() and returns empty for numbers/booleans.
+        private static JsonObject ToGoldbergItemDefinition(JsonObject item)
+        {
+            var result = new JsonObject();
+            foreach (var prop in item.Properties())
+            {
+                JsonValue value = prop.Value;
+                switch (value.Kind)
+                {
+                    case JsonValueKind.Integer:
+                    case JsonValueKind.Float:
+                        result[prop.Name] = new JsonString(value.ToString());
+                        break;
+                    case JsonValueKind.Boolean:
+                        result[prop.Name] = new JsonString(((JsonBool)value).Value ? "true" : "false");
+                        break;
+                    default:
+                        result[prop.Name] = value.DeepClone();
+                        break;
+                }
+            }
+            return result;
         }
 
         // Goldberg default_items.json: instance slot -> { definition: itemdefid, quantity }.

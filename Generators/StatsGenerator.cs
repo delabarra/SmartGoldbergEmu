@@ -12,8 +12,6 @@ namespace SmartGoldbergEmu.Generators
 {
     public class StatsGenerator
     {
-        private static readonly string[] GlobalFallbackPropertyNames = { "max", "default", "defaultvalue" };
-
         private readonly string _gamesDirectory;
 
         public StatsGenerator() : this(PathConstants.GamesDirectory)
@@ -130,35 +128,8 @@ namespace SmartGoldbergEmu.Generators
             if (string.IsNullOrWhiteSpace(statsDbJson))
                 return null;
 
-            var arr = JsonArray.Parse(statsDbJson);
-            var outArr = new JsonArray();
-
-            foreach (var token in arr)
-            {
-                if (token == null || token.Type != JsonValueKind.Object)
-                    continue;
-
-                var o = (JsonObject)token.DeepClone();
-
-                if (o["global"] == null)
-                {
-                    JsonValue chosen = null;
-                    foreach (var key in GlobalFallbackPropertyNames)
-                    {
-                        var candidate = o[key];
-                        if (candidate != null)
-                        {
-                            chosen = candidate.DeepClone();
-                            break;
-                        }
-                    }
-                    o["global"] = chosen ?? new JsonNumber(0);
-                }
-
-                outArr.Add(o);
-            }
-
-            return outArr.Count == 0 ? null : outArr.ToJsonString(JsonFormatting.Indented);
+            // gbe_fork reads default/global with value(key, std::string), which throws on JSON numbers and drops the stat.
+            return BuildGoldbergStatsJson(GamesInfosDatasHelper.ParseStatsDb(statsDbJson));
         }
 
         private static string FormatStatsJsonIndented(string json)

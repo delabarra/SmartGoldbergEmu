@@ -1108,7 +1108,7 @@ namespace SmartGoldbergEmu.Forms
 
                 var dlcData = await ServiceLocator.AppDataKitBridgeService
                     .FetchDlcAsync(_gameConfig.AppId)
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(true);
 
                 if (IsDisposed || Disposing)
                     return;

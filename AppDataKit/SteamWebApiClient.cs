@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -512,7 +513,7 @@ namespace AppDataKit
             if (parent == null || !parent.TryGetValue(key, out object value) || value == null)
                 return string.Empty;
 
-            return value.ToString();
+            return Convert.ToString(value, CultureInfo.InvariantCulture);
         }
 
         private static bool ReadBool(Dictionary<string, object> parent, string key)

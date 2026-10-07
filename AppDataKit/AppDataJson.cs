@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace AppDataKit
 {
@@ -514,7 +515,7 @@ namespace AppDataKit
         {
             if (node == null || !node.TryGetValue(key, out object value) || value == null)
                 return null;
-            string text = value.ToString();
+            string text = Convert.ToString(value, CultureInfo.InvariantCulture);
             return string.IsNullOrEmpty(text) ? null : text;
         }
 

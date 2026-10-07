@@ -293,16 +293,25 @@ namespace SmartGoldbergEmu.Services
         {
             ulong appId = request.GameConfig.AppId;
             string displayName = GetLibraryGameDisplayName(request.GameConfig);
+            // Keep saving the remaining files after a settings write failure, then report it.
+            GameSettingsSaveResult deferredFailure = null;
             try
             {
                 taskReport?.SetMessage(AddGameStatusMessages.SavingEmulatorSettings(displayName));
                 GameSettingsSnapshot snapshot = request.BuildSnapshot();
                 request.ResolveAchievementLanguage(snapshot);
 
-                if (!request.IsEditMode)
-                    _emulatorConfigService.SaveAllGameSettings(appId, snapshot);
-                else
-                    _emulatorConfigService.SaveModifiedGameSettings(appId, snapshot);
+                SaveResult settingsSave = !request.IsEditMode
+                    ? _emulatorConfigService.SaveAllGameSettings(appId, snapshot)
+                    : _emulatorConfigService.SaveModifiedGameSettings(appId, snapshot);
+                if (settingsSave != null && !settingsSave.IsSuccess)
+                {
+                    LogSaveResultWarning(settingsSave, "Failed to save emulator settings");
+                    deferredFailure = GameSettingsSaveResult.Failure(
+                        string.IsNullOrWhiteSpace(settingsSave.ErrorMessage)
+                            ? "Failed to save emulator settings."
+                            : settingsSave.ErrorMessage);
+                }
 
                 if (request.SaveDlcAndPaths != null)
                 {
@@ -330,9 +339,10 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 LogWarningWithExceptionMessage("Failed to save emulator settings", ex);
+                return GameSettingsSaveResult.Failure(ErrorDisplayHelper.SanitizeForUser("Saving emulator settings", ex));
             }
 
-            return GameSettingsSaveResult.Success();
+            return deferredFailure ?? GameSettingsSaveResult.Success();
         }
 
         private async Task TryExportSteamProductInfoVdfAsync(GameConfig gameConfig, ITaskReportService taskReport = null)

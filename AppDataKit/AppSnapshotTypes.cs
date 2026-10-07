@@ -80,7 +80,7 @@ namespace AppDataKit
     public sealed class StatsSection : SnapshotSection
     {
         public IReadOnlyList<StatSchemaEntry> Items { get; set; } = Array.Empty<StatSchemaEntry>();
-        // Raw games-infos stats_db.json body (no-key fallback) so stats.json keeps every field; in-memory only, not persisted.
+        // Raw games-infos stats_db.json body (no-key fallback), converted to Goldberg stats.json on save; in-memory only, not persisted.
         public string StatsDbJson { get; set; }
     }
 
