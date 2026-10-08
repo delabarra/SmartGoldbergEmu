@@ -1,5 +1,6 @@
 using System.IO;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Tests.TestSupport;
 using Xunit;
@@ -82,6 +83,131 @@ namespace SmartGoldbergEmu.Tests.Services
                         timeoutMs: 25000);
 
                     Assert.True(restored, "Expected experimental deploy files to be restored or removed after the game process exited.");
+                }
+                finally
+                {
+                    try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                }
+            }
+        }
+
+        [Fact]
+        public void LaunchGame_standard_mode_keeps_existing_sge_original_over_stale_goldberg_target()
+        {
+            const byte staleGoldbergMarker = 0xD4;
+            using (var harness = new LaunchDeployTestHarness())
+            {
+                string gameFolder = TestFileHelper.CreateTempDirectory("sge-game-stale-sge-");
+                try
+                {
+                    harness.CreateGameInstall(gameFolder, out string executablePath);
+                    string steamApiPath = Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64);
+                    string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
+                    harness.WriteMarkerFile(backupPath, LaunchDeployTestHarness.OriginalFileMarker);
+                    harness.WriteMarkerFile(steamApiPath, staleGoldbergMarker);
+                    harness.StageGoldbergExperimental(useX64: true);
+
+                    var game = harness.CreateGameConfig(
+                        LaunchDeployTestHarness.DefaultTestAppId,
+                        gameFolder,
+                        executablePath,
+                        GoldbergLaunchMode.StandardSteamApi);
+
+                    var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
+                    Assert.True(result.IsValid, result.ErrorMessage);
+                    Assert.Equal(LaunchDeployTestHarness.OriginalFileMarker, harness.ReadMarkerFile(backupPath));
+
+                    bool restored = LaunchDeployTestHarness.WaitUntil(
+                        () => File.Exists(steamApiPath)
+                            && !File.Exists(backupPath)
+                            && harness.ReadMarkerFile(steamApiPath) == LaunchDeployTestHarness.OriginalFileMarker,
+                        timeoutMs: 25000);
+
+                    Assert.True(restored, "Expected the pre-existing .sge original to be restored, not the stale Goldberg copy.");
+                }
+                finally
+                {
+                    try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                }
+            }
+        }
+
+        [Fact]
+        public void LaunchGame_steam_dll_mode_moves_game_steamclient_aside_and_restores_it()
+        {
+            using (var harness = new LaunchDeployTestHarness())
+            {
+                string gameFolder = TestFileHelper.CreateTempDirectory("sge-game-stray-client-");
+                try
+                {
+                    harness.CreateGameInstall(gameFolder, out string executablePath);
+                    string steamClientPath = Path.Combine(gameFolder, PathConstants.GoldbergSteamClientDll64);
+                    string backupPath = steamClientPath + PathConstants.SteamApiBackupSidecarExtension;
+                    harness.WriteMarkerFile(steamClientPath, LaunchDeployTestHarness.OriginalFileMarker);
+                    harness.StageGoldbergSteamDll();
+
+                    var game = harness.CreateGameConfig(
+                        LaunchDeployTestHarness.DefaultTestAppId,
+                        gameFolder,
+                        executablePath,
+                        GoldbergLaunchMode.SteamDllBesideExe);
+
+                    var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
+                    Assert.True(result.IsValid, result.ErrorMessage);
+                    Assert.False(File.Exists(steamClientPath), "Expected the game's steamclient to be moved aside during the session.");
+                    Assert.True(File.Exists(backupPath));
+
+                    bool restored = LaunchDeployTestHarness.WaitUntil(
+                        () => File.Exists(steamClientPath)
+                            && !File.Exists(backupPath)
+                            && harness.ReadMarkerFile(steamClientPath) == LaunchDeployTestHarness.OriginalFileMarker,
+                        timeoutMs: 25000);
+
+                    Assert.True(restored, "Expected the game's steamclient to be restored after the game process exited.");
+                }
+                finally
+                {
+                    try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                }
+            }
+        }
+
+        [Fact]
+        public void LaunchGame_standard_mode_restores_game_owned_steam_settings_folder()
+        {
+            using (var harness = new LaunchDeployTestHarness())
+            {
+                string gameFolder = TestFileHelper.CreateTempDirectory("sge-game-own-settings-");
+                try
+                {
+                    harness.CreateGameInstall(gameFolder, out string executablePath);
+                    string settingsPath = Path.Combine(gameFolder, PathConstants.SteamSettingsFolderName);
+                    string settingsBackupPath = settingsPath + PathConstants.SteamApiBackupSidecarExtension;
+                    string customFile = Path.Combine(settingsPath, "custom.txt");
+                    harness.WriteMarkerFile(customFile, LaunchDeployTestHarness.OriginalFileMarker);
+                    harness.WriteMarkerFile(
+                        Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64),
+                        LaunchDeployTestHarness.OriginalFileMarker);
+                    harness.StageGoldbergExperimental(useX64: true);
+
+                    var game = harness.CreateGameConfig(
+                        LaunchDeployTestHarness.DefaultTestAppId,
+                        gameFolder,
+                        executablePath,
+                        GoldbergLaunchMode.StandardSteamApi);
+
+                    var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
+                    Assert.True(result.IsValid, result.ErrorMessage);
+                    Assert.True(File.Exists(Path.Combine(settingsBackupPath, "custom.txt")));
+
+                    bool restored = LaunchDeployTestHarness.WaitUntil(
+                        () => File.Exists(customFile)
+                            && !DirectoryJunctionHelper.IsDirectoryReparsePoint(settingsPath)
+                            && !Directory.Exists(settingsBackupPath),
+                        timeoutMs: 25000);
+
+                    Assert.True(restored, "Expected the game's own steam_settings folder to be restored after the game process exited.");
+                    Assert.Equal(LaunchDeployTestHarness.OriginalFileMarker, harness.ReadMarkerFile(customFile));
                 }
                 finally
                 {

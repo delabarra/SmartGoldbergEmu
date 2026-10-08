@@ -86,7 +86,7 @@ namespace SmartGoldbergEmu.Helpers
             return PathConstants.CombineSteamClientUiImagesPath(PathConstants.GetProgramFilesX86DefaultSteamInstallationRoot());
         }
 
-        // IfAbsent: copy hashed clientui image into %LocalAppData%\SmartGoldbergEmu\.
+        // Copies only when the destination file is missing.
         public static bool TryCopySteamClientUiHashedImageFromSteam(string destinationFilePath)
         {
             if (string.IsNullOrWhiteSpace(destinationFilePath))
@@ -192,8 +192,8 @@ namespace SmartGoldbergEmu.Helpers
             return IsSteamDllPresentInGoldbergFolder();
         }
 
-        // IfAbsent: copy Steam.dll from the local Steam client into goldberg\steam_old.
-        // CDN bins_win32 extract is soft-fail in EnsureGlobalConfigFilesExistAsync; never use fork zip Steam.dll.
+        // Copies Steam.dll from the local Steam client only when missing. Never use the fork zip's Steam.dll;
+        // the CDN bins_win32 extract in EnsureGlobalConfigFilesExistAsync is soft-fail.
         public static bool TryEnsureSteamDllFromSteamClient(string targetDirectory, out string errorMessage)
         {
             errorMessage = null;
@@ -290,7 +290,7 @@ namespace SmartGoldbergEmu.Helpers
             return !string.IsNullOrEmpty(gameDataPath);
         }
 
-        // IfAbsent: prefer an existing goldberg\steam_old\Steam.dll; otherwise copy from the Steam client.
+        // Keeps an existing Steam.dll in the target folder; otherwise copies it from the Steam client.
         public static bool TrySyncSteamDllToDirectory(string targetDirectory, out string errorMessage)
         {
             errorMessage = null;

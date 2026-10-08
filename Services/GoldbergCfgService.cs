@@ -143,16 +143,17 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private void ApplyOverlayToIni(IniFile iniFile, OverlaySettings settings)
+        public void ApplyOverlayToIni(IniFile iniFile, OverlaySettings settings)
         {
             var d = new OverlaySettings();
 
-            SetBoolIfNotDefault(iniFile, "overlay::general", "enable_experimental_overlay", settings.EnableExperimentalOverlay, d.EnableExperimentalOverlay);
+            // App defaults differ from Goldberg's (enable_experimental_overlay=0, disable_achievement_progress=1), so omitting these keys would flip them.
+            _iniService.SetValue(iniFile, "overlay::general", "enable_experimental_overlay", IniParseHelper.BoolToString(settings.EnableExperimentalOverlay));
             SetIntIfNotDefault(iniFile, "overlay::general", "hook_delay_sec", settings.HookDelaySec, d.HookDelaySec);
             SetIntIfNotDefault(iniFile, "overlay::general", "renderer_detector_timeout_sec", settings.RendererDetectorTimeoutSec, d.RendererDetectorTimeoutSec);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_achievement_notification", settings.DisableAchievementNotification, d.DisableAchievementNotification);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_friend_notification", settings.DisableFriendNotification, d.DisableFriendNotification);
-            SetBoolIfNotDefault(iniFile, "overlay::general", "disable_achievement_progress", settings.DisableAchievementProgress, d.DisableAchievementProgress);
+            _iniService.SetValue(iniFile, "overlay::general", "disable_achievement_progress", IniParseHelper.BoolToString(settings.DisableAchievementProgress));
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_warning_any", settings.DisableWarningAny, d.DisableWarningAny);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_warning_bad_appid", settings.DisableWarningBadAppId, d.DisableWarningBadAppId);
             SetBoolIfNotDefault(iniFile, "overlay::general", "disable_warning_local_save", settings.DisableWarningLocalSave, d.DisableWarningLocalSave);
@@ -162,6 +163,10 @@ namespace SmartGoldbergEmu.Services
             SetBoolIfNotDefault(iniFile, "overlay::general", "overlay_always_show_fps", settings.OverlayAlwaysShowFps, d.OverlayAlwaysShowFps);
             SetBoolIfNotDefault(iniFile, "overlay::general", "overlay_always_show_frametime", settings.OverlayAlwaysShowFrametime, d.OverlayAlwaysShowFrametime);
             SetBoolIfNotDefault(iniFile, "overlay::general", "overlay_always_show_playtime", settings.OverlayAlwaysShowPlaytime, d.OverlayAlwaysShowPlaytime);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "enable_screenshot", settings.EnableScreenshot, d.EnableScreenshot);
+
+            SetValueIfNotDefault(iniFile, "overlay::hotkeys", "key_combo", settings.OverlayKeyCombo, d.OverlayKeyCombo);
+            SetValueIfNotDefault(iniFile, "overlay::hotkeys", "screenshot_combo", settings.ScreenshotCombo, d.ScreenshotCombo);
 
             _iniService.SetValue(iniFile, "overlay::appearance", "Font_Override", settings.FontOverride, skipIfDefault: true);
             SetFloatIfNotDefault(iniFile, "overlay::appearance", "Font_Size", settings.FontSize, d.FontSize);
@@ -183,8 +188,16 @@ namespace SmartGoldbergEmu.Services
             SetFloatIfNotDefault(iniFile, "overlay::appearance", "Notification_Duration_Achievement", settings.NotificationDurationAchievement, d.NotificationDurationAchievement);
             SetFloatIfNotDefault(iniFile, "overlay::appearance", "Notification_Duration_Invitation", settings.NotificationDurationInvitation, d.NotificationDurationInvitation);
             SetFloatIfNotDefault(iniFile, "overlay::appearance", "Notification_Duration_Chat", settings.NotificationDurationChat, d.NotificationDurationChat);
+            SetFloatIfNotDefault(iniFile, "overlay::appearance", "Notification_Duration_Screenshot", settings.NotificationDurationScreenshot, d.NotificationDurationScreenshot);
+            SetFloatIfNotDefault(iniFile, "overlay::appearance", "Achievement_Notification_Delay", settings.AchievementNotificationDelay, d.AchievementNotificationDelay);
 
             SetValueIfNotDefault(iniFile, "overlay::appearance", "Achievement_Unlock_Datetime_Format", settings.AchievementUnlockDatetimeFormat, d.AchievementUnlockDatetimeFormat);
+            SetValueIfNotDefault(iniFile, "overlay::appearance", "Screenshot_Datetime_Format", settings.ScreenshotDatetimeFormat, d.ScreenshotDatetimeFormat);
+            SetBoolIfNotDefault(iniFile, "overlay::appearance", "Show_Notification_History", settings.ShowNotificationHistory, d.ShowNotificationHistory);
+            SetBoolIfNotDefault(iniFile, "overlay::appearance", "Show_Achievement_List", settings.ShowAchievementList, d.ShowAchievementList);
+            SetBoolIfNotDefault(iniFile, "overlay::appearance", "Unlocked_Expanded", settings.UnlockedExpanded, d.UnlockedExpanded);
+            SetBoolIfNotDefault(iniFile, "overlay::appearance", "Locked_Expanded", settings.LockedExpanded, d.LockedExpanded);
+            SetBoolIfNotDefault(iniFile, "overlay::appearance", "Show_Playtime_In_User_Info", settings.ShowPlaytimeInUserInfo, d.ShowPlaytimeInUserInfo);
 
             SetFloatIfNotDefault(iniFile, "overlay::appearance", "Background_R", settings.BackgroundR, d.BackgroundR);
             SetFloatIfNotDefault(iniFile, "overlay::appearance", "Background_G", settings.BackgroundG, d.BackgroundG);
@@ -247,6 +260,8 @@ namespace SmartGoldbergEmu.Services
             SetBoolIfNotDefault(iniFile, "main::stats", "save_only_higher_stat_achievement_progress", settings.SaveOnlyHigherStatAchievementProgress, d.SaveOnlyHigherStatAchievementProgress);
             SetIntIfNotDefault(iniFile, "main::stats", "paginated_achievements_icons", settings.PaginatedAchievementsIcons, d.PaginatedAchievementsIcons);
             SetBoolIfNotDefault(iniFile, "main::stats", "record_playtime", settings.RecordPlaytime, d.RecordPlaytime);
+            SetBoolIfNotDefault(iniFile, "main::stats", "pause_total_when_unfocused", settings.PauseTotalWhenUnfocused, d.PauseTotalWhenUnfocused);
+            SetBoolIfNotDefault(iniFile, "main::stats", "pause_session_when_unfocused", settings.PauseSessionWhenUnfocused, d.PauseSessionWhenUnfocused);
 
             SetBoolIfNotDefault(iniFile, "main::misc", "achievements_bypass", settings.AchievementsBypass, d.AchievementsBypass);
             _iniService.SetValue(iniFile, "main::misc", "steam_game_stats_reports_dir", settings.SteamGameStatsReportsDir, skipIfDefault: true);
@@ -281,7 +296,10 @@ namespace SmartGoldbergEmu.Services
 
             SetBoolIfNotDefault(iniFile, "main::general", "new_app_ticket", settings.NewAppTicket, d.NewAppTicket);
             SetBoolIfNotDefault(iniFile, "main::general", "gc_token", settings.GcToken, d.GcToken);
-            SetBoolIfNotDefault(iniFile, "main::general", "steam_deck", settings.SteamDeck, d.SteamDeck);
+            SetIntIfNotDefault(iniFile, "main::general", "steam_hardware_type", settings.SteamHardwareType, d.SteamHardwareType);
+            SetIntIfNotDefault(iniFile, "main::general", "steam_hardware_default_config", settings.SteamHardwareDefaultConfig, d.SteamHardwareDefaultConfig);
+            SetBoolIfNotDefault(iniFile, "main::general", "is_under_proton", settings.IsUnderProton, d.IsUnderProton);
+            _iniService.RemoveValue(iniFile, "main::general", "steam_deck");
             SetBoolIfNotDefault(iniFile, "main::general", "enable_account_avatar", settings.EnableAccountAvatar, d.EnableAccountAvatar);
             SetBoolIfNotDefault(iniFile, "main::general", "enable_voice_chat", settings.EnableVoiceChat, d.EnableVoiceChat);
             _iniService.RemoveValue(iniFile, "main::general", "crash_printer_location");
@@ -292,6 +310,8 @@ namespace SmartGoldbergEmu.Services
             SetBoolIfNotDefault(iniFile, "main::stats", "save_only_higher_stat_achievement_progress", settings.SaveOnlyHigherStatAchievementProgress, d.SaveOnlyHigherStatAchievementProgress);
             SetIntIfNotDefault(iniFile, "main::stats", "paginated_achievements_icons", settings.PaginatedAchievementsIcons, d.PaginatedAchievementsIcons);
             SetBoolIfNotDefault(iniFile, "main::stats", "record_playtime", settings.RecordPlaytime, d.RecordPlaytime);
+            SetBoolIfNotDefault(iniFile, "main::stats", "pause_total_when_unfocused", settings.PauseTotalWhenUnfocused, d.PauseTotalWhenUnfocused);
+            SetBoolIfNotDefault(iniFile, "main::stats", "pause_session_when_unfocused", settings.PauseSessionWhenUnfocused, d.PauseSessionWhenUnfocused);
 
             SetBoolIfNotDefault(iniFile, "main::misc", "achievements_bypass", settings.AchievementsBypass, d.AchievementsBypass);
             SetBoolIfNotDefault(iniFile, "main::misc", "force_steamhttp_success", settings.ForceSteamhttpSuccess, d.ForceSteamhttpSuccess);
@@ -391,6 +411,21 @@ namespace SmartGoldbergEmu.Services
                     case "overlay_always_show_playtime":
                         settings.OverlayAlwaysShowPlaytime = IniParseHelper.StringToBool(value);
                         break;
+                    case "enable_screenshot":
+                        settings.EnableScreenshot = IniParseHelper.StringToBool(value);
+                        break;
+                }
+            }
+            else if (section == "overlay::hotkeys")
+            {
+                switch (key)
+                {
+                    case "key_combo":
+                        settings.OverlayKeyCombo = value;
+                        break;
+                    case "screenshot_combo":
+                        settings.ScreenshotCombo = value;
+                        break;
                 }
             }
             else if (section == "overlay::appearance")
@@ -448,8 +483,32 @@ namespace SmartGoldbergEmu.Services
                     case "Notification_Duration_Chat":
                         settings.NotificationDurationChat = IniParseHelper.ParseFloat(value);
                         break;
+                    case "Notification_Duration_Screenshot":
+                        settings.NotificationDurationScreenshot = IniParseHelper.ParseFloat(value);
+                        break;
+                    case "Achievement_Notification_Delay":
+                        settings.AchievementNotificationDelay = IniParseHelper.ParseFloat(value);
+                        break;
                     case "Achievement_Unlock_Datetime_Format":
                         settings.AchievementUnlockDatetimeFormat = value;
+                        break;
+                    case "Screenshot_Datetime_Format":
+                        settings.ScreenshotDatetimeFormat = value;
+                        break;
+                    case "Show_Notification_History":
+                        settings.ShowNotificationHistory = IniParseHelper.StringToBool(value);
+                        break;
+                    case "Show_Achievement_List":
+                        settings.ShowAchievementList = IniParseHelper.StringToBool(value);
+                        break;
+                    case "Unlocked_Expanded":
+                        settings.UnlockedExpanded = IniParseHelper.StringToBool(value);
+                        break;
+                    case "Locked_Expanded":
+                        settings.LockedExpanded = IniParseHelper.StringToBool(value);
+                        break;
+                    case "Show_Playtime_In_User_Info":
+                        settings.ShowPlaytimeInUserInfo = IniParseHelper.StringToBool(value);
                         break;
                     case "Background_R":
                         settings.BackgroundR = IniParseHelper.ParseFloat(value);
@@ -576,7 +635,19 @@ namespace SmartGoldbergEmu.Services
                         settings.BlockUnknownClients = value == "1";
                         break;
                     case "steam_deck":
-                        settings.SteamDeck = value == "1";
+                        if (value == "1" && settings.SteamHardwareType == 0)
+                            settings.SteamHardwareType = 1;
+                        break;
+                    case "steam_hardware_type":
+                        if (int.TryParse(value, out int hardwareType))
+                            settings.SteamHardwareType = hardwareType;
+                        break;
+                    case "steam_hardware_default_config":
+                        if (int.TryParse(value, out int hardwareDefaultConfig))
+                            settings.SteamHardwareDefaultConfig = hardwareDefaultConfig;
+                        break;
+                    case "is_under_proton":
+                        settings.IsUnderProton = value == "1";
                         break;
                     case "enable_account_avatar":
                         settings.EnableAccountAvatar = value == "1";
@@ -617,6 +688,12 @@ namespace SmartGoldbergEmu.Services
                         break;
                     case "record_playtime":
                         settings.RecordPlaytime = value == "1";
+                        break;
+                    case "pause_total_when_unfocused":
+                        settings.PauseTotalWhenUnfocused = value == "1";
+                        break;
+                    case "pause_session_when_unfocused":
+                        settings.PauseSessionWhenUnfocused = value == "1";
                         break;
                 }
             }

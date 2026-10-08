@@ -7,13 +7,13 @@ namespace SmartGoldbergEmu.Helpers
     // Parses Valve KeyValues snippets from steam_client_win32 (and similar) manifests.
     public static class SteamClientManifestHelper
     {
-        // Returns the bins_win32 package file name (e.g. bins_win32.zip.vz.…), or null.
+        // File name looks like bins_win32.zip.vz.…
         public static bool TryGetBinsWin32ZipVzFileName(string manifestText, out string zipVzFileName)
         {
             return TryGetPackageZipVzFileName(manifestText, "bins_win32", out zipVzFileName);
         }
 
-        // Returns the resources_all package file name (contains clientui\images), or null.
+        // The resources_all package contains clientui\images.
         public static bool TryGetResourcesAllZipVzFileName(string manifestText, out string zipVzFileName)
         {
             return TryGetPackageZipVzFileName(

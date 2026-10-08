@@ -3,10 +3,9 @@ using System.Collections.Generic;
 
 namespace SmartGoldbergEmu.Helpers
 {
-        // Version comparison (v-prefix, MAJOR.MINOR.PATCH, optional .hotfix revision, optional -suffix).
+    // Accepts a v-prefix, MAJOR.MINOR.PATCH, an optional .hotfix revision, and an optional -suffix.
     public static class VersionComparisonHelper
     {
-        // True when latest is newer than current.
         public static bool IsNewerVersion(string current, string latest)
         {
             if (string.IsNullOrEmpty(latest))

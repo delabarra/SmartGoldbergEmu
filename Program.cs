@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Forms;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
@@ -30,13 +31,11 @@ namespace SmartGoldbergEmu
 
         public static ILogService LogService => BootstrapService.LogService;
 
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
         [STAThread]
         static void Main(string[] args)
         {
             BootstrapService.EnsureLoggingInitialized();
+            InstallGlobalExceptionHandlers();
 
             if (LaunchSessionCleanupService.TryRunWatcherFromCommandLine(args, LogService))
                 return;
@@ -53,10 +52,8 @@ namespace SmartGoldbergEmu
                 }
                 _mutex = null;
 
-                // Another instance is already running focus it
                 FocusExistingWindow();
 
-                // URI
                 if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
                 {
                     if (UriProtocolService.IsValidUri(args[0]))
@@ -94,7 +91,6 @@ namespace SmartGoldbergEmu
                     }
                 }
 
-                // Bootstrap: logging, TLS, config, URI protocol, WinForms init
                 if (!BootstrapService.Initialize())
                 {
                     return;
@@ -114,6 +110,11 @@ namespace SmartGoldbergEmu
                 if (!EmulatorUpdateService.GoldbergFilesCheckSync())
                     EmulatorUpdateService.CheckForUpdatesWithUISync(BootstrapService.LogService, isStartup: true);
 
+                // A modal loop or DoEvents before Application.Run (startup Goldberg download, update prompts) leaves a plain
+                // SynchronizationContext that WinForms does not replace; MainForm awaits would then resume on the thread pool.
+                if (!(SynchronizationContext.Current is WindowsFormsSynchronizationContext))
+                    SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+
                 BootstrapService.LogService.LogMessage("Starting main application form...");
                 var mainForm = new Forms.MainForm();
                 mainForm.PendingAppIdLaunch = appIdToLaunch;
@@ -130,6 +131,45 @@ namespace SmartGoldbergEmu
                 _mutex?.ReleaseMutex();
                 _mutex?.Dispose();
             }
+        }
+
+        // Must run before any control is created (SetUnhandledExceptionMode throws afterwards).
+        private static void InstallGlobalExceptionHandlers()
+        {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += OnUiThreadException;
+            AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        }
+
+        private static void OnUiThreadException(object sender, ThreadExceptionEventArgs e)
+        {
+            LogService?.LogError("Unhandled UI exception", e.Exception);
+            try
+            {
+                MessageBox.Show(
+                    ErrorDisplayHelper.SanitizeForUser("The last action", e.Exception) + "\n\nDetails were written to the log.",
+                    Application.ProductName,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            catch
+            {
+            }
+        }
+
+        // Exceptions on non-UI threads still terminate the process; log first so the cause is not lost.
+        private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            LogService?.LogError(
+                $"Unhandled exception (terminating: {e.IsTerminating})",
+                e.ExceptionObject as Exception);
+        }
+
+        private static void OnUnobservedTaskException(object sender, UnobservedTaskExceptionEventArgs e)
+        {
+            LogService?.LogError("Unobserved task exception", e.Exception);
+            e.SetObserved();
         }
 
         private static void TryRestoreSteamClientRegistryForLifecycle()

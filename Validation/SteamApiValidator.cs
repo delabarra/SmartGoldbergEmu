@@ -11,24 +11,13 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Validation
 {
-    /// <summary>
-    /// Service for validating Steam API DLL files.
-    /// Detects and verifies whether DLL files are original Valve releases or have been modified.
-    /// </summary>
     public static class SteamApiValidator
     {
-        /// <summary>32-bit Steam API DLL filename.</summary>
         public const string SteamApiDll32 = "steam_api.dll";
 
-        /// <summary>64-bit Steam API DLL filename.</summary>
         public const string SteamApiDll64 = "steam_api64.dll";
 
-        /// <summary>
-        /// Determines if a file is an original, unmodified Steam API DLL by comparing its SHA256 hash
-        /// against a database of known-good versions.
-        /// </summary>
-        /// <param name="path">The full path to the DLL file to validate.</param>
-        /// <returns>True if the file hash matches a known original Steam API DLL version; otherwise, false.</returns>
+        // SHA256 match against the known-good Valve hashes for this file name only.
         public static bool IsOriginalSteamApi(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
@@ -64,9 +53,6 @@ namespace SmartGoldbergEmu.Validation
             return TryGetKnownGoodWindowsSteamApiBitness(path, out _);
         }
 
-        /// <summary>
-        /// Computes SHA256 hash of a file and returns it as lowercase hex string.
-        /// </summary>
         private static string ComputeSha256Hex(string path)
         {
             using (SHA256 checksum = SHA256.Create())
@@ -80,9 +66,7 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
-        /// <summary>
-        /// Computes SHA256 hash of a file and returns lowercase hex, or null on error.
-        /// </summary>
+        // Lowercase hex, or null on any error.
         public static string TryComputeSha256Hex(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
@@ -98,9 +82,7 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
-        /// <summary>
-        /// Tries to resolve "Steamworks vX.XX" label for a known Windows steam_api / steam_api64 file.
-        /// </summary>
+        // Label is "Steamworks vX.XX"; only resolved for hashes in the Windows steam_api catalog.
         public static bool TryGetWindowsSteamworksVersionLabel(string path, out string steamworksVersionLabel)
         {
             steamworksVersionLabel = null;
@@ -124,9 +106,6 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
-        /// <summary>
-        /// Returns file ProductName metadata, or empty if unavailable.
-        /// </summary>
         public static string GetFileProductName(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
@@ -167,9 +146,7 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
-        /// <summary>
-        /// True when the file is a Valve steam_api binary suitable for scanning interface version strings (not emulator builds).
-        /// </summary>
+        // Valve steam_api binaries only (never emulator builds); used to scan interface version strings.
         public static bool IsAcceptableSteamApiForInterfaceGeneration(string path)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
@@ -204,9 +181,6 @@ namespace SmartGoldbergEmu.Validation
             return productName.Equals("Steam Client API", StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>
-        /// True if the file SHA256 is listed in <see cref="SteamApiHashes.IgnoredSteamApiDetectionHashes"/>.
-        /// </summary>
         private static bool IsIgnoredSteamApiFile(string path)
         {
             try
@@ -220,9 +194,7 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
-        /// <summary>
-        /// True if the file bytes match a known Windows steam_api / steam_api64 hash (any filename).
-        /// </summary>
+        // Matches the Windows steam_api / steam_api64 hash catalog regardless of file name.
         public static bool TryGetKnownGoodWindowsSteamApiBitness(string path, out bool is64Bit)
         {
             is64Bit = false;
@@ -245,10 +217,7 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
-        /// <summary>
-        /// Replaces dirty steam_api / steam_api64 with a clean file from <see cref="SteamApiStatus.CleanBackups"/> (move current to .sge backup, copy clean backup).
-        /// </summary>
-        /// <returns>Number of DLLs restored.</returns>
+        // Moves each dirty DLL aside to a .sge sidecar and copies the matching clean backup over it; returns the count restored.
         public static int TryRestoreSteamApiFromCleanBackups(SteamApiStatus status, out string errorMessage)
         {
             errorMessage = null;
@@ -325,11 +294,7 @@ namespace SmartGoldbergEmu.Validation
             return GetDirtyFindings(status).Count > 0;
         }
 
-        /// <summary>
-        /// Scans a game folder recursively to find Steam API DLLs and validates each one.
-        /// </summary>
-        /// <param name="gameFolder">The path to the game folder to scan.</param>
-        /// <returns>A SteamApiStatus object containing validation results for all found DLLs.</returns>
+        // Recursive scan of the game folder.
         public static SteamApiStatus DetectAndValidateSteamApi(string gameFolder)
         {
             SteamApiStatus status = new SteamApiStatus();
@@ -479,10 +444,7 @@ namespace SmartGoldbergEmu.Validation
                 || TrySelectBestPrimaryCandidate(allFiles, gameFolder, targetIs64Bit: true, out _);
         }
 
-        /// <summary>
-        /// Full paths to existing Steam API DLLs under <paramref name="gameFolder"/> matching <paramref name="useX64"/>.
-        /// Used to deploy standard Goldberg builds beside every copy (launcher + nested game binaries).
-        /// </summary>
+        // Every same-bitness copy (launcher and nested game binaries) receives the standard Goldberg build.
         public static List<string> GetDeployTargetPathsForBitness(string gameFolder, bool useX64)
         {
             var paths = new List<string>();
@@ -498,10 +460,7 @@ namespace SmartGoldbergEmu.Validation
             return paths;
         }
 
-        /// <summary>
-        /// Resolves the Valve-style steam_api path the given executable is expected to load (same bitness).
-        /// Order: exe directory, then nearest ancestor under <paramref name="startFolder"/>, then best primary under startFolder.
-        /// </summary>
+        // Search order: exe directory, nearest ancestor under startFolder, then the best primary under startFolder.
         public static bool TryResolveSteamApiForExecutable(
             string startFolder,
             string exePath,
@@ -536,9 +495,7 @@ namespace SmartGoldbergEmu.Validation
             return true;
         }
 
-        /// <summary>
-        /// Resolves a Valve/original steam_api binary to scan for interface strings (live file or <c>.sge</c> sidecar).
-        /// </summary>
+        // Returns the live file or its .sge sidecar, whichever is the original Valve binary.
         public static bool TryResolveSteamApiSourceForInterfaces(
             string startFolder,
             string exePath,
@@ -563,10 +520,8 @@ namespace SmartGoldbergEmu.Validation
             return TryPickAcceptableInterfaceSource(bestPath, out sourcePath);
         }
 
-        /// <summary>
-        /// Deploy targets: <paramref name="preferredApiPath"/> plus same-bitness primaries whose original hash matches
-        /// (live Valve bytes, or <c>.sge</c> backup when the live file was already swapped).
-        /// </summary>
+        // preferredApiPath plus same-bitness primaries with the same original hash
+        // (live Valve bytes, or the .sge backup when the live file was already swapped).
         public static List<string> GetSameHashDeployTargetPaths(
             string gameRoot,
             bool useX64,
@@ -618,9 +573,7 @@ namespace SmartGoldbergEmu.Validation
             return paths;
         }
 
-        /// <summary>
-        /// Reads PE Machine from an executable. Returns false when the file is missing or not a valid PE.
-        /// </summary>
+        // Reads the PE Machine field; false when the file is missing or not a valid PE.
         public static bool TryDetectExecutableIsX64(string executablePath, out bool isX64)
         {
             isX64 = true;
@@ -824,10 +777,6 @@ namespace SmartGoldbergEmu.Validation
             }
         }
 
-        /// <summary>
-        /// Returns true if <paramref name="filePath"/> is a candidate primary Steam API DLL for the requested bitness.
-        /// Accepts exact canonical names and steam_api*.dll variants when bitness can be inferred.
-        /// </summary>
         private static bool TrySelectBestPrimaryCandidate(
             IEnumerable<string> allFiles,
             string gameFolder,
@@ -948,6 +897,7 @@ namespace SmartGoldbergEmu.Validation
             return false;
         }
 
+        // Exact canonical names, or steam_api*.dll variants whose bitness can be determined.
         private static bool IsPrimarySteamApiCandidate(string filePath, bool targetIs64Bit)
         {
             if (IsExcludedFromPrimarySteamApiDetection(filePath))
@@ -977,9 +927,7 @@ namespace SmartGoldbergEmu.Validation
             return false;
         }
 
-        /// <summary>
-        /// Lists files under <paramref name="root"/> whose name contains "steam_api", skipping directories that cannot be read (common under game install folders).
-        /// </summary>
+        // Skips unreadable directories, which are common under game install folders.
         private static List<string> EnumerateSteamApiNamedFilesSafe(string root)
         {
             var paths = new List<string>();
@@ -1030,9 +978,6 @@ namespace SmartGoldbergEmu.Validation
             return unique;
         }
 
-        /// <summary>
-        /// Searches for backup files that might contain clean (original) Steam API DLL versions.
-        /// </summary>
         public static List<string> FindCleanBackupDlls(string gameFolder, string mainX32Path = null, string mainX64Path = null)
         {
             var exclude = new List<string>();
@@ -1071,7 +1016,6 @@ namespace SmartGoldbergEmu.Validation
                     if (excluded.Contains(filePath) || IsExcludedFromPrimarySteamApiDetection(filePath))
                         continue;
 
-                    // Candidate name filter: *steam_api*.dll*
                     if (!IsSteamApiDllCandidateFileName(fileName))
                         continue;
 

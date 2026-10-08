@@ -7,10 +7,7 @@ using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// AppDataKit <see cref="AppInfoKeyValue"/> — catalog app-root navigation and DLC id extraction.
-    /// Counterpart to <see cref="SteamPicsKeyValueHelper"/> (SteamKit <c>KeyValue</c>, used for package PICS only).
-    /// </summary>
+    // AppDataKit counterpart to SteamPicsKeyValueHelper, which reads SteamKit KeyValue trees.
     public static class AppInfoKeyValueHelper
     {
         public static AppInfoKeyValue FindChild(AppInfoKeyValue parent, string name)
@@ -18,9 +15,7 @@ namespace SmartGoldbergEmu.Helpers
             return parent?.GetChild(name);
         }
 
-        /// <summary>
-        /// PICS-recovered roots may be wrapped in <c>appinfo</c>; otherwise use <paramref name="root"/> directly.
-        /// </summary>
+        // PICS-recovered roots may be wrapped in an appinfo node.
         public static AppInfoKeyValue ResolveAppInfoTarget(AppInfoKeyValue root)
         {
             if (root == null)
@@ -31,9 +26,6 @@ namespace SmartGoldbergEmu.Helpers
             return root;
         }
 
-        /// <summary>
-        /// Reads <c>common/name</c> and <c>common/type</c> from a catalog app <see cref="AppInfoKeyValue"/> tree.
-        /// </summary>
         public static bool TryGetAppDisplayInfo(AppInfoKeyValue root, out string name, out string type)
         {
             name = null;
@@ -54,9 +46,6 @@ namespace SmartGoldbergEmu.Helpers
             return true;
         }
 
-        /// <summary>
-        /// Fills <see cref="OnlineAppData"/> from a catalog app <see cref="AppInfoKeyValue"/> tree: <c>common/name</c>, supported languages, DLC ids.
-        /// </summary>
         public static void PopulateMetadataFromAppRoot(AppInfoKeyValue root, OnlineAppData metadata)
         {
             if (root == null || metadata == null)
@@ -134,9 +123,7 @@ namespace SmartGoldbergEmu.Helpers
                 metadata.InstallDir = installDirFolder;
         }
 
-        /// <summary>
-        /// Reads <c>config/installdir</c> from a catalog app <see cref="AppInfoKeyValue"/> tree (Steam install folder name under <c>steamapps/common</c>).
-        /// </summary>
+        // config/installdir is the folder name under steamapps/common.
         public static bool TryGetSteamInstallDirFolderName(AppInfoKeyValue root, out string installDirFolderName)
         {
             installDirFolderName = null;
@@ -153,9 +140,6 @@ namespace SmartGoldbergEmu.Helpers
             return installDirFolderName.Length > 0;
         }
 
-        /// <summary>
-        /// Collects DLC app ids from <c>common.dlc</c>, <c>extended.dlc</c>, and <c>extended.listofdlc</c>.
-        /// </summary>
         public static void CollectDlcIdsFromAppRoot(AppInfoKeyValue root, IList<long> dlcIds)
         {
             if (root == null || dlcIds == null)
@@ -182,9 +166,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Parses a <c>dlc</c> or <c>listofdlc</c> node: dictionary keys as ids, or a single comma/space-separated value.
-        /// </summary>
         public static void ExtractDlcIdsFromDlcKeyValue(AppInfoKeyValue dlcNode, IList<long> dlcIds)
         {
             if (dlcNode == null || dlcIds == null)

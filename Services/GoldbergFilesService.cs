@@ -457,7 +457,6 @@ namespace SmartGoldbergEmu.Services
                 if (File.Exists(path))
                 {
                     var jsonContent = File.ReadAllText(path);
-                    // Pretty-print JSON for display
                     try
                     {
                         var jsonObj = JsonConvert.DeserializeObject(jsonContent);
@@ -465,7 +464,7 @@ namespace SmartGoldbergEmu.Services
                     }
                     catch
                     {
-                        // If JSON is invalid, return raw content
+                        // Show invalid JSON unformatted.
                         return jsonContent;
                     }
                 }
@@ -494,7 +493,6 @@ namespace SmartGoldbergEmu.Services
                 if (File.Exists(path))
                 {
                     var jsonContent = File.ReadAllText(path);
-                    // Pretty-print JSON for display
                     try
                     {
                         var jsonObj = JsonConvert.DeserializeObject(jsonContent);
@@ -502,7 +500,7 @@ namespace SmartGoldbergEmu.Services
                     }
                     catch
                     {
-                        // If JSON is invalid, return raw content
+                        // Show invalid JSON unformatted.
                         return jsonContent;
                     }
                 }
@@ -531,7 +529,6 @@ namespace SmartGoldbergEmu.Services
                 if (File.Exists(path))
                 {
                     var jsonContent = File.ReadAllText(path);
-                    // Pretty-print JSON for display
                     try
                     {
                         var jsonObj = JsonConvert.DeserializeObject(jsonContent);
@@ -539,7 +536,7 @@ namespace SmartGoldbergEmu.Services
                     }
                     catch
                     {
-                        // If JSON is invalid, return raw content
+                        // Show invalid JSON unformatted.
                         return jsonContent;
                     }
                 }
@@ -973,7 +970,7 @@ namespace SmartGoldbergEmu.Services
                 if (File.Exists(path))
                 {
                     var lines = File.ReadAllLines(path);
-                    // Return comma-separated list for compatibility with PopulateLanguageDropdown
+                    // PopulateLanguageDropdown expects a comma-separated list.
                     return string.Join(",", lines.Where(l => !string.IsNullOrWhiteSpace(l)));
                 }
             }

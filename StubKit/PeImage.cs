@@ -5,9 +5,7 @@ using System.Text;
 
 namespace SmartGoldbergEmu.StubKit
 {
-    /// <summary>
-    /// Minimal PE32/PE32+ reader/writer sufficient for SteamStub 3.1 removal.
-    /// </summary>
+    // Minimal PE32/PE32+ reader/writer; only covers what SteamStub removal needs.
     internal sealed class PeImage
     {
         public byte[] Data { get; private set; }
@@ -341,9 +339,7 @@ namespace SmartGoldbergEmu.StubKit
             WriteU32(offset + 4, (uint)(value >> 32));
         }
 
-        /// <summary>
-        /// Replace the first TLS callback VA (used when SteamStub hijacked TLS).
-        /// </summary>
+        // Used when SteamStub hijacked the TLS callback.
         public void SetFirstTlsCallback(ulong callbackVa)
         {
             var list = new List<ulong>(TlsCallbacks);
@@ -354,9 +350,7 @@ namespace SmartGoldbergEmu.StubKit
             WriteTlsCallbacks(list);
         }
 
-        /// <summary>
-        /// Rewrite the TLS callback VA array (null-terminated).
-        /// </summary>
+        // Writes the callback VA array with a null terminator.
         public void WriteTlsCallbacks(List<ulong> callbacks)
         {
             if (callbacks == null)
@@ -394,9 +388,7 @@ namespace SmartGoldbergEmu.StubKit
             TlsCallbacks = new List<ulong>(callbacks);
         }
 
-        /// <summary>
-        /// Zero IMAGE_DIRECTORY_ENTRY_SECURITY so leftover Authenticode metadata is gone.
-        /// </summary>
+        // Zeroes IMAGE_DIRECTORY_ENTRY_SECURITY so stale Authenticode data does not survive.
         public void ClearSecurityDirectory()
         {
             SetDataDirectory(4, 0, 0);
@@ -427,12 +419,8 @@ namespace SmartGoldbergEmu.StubKit
             return rva >= start && rva < end;
         }
 
-        /// <summary>
-        /// Some SteamStub 2.x builds place IMAGE_IMPORT_DESCRIPTOR in .bind while ILT/IAT
-        /// stay in .rdata (e.g. The Cursed Crusade). Copy surviving descriptors into
-        /// section raw slack and retarget the Import data directory so .bind can be dropped.
-        /// </summary>
-        /// <returns>true if import dir was moved (or did not need moving).</returns>
+        // Some SteamStub 2.x builds keep import descriptors in .bind while ILT/IAT stay in .rdata (e.g. The Cursed Crusade).
+        // Moves descriptors into section slack so .bind can be dropped; also returns true when no move was needed.
         public bool TryRelocateImportDirectoryOutOfSection(Section fromSection)
         {
             if (fromSection == null)
@@ -540,10 +528,7 @@ namespace SmartGoldbergEmu.StubKit
             return true;
         }
 
-        /// <summary>
-        /// Drop TLS callbacks whose RVA falls inside <paramref name="section"/> and compact the list.
-        /// Needed when the stub installs itself as a TLS callback inside .bind.
-        /// </summary>
+        // Needed when the stub installs itself as a TLS callback inside .bind.
         public void RemoveTlsCallbacksInSection(Section section)
         {
             if (section == null || TlsCallbacks == null || TlsCallbacks.Count == 0)
@@ -596,9 +581,7 @@ namespace SmartGoldbergEmu.StubKit
             TlsCallbacks = keep;
         }
 
-        /// <summary>
-        /// Remove .bind. Prefer truncate when it is last; otherwise drop the header entry only.
-        /// </summary>
+        // Truncates image data when .bind is the last section; otherwise drops only the header entry.
         public void RemoveBindSection(Section section)
         {
             if (section == null || section.Name != ".bind")

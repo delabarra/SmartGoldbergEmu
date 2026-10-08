@@ -35,6 +35,10 @@ namespace SmartGoldbergEmu.Forms
         private Models.OverlaySettings _initialOverlaySettings;
         private Models.UserSettings _initialUserSettings;
         private MainSettings _initialMainSettings;
+        private int _preservedSteamHardwareDefaultConfig;
+        private string _preservedOverlayKeyCombo;
+        private string _preservedScreenshotCombo;
+        private string _preservedScreenshotDatetimeFormat;
         private bool _isLoading = false;
         private static readonly Models.OverlaySettings _overlayDefaults = new Models.OverlaySettings();
         private string _persistedCustomLocalSavePath = string.Empty;
@@ -356,6 +360,14 @@ namespace SmartGoldbergEmu.Forms
                 (chkAlwaysShowPlaytime, "1=Always show playtime on the overlay."),
                 (numStatsPosX, "FPS overlay horizontal position (0=left, 1=right)."),
                 (numStatsPosY, "FPS overlay vertical position (0=top, 1=bottom)."),
+                (chkEnableScreenshot, "1=Enable overlay screenshot capture."),
+                (chkShowNotificationHistory, "1=Show notification history in the overlay."),
+                (chkShowAchievementList, "1=Show the achievement list in the overlay."),
+                (chkShowPlaytimeInUserInfo, "1=Show playtime in overlay user info."),
+                (chkUnlockedExpanded, "1=Expand unlocked achievements in the overlay list."),
+                (chkLockedExpanded, "1=Expand locked achievements in the overlay list."),
+                (numNotificationDurationScreenshot, "Duration for screenshot notifications in seconds."),
+                (numAchievementNotificationDelay, "Delay before achievement notifications in seconds."),
                 (txtUsername, "Account name reported to games. Saved with the Steam ID as a profile when you click Save."),
                 (txtSteamID, "Steam64 account ID. The list shows saved profiles as name and ID; you can still type a new ID."),
                 (cmbLanguage, "Language reported to games (must be in supported_languages.txt)."),
@@ -1878,6 +1890,15 @@ namespace SmartGoldbergEmu.Forms
             btnColorStatsBackground.BackColorChanged += Control_Changed;
             btnColorStatsText.BackColorChanged += Control_Changed;
 
+            chkEnableScreenshot.CheckedChanged += Control_Changed;
+            chkShowNotificationHistory.CheckedChanged += Control_Changed;
+            chkShowAchievementList.CheckedChanged += Control_Changed;
+            chkShowPlaytimeInUserInfo.CheckedChanged += Control_Changed;
+            chkUnlockedExpanded.CheckedChanged += Control_Changed;
+            chkLockedExpanded.CheckedChanged += Control_Changed;
+            numNotificationDurationScreenshot.ValueChanged += Control_Changed;
+            numAchievementNotificationDelay.ValueChanged += Control_Changed;
+
             chkDisableWarningLocalSave.CheckedChanged += Control_Changed;
             txtSavesFolderName.TextChanged += TxtSavesFolderName_TextChanged;
 
@@ -2021,7 +2042,18 @@ namespace SmartGoldbergEmu.Forms
                    Math.Abs(a.StatsTextR - b.StatsTextR) < 0.001f &&
                    Math.Abs(a.StatsTextG - b.StatsTextG) < 0.001f &&
                    Math.Abs(a.StatsTextB - b.StatsTextB) < 0.001f &&
-                   Math.Abs(a.StatsTextA - b.StatsTextA) < 0.001f;
+                   Math.Abs(a.StatsTextA - b.StatsTextA) < 0.001f &&
+                   a.EnableScreenshot == b.EnableScreenshot &&
+                   a.ShowNotificationHistory == b.ShowNotificationHistory &&
+                   a.ShowAchievementList == b.ShowAchievementList &&
+                   a.UnlockedExpanded == b.UnlockedExpanded &&
+                   a.LockedExpanded == b.LockedExpanded &&
+                   a.ShowPlaytimeInUserInfo == b.ShowPlaytimeInUserInfo &&
+                   Math.Abs(a.NotificationDurationScreenshot - b.NotificationDurationScreenshot) < 0.001f &&
+                   Math.Abs(a.AchievementNotificationDelay - b.AchievementNotificationDelay) < 0.001f &&
+                   a.OverlayKeyCombo == b.OverlayKeyCombo &&
+                   a.ScreenshotCombo == b.ScreenshotCombo &&
+                   a.ScreenshotDatetimeFormat == b.ScreenshotDatetimeFormat;
         }
 
         private static void SetNudIntIfDiff(NumericUpDown n, int value, int def)
@@ -2085,12 +2117,16 @@ namespace SmartGoldbergEmu.Forms
                 var overlaySettings = _goldbergCfgService.LoadGlobalOverlaySettings();
                 var mainSettings = _goldbergCfgService.LoadGlobalMainSettings();
                 var userSettings = _goldbergCfgService.LoadGlobalUserSettings();
+                _preservedOverlayKeyCombo = overlaySettings.OverlayKeyCombo;
+                _preservedScreenshotCombo = overlaySettings.ScreenshotCombo;
+                _preservedScreenshotDatetimeFormat = overlaySettings.ScreenshotDatetimeFormat;
                 LoadEmulatorSettings(mainSettings);
                 LoadUserSettings(userSettings);
                 LoadOverlayGeneral(overlaySettings);
                 LoadOverlayVisual(overlaySettings);
                 LoadOverlayNotifications(overlaySettings);
                 LoadOverlayMetrics(overlaySettings);
+                LoadOverlayExtras(overlaySettings);
                 LoadSaveManagement(overlaySettings, userSettings);
             }
             catch (Exception ex)
@@ -2198,6 +2234,19 @@ namespace SmartGoldbergEmu.Forms
             SetNudFloatIfDiff(numStatsPosY, o.StatsPosY, d.StatsPosY);
         }
 
+        private void LoadOverlayExtras(OverlaySettings o)
+        {
+            var d = _overlayDefaults;
+            SetChkIfDiff(chkEnableScreenshot, o.EnableScreenshot, d.EnableScreenshot);
+            SetChkIfDiff(chkShowNotificationHistory, o.ShowNotificationHistory, d.ShowNotificationHistory);
+            SetChkIfDiff(chkShowAchievementList, o.ShowAchievementList, d.ShowAchievementList);
+            SetChkIfDiff(chkShowPlaytimeInUserInfo, o.ShowPlaytimeInUserInfo, d.ShowPlaytimeInUserInfo);
+            SetChkIfDiff(chkUnlockedExpanded, o.UnlockedExpanded, d.UnlockedExpanded);
+            SetChkIfDiff(chkLockedExpanded, o.LockedExpanded, d.LockedExpanded);
+            SetNudFloatIfDiff(numNotificationDurationScreenshot, o.NotificationDurationScreenshot, d.NotificationDurationScreenshot);
+            SetNudFloatIfDiff(numAchievementNotificationDelay, o.AchievementNotificationDelay, d.AchievementNotificationDelay);
+        }
+
         private void LoadSaveManagement(OverlaySettings o, UserSettings userSettings)
         {
             SetChkIfDiff(chkDisableWarningLocalSave, o.DisableWarningLocalSave, _overlayDefaults.DisableWarningLocalSave);
@@ -2211,6 +2260,15 @@ namespace SmartGoldbergEmu.Forms
         {
             var d = _overlayDefaults;
             bool activeGray = btnColorActiveElements.BackColor == Color.Gray;
+            string overlayKeyCombo = _initialOverlaySettings != null
+                ? _initialOverlaySettings.OverlayKeyCombo
+                : (_preservedOverlayKeyCombo ?? d.OverlayKeyCombo);
+            string screenshotCombo = _initialOverlaySettings != null
+                ? _initialOverlaySettings.ScreenshotCombo
+                : (_preservedScreenshotCombo ?? d.ScreenshotCombo);
+            string screenshotDatetimeFormat = _initialOverlaySettings != null
+                ? _initialOverlaySettings.ScreenshotDatetimeFormat
+                : (_preservedScreenshotDatetimeFormat ?? d.ScreenshotDatetimeFormat);
             var overlay = new OverlaySettings
             {
                 EnableExperimentalOverlay = chkEnableExperimentalOverlay.Checked,
@@ -2228,6 +2286,17 @@ namespace SmartGoldbergEmu.Forms
                 OverlayAlwaysShowFps = chkAlwaysShowFPS.Checked,
                 OverlayAlwaysShowFrametime = chkAlwaysShowFrametime.Checked,
                 OverlayAlwaysShowPlaytime = chkAlwaysShowPlaytime.Checked,
+                EnableScreenshot = chkEnableScreenshot.Checked,
+                ShowNotificationHistory = chkShowNotificationHistory.Checked,
+                ShowAchievementList = chkShowAchievementList.Checked,
+                ShowPlaytimeInUserInfo = chkShowPlaytimeInUserInfo.Checked,
+                UnlockedExpanded = chkUnlockedExpanded.Checked,
+                LockedExpanded = chkLockedExpanded.Checked,
+                NotificationDurationScreenshot = (float)numNotificationDurationScreenshot.Value,
+                AchievementNotificationDelay = (float)numAchievementNotificationDelay.Value,
+                OverlayKeyCombo = overlayKeyCombo ?? d.OverlayKeyCombo,
+                ScreenshotCombo = screenshotCombo ?? d.ScreenshotCombo,
+                ScreenshotDatetimeFormat = screenshotDatetimeFormat ?? d.ScreenshotDatetimeFormat,
                 FontOverride = cmbFontOverride.Text == "Default" ? string.Empty : cmbFontOverride.Text,
                 FontSize = (float)numFontSize.Value,
                 IconSize = (float)numIconSize.Value,

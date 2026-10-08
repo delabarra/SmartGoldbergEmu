@@ -21,7 +21,10 @@ namespace SmartGoldbergEmu.Forms
 
             var bindings = new (Control Control, string Text)[]
             {
-                (chkSteamDeck, "1=Pretend the app is running on a Steam Deck."),
+                (chkSteamDeck, "1=Pretend the app is running on a Steam Deck (steam_hardware_type=1)."),
+                (chkIsUnderProton, "1=Pretend the app is running under Proton."),
+                (chkPauseTotalWhenUnfocused, "When enabled, total playtime pauses when the game window loses focus (Alt+Tab)."),
+                (chkPauseSessionWhenUnfocused, "When enabled, session playtime pauses when the game window loses focus (Alt+Tab)."),
                 (chkEnableAccountAvatar, "1=Enable account avatar functionality."),
                 (chkEnableVoiceChat, "Enable experimental voice chat. May increase CPU use or cause crashes."),
                 (chkModernAuthTicket, "1=Generate a modern auth ticket. Disable for very old games."),
@@ -52,11 +55,15 @@ namespace SmartGoldbergEmu.Forms
         private void LoadEmulatorSettings(MainSettings settings)
         {
             var s = settings ?? new MainSettings();
+            _preservedSteamHardwareDefaultConfig = s.SteamHardwareDefaultConfig;
             chkModernAuthTicket.Checked = s.NewAppTicket;
             chkGameCoordinatorToken.Checked = s.GcToken;
             chkEnableAccountAvatar.Checked = s.EnableAccountAvatar;
             chkEnableVoiceChat.Checked = s.EnableVoiceChat;
-            chkSteamDeck.Checked = s.SteamDeck;
+            chkSteamDeck.Checked = s.SteamHardwareType == 1;
+            chkIsUnderProton.Checked = s.IsUnderProton;
+            chkPauseTotalWhenUnfocused.Checked = s.PauseTotalWhenUnfocused;
+            chkPauseSessionWhenUnfocused.Checked = s.PauseSessionWhenUnfocused;
 
             chkDisableLeaderboardsCreateUnknown.Checked = s.DisableLeaderboardsCreateUnknown;
             chkAllowUnknownStats.Checked = s.AllowUnknownStats;
@@ -76,19 +83,27 @@ namespace SmartGoldbergEmu.Forms
 
         private MainSettings BuildEmulatorSettings()
         {
+            int steamHardwareDefaultConfig = _initialMainSettings != null
+                ? _initialMainSettings.SteamHardwareDefaultConfig
+                : _preservedSteamHardwareDefaultConfig;
+
             return new MainSettings
             {
                 NewAppTicket = chkModernAuthTicket.Checked,
                 GcToken = chkGameCoordinatorToken.Checked,
                 EnableAccountAvatar = chkEnableAccountAvatar.Checked,
                 EnableVoiceChat = chkEnableVoiceChat.Checked,
-                SteamDeck = chkSteamDeck.Checked,
+                SteamHardwareType = chkSteamDeck.Checked ? 1 : 0,
+                SteamHardwareDefaultConfig = steamHardwareDefaultConfig,
+                IsUnderProton = chkIsUnderProton.Checked,
                 DisableLeaderboardsCreateUnknown = chkDisableLeaderboardsCreateUnknown.Checked,
                 AllowUnknownStats = chkAllowUnknownStats.Checked,
                 StatAchievementProgressFunctionality = chkStatAchievementProgressFunctionality.Checked,
                 SaveOnlyHigherStatAchievementProgress = chkSaveOnlyHigherStatAchievementProgress.Checked,
                 PaginatedAchievementsIcons = (int)numIconsPerIteration.Value,
                 RecordPlaytime = chkRecordPlaytime.Checked,
+                PauseTotalWhenUnfocused = chkPauseTotalWhenUnfocused.Checked,
+                PauseSessionWhenUnfocused = chkPauseSessionWhenUnfocused.Checked,
                 SteamGameStatsReportsDir = txtSteamGameStatsReportsDir.Text.Trim(),
                 AchievementsBypass = chkAchievementsBypass.Checked,
                 ForceSteamhttpSuccess = chkForceSteamhttpSuccess.Checked,
@@ -108,7 +123,9 @@ namespace SmartGoldbergEmu.Forms
 
             return a.NewAppTicket == b.NewAppTicket &&
                    a.GcToken == b.GcToken &&
-                   a.SteamDeck == b.SteamDeck &&
+                   a.SteamHardwareType == b.SteamHardwareType &&
+                   a.SteamHardwareDefaultConfig == b.SteamHardwareDefaultConfig &&
+                   a.IsUnderProton == b.IsUnderProton &&
                    a.EnableAccountAvatar == b.EnableAccountAvatar &&
                    a.EnableVoiceChat == b.EnableVoiceChat &&
                    a.DisableLeaderboardsCreateUnknown == b.DisableLeaderboardsCreateUnknown &&
@@ -117,6 +134,8 @@ namespace SmartGoldbergEmu.Forms
                    a.SaveOnlyHigherStatAchievementProgress == b.SaveOnlyHigherStatAchievementProgress &&
                    a.PaginatedAchievementsIcons == b.PaginatedAchievementsIcons &&
                    a.RecordPlaytime == b.RecordPlaytime &&
+                   a.PauseTotalWhenUnfocused == b.PauseTotalWhenUnfocused &&
+                   a.PauseSessionWhenUnfocused == b.PauseSessionWhenUnfocused &&
                    a.AchievementsBypass == b.AchievementsBypass &&
                    a.ForceSteamhttpSuccess == b.ForceSteamhttpSuccess &&
                    a.DisableSteamoverlaygameidEnvVar == b.DisableSteamoverlaygameidEnvVar &&

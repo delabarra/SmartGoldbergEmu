@@ -11,16 +11,13 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper class for managing ListView column width and themed header drawing.
-    /// </summary>
     public static class ListViewColumnHelper
     {
         private const int LvmGetOrigin = 0x1000 + 41;
         private const int LvmSetExtendedListViewStyle = 0x1000 + 54;
         private const int LvsExDoubleBuffer = 0x00010000;
 
-        /// <summary>Require content this many pixels past the client before subtracting vertical scrollbar width (reduces flip-flop).</summary>
+        // Content must exceed the client height by this many pixels before reserving scrollbar width (avoids flip-flop).
         private const int VerticalScrollbarLayoutHysteresisPx = 8;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -127,9 +124,6 @@ namespace SmartGoldbergEmu.Helpers
             return bounds.Width > 0 && bounds.Height > 0;
         }
 
-        /// <summary>
-        /// Clamps proposed width during user drag on Name, App ID, or Path.
-        /// </summary>
         public static void ClampDetailsDataColumnWidthChanging(ColumnWidthChangingEventArgs e)
         {
             if (e == null)
@@ -140,9 +134,7 @@ namespace SmartGoldbergEmu.Helpers
                 e.NewWidth = ApplicationConstants.DetailsColumnWidthMax;
         }
 
-        /// <summary>
-        /// Sizes the Path column to the client width left after Name and App ID (main game Details list).
-        /// </summary>
+        // Path column takes the client width left after Name and App ID.
         public static void UpdateDetailsGameListColumnLayout(ListView listView)
         {
             if (listView == null)
@@ -177,9 +169,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Updates the last column width to fill remaining client width (lists with a trailing stretch column).
-        /// </summary>
         public static void UpdateLastColumnWidth(ListView listView)
         {
             if (listView == null || listView.Columns.Count == 0)
@@ -238,12 +227,7 @@ namespace SmartGoldbergEmu.Helpers
             return 0;
         }
 
-        /// <summary>
-        /// Draws a themed column header with sort indicators.
-        /// </summary>
-        /// <param name="e">The draw list view column header event arguments.</param>
-        /// <param name="themeService">The theme service to get colors.</param>
-        /// <param name="appDataService">The app data service for sort indicators; pass null to draw headers without sort arrows.</param>
+        // Pass a null appDataService to draw headers without sort arrows.
         public static void DrawThemedColumnHeader(
             DrawListViewColumnHeaderEventArgs e,
             ThemeService themeService,
@@ -252,7 +236,6 @@ namespace SmartGoldbergEmu.Helpers
             if (e == null || themeService == null)
                 return;
 
-            // Get theme colors
             var effectiveTheme = themeService.EffectiveTheme;
             var colors = themeService.GetThemeColors(effectiveTheme);
 
@@ -264,7 +247,7 @@ namespace SmartGoldbergEmu.Helpers
             string sortIndicator = string.Empty;
             if (appDataService != null)
             {
-                // Determine if this column is currently sorted (check by column text, not index, since columns can be reordered)
+                // Match by column text, not index; columns can be reordered.
                 var sortBy = appDataService.GetSortBy();
                 var sortDirection = appDataService.GetSortDirection();
 
@@ -278,41 +261,29 @@ namespace SmartGoldbergEmu.Helpers
                 }
             }
 
-            // Prepare text with sort indicator
             string headerText = e.Header.Text + sortIndicator;
 
-            // Calculate text bounds (leave space for sort indicator)
             Rectangle textBounds = e.Bounds;
-            textBounds.X += 4; // Left padding
-            textBounds.Width -= 8; // Right padding
+            textBounds.X += 4;
+            textBounds.Width -= 8;
 
-            // Draw column header text
             TextRenderer.DrawText(e.Graphics, headerText, e.Font, textBounds,
                 colors.ControlForeground, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine);
 
-            // Draw border
             using (var pen = new Pen(colors.Border))
             {
                 e.Graphics.DrawRectangle(pen, e.Bounds);
             }
         }
 
-        /// <summary>
-        /// Handles column reordering and saves the column order.
-        /// </summary>
-        /// <param name="listView">The ListView that was reordered.</param>
-        /// <param name="appDataService">The app data service to save column order.</param>
-        /// <param name="viewMode">The current view mode (only saves if "Details").</param>
         public static void HandleColumnReordered(ListView listView, AppDataService appDataService, string viewMode)
         {
             if (listView == null || appDataService == null)
                 return;
 
-            // Only save column order in Details view
             if (viewMode != ApplicationConstants.ViewModeDetails)
                 return;
 
-            // Build column order string from current display indices
             var columns = listView.Columns.Cast<ColumnHeader>()
                 .Where(c => !string.IsNullOrEmpty(c.Text)) // Exclude filler column
                 .OrderBy(c => c.DisplayIndex)
@@ -326,9 +297,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Builds canonical Name,App ID,Path width CSV from the list (excludes filler / empty header).
-        /// </summary>
         public static bool TryFormatDetailsDataColumnWidthsCsv(ListView listView, out string normalizedCsv)
         {
             normalizedCsv = null;
@@ -359,10 +327,7 @@ namespace SmartGoldbergEmu.Helpers
             return true;
         }
 
-        /// <summary>
-        /// Persists Details data column widths if they differ from <paramref name="lastPersistedWidthCsv"/>.
-        /// Updates the snapshot when save succeeds (avoids reading INI on each resize).
-        /// </summary>
+        // lastPersistedWidthCsv caches the saved value so resizes do not re-read the INI.
         public static void PersistDetailsColumnWidthsIfChanged(ListView listView, AppDataService appDataService, string viewMode, ref string lastPersistedWidthCsv)
         {
             if (listView == null || appDataService == null)

@@ -19,19 +19,9 @@ namespace SmartGoldbergEmu.Models
         public string Tooltip { get; set; }
     }
 
-    /// <summary>
-    /// Reason for creating a dummy achievement
-    /// </summary>
     public enum DummyAchievementReason
     {
-        /// <summary>
-        /// No Steam WebAPI key is configured
-        /// </summary>
         NoApiKey,
-
-        /// <summary>
-        /// Game has no achievements on Steam
-        /// </summary>
         NoAchievements
     }
 }

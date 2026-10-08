@@ -479,6 +479,8 @@ namespace SmartGoldbergEmu.Forms
             BindCheck(chkSaveOnlyHigherStatAchievementProgress, v => main.SaveOnlyHigherStatAchievementProgress = v);
             BindNum(numIconsPerIteration, v => main.PaginatedAchievementsIcons = v);
             BindCheck(chkRecordPlaytime, v => main.RecordPlaytime = v);
+            BindCheck(chkPauseTotalWhenUnfocused, v => main.PauseTotalWhenUnfocused = v);
+            BindCheck(chkPauseSessionWhenUnfocused, v => main.PauseSessionWhenUnfocused = v);
             BindCheck(chkAchievementsBypass, v => main.AchievementsBypass = v);
         }
 
@@ -501,6 +503,8 @@ namespace SmartGoldbergEmu.Forms
                 LoadNum(numIconsPerIteration, icons);
             }
             LoadCheck(chkRecordPlaytime, main.RecordPlaytime);
+            LoadCheck(chkPauseTotalWhenUnfocused, main.PauseTotalWhenUnfocused);
+            LoadCheck(chkPauseSessionWhenUnfocused, main.PauseSessionWhenUnfocused);
             LoadCheck(chkAchievementsBypass, main.AchievementsBypass);
         }
 
@@ -590,16 +594,14 @@ namespace SmartGoldbergEmu.Forms
                 var appConfigData = service.LoadAppConfigDlcAndPaths(_gameConfig.AppId);
                 var dlcDataFromFile = appConfigData.DlcData;
 
-                // Populate DLC list textbox - use PreFetchedDlcData for proper names if available
-                // This prevents depot-file names from overwriting proper Steam API names
+                // Prefer PreFetchedDlcData names so depot-file names do not overwrite Steam names.
                 if (txtDLCList != null && dlcDataFromFile.Count > 0)
                 {
                     SetTextBoxText(txtDLCList, DlcService.BuildDlcListTextWithPreferredNames(dlcDataFromFile, _gameConfig.PreFetchedDlcData));
                 }
                 else if (txtDLCList != null && dlcDataFromFile.Count == 0)
                 {
-                    // In edit mode, DlcCheckPerformed is runtime-only and not persisted.
-                    // Show explicit no-DLC state when config has no DLC entries.
+                    // DlcCheckPerformed is runtime-only, so edit mode shows the no-DLC state from config.
                     SetTextBoxText(txtDLCList, "No DLC found for this game.");
                 }
 
@@ -617,7 +619,6 @@ namespace SmartGoldbergEmu.Forms
 
             try
             {
-                // Extract DLC data from txtDLCList - user edits are preserved
                 Dictionary<long, string> dlcData = txtDLCList != null
                     ? DlcService.ParseDlcListText(txtDLCList.Text, _gameConfig.PreFetchedDlcData)
                     : null;
@@ -645,7 +646,6 @@ namespace SmartGoldbergEmu.Forms
                     if (txtAppID != null)
                         SetTextBoxText(txtAppID, searchForm.SelectedAppId.Value.ToString());
                     RequestRefreshSteamLaunchOptionsCombo();
-                    // Trigger metadata fetch
                     _ = Task.Run(async () =>
                     {
                         await FetchMetadataForAppIdAsync(searchForm.SelectedAppId.Value.ToString());
@@ -681,10 +681,12 @@ namespace SmartGoldbergEmu.Forms
                 if (!ulong.TryParse(appId, out ulong appIdNum) || appIdNum == 0)
                     return;
 
+                // The offline fallback must never apply another app's tree to the looked-up App ID.
+                AppInfoKeyValue sameAppInfo = GetRuntimeAppDataAppId() == appIdNum ? _gameConfig?.AppInfo : null;
                 AppCatalogSnapshot snapshot = await ServiceLocator.AppDataKitBridgeService
                     .FetchMetadataSnapshotAsync(
                         appIdNum,
-                        _gameConfig?.AppInfo,
+                        sameAppInfo,
                         cancellationToken: ServiceLocator.ApplicationLifetimeToken)
                     .ConfigureAwait(false);
 
@@ -712,24 +714,46 @@ namespace SmartGoldbergEmu.Forms
 
             if (_gameConfig != null && snapshot.Failure == AppMetadataFetchFailure.None && snapshot.IsUsable)
             {
+                // Catalog and AppInfo move together so GetRuntimeAppDataAppId stays accurate.
                 _gameConfig.Catalog = snapshot;
+                _gameConfig.AppInfo = snapshot.AppInfo;
                 _gameConfig.PreFetchedDlcData = snapshot.ToDlcDictionary();
             }
 
-            ApplyFetchedAppMetadata(snapshot.Online, snapshot.AppInfo);
+            ApplyFetchedAppMetadata(snapshot.Online);
         }
 
-        private void ApplyFetchedAppMetadata(OnlineAppData metadata, AppInfoKeyValue appInfo = null)
+        // Lookups attach Catalog/AppInfo for the looked-up app before Save commits that App ID to _gameConfig.AppId.
+        private ulong GetRuntimeAppDataAppId()
+        {
+            if (_gameConfig == null)
+                return 0;
+            return _gameConfig.Catalog != null ? _gameConfig.Catalog.AppId : _gameConfig.AppId;
+        }
+
+        private static bool IsMetadataForApp(OnlineAppData metadata, string appId)
+        {
+            return metadata != null && string.Equals(metadata.AppId, appId, StringComparison.Ordinal);
+        }
+
+        // Save must not hand the previous app's trees or metadata to the pipeline for a new App ID; downstream fetches for the new app instead.
+        private void DropRuntimeAppDataForOtherApp(ulong appId)
+        {
+            if (GetRuntimeAppDataAppId() != appId)
+                _gameConfig.ReleaseHeavyRuntimeData();
+            if (_metadata != null && !IsMetadataForApp(_metadata, appId.ToString()))
+                _metadata = null;
+        }
+
+        private void ApplyFetchedAppMetadata(OnlineAppData metadata)
         {
             if (IsDisposed || Disposing)
                 return;
             if (metadata == null)
                 return;
 
-            if (appInfo != null && _gameConfig != null)
-                _gameConfig.AppInfo = appInfo;
-
-            if (_metadata == null)
+            // Merge only refreshes the same app; a lookup for another App ID must not inherit the old app's fields.
+            if (_metadata == null || !IsMetadataForApp(_metadata, metadata.AppId))
                 _metadata = metadata;
             else
             {
@@ -815,7 +839,6 @@ namespace SmartGoldbergEmu.Forms
                         folderDialog.SelectedPath);
                     if (txtGameFolder != null)
                         SetTextBoxText(txtGameFolder, folderDialog.SelectedPath);
-                    // Validate Steam API DLLs after folder selection
                     ValidateSteamApiDlls();
                     UpdateGameFolderInstallDirHintVisibility();
                 }
@@ -912,7 +935,6 @@ namespace SmartGoldbergEmu.Forms
                     }
                     else
                     {
-                        // Auto-update game folder if empty
                         if (txtGameFolder != null && string.IsNullOrEmpty(txtGameFolder.Text))
                         {
                             SetTextBoxText(txtGameFolder, Path.GetDirectoryName(selected));
@@ -1072,7 +1094,6 @@ namespace SmartGoldbergEmu.Forms
                 btnFindDLCs.Enabled = false;
                 btnFindDLCs.Text = "Searching...";
 
-                // Clear the DLC list at the start
                 if (txtDLCList != null)
                 {
                     ClearTextBox(txtDLCList);
@@ -1080,17 +1101,15 @@ namespace SmartGoldbergEmu.Forms
 
                 var dlcData = await ServiceLocator.AppDataKitBridgeService
                     .FetchDlcAsync(_gameConfig.AppId)
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(true);
 
                 if (IsDisposed || Disposing)
                     return;
 
-                // Mark that DLC check has been performed
                 _gameConfig.DlcCheckPerformed = true;
 
                 if (dlcData != null && dlcData.Count > 0)
                 {
-                    // Update GameConfig with DLC data
                     if (_gameConfig.PreFetchedDlcData == null)
                     {
                         _gameConfig.PreFetchedDlcData = new Dictionary<long, string>();
@@ -1108,17 +1127,13 @@ namespace SmartGoldbergEmu.Forms
                         AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
                     }
 
-                    // Populate DLC list textbox
                     if (txtDLCList != null)
                         SetTextBoxText(txtDLCList, DlcService.BuildDlcListText(dlcData));
 
-                    // Note: Metadata files (including installed_app_ids.txt and supported_languages.txt) 
-                    // are only generated when adding a new game, not when editing
-
+                    // installed_app_ids.txt and supported_languages.txt are written on add and by catalog refresh, not by edit-mode saves.
                 }
                 else
                 {
-                    // Show message in the list when no DLC is found
                     if (txtDLCList != null)
                     {
                         SetTextBoxText(txtDLCList, "No DLC found for this game.");
@@ -1129,7 +1144,6 @@ namespace SmartGoldbergEmu.Forms
             {
                 LogAndShowErrorWithExceptionMessage("Error finding DLCs", ex);
                 
-                // Show error message in the list as well
                 if (txtDLCList != null)
                 {
                     SetTextBoxText(txtDLCList, "Error: " + ex.Message);
@@ -1216,6 +1230,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 _addBundle.AchievementsPreviewJson = null;
                 _addBundle.ItemsJson = null;
+                _addBundle.PrefetchedSchemas = null;
             }
             base.OnFormClosed(e);
         }
@@ -1318,8 +1333,6 @@ namespace SmartGoldbergEmu.Forms
 
         private void TxtGameFolder_TextChanged(object sender, EventArgs e)
         {
-            // Debounce validation to avoid excessive calls while typing
-            // Only validate if text is not empty and looks like a valid path
             string folder = txtGameFolder?.Text?.Trim();
             if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder))
             {
@@ -1380,7 +1393,8 @@ namespace SmartGoldbergEmu.Forms
                 chkDisableSharingStatsWithGameserver, chkDisableSourceQuery, chkShareLeaderboardsOverNetwork,
                 chkDisableLobbyCreation, chkDownloadSteamhttpRequests,
                 chkDisableLeaderboardsCreateUnknown, chkAllowUnknownStats, chkStatAchievementProgressFunctionality,
-                chkSaveOnlyHigherStatAchievementProgress, chkRecordPlaytime, chkAchievementsBypass
+                chkSaveOnlyHigherStatAchievementProgress, chkRecordPlaytime,
+                chkPauseTotalWhenUnfocused, chkPauseSessionWhenUnfocused, chkAchievementsBypass
             })
                 WireChecked(chk);
 
@@ -3996,6 +4010,7 @@ namespace SmartGoldbergEmu.Forms
                     _gameConfig.WorkingDirectory = txtWorkingDirectory.Text.Trim();
                 if (txtCustomIcon != null)
                     _gameConfig.CustomIcon = txtCustomIcon.Text.Trim();
+                DropRuntimeAppDataForOtherApp(appId);
                 _gameConfig.AppId = appId;
                 ApplyLaunchModeFromUiToGameConfig();
 
@@ -4048,7 +4063,7 @@ namespace SmartGoldbergEmu.Forms
                             GameConfig = _gameConfig,
                             InitialGameConfig = _initialGameConfig,
                             FormSaveRequest = editFormSaveRequest,
-                            CredentialsTouched = HaveCredentialsChanged(),
+                            CredentialsTouched = HaveCredentialsChanged(capturedSnapshot),
                             OnSuccessfulSaveCompleted = _onSaveCompleted
                         }).ConfigureAwait(true);
 
@@ -4082,19 +4097,9 @@ namespace SmartGoldbergEmu.Forms
                     }
                 }
 
-                // Hide first so MainForm's status strip is visible, then show immediate add feedback
-                // before BuildPendingAddSave (snapshot capture) which can take a noticeable moment.
                 HideFormForSaveIfVisible(ref formHiddenForSave);
-                string addDisplayName = !string.IsNullOrWhiteSpace(_gameConfig.AppName)
-                    ? _gameConfig.AppName.Trim()
-                    : "Game";
-                _taskReportService?.SetMessage(
-                    _isUpdateOfExisting
-                        ? AddGameStatusMessages.UpdatingInLibrary(addDisplayName)
-                        : AddGameStatusMessages.AddingToLibrary(addDisplayName));
-                if (Owner != null && Owner.IsHandleCreated && !Owner.IsDisposed)
-                    Owner.Update();
-
+                _taskReportService?.SetMessage(AddGameStatusMessages.PreparingSave(
+                    string.IsNullOrWhiteSpace(_gameConfig.AppName) ? "Game" : _gameConfig.AppName.Trim()));
                 PendingAddSave = BuildPendingAddSave();
                 restoreSaveButtonState = false;
                 this.DialogResult = DialogResult.OK;
@@ -4150,7 +4155,7 @@ namespace SmartGoldbergEmu.Forms
                 dlcData = _gameConfig.PreFetchedDlcData;
 
             // Ensure PICS trees stay on GameConfig for CompletePendingAddSaveAsync asset download.
-            if (_gameConfig.Catalog == null && _addBundle?.Catalog != null)
+            if (_gameConfig.Catalog == null && _addBundle?.Catalog != null && _addBundle.Catalog.AppId == _gameConfig.AppId)
                 _gameConfig.Catalog = _addBundle.Catalog;
             if (_gameConfig.AppInfo == null && _gameConfig.Catalog?.AppInfo != null)
                 _gameConfig.AppInfo = _gameConfig.Catalog.AppInfo;
@@ -4160,9 +4165,10 @@ namespace SmartGoldbergEmu.Forms
                 GameConfig = _gameConfig,
                 Metadata = _metadata,
                 AchievementPreview = _addBundle?.AchievementPreview ?? AchievementPreviewKind.NoApiKey,
+                PrefetchedSchemas = _addBundle?.PrefetchedSchemas,
                 SettingsSnapshot = snapshot,
                 CustomStatsRawJson = _customStatsRawJson ?? string.Empty,
-                CredentialsTouched = HaveCredentialsChanged(),
+                CredentialsTouched = HaveCredentialsChanged(snapshot),
                 IsUpdateOfExisting = _isUpdateOfExisting,
                 AdditionalFilesSaveRequest = BuildAdditionalFilesSaveRequest(),
                 SaveDlcAndPaths = () =>
@@ -4226,9 +4232,8 @@ namespace SmartGoldbergEmu.Forms
                 CheckForChanges();
         }
 
-        private bool HaveCredentialsChanged()
+        private bool HaveCredentialsChanged(GameSettingsSnapshot current)
         {
-            GameSettingsSnapshot current = GetSettingsFromForm();
             return !string.Equals(current.User?.Ticket ?? string.Empty, _initialCredentialTicket ?? string.Empty, StringComparison.Ordinal)
                 || !string.Equals(current.User?.AltSteamId ?? string.Empty, _initialCredentialAlt ?? string.Empty, StringComparison.Ordinal);
         }

@@ -4,10 +4,7 @@ using System.Linq;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper for Steam language display names and API codes.
-    /// Format: "Native Name - (English Name)" for display; API uses codes like "english", "schinese".
-    /// </summary>
+    // Display format is "Native Name - (English Name)"; Steam API codes look like "english", "schinese".
     public static class SteamLanguageDisplayHelper
     {
         public const string UseGlobalSettingOption = "Use Global Setting";
@@ -148,9 +145,6 @@ namespace SmartGoldbergEmu.Helpers
             { "vietnamese", "Vietnamese" }
         };
 
-        /// <summary>
-        /// Supported languages for dropdown display. Format: "Native Name - (English Name)".
-        /// </summary>
         public static readonly string[] SupportedLanguages =
         {
             "العربية - (Arabic)",
@@ -186,9 +180,6 @@ namespace SmartGoldbergEmu.Helpers
             "Tiếng Việt - (Vietnamese)"
         };
 
-        /// <summary>
-        /// Converts display name to Steam API language code.
-        /// </summary>
         public static string ToLanguageCode(string displayName)
         {
             if (string.IsNullOrEmpty(displayName))
@@ -197,9 +188,6 @@ namespace SmartGoldbergEmu.Helpers
             return NativeToCode.TryGetValue(nativeName, out string code) ? code : "english";
         }
 
-        /// <summary>
-        /// Converts Steam API language code to display name.
-        /// </summary>
         public static string ToDisplayName(string code)
         {
             if (string.IsNullOrEmpty(code))

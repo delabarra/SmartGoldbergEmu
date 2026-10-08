@@ -1,6 +1,7 @@
 namespace SmartGoldbergEmu.Constants
 {
-    // games.ini per-game section — keys as written by GameDataService.SaveGameLibrary (PascalCase) and normalized keys used when parsing (lowercase). "appid" matches SteamAppManifestAcfKeys.AppId spelling only (different format).
+    // games.ini per-game section keys: *Write names as saved by GameDataService.SaveGameLibrary, lowercase names for parsing.
+    // "appid" shares only its spelling with SteamAppManifestAcfKeys.AppId (different file format).
     public static class GamesIniKeyNames
     {
         public const string GameSectionPrefix = "Game";

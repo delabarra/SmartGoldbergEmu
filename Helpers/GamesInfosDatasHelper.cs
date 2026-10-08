@@ -215,6 +215,7 @@ namespace SmartGoldbergEmu.Helpers
                 else
                 {
                     section.Status = SnapshotSectionStatus.Ok;
+                    section.StatsDbJson = statsDbJson.Trim();
                 }
 
                 return section;

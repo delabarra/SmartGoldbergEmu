@@ -15,7 +15,7 @@ namespace SmartGoldbergEmu.Services
 {
     public class GameImageService : IDisposable
     {
-        // Store Banner list + essentials: rebuild contract — header.jpg (PICS header_image may alias).
+        // Store Banner fallback; BuildStoreBannerPreferredFileNames tries the PICS header_image file name first.
         private static readonly string[] StoreBannerPreferredFileNames =
         {
             PathConstants.SteamGameResourcesHeaderImageFileName
@@ -152,7 +152,8 @@ namespace SmartGoldbergEmu.Services
             ulong? steamAppIdForRemoteAssets = null,
             AppInfoKeyValue appPicsData = null,
             string gameDisplayName = null,
-            GameAssetsSection catalogAssets = null)
+            GameAssetsSection catalogAssets = null,
+            Action<int, int> onProgress = null)
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(GameImageService));
@@ -191,6 +192,7 @@ namespace SmartGoldbergEmu.Services
                     Feedback?.SetMessage($"Downloading game assets ({totalDownloads} files)...");
                     Feedback?.SetProgress(0, Math.Max(totalDownloads, 1));
                 }
+                onProgress?.Invoke(0, totalDownloads);
 
                 if (_disposed)
                     return ApplyDownloadOutcomeFeedback(
@@ -219,7 +221,7 @@ namespace SmartGoldbergEmu.Services
                                 failedFiles.Add(request.FileName);
                         }
 
-                        if (_disposed || !reportFeedback)
+                        if (_disposed || (!reportFeedback && onProgress == null))
                             return;
 
                         lock (lockObj)
@@ -227,8 +229,12 @@ namespace SmartGoldbergEmu.Services
                             if (_disposed)
                                 return;
                             completed++;
-                            Feedback?.SetProgress(completed, Math.Max(totalDownloads, 1));
-                            Feedback?.SetMessage($"Downloading assets... {completed}/{totalDownloads}");
+                            if (reportFeedback)
+                            {
+                                Feedback?.SetProgress(completed, Math.Max(totalDownloads, 1));
+                                Feedback?.SetMessage($"Downloading assets... {completed}/{totalDownloads}");
+                            }
+                            onProgress?.Invoke(completed, totalDownloads);
                         }
                     }).ConfigureAwait(false);
 
@@ -708,7 +714,7 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                await _httpService.DownloadFileAsync(url, imagePath);
+                await HttpHelpers.DownloadFileAtomicAsync(_httpService, url, imagePath).ConfigureAwait(false);
                 return !_disposed;
             }
             catch (Exception)

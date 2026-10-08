@@ -5,9 +5,6 @@ using System.Threading.Tasks;
 
 namespace AppDataKit
 {
-    /// <summary>
-    /// Fetches app metadata, DLC, game assets, achievements, stats, and items via steamcmd.net and Steam Web API.
-    /// </summary>
     public sealed class AppDataService
     {
         private readonly AppSnapshotOptions _options;

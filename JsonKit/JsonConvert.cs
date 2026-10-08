@@ -45,7 +45,9 @@ namespace SmartGoldbergEmu.JsonKit
             settings.AccountName = GetStringProperty(root, nameof(GlobalSettings.AccountName)) ?? settings.AccountName;
             settings.AccountSteamId = GetStringProperty(root, nameof(GlobalSettings.AccountSteamId)) ?? settings.AccountSteamId;
             settings.Language = GetStringProperty(root, nameof(GlobalSettings.Language)) ?? settings.Language;
-            settings.SteamDeck = GetBoolProperty(root, nameof(GlobalSettings.SteamDeck));
+            settings.SteamHardwareType = GetIntProperty(root, nameof(GlobalSettings.SteamHardwareType));
+            if (settings.SteamHardwareType == 0 && GetBoolProperty(root, "SteamDeck"))
+                settings.SteamHardwareType = 1;
             settings.EnableAccountAvatar = GetBoolProperty(root, nameof(GlobalSettings.EnableAccountAvatar));
             return settings;
         }

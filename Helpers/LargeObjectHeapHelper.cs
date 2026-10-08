@@ -3,8 +3,7 @@ using System.Runtime;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // .NET Framework LOH is not compacted by default. Large transient byte[] from VZip/7z decode
-    // become unreachable but the process working set often stays high until a compacting GC.
+    // The LOH is not compacted by default, so large VZip/7z decode buffers keep the working set high.
     // Call only after known large update/self-heal work — not on routine UI paths.
     public static class LargeObjectHeapHelper
     {

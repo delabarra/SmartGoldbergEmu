@@ -214,7 +214,7 @@ namespace SmartGoldbergEmu.Forms
         {
             UpdateThemeIcon();
             UpdateThemeMenuCheckMarks();
-            // Avoid mosaic reload during first handle create (before games load); match prior ThemeChanged-only behavior.
+            // Skip mosaic reload during the first handle creation, before games are loaded.
             if (Visible)
                 ReloadMosaicTileImagesIfNeeded();
         }
@@ -1647,6 +1647,7 @@ namespace SmartGoldbergEmu.Forms
                     // Do not touch Game here: failed save may restore the draft; success already released it.
                     addBundle.AchievementsPreviewJson = null;
                     addBundle.ItemsJson = null;
+                    addBundle.PrefetchedSchemas = null;
                     addBundle.Metadata = null;
                     addBundle.Catalog = null;
                 }
@@ -1674,7 +1675,6 @@ namespace SmartGoldbergEmu.Forms
                 Metadata = pending.Metadata,
                 CustomStatsRawJson = pending.CustomStatsRawJson,
                 TaskReportService = _taskReportService,
-                SuppressStatusMessages = true,
                 BuildSnapshot = () => snapshot,
                 ResolveAchievementLanguage = s =>
                 {
@@ -1685,7 +1685,8 @@ namespace SmartGoldbergEmu.Forms
                 SaveDlcAndPaths = pending.SaveDlcAndPaths,
                 SaveAdditionalGoldbergFiles = () => SaveAdditionalFilesFromPending(pending),
                 OnAssetsDownloaded = () => NotifyAddSaveListChanged(savedGameGuid, reloadMosaic: true),
-                OnSuccessfulSaveCompleted = () => NotifyAddSaveListChanged(savedGameGuid, reloadMosaic: false)
+                OnSuccessfulSaveCompleted = () => NotifyAddSaveListChanged(savedGameGuid, reloadMosaic: false),
+                PrefetchedSchemas = pending.PrefetchedSchemas
             };
 
             try
@@ -1728,6 +1729,7 @@ namespace SmartGoldbergEmu.Forms
                 }
 
                 pending.Metadata = null;
+                pending.PrefetchedSchemas = null;
                 pending.CustomStatsRawJson = null;
                 pending.AdditionalFilesSaveRequest = null;
                 pending.SaveDlcAndPaths = null;
@@ -3465,6 +3467,8 @@ namespace SmartGoldbergEmu.Forms
             finally
             {
                 editBundle?.ReleaseHeavyRuntimeData();
+                // The dialog edits the live library row; App ID lookups attach Catalog/AppInfo to it even on Cancel.
+                game.ReleaseHeavyRuntimeData();
             }
         }
 

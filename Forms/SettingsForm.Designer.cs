@@ -172,6 +172,17 @@ namespace SmartGoldbergEmu.Forms
             this.lblStatsPosition = new System.Windows.Forms.Label();
             this.numStatsPosX = new System.Windows.Forms.NumericUpDown();
             this.numStatsPosY = new System.Windows.Forms.NumericUpDown();
+            this.grpOverlayExtras = new System.Windows.Forms.GroupBox();
+            this.numAchievementNotificationDelay = new System.Windows.Forms.NumericUpDown();
+            this.lblAchievementNotificationDelay = new System.Windows.Forms.Label();
+            this.numNotificationDurationScreenshot = new System.Windows.Forms.NumericUpDown();
+            this.lblNotificationDurationScreenshot = new System.Windows.Forms.Label();
+            this.chkLockedExpanded = new System.Windows.Forms.CheckBox();
+            this.chkUnlockedExpanded = new System.Windows.Forms.CheckBox();
+            this.chkShowPlaytimeInUserInfo = new System.Windows.Forms.CheckBox();
+            this.chkShowAchievementList = new System.Windows.Forms.CheckBox();
+            this.chkShowNotificationHistory = new System.Windows.Forms.CheckBox();
+            this.chkEnableScreenshot = new System.Windows.Forms.CheckBox();
             this.tabEmulator = new System.Windows.Forms.TabPage();
             this.grpEmulatorWorkarounds = new System.Windows.Forms.GroupBox();
             this.chkUse32BitInventoryItemIds = new System.Windows.Forms.CheckBox();
@@ -191,7 +202,10 @@ namespace SmartGoldbergEmu.Forms
             this.chkStatAchievementProgressFunctionality = new System.Windows.Forms.CheckBox();
             this.chkAllowUnknownStats = new System.Windows.Forms.CheckBox();
             this.chkDisableLeaderboardsCreateUnknown = new System.Windows.Forms.CheckBox();
+            this.chkPauseTotalWhenUnfocused = new System.Windows.Forms.CheckBox();
+            this.chkPauseSessionWhenUnfocused = new System.Windows.Forms.CheckBox();
             this.grpEmulatorSession = new System.Windows.Forms.GroupBox();
+            this.chkIsUnderProton = new System.Windows.Forms.CheckBox();
             this.chkSteamDeck = new System.Windows.Forms.CheckBox();
             this.chkEnableVoiceChat = new System.Windows.Forms.CheckBox();
             this.chkEnableAccountAvatar = new System.Windows.Forms.CheckBox();
@@ -231,6 +245,9 @@ namespace SmartGoldbergEmu.Forms
             ((System.ComponentModel.ISupportInitialize)(this.numIconSize)).BeginInit();
             this.tabMetrics.SuspendLayout();
             this.grpFPSDisplay.SuspendLayout();
+            this.grpOverlayExtras.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.numAchievementNotificationDelay)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numNotificationDurationScreenshot)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numFpsAveragingWindow)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numStatsPosX)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numStatsPosY)).BeginInit();
@@ -1694,6 +1711,7 @@ namespace SmartGoldbergEmu.Forms
             // 
             // tabMetrics
             // 
+            this.tabMetrics.Controls.Add(this.grpOverlayExtras);
             this.tabMetrics.Controls.Add(this.grpFPSDisplay);
             this.tabMetrics.Location = new System.Drawing.Point(4, 22);
             this.tabMetrics.Name = "tabMetrics";
@@ -1902,6 +1920,165 @@ namespace SmartGoldbergEmu.Forms
             this.numStatsPosY.Size = new System.Drawing.Size(60, 20);
             this.numStatsPosY.TabIndex = 15;
             // 
+            // grpOverlayExtras
+            // 
+            this.grpOverlayExtras.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpOverlayExtras.Controls.Add(this.numAchievementNotificationDelay);
+            this.grpOverlayExtras.Controls.Add(this.lblAchievementNotificationDelay);
+            this.grpOverlayExtras.Controls.Add(this.numNotificationDurationScreenshot);
+            this.grpOverlayExtras.Controls.Add(this.lblNotificationDurationScreenshot);
+            this.grpOverlayExtras.Controls.Add(this.chkLockedExpanded);
+            this.grpOverlayExtras.Controls.Add(this.chkUnlockedExpanded);
+            this.grpOverlayExtras.Controls.Add(this.chkShowPlaytimeInUserInfo);
+            this.grpOverlayExtras.Controls.Add(this.chkShowAchievementList);
+            this.grpOverlayExtras.Controls.Add(this.chkShowNotificationHistory);
+            this.grpOverlayExtras.Controls.Add(this.chkEnableScreenshot);
+            this.grpOverlayExtras.Location = new System.Drawing.Point(12, 205);
+            this.grpOverlayExtras.Name = "grpOverlayExtras";
+            this.grpOverlayExtras.Size = new System.Drawing.Size(568, 130);
+            this.grpOverlayExtras.TabIndex = 1;
+            this.grpOverlayExtras.TabStop = false;
+            this.grpOverlayExtras.Text = "Overlay extras (gbe_fork)";
+            // 
+            // numAchievementNotificationDelay
+            // 
+            this.numAchievementNotificationDelay.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.numAchievementNotificationDelay.DecimalPlaces = 1;
+            this.numAchievementNotificationDelay.Increment = new decimal(new int[] {
+            1,
+            0,
+            0,
+            65536});
+            this.numAchievementNotificationDelay.Location = new System.Drawing.Point(460, 98);
+            this.numAchievementNotificationDelay.Maximum = new decimal(new int[] {
+            3600,
+            0,
+            0,
+            0});
+            this.numAchievementNotificationDelay.Name = "numAchievementNotificationDelay";
+            this.numAchievementNotificationDelay.Size = new System.Drawing.Size(60, 20);
+            this.numAchievementNotificationDelay.TabIndex = 9;
+            // 
+            // lblAchievementNotificationDelay
+            // 
+            this.lblAchievementNotificationDelay.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.lblAchievementNotificationDelay.AutoSize = true;
+            this.lblAchievementNotificationDelay.Location = new System.Drawing.Point(280, 100);
+            this.lblAchievementNotificationDelay.Name = "lblAchievementNotificationDelay";
+            this.lblAchievementNotificationDelay.Size = new System.Drawing.Size(174, 13);
+            this.lblAchievementNotificationDelay.TabIndex = 8;
+            this.lblAchievementNotificationDelay.Text = "Achievement notification delay (s):";
+            // 
+            // numNotificationDurationScreenshot
+            // 
+            this.numNotificationDurationScreenshot.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.numNotificationDurationScreenshot.DecimalPlaces = 1;
+            this.numNotificationDurationScreenshot.Increment = new decimal(new int[] {
+            1,
+            0,
+            0,
+            65536});
+            this.numNotificationDurationScreenshot.Location = new System.Drawing.Point(200, 98);
+            this.numNotificationDurationScreenshot.Maximum = new decimal(new int[] {
+            3600,
+            0,
+            0,
+            0});
+            this.numNotificationDurationScreenshot.Minimum = new decimal(new int[] {
+            1,
+            0,
+            0,
+            65536});
+            this.numNotificationDurationScreenshot.Name = "numNotificationDurationScreenshot";
+            this.numNotificationDurationScreenshot.Size = new System.Drawing.Size(60, 20);
+            this.numNotificationDurationScreenshot.TabIndex = 7;
+            this.numNotificationDurationScreenshot.Value = new decimal(new int[] {
+            10,
+            0,
+            0,
+            65536});
+            // 
+            // lblNotificationDurationScreenshot
+            // 
+            this.lblNotificationDurationScreenshot.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.lblNotificationDurationScreenshot.AutoSize = true;
+            this.lblNotificationDurationScreenshot.Location = new System.Drawing.Point(16, 100);
+            this.lblNotificationDurationScreenshot.Name = "lblNotificationDurationScreenshot";
+            this.lblNotificationDurationScreenshot.Size = new System.Drawing.Size(178, 13);
+            this.lblNotificationDurationScreenshot.TabIndex = 6;
+            this.lblNotificationDurationScreenshot.Text = "Screenshot notification duration (s):";
+            // 
+            // chkLockedExpanded
+            // 
+            this.chkLockedExpanded.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkLockedExpanded.AutoSize = true;
+            this.chkLockedExpanded.Location = new System.Drawing.Point(280, 72);
+            this.chkLockedExpanded.Name = "chkLockedExpanded";
+            this.chkLockedExpanded.Size = new System.Drawing.Size(105, 17);
+            this.chkLockedExpanded.TabIndex = 5;
+            this.chkLockedExpanded.Text = "Locked expanded";
+            this.chkLockedExpanded.UseVisualStyleBackColor = true;
+            // 
+            // chkUnlockedExpanded
+            // 
+            this.chkUnlockedExpanded.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkUnlockedExpanded.AutoSize = true;
+            this.chkUnlockedExpanded.Checked = true;
+            this.chkUnlockedExpanded.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkUnlockedExpanded.Location = new System.Drawing.Point(280, 48);
+            this.chkUnlockedExpanded.Name = "chkUnlockedExpanded";
+            this.chkUnlockedExpanded.Size = new System.Drawing.Size(117, 17);
+            this.chkUnlockedExpanded.TabIndex = 4;
+            this.chkUnlockedExpanded.Text = "Unlocked expanded";
+            this.chkUnlockedExpanded.UseVisualStyleBackColor = true;
+            // 
+            // chkShowPlaytimeInUserInfo
+            // 
+            this.chkShowPlaytimeInUserInfo.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkShowPlaytimeInUserInfo.AutoSize = true;
+            this.chkShowPlaytimeInUserInfo.Location = new System.Drawing.Point(280, 24);
+            this.chkShowPlaytimeInUserInfo.Name = "chkShowPlaytimeInUserInfo";
+            this.chkShowPlaytimeInUserInfo.Size = new System.Drawing.Size(147, 17);
+            this.chkShowPlaytimeInUserInfo.TabIndex = 3;
+            this.chkShowPlaytimeInUserInfo.Text = "Show playtime in user info";
+            this.chkShowPlaytimeInUserInfo.UseVisualStyleBackColor = true;
+            // 
+            // chkShowAchievementList
+            // 
+            this.chkShowAchievementList.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkShowAchievementList.AutoSize = true;
+            this.chkShowAchievementList.Location = new System.Drawing.Point(16, 72);
+            this.chkShowAchievementList.Name = "chkShowAchievementList";
+            this.chkShowAchievementList.Size = new System.Drawing.Size(127, 17);
+            this.chkShowAchievementList.TabIndex = 2;
+            this.chkShowAchievementList.Text = "Show achievement list";
+            this.chkShowAchievementList.UseVisualStyleBackColor = true;
+            // 
+            // chkShowNotificationHistory
+            // 
+            this.chkShowNotificationHistory.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkShowNotificationHistory.AutoSize = true;
+            this.chkShowNotificationHistory.Location = new System.Drawing.Point(16, 48);
+            this.chkShowNotificationHistory.Name = "chkShowNotificationHistory";
+            this.chkShowNotificationHistory.Size = new System.Drawing.Size(141, 17);
+            this.chkShowNotificationHistory.TabIndex = 1;
+            this.chkShowNotificationHistory.Text = "Show notification history";
+            this.chkShowNotificationHistory.UseVisualStyleBackColor = true;
+            // 
+            // chkEnableScreenshot
+            // 
+            this.chkEnableScreenshot.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkEnableScreenshot.AutoSize = true;
+            this.chkEnableScreenshot.Checked = true;
+            this.chkEnableScreenshot.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkEnableScreenshot.Location = new System.Drawing.Point(16, 24);
+            this.chkEnableScreenshot.Name = "chkEnableScreenshot";
+            this.chkEnableScreenshot.Size = new System.Drawing.Size(112, 17);
+            this.chkEnableScreenshot.TabIndex = 0;
+            this.chkEnableScreenshot.Text = "Enable screenshot";
+            this.chkEnableScreenshot.UseVisualStyleBackColor = true;
+            // 
             // tabEmulator
             // 
             this.tabEmulator.AutoScroll = true;
@@ -1926,7 +2103,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpEmulatorWorkarounds.Controls.Add(this.chkDisableSteamoverlaygameidEnvVar);
             this.grpEmulatorWorkarounds.Controls.Add(this.chkForceSteamhttpSuccess);
             this.grpEmulatorWorkarounds.Controls.Add(this.chkAchievementsBypass);
-            this.grpEmulatorWorkarounds.Location = new System.Drawing.Point(12, 324);
+            this.grpEmulatorWorkarounds.Location = new System.Drawing.Point(12, 364);
             this.grpEmulatorWorkarounds.Name = "grpEmulatorWorkarounds";
             this.grpEmulatorWorkarounds.Size = new System.Drawing.Size(568, 123);
             this.grpEmulatorWorkarounds.TabIndex = 2;
@@ -1997,6 +2174,8 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.grpEmulatorStats.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpEmulatorStats.Controls.Add(this.chkPauseSessionWhenUnfocused);
+            this.grpEmulatorStats.Controls.Add(this.chkPauseTotalWhenUnfocused);
             this.grpEmulatorStats.Controls.Add(this.btnBrowseSteamGameStatsReportsDir);
             this.grpEmulatorStats.Controls.Add(this.txtSteamGameStatsReportsDir);
             this.grpEmulatorStats.Controls.Add(this.lblStatsReportsFolder);
@@ -2009,7 +2188,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpEmulatorStats.Controls.Add(this.chkDisableLeaderboardsCreateUnknown);
             this.grpEmulatorStats.Location = new System.Drawing.Point(12, 118);
             this.grpEmulatorStats.Name = "grpEmulatorStats";
-            this.grpEmulatorStats.Size = new System.Drawing.Size(568, 200);
+            this.grpEmulatorStats.Size = new System.Drawing.Size(568, 240);
             this.grpEmulatorStats.TabIndex = 1;
             this.grpEmulatorStats.TabStop = false;
             this.grpEmulatorStats.Text = "Stats (main::stats)";
@@ -2121,10 +2300,33 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableLeaderboardsCreateUnknown.Text = "Disable leaderboards create unknown";
             this.chkDisableLeaderboardsCreateUnknown.UseVisualStyleBackColor = true;
             // 
+            // chkPauseTotalWhenUnfocused
+            // 
+            this.chkPauseTotalWhenUnfocused.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkPauseTotalWhenUnfocused.AutoSize = true;
+            this.chkPauseTotalWhenUnfocused.Location = new System.Drawing.Point(280, 24);
+            this.chkPauseTotalWhenUnfocused.Name = "chkPauseTotalWhenUnfocused";
+            this.chkPauseTotalWhenUnfocused.Size = new System.Drawing.Size(210, 17);
+            this.chkPauseTotalWhenUnfocused.TabIndex = 10;
+            this.chkPauseTotalWhenUnfocused.Text = "Pause total playtime when unfocused";
+            this.chkPauseTotalWhenUnfocused.UseVisualStyleBackColor = true;
+            // 
+            // chkPauseSessionWhenUnfocused
+            // 
+            this.chkPauseSessionWhenUnfocused.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkPauseSessionWhenUnfocused.AutoSize = true;
+            this.chkPauseSessionWhenUnfocused.Location = new System.Drawing.Point(280, 48);
+            this.chkPauseSessionWhenUnfocused.Name = "chkPauseSessionWhenUnfocused";
+            this.chkPauseSessionWhenUnfocused.Size = new System.Drawing.Size(222, 17);
+            this.chkPauseSessionWhenUnfocused.TabIndex = 11;
+            this.chkPauseSessionWhenUnfocused.Text = "Pause session playtime when unfocused";
+            this.chkPauseSessionWhenUnfocused.UseVisualStyleBackColor = true;
+            // 
             // grpEmulatorSession
             // 
             this.grpEmulatorSession.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpEmulatorSession.Controls.Add(this.chkIsUnderProton);
             this.grpEmulatorSession.Controls.Add(this.chkSteamDeck);
             this.grpEmulatorSession.Controls.Add(this.chkEnableVoiceChat);
             this.grpEmulatorSession.Controls.Add(this.chkEnableAccountAvatar);
@@ -2146,6 +2348,17 @@ namespace SmartGoldbergEmu.Forms
             this.chkSteamDeck.TabIndex = 4;
             this.chkSteamDeck.Text = "Steam Deck";
             this.chkSteamDeck.UseVisualStyleBackColor = true;
+            // 
+            // chkIsUnderProton
+            // 
+            this.chkIsUnderProton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkIsUnderProton.AutoSize = true;
+            this.chkIsUnderProton.Location = new System.Drawing.Point(280, 72);
+            this.chkIsUnderProton.Name = "chkIsUnderProton";
+            this.chkIsUnderProton.Size = new System.Drawing.Size(177, 17);
+            this.chkIsUnderProton.TabIndex = 5;
+            this.chkIsUnderProton.Text = "Pretend running under Proton";
+            this.chkIsUnderProton.UseVisualStyleBackColor = true;
             // 
             // chkEnableVoiceChat
             // 
@@ -2269,6 +2482,10 @@ namespace SmartGoldbergEmu.Forms
             this.tabMetrics.ResumeLayout(false);
             this.grpFPSDisplay.ResumeLayout(false);
             this.grpFPSDisplay.PerformLayout();
+            this.grpOverlayExtras.ResumeLayout(false);
+            this.grpOverlayExtras.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.numAchievementNotificationDelay)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numNotificationDurationScreenshot)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numFpsAveragingWindow)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numStatsPosX)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numStatsPosY)).EndInit();
@@ -2298,12 +2515,15 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.CheckBox chkEnableAccountAvatar;
         private System.Windows.Forms.CheckBox chkEnableVoiceChat;
         private System.Windows.Forms.CheckBox chkSteamDeck;
+        private System.Windows.Forms.CheckBox chkIsUnderProton;
         private System.Windows.Forms.GroupBox grpEmulatorStats;
         private System.Windows.Forms.CheckBox chkDisableLeaderboardsCreateUnknown;
         private System.Windows.Forms.CheckBox chkAllowUnknownStats;
         private System.Windows.Forms.CheckBox chkStatAchievementProgressFunctionality;
         private System.Windows.Forms.CheckBox chkSaveOnlyHigherStatAchievementProgress;
         private System.Windows.Forms.CheckBox chkRecordPlaytime;
+        private System.Windows.Forms.CheckBox chkPauseTotalWhenUnfocused;
+        private System.Windows.Forms.CheckBox chkPauseSessionWhenUnfocused;
         private System.Windows.Forms.Label lblIconsPerIteration;
         private System.Windows.Forms.NumericUpDown numIconsPerIteration;
         private System.Windows.Forms.Label lblStatsReportsFolder;
@@ -2413,6 +2633,17 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.NumericUpDown numFontSpacingX;
         private System.Windows.Forms.Label lblFontSpacing;
         private System.Windows.Forms.GroupBox grpFPSDisplay;
+        private System.Windows.Forms.GroupBox grpOverlayExtras;
+        private System.Windows.Forms.CheckBox chkEnableScreenshot;
+        private System.Windows.Forms.CheckBox chkShowNotificationHistory;
+        private System.Windows.Forms.CheckBox chkShowAchievementList;
+        private System.Windows.Forms.CheckBox chkShowPlaytimeInUserInfo;
+        private System.Windows.Forms.CheckBox chkUnlockedExpanded;
+        private System.Windows.Forms.CheckBox chkLockedExpanded;
+        private System.Windows.Forms.Label lblNotificationDurationScreenshot;
+        private System.Windows.Forms.NumericUpDown numNotificationDurationScreenshot;
+        private System.Windows.Forms.Label lblAchievementNotificationDelay;
+        private System.Windows.Forms.NumericUpDown numAchievementNotificationDelay;
         private System.Windows.Forms.CheckBox chkAlwaysShowPlaytime;
         private System.Windows.Forms.CheckBox chkAlwaysShowFrametime;
         private System.Windows.Forms.CheckBox chkAlwaysShowFPS;

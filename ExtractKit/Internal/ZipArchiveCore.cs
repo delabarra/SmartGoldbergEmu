@@ -134,33 +134,6 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
             ExtractEntryData(entry, outputPath);
         }
 
-        public void ExtractAll(string destRoot)
-        {
-            if (string.IsNullOrEmpty(destRoot))
-                throw new ArgumentException("Destination root is required.", nameof(destRoot));
-
-            EnsureOpen();
-            Directory.CreateDirectory(destRoot);
-
-            for (int i = 0; i < _entries.Length; i++)
-            {
-                ZipEntry entry = _entries[i];
-                string outputPath = Path.Combine(destRoot, entry.Path.Replace('/', Path.DirectorySeparatorChar));
-
-                if (entry.IsDirectory)
-                {
-                    Directory.CreateDirectory(outputPath);
-                    continue;
-                }
-
-                string parent = Path.GetDirectoryName(outputPath);
-                if (!string.IsNullOrEmpty(parent))
-                    Directory.CreateDirectory(parent);
-
-                ExtractEntryData(entry, outputPath);
-            }
-        }
-
         private static string ResolveEntryDestinationPath(ZipEntry entry, string destPath)
         {
             bool destIsDirectory = destPath.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
@@ -169,10 +142,7 @@ namespace SmartGoldbergEmu.ExtractKit.Internal
                 || Directory.Exists(destPath);
 
             if (destIsDirectory)
-            {
-                string relative = entry.Path.Replace('/', Path.DirectorySeparatorChar);
-                return Path.Combine(destPath, relative);
-            }
+                return EntryPath.ResolveDestinationPath(destPath, entry.Path);
 
             return destPath;
         }

@@ -11,15 +11,9 @@ using SmartGoldbergEmu;
 
 namespace SmartGoldbergEmu.Forms
 {
-    /// <summary>
-    /// Form for selecting how to launch a game. The selected option overrides the game launch
-    /// with its Executable (process path), Parameters (arguments), and WorkingDir.
-    /// </summary>
     public partial class LaunchOptionsForm : ThemedForm
     {
-        /// <summary>
-        /// The selected launch option. When set, overrides the game launch with Executable, Parameters, WorkingDir.
-        /// </summary>
+        // When set, its Executable, Parameters, and WorkingDir override the game's launch settings.
         public LaunchOption SelectedOption { get; private set; }
         public DialogResult Result { get; private set; }
         public bool SkipLauncher { get; private set; } = false;
@@ -45,12 +39,11 @@ namespace SmartGoldbergEmu.Forms
             _game = game;
             _appDataService = ServiceLocator.AppDataService;
 
-            // Ensure ListBox uses item ToString() for display
+            // Items render via ToString().
             lstLaunchOptions.DisplayMember = null;
 
             _allLaunchOptions = launchOptions ?? new List<LaunchOption>();
 
-            // Set labels text
             lblTitle.Text = $"Launch Options for {game?.AppName ?? "Game"}";
             lblInstruction.Text = "Select how to launch:";
 
@@ -66,22 +59,19 @@ namespace SmartGoldbergEmu.Forms
             ServiceLocator.LogService.LogDebug(
                 $"LaunchOptionsForm: {game?.AppName ?? "Game"}, {filteredOptions.Count} option(s), ExcludeConfigType={ExcludeConfigType}");
 
-            // Set default selection
             if (lstLaunchOptions.Items.Count > 0)
                 lstLaunchOptions.SelectedIndex = 0;
             else
                 ServiceLocator.LogService.LogWarning("Launch options list is empty");
 
-            // Subscribe to Load event to set focus on list box
             this.Load += LaunchOptionsForm_Load;
         }
 
         private void LaunchOptionsForm_Load(object sender, EventArgs e)
         {
-            // Record load time to prevent immediate auto-triggering
             _formLoadTime = DateTime.Now;
             
-            // Set focus on list box to prevent accidental Enter key presses on the Launch button
+            // Focus the list, not the Launch button, so a stray Enter does not launch.
             lstLaunchOptions.Focus();
         }
 
@@ -149,7 +139,6 @@ namespace SmartGoldbergEmu.Forms
         {
             // Checked = full list (ExcludeConfigType = false); unchecked = hide restricted options (ExcludeConfigType = true)
             ExcludeConfigType = !chkShowBetaOptions.Checked;
-            // Save the checkbox state to configuration (inverted)
             var settings = _appDataService.LoadApplicationSettings();
             settings.FullLaunchOptions = chkShowBetaOptions.Checked;
             _appDataService.SaveApplicationSettings(settings);
@@ -162,7 +151,6 @@ namespace SmartGoldbergEmu.Forms
             ServiceLocator.LogService.LogMessage(
                 $"Launch options filter changed: ExcludeConfigType={ExcludeConfigType}, visible={filteredOptions.Count}");
             
-            // Reset selection if current selection is no longer valid
             if (lstLaunchOptions.SelectedIndex >= lstLaunchOptions.Items.Count)
                 lstLaunchOptions.SelectedIndex = lstLaunchOptions.Items.Count > 0 ? 0 : -1;
         }
@@ -173,7 +161,6 @@ namespace SmartGoldbergEmu.Forms
             
             foreach (var option in launchOptions)
             {
-                // Create display description without arch/type suffixes
                 var description = CreateEnhancedDescription(option);
                 var displayItem = new LaunchOptionDisplayItem(option, description);
                 lstLaunchOptions.Items.Add(displayItem);
@@ -198,9 +185,7 @@ namespace SmartGoldbergEmu.Forms
             return AppendShortLaunchTags(baseText, option);
         }
 
-        /// <summary>
-        /// Appends short bracket tags only for "extra" launch options (same as when Show Extra options reveals them): beta branch, config/dev types, etc.
-        /// </summary>
+        // Tags only the "extra" options that Show Extra reveals (beta branch, config/dev types, etc.).
         private static string AppendShortLaunchTags(string baseText, LaunchOption option)
         {
             if (option == null || string.IsNullOrEmpty(baseText))
@@ -241,7 +226,6 @@ namespace SmartGoldbergEmu.Forms
             if (unique.Count == 0)
                 return baseText;
 
-            // Prefix tags before the name, using " - " separator.
             // Example: "[user] - My Custom Launch"
             return string.Join(" ", unique.Select(x => "[" + x + "]")) + " - " + baseText;
         }
@@ -295,8 +279,7 @@ namespace SmartGoldbergEmu.Forms
         {
             if (e.KeyCode == Keys.Enter && lstLaunchOptions.SelectedItem != null)
             {
-                // Prevent immediate triggering if form was just loaded (within 100ms)
-                // This prevents accidental auto-launch from queued key events
+                // Ignore Enter queued from before the form loaded so it does not auto-launch.
                 if ((DateTime.Now - _formLoadTime).TotalMilliseconds < 100)
                 {
                     e.Handled = true;
@@ -397,9 +380,6 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        /// <summary>
-        /// Helper class to display launch options with enhanced descriptions
-        /// </summary>
         private class LaunchOptionDisplayItem
         {
             public LaunchOption LaunchOption { get; }

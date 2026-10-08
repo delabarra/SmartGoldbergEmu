@@ -112,7 +112,7 @@ namespace SmartGoldbergEmu.Forms
         private const int ButtonWidth = 88;
         private const int ButtonHeight = 26;
         private const int ButtonGap = 8;
-        // Match native Task Dialog / MessageBox command-area padding (was 12 — too tall).
+        // Match native Task Dialog / MessageBox command-area padding.
         private const int BandPadY = 8;
         // Blank lines around the checkbox, owned by the checkbox slice (matches body TextRenderer line advance).
         // Standard rhythm: message (2 lines from top) → 2 lines → checkbox → 2 lines → button slice.

@@ -36,7 +36,7 @@ namespace SmartGoldbergEmu.Services
                 if (string.IsNullOrWhiteSpace(json))
                     return false;
 
-                // JavaScriptSerializer Dictionary shape matches AppDataJson Build/Parse.
+                // AppDataJson.TryParseNodes expects the JavaScriptSerializer-style Dictionary<string, object> tree.
                 object parsed = AppDataKitJsonParse(json);
                 var root = parsed as Dictionary<string, object>;
                 if (root == null)
@@ -172,10 +172,9 @@ namespace SmartGoldbergEmu.Services
             };
         }
 
-        // Kit JsonUtil is internal; bridge parse through public AppInfo path is awkward — use reflection-free duplicate via JavaScriptSerializer in kit Parse exposed:
+        // Kit JsonUtil is internal, so walk the JsonKit tree into the Dictionary shape AppDataJson Build/Parse uses.
         private static object AppDataKitJsonParse(string json)
         {
-            // Prefer walking JsonKit tree into Dictionary so save/load stay JsonKit-compatible with AppDataJson.
             JsonValue root = JsonValue.Parse(json);
             return JsonValueToObject(root);
         }

@@ -7,7 +7,6 @@ namespace SmartGoldbergEmu.JsonKit
     {
         public abstract JsonValueKind Kind { get; }
 
-        // Compatibility with prior JToken.Type checks.
         public JsonValueKind Type => Kind;
 
         public static JsonValue Parse(string json)

@@ -128,8 +128,7 @@ namespace SmartGoldbergEmu.Helpers
             if (textBox == null || !_placeholderTexts.ContainsKey(textBox))
                 return;
 
-            // Only clear when the control is actively showing placeholder style text.
-            // This prevents clearing real user input that happens to match placeholder value.
+            // Only clear while placeholder styling is shown, so real input that matches the hint is kept.
             if (textBox.Text == _placeholderTexts[textBox] && textBox.ForeColor.ToArgb() == _getPlaceholderColor().ToArgb())
             {
                 textBox.Text = string.Empty;

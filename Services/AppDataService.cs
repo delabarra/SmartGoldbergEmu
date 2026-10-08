@@ -797,7 +797,7 @@ namespace SmartGoldbergEmu.Services
                 if (!includeAssets)
                     return ValidationResult.Success();
 
-                // Soft-fail: batch A (Steam lineage) ∥ batch B (EXAMPLE).
+                // Both batches run in parallel and soft-fail (log only).
                 Task batchA = EnsureSteamLineageAssetsAsync();
                 Task batchB = EnsureExampleAssetsAsync();
                 await Task.WhenAll(batchA, batchB).ConfigureAwait(false);

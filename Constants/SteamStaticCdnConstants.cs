@@ -3,9 +3,7 @@ using System.Collections.Generic;
 
 namespace SmartGoldbergEmu.Constants
 {
-    /// <summary>
-    /// Known Steam static asset CDN hosts and probe targets used to rank mirrors per user.
-    /// </summary>
+    // Steam static asset CDN hosts and probe targets used to rank mirrors per user.
     public static class SteamStaticCdnConstants
     {
         public const string PreferencesCacheFileName = "steam_static_cdn_preferences.json";
@@ -14,7 +12,7 @@ namespace SmartGoldbergEmu.Constants
 
         public const int ProbeTimeoutMs = 3000;
 
-        /// <summary>Stable probe app for bare <c>/steam/apps/</c> mirrors.</summary>
+        // Stable probe app for bare /steam/apps/ mirrors.
         public const ulong ProbeAppId = 570;
 
         public const string ProbeBareAssetPath = "header.jpg";

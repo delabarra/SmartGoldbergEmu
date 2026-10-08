@@ -4,10 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: patch=2.4.4, hotfix=2.4.4.1, minor=2.5.0, major=3.0.0
+        description: Next version for each bump (synced from Version.props on each release)
         type: choice
-        options: [patch, hotfix, minor, major]
-        default: patch
+        # bump-choices:begin
+        options:
+          - patch (2.4.4)
+          - hotfix (2.4.3.3)
+          - minor (2.5.0)
+          - major (3.0.0)
+        default: patch (2.4.4)
+        # bump-choices:end
       skip_version_bump:
         description: Re-run only — publish current Version.props without bumping
         type: boolean
@@ -55,7 +61,7 @@ jobs:
         if: inputs.skip_version_bump != true
         shell: pwsh
         run: |
-          git add Version.props
+          git add Version.props .github/workflows/release.yml
           if ([string]::IsNullOrWhiteSpace((git status --porcelain Version.props))) {
             throw 'Version.props has no changes after bump.'
           }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -23,8 +24,10 @@ namespace SmartGoldbergEmu.Generators
             _taskReportService = taskReportService;
         }
 
+        // prefetchedItems: section already fetched for this app (add collect / catalog refresh); null fetches live.
         public async Task<ItemGeneratorResult> GenerateAndSaveAsync(
             GameConfig game,
+            ItemsSection prefetchedItems = null,
             bool showProgress = true,
             bool friendlyProgressMessages = false,
             CancellationToken cancellationToken = default)
@@ -44,15 +47,20 @@ namespace SmartGoldbergEmu.Generators
 
             try
             {
-                if (showProgress && !friendlyProgressMessages)
+                ItemsSection section = prefetchedItems;
+                if (section == null)
                 {
-                    _taskReportService?.SetMessage("Fetching item definitions…");
-                    _taskReportService?.SetProgress(0, 100);
-                }
+                    if (showProgress)
+                    {
+                        _taskReportService?.SetMessage("Fetching item definitions…");
+                        if (!friendlyProgressMessages)
+                            _taskReportService?.SetProgress(0, 100);
+                    }
 
-                ItemsSection section = await ServiceLocator.AppDataKitBridgeService
-                    .FetchItemsAsync(game.AppId, cancellationToken)
-                    .ConfigureAwait(false);
+                    section = await ServiceLocator.AppDataKitBridgeService
+                        .FetchItemsAsync(game.AppId, cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (section == null || string.IsNullOrWhiteSpace(section.ArchiveJson))
@@ -60,7 +68,7 @@ namespace SmartGoldbergEmu.Generators
                     string failMessage = string.IsNullOrWhiteSpace(section?.Error)
                         ? "No item definitions available for this app."
                         : section.Error;
-                    if (showProgress && !friendlyProgressMessages)
+                    if (showProgress)
                     {
                         ReportFinishedStatus(
                             failMessage,
@@ -77,12 +85,14 @@ namespace SmartGoldbergEmu.Generators
                 if (!TryBuildItemDefinitionMap(archiveJson, out map, out parseDetail))
                 {
                     Program.LogService?.LogWarning("ItemGenerator: could not parse item archive for app " + appIdStr + ". " + parseDetail);
+                    if (showProgress)
+                        ReportFinishedStatus("Could not parse item definitions.", TaskReportKind.Warning);
                     return ItemGeneratorResult.Fail(parseDetail);
                 }
 
                 if (map.Count == 0)
                 {
-                    if (showProgress && !friendlyProgressMessages)
+                    if (showProgress)
                         ReportFinishedStatus("Item archive contained no item definitions.", TaskReportKind.Info);
                     return ItemGeneratorResult.Fail("Item archive contained no item definitions.");
                 }
@@ -135,7 +145,7 @@ namespace SmartGoldbergEmu.Generators
                 }
 
                 Program.LogService?.LogDebug(string.Format("ItemGenerator: wrote {0} item(s) for {1} ({2})", map.Count, game.AppName, game.AppId));
-                return ItemGeneratorResult.Ok(map.Count);
+                return ItemGeneratorResult.Ok(map.Count, section);
             }
             catch (OperationCanceledException)
             {
@@ -144,7 +154,7 @@ namespace SmartGoldbergEmu.Generators
             catch (Exception ex)
             {
                 Program.LogService?.LogError("ItemGenerator failed", ex);
-                if (showProgress && !friendlyProgressMessages)
+                if (showProgress)
                     ReportFinishedStatus("Item generation failed.", TaskReportKind.Error);
                 return ItemGeneratorResult.Fail(ex.Message);
             }
@@ -155,7 +165,7 @@ namespace SmartGoldbergEmu.Generators
             _taskReportService?.SetMessageWithAutoClear(message, kind);
         }
 
-        private static bool TryBuildItemDefinitionMap(string archiveJson, out JsonObject map, out string errorDetail)
+        internal static bool TryBuildItemDefinitionMap(string archiveJson, out JsonObject map, out string errorDetail)
         {
             map = null;
             errorDetail = null;
@@ -188,7 +198,9 @@ namespace SmartGoldbergEmu.Generators
                 }
                 if (allValuesAreObjects)
                 {
-                    map = (JsonObject)asObj.DeepClone();
+                    map = new JsonObject();
+                    foreach (var p in asObj.Properties())
+                        AddGoldbergItemDefinition(map, p.Name, (JsonObject)p.Value);
                     return true;
                 }
             }
@@ -240,20 +252,49 @@ namespace SmartGoldbergEmu.Generators
                 if (item == null)
                     continue;
 
-                string itemId = item["itemdefid"]?.ToString();
-                if (string.IsNullOrEmpty(itemId))
-                    itemId = "item_" + i;
-
-                map[itemId] = item;
+                AddGoldbergItemDefinition(map, item["itemdefid"]?.ToString(), item);
             }
 
             if (map.Count == 0)
             {
-                errorDetail = "The archive array had no JSON objects with item definitions. Preview: " + preview;
+                errorDetail = "The archive array had no item definitions with a numeric itemdefid. Preview: " + preview;
                 return false;
             }
 
             return true;
+        }
+
+        // gbe_fork calls std::stoi on every items.json key without try/catch, so non-numeric ids must not be written.
+        private static void AddGoldbergItemDefinition(JsonObject map, string itemDefId, JsonObject item)
+        {
+            if (!int.TryParse(itemDefId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+                return;
+
+            map[itemDefId] = ToGoldbergItemDefinition(item);
+        }
+
+        // gbe_fork GetItemDefinitionProperty reads attributes with get<std::string>() and returns empty for numbers/booleans.
+        private static JsonObject ToGoldbergItemDefinition(JsonObject item)
+        {
+            var result = new JsonObject();
+            foreach (var prop in item.Properties())
+            {
+                JsonValue value = prop.Value;
+                switch (value.Kind)
+                {
+                    case JsonValueKind.Integer:
+                    case JsonValueKind.Float:
+                        result[prop.Name] = new JsonString(value.ToString());
+                        break;
+                    case JsonValueKind.Boolean:
+                        result[prop.Name] = new JsonString(((JsonBool)value).Value ? "true" : "false");
+                        break;
+                    default:
+                        result[prop.Name] = value.DeepClone();
+                        break;
+                }
+            }
+            return result;
         }
 
         // Goldberg default_items.json: instance slot -> { definition: itemdefid, quantity }.

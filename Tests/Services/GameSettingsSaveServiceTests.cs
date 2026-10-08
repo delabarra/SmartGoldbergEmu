@@ -83,6 +83,42 @@ namespace SmartGoldbergEmu.Tests.Services
             }
         }
 
+        [Fact]
+        public async Task SaveEmulatorSettingsFromRequestAsync_reports_failure_when_settings_write_fails_but_saves_remaining_files()
+        {
+            using (var ctx = CreateContext())
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(ctx.SteamSettingsPath));
+                File.WriteAllText(ctx.SteamSettingsPath, "blocks the steam_settings folder");
+
+                var snapshot = new GameSettingsSnapshot { AppId = TestAppId };
+                var request = BuildRequest(ctx, isEditMode: false, snapshot, customStatsRawJson: string.Empty);
+                bool additionalFilesSaved = false;
+                request.SaveAdditionalGoldbergFiles = () => additionalFilesSaved = true;
+
+                GameSettingsSaveResult result = await ctx.Service.SaveEmulatorSettingsFromRequestAsync(request);
+
+                Assert.False(result.IsSuccess);
+                Assert.False(string.IsNullOrWhiteSpace(result.ErrorMessage));
+                Assert.True(additionalFilesSaved);
+            }
+        }
+
+        [Fact]
+        public async Task SaveEmulatorSettingsFromRequestAsync_reports_failure_when_a_save_step_throws()
+        {
+            using (var ctx = CreateContext())
+            {
+                var snapshot = ctx.EmulatorConfig.LoadGameSettingsSnapshot(TestAppId);
+                var request = BuildRequest(ctx, isEditMode: true, snapshot, customStatsRawJson: string.Empty);
+                request.SaveAdditionalGoldbergFiles = () => throw new IOException("disk full");
+
+                GameSettingsSaveResult result = await ctx.Service.SaveEmulatorSettingsFromRequestAsync(request);
+
+                Assert.False(result.IsSuccess);
+            }
+        }
+
         private static GameSettingsSaveTestContext CreateContext()
         {
             string gamesRoot = TestFileHelper.CreateTempDirectory("sge-save-service-games-");

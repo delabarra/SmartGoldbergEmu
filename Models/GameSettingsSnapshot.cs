@@ -4,44 +4,20 @@ using SmartGoldbergEmu.Constants;
 
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// Represents a snapshot of game settings with dirty tracking capability.
-    /// </summary>
     public class GameSettingsSnapshot
     {
-        /// <summary>
-        /// Gets or sets the App ID this snapshot belongs to.
-        /// </summary>
         public ulong AppId { get; set; }
 
-        /// <summary>
-        /// Gets or sets the overlay settings.
-        /// </summary>
         public OverlaySettings Overlay { get; set; }
 
-        /// <summary>
-        /// Gets or sets the main emulation settings.
-        /// </summary>
         public MainSettings Main { get; set; }
 
-        /// <summary>
-        /// Gets or sets the app-specific settings.
-        /// </summary>
         public AppSettings App { get; set; }
 
-        /// <summary>
-        /// Gets or sets the user-specific settings.
-        /// </summary>
         public UserSettings User { get; set; }
 
-        /// <summary>
-        /// Gets or sets the timestamp when this snapshot was created.
-        /// </summary>
         public DateTime CreatedAt { get; set; }
 
-        /// <summary>
-        /// Initializes a new instance of the GameSettingsSnapshot class.
-        /// </summary>
         public GameSettingsSnapshot()
         {
             Overlay = new OverlaySettings();
@@ -52,12 +28,8 @@ namespace SmartGoldbergEmu.Models
         }
     }
 
-    /// <summary>
-    /// Represents overlay-specific settings.
-    /// </summary>
     public class OverlaySettings
     {
-        // General overlay settings
         public bool EnableExperimentalOverlay { get; set; } = true;
         public int HookDelaySec { get; set; } = 0;
         public int RendererDetectorTimeoutSec { get; set; } = 15;
@@ -73,8 +45,10 @@ namespace SmartGoldbergEmu.Models
         public bool OverlayAlwaysShowFps { get; set; } = false;
         public bool OverlayAlwaysShowFrametime { get; set; } = false;
         public bool OverlayAlwaysShowPlaytime { get; set; } = false;
+        public bool EnableScreenshot { get; set; } = true;
+        public string ScreenshotCombo { get; set; } = "f12";
+        public string OverlayKeyCombo { get; set; } = "shift + tab";
 
-        // Appearance settings
         public string FontOverride { get; set; } = string.Empty;
         public float FontSize { get; set; } = 20.0f;
         public float IconSize { get; set; } = 64.0f;
@@ -87,20 +61,27 @@ namespace SmartGoldbergEmu.Models
         public float NotificationB { get; set; } = 0.21f;
         public float NotificationA { get; set; } = 1.0f;
 
-        // Notification appearance
         public float NotificationRounding { get; set; } = 10.0f;
         public float NotificationMarginX { get; set; } = 5.0f;
         public float NotificationMarginY { get; set; } = 5.0f;
 
-        // Notification durations
+        // Seconds.
         public float NotificationAnimation { get; set; } = 0.35f;
         public float NotificationDurationProgress { get; set; } = 6.0f;
         public float NotificationDurationAchievement { get; set; } = 7.0f;
         public float NotificationDurationInvitation { get; set; } = 8.0f;
         public float NotificationDurationChat { get; set; } = 4.0f;
+        public float NotificationDurationScreenshot { get; set; } = 1.0f;
+        public float AchievementNotificationDelay { get; set; } = 0f;
 
-        // Achievement datetime format
+        // strftime-style formats.
         public string AchievementUnlockDatetimeFormat { get; set; } = "%Y/%m/%d - %H:%M:%S";
+        public string ScreenshotDatetimeFormat { get; set; } = "%Y/%m/%d - %H:%M:%S";
+        public bool ShowNotificationHistory { get; set; } = false;
+        public bool ShowAchievementList { get; set; } = false;
+        public bool UnlockedExpanded { get; set; } = true;
+        public bool LockedExpanded { get; set; } = false;
+        public bool ShowPlaytimeInUserInfo { get; set; } = false;
 
         // Background colors (RGBA)
         public float BackgroundR { get; set; } = 0.12f;
@@ -134,7 +115,6 @@ namespace SmartGoldbergEmu.Models
         public float FontSizeAchievementDescription { get; set; }
         public bool FontAchievementTitleBold { get; set; }
 
-        // Notification positions
         public string PosAchievement { get; set; } = "bot_right";
         public string PosInvitation { get; set; } = "top_right";
         public string PosChatMsg { get; set; } = "top_center";
@@ -155,31 +135,32 @@ namespace SmartGoldbergEmu.Models
         public float StatsPosY { get; set; } = 0.0f;
     }
 
-    /// <summary>
-    /// Represents main emulation settings.
-    /// </summary>
     public class MainSettings
     {
-        // General settings
+        // [main::general]
         public bool NewAppTicket { get; set; } = true;
         public bool GcToken { get; set; } = true;
         public bool BlockUnknownClients { get; set; } = false;
-        public bool SteamDeck { get; set; } = false;
+        public int SteamHardwareType { get; set; } = 0;
+        public int SteamHardwareDefaultConfig { get; set; } = 0;
+        public bool IsUnderProton { get; set; } = false;
         public bool EnableAccountAvatar { get; set; } = false;
         public bool EnableVoiceChat { get; set; } = false;
         public bool ImmediateGameserverStats { get; set; } = false;
         public bool MatchmakingServerListActualType { get; set; } = false;
         public bool MatchmakingServerDetailsViaSourceQuery { get; set; } = false;
 
-        // Stats settings
+        // [main::stats]
         public bool DisableLeaderboardsCreateUnknown { get; set; } = false;
         public bool AllowUnknownStats { get; set; } = false;
         public bool StatAchievementProgressFunctionality { get; set; } = true;
         public bool SaveOnlyHigherStatAchievementProgress { get; set; } = true;
         public int PaginatedAchievementsIcons { get; set; } = 10;
         public bool RecordPlaytime { get; set; } = false;
+        public bool PauseTotalWhenUnfocused { get; set; } = false;
+        public bool PauseSessionWhenUnfocused { get; set; } = false;
 
-        // Connectivity settings
+        // [main::connectivity]
         public bool DisableLanOnly { get; set; } = false;
         public bool DisableNetworking { get; set; } = false;
         public int ListenPort { get; set; } = 47584;
@@ -191,7 +172,7 @@ namespace SmartGoldbergEmu.Models
         public bool DownloadSteamhttpRequests { get; set; } = false;
         public int OldP2PPacketSharingMode { get; set; } = 0;
 
-        // Misc settings
+        // [main::misc]
         public bool AchievementsBypass { get; set; } = false;
         public bool ForceSteamhttpSuccess { get; set; } = false;
         public bool DisableSteamoverlaygameidEnvVar { get; set; } = false;
@@ -201,9 +182,6 @@ namespace SmartGoldbergEmu.Models
         public bool Use32BitInventoryItemIds { get; set; } = false;
     }
 
-    /// <summary>
-    /// Represents app-specific settings.
-    /// </summary>
     public class AppSettings
     {
         public bool UnlockAllDLC { get; set; } = false;
@@ -215,12 +193,8 @@ namespace SmartGoldbergEmu.Models
         public string ControllerType { get; set; } = "XBOX360";
     }
 
-    /// <summary>
-    /// Represents user-specific settings.
-    /// </summary>
     public class UserSettings
     {
-        // General user settings
         public string AccountName { get; set; } = string.Empty;
         public string AccountSteamId { get; set; } = string.Empty;
         public string Ticket { get; set; } = string.Empty;
@@ -229,11 +203,9 @@ namespace SmartGoldbergEmu.Models
         public string Language { get; set; } = ApplicationConstants.DefaultLanguage;
         public string IpCountry { get; set; } = ApplicationConstants.DefaultIpCountry;
 
-        // Save settings
         public string LocalSavePath { get; set; } = string.Empty;
         public string SavesFolderName { get; set; } = ApplicationConstants.DefaultSavesFolderName;
-        
-        // Additional user settings (not in standard configs but may be used)
+
         public string ClanTag { get; set; } = string.Empty;
     }
 }

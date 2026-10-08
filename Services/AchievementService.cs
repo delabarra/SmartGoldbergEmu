@@ -33,6 +33,7 @@ namespace SmartGoldbergEmu.Services
             public List<CAchievement> Achievements;
             public string ApiErrorCode;
             public Exception Failure;
+            public AchievementsSection Section;
         }
 
         // Progress UI differs by caller: main menu (per-image), add-game status bar only, or add-game with step text.
@@ -67,10 +68,16 @@ namespace SmartGoldbergEmu.Services
             int current,
             int total)
         {
+            ReportAddSaveStep(
+                progressMode,
+                AddGameStatusMessages.DownloadingAchievementIcons(GetAddSaveGameDisplayName(app), current, total));
+        }
+
+        private void ReportAddSaveStep(AchievementProgressMode progressMode, string message)
+        {
             if (_taskReportService == null || !ProgressBarOnly(progressMode))
                 return;
-            _taskReportService.SetMessage(
-                AddGameStatusMessages.DownloadingAchievementIcons(GetAddSaveGameDisplayName(app), current, total));
+            _taskReportService.SetMessage(message);
         }
 
         private readonly ITaskReportService _taskReportService;
@@ -296,34 +303,7 @@ namespace SmartGoldbergEmu.Services
                     .FetchAchievementsAsync(appId, _language)
                     .ConfigureAwait(false);
 
-                if (section == null)
-                    return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList };
-
-                if (section.Status == SnapshotSectionStatus.Unavailable
-                    && !string.IsNullOrEmpty(section.Error)
-                    && section.Error.IndexOf("API key", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.InvalidApiKey };
-                }
-
-                if (section.Status == SnapshotSectionStatus.Error)
-                {
-                    return new SteamAchievementFetchResult
-                    {
-                        Status = SteamAchievementFetchStatus.ApiError,
-                        ApiErrorCode = string.IsNullOrWhiteSpace(section.Error) ? "error" : section.Error
-                    };
-                }
-
-                List<CAchievement> achievements = MapKitAchievements(section);
-                if (achievements == null || achievements.Count == 0)
-                    return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList };
-
-                return new SteamAchievementFetchResult
-                {
-                    Status = SteamAchievementFetchStatus.Success,
-                    Achievements = achievements
-                };
+                return ClassifyAchievementsSection(section);
             }
             catch (OperationCanceledException)
             {
@@ -341,6 +321,40 @@ namespace SmartGoldbergEmu.Services
                     Failure = new AchievementException(errorMsg, appId.ToString(), ex)
                 };
             }
+        }
+
+        private static SteamAchievementFetchResult ClassifyAchievementsSection(AchievementsSection section)
+        {
+            if (section == null)
+                return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList };
+
+            if (section.Status == SnapshotSectionStatus.Unavailable
+                && !string.IsNullOrEmpty(section.Error)
+                && section.Error.IndexOf("API key", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.InvalidApiKey, Section = section };
+            }
+
+            if (section.Status == SnapshotSectionStatus.Error)
+            {
+                return new SteamAchievementFetchResult
+                {
+                    Status = SteamAchievementFetchStatus.ApiError,
+                    ApiErrorCode = string.IsNullOrWhiteSpace(section.Error) ? "error" : section.Error,
+                    Section = section
+                };
+            }
+
+            List<CAchievement> achievements = MapKitAchievements(section);
+            if (achievements == null || achievements.Count == 0)
+                return new SteamAchievementFetchResult { Status = SteamAchievementFetchStatus.EmptyList, Section = section };
+
+            return new SteamAchievementFetchResult
+            {
+                Status = SteamAchievementFetchStatus.Success,
+                Achievements = achievements,
+                Section = section
+            };
         }
 
         private static List<CAchievement> MapKitAchievements(AchievementsSection section)
@@ -392,12 +406,12 @@ namespace SmartGoldbergEmu.Services
             string failureMessage)
         {
             bool active = ProgressActive(progressMode);
+            ReportAddSaveStep(progressMode, AddGameStatusMessages.CreatingPlaceholderAchievement(GetAddSaveGameDisplayName(app)));
             bool created = EnsureDummyAchievementAndFiles(app, reason, progressMode);
             if (active && ProgressIsAddSave(progressMode) && created)
             {
                 if (ProgressBarOnly(progressMode))
                 {
-                    ReportAddSaveDownloadingIconsProgress(app, progressMode, 1, 1);
                     _taskReportService?.SetProgress(1, 1);
                     return created;
                 }
@@ -787,13 +801,21 @@ namespace SmartGoldbergEmu.Services
 
         #region Achievement Generation
 
-        public Task<bool> GenerateAchievementsAsync(GameConfig app, bool showProgress = true)
+        // Returns the schema section achievements.json was built from (fetched or prefetched) so callers can patch the catalog.
+        public Task<AchievementsSection> GenerateAchievementsAsync(
+            GameConfig app,
+            bool showProgress = true,
+            AchievementsSection prefetchedSchema = null)
         {
             AchievementProgressMode mode = showProgress ? AchievementProgressMode.Menu : AchievementProgressMode.None;
-            return GenerateAchievementsCoreAsync(app, mode);
+            return GenerateAchievementsCoreAsync(app, mode, prefetchedSchema);
         }
 
-        private async Task<bool> GenerateAchievementsCoreAsync(GameConfig app, AchievementProgressMode progressMode)
+        // prefetchedSchema must already be in this service's language; null fetches live.
+        private async Task<AchievementsSection> GenerateAchievementsCoreAsync(
+            GameConfig app,
+            AchievementProgressMode progressMode,
+            AchievementsSection prefetchedSchema)
         {
             try
             {
@@ -819,9 +841,14 @@ namespace SmartGoldbergEmu.Services
 
                 EnsureSteamSettingsFolder(app);
 
-                SteamAchievementFetchResult fetch = await FetchAchievementSchemaFromSteamAsync(
-                    app.AppId,
-                    showRetrieveStatusMessage: ProgressIsMenu(progressMode)).ConfigureAwait(false);
+                if (prefetchedSchema == null)
+                    ReportAddSaveStep(progressMode, AddGameStatusMessages.FetchingAchievementSchema(GetAddSaveGameDisplayName(app)));
+
+                SteamAchievementFetchResult fetch = prefetchedSchema != null
+                    ? ClassifyAchievementsSection(prefetchedSchema)
+                    : await FetchAchievementSchemaFromSteamAsync(
+                        app.AppId,
+                        showRetrieveStatusMessage: ProgressIsMenu(progressMode)).ConfigureAwait(false);
 
                 if (fetch.Failure != null)
                 {
@@ -840,27 +867,30 @@ namespace SmartGoldbergEmu.Services
                 {
                     if (ProgressIsMenu(progressMode))
                         _taskReportService?.SetMessage("No achievement schema available - creating placeholder");
-                    return await CompleteDummyGenerationAsync(
+                    await CompleteDummyGenerationAsync(
                         app,
                         progressMode,
                         DummyAchievementReason.NoApiKey,
                         "Placeholder achievement created successfully",
                         "Failed to create placeholder achievement");
+                    return fetch.Section;
                 }
 
                 if (fetch.Status == SteamAchievementFetchStatus.ApiError)
                 {
-                    return await HandleApiError("ERROR:" + fetch.ApiErrorCode, app, progressMode);
+                    await HandleApiError("ERROR:" + fetch.ApiErrorCode, app, progressMode);
+                    return fetch.Section;
                 }
 
                 if (fetch.Status == SteamAchievementFetchStatus.EmptyList)
                 {
-                    return await CompleteDummyGenerationAsync(
+                    await CompleteDummyGenerationAsync(
                         app,
                         progressMode,
                         DummyAchievementReason.NoAchievements,
                         "No achievements available - placeholder created",
                         "No achievements available - failed to create placeholder");
+                    return fetch.Section;
                 }
 
                 bool success = await GenerateAchievementFilesAsync(
@@ -876,7 +906,7 @@ namespace SmartGoldbergEmu.Services
                     _taskReportService.SetProgress(0, 0);
                 }
 
-                return success;
+                return fetch.Section;
             }
             catch (Exception ex)
             {
@@ -898,14 +928,16 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public async Task<bool> GenerateAchievementsForAddSaveAsync(
+        // prefetchedSchema (RealList only) must be in this service's language; null fetches live.
+        public async Task GenerateAchievementsForAddSaveAsync(
             GameConfig app,
             AchievementPreviewKind previewKind,
+            AchievementsSection prefetchedSchema,
             bool showProgress = true,
             bool progressOnlyNoMessages = false)
         {
             if (app == null || app.AppId == 0)
-                return false;
+                return;
 
             AchievementProgressMode progressMode = !showProgress
                 ? AchievementProgressMode.None
@@ -916,87 +948,86 @@ namespace SmartGoldbergEmu.Services
             switch (previewKind)
             {
                 case AchievementPreviewKind.NoApiKey:
-                    return await CompleteDummyGenerationAsync(
+                    await CompleteDummyGenerationAsync(
                         app,
                         progressMode,
                         DummyAchievementReason.NoApiKey,
                         "Placeholder achievement created successfully",
                         "Failed to create placeholder achievement").ConfigureAwait(false);
+                    break;
                 case AchievementPreviewKind.NoAchievementsOnSteam:
-                    return await CompleteDummyGenerationAsync(
+                    await CompleteDummyGenerationAsync(
                         app,
                         progressMode,
                         DummyAchievementReason.NoAchievements,
                         "No achievements on Steam — placeholder created",
                         "Failed to create placeholder achievement").ConfigureAwait(false);
+                    break;
                 default:
-                    return await GenerateAchievementsCoreAsync(app, progressMode).ConfigureAwait(false);
+                    await GenerateAchievementsCoreAsync(app, progressMode, prefetchedSchema).ConfigureAwait(false);
+                    break;
             }
         }
 
-        public async Task<(AchievementPreviewKind kind, string previewJson)> BuildAddModePreviewAsync(GameConfig app)
+        // prefetchedSchema must already be in this service's language; null fetches live.
+        public async Task<AchievementAddModePreview> BuildAddModePreviewAsync(GameConfig app, AchievementsSection prefetchedSchema)
         {
             if (app == null || app.AppId == 0)
-            {
-                return (
-                    AchievementPreviewKind.NoApiKey,
-                    AchievementPreviewHelper.BuildDummyPreviewJson(DummyAchievementReason.NoApiKey));
-            }
+                return CreateDummyAddModePreview(AchievementPreviewKind.NoApiKey, DummyAchievementReason.NoApiKey);
 
             try
             {
-                SteamAchievementFetchResult fetch = await FetchAchievementSchemaFromSteamAsync(
-                    app.AppId,
-                    showRetrieveStatusMessage: false).ConfigureAwait(false);
+                SteamAchievementFetchResult fetch = prefetchedSchema != null
+                    ? ClassifyAchievementsSection(prefetchedSchema)
+                    : await FetchAchievementSchemaFromSteamAsync(
+                        app.AppId,
+                        showRetrieveStatusMessage: false).ConfigureAwait(false);
 
                 if (fetch.Failure != null)
                 {
                     Program.LogService?.LogWarning(
                         $"Add-mode achievement preview failed for app {app.AppId}: {fetch.Failure.Message}");
-                    return (
-                        AchievementPreviewKind.NoApiKey,
-                        AchievementPreviewHelper.BuildDummyPreviewJson(DummyAchievementReason.NoApiKey));
+                    return CreateDummyAddModePreview(AchievementPreviewKind.NoApiKey, DummyAchievementReason.NoApiKey);
                 }
 
                 if (fetch.Status == SteamAchievementFetchStatus.InvalidApiKey)
-                {
-                    return (
-                        AchievementPreviewKind.NoApiKey,
-                        AchievementPreviewHelper.BuildDummyPreviewJson(DummyAchievementReason.NoApiKey));
-                }
+                    return CreateDummyAddModePreview(AchievementPreviewKind.NoApiKey, DummyAchievementReason.NoApiKey);
 
                 if (fetch.Status == SteamAchievementFetchStatus.ApiError)
                 {
                     if (fetch.ApiErrorCode == "404")
-                    {
-                        return (
-                            AchievementPreviewKind.NoAchievementsOnSteam,
-                            AchievementPreviewHelper.BuildDummyPreviewJson(DummyAchievementReason.NoAchievements));
-                    }
+                        return CreateDummyAddModePreview(AchievementPreviewKind.NoAchievementsOnSteam, DummyAchievementReason.NoAchievements);
 
-                    return (
-                        AchievementPreviewKind.NoApiKey,
-                        AchievementPreviewHelper.BuildDummyPreviewJson(DummyAchievementReason.NoApiKey));
+                    return CreateDummyAddModePreview(AchievementPreviewKind.NoApiKey, DummyAchievementReason.NoApiKey);
                 }
 
                 if (fetch.Status == SteamAchievementFetchStatus.EmptyList)
-                {
-                    return (
-                        AchievementPreviewKind.NoAchievementsOnSteam,
-                        AchievementPreviewHelper.BuildDummyPreviewJson(DummyAchievementReason.NoAchievements));
-                }
+                    return CreateDummyAddModePreview(AchievementPreviewKind.NoAchievementsOnSteam, DummyAchievementReason.NoAchievements);
 
                 ClearAchievementIconUrlsForPreview(fetch.Achievements);
-                string json = JsonConvert.SerializeObject(fetch.Achievements, JsonFormatting.Indented);
-                return (AchievementPreviewKind.RealList, json);
+                return new AchievementAddModePreview
+                {
+                    Kind = AchievementPreviewKind.RealList,
+                    PreviewJson = JsonConvert.SerializeObject(fetch.Achievements, JsonFormatting.Indented),
+                    Schema = fetch.Section,
+                    Language = _language
+                };
             }
             catch (Exception ex)
             {
                 Program.LogService?.LogWarning($"Add-mode achievement preview failed for app {app.AppId}: {ex.Message}");
-                return (
-                    AchievementPreviewKind.NoApiKey,
-                    AchievementPreviewHelper.BuildDummyPreviewJson(DummyAchievementReason.NoApiKey));
+                return CreateDummyAddModePreview(AchievementPreviewKind.NoApiKey, DummyAchievementReason.NoApiKey);
             }
+        }
+
+        private AchievementAddModePreview CreateDummyAddModePreview(AchievementPreviewKind kind, DummyAchievementReason reason)
+        {
+            return new AchievementAddModePreview
+            {
+                Kind = kind,
+                PreviewJson = AchievementPreviewHelper.BuildDummyPreviewJson(reason),
+                Language = _language
+            };
         }
 
         private async Task<bool> HandleApiError(string result, GameConfig app, AchievementProgressMode progressMode)
@@ -1090,6 +1121,7 @@ namespace SmartGoldbergEmu.Services
                         imagesForAchievement => Interlocked.Add(ref imagesDownloaded, imagesForAchievement))).ConfigureAwait(false);
             }
 
+            ReportAddSaveStep(progressMode, AddGameStatusMessages.WritingAchievementsFile(GetAddSaveGameDisplayName(app)));
             File.WriteAllText(achievementsFile, JsonConvert.SerializeObject(achievements, JsonFormatting.Indented), Encoding.UTF8);
             TryEnsureUserSavesAchievementsProgressFile(app.AppId, achievements);
 

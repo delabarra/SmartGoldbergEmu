@@ -99,6 +99,64 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void TryExecuteCleanup_keeps_retry_manifest_when_restore_fails_and_reconcile_finishes_it()
+        {
+            const ulong retryAppId = 999002;
+            string workDir = TestFileHelper.CreateTempDirectory("sge-cleanup-retry-");
+            string manifestPath = PathConstants.CombineLaunchSessionManifestPath(retryAppId);
+            try
+            {
+                string targetPath = Path.Combine(workDir, "steam_api64.dll");
+                string backupPath = targetPath + PathConstants.SteamApiBackupSidecarExtension;
+                File.WriteAllBytes(backupPath, new[] { LaunchDeployTestHarness.OriginalFileMarker });
+                File.WriteAllBytes(targetPath, new[] { LaunchDeployTestHarness.GoldbergFileMarker });
+
+                var session = new PersistedLaunchSession
+                {
+                    AppId = retryAppId,
+                    GameProcessId = 0,
+                    GameLibraryFolder = workDir,
+                    LoadDllsFolder = Path.Combine(workDir, "load_dlls"),
+                    DeploySites = new List<PersistedDeploySite>
+                    {
+                        new PersistedDeploySite
+                        {
+                            Files = new List<PersistedFileDeployment>
+                            {
+                                new PersistedFileDeployment
+                                {
+                                    TargetPath = targetPath,
+                                    BackupPath = backupPath,
+                                    HadOriginal = true,
+                                },
+                            },
+                        },
+                    },
+                };
+
+                var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
+                using (new FileStream(targetPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                    cleanup.TryExecuteCleanup(null, session);
+
+                Assert.True(File.Exists(backupPath));
+                Assert.True(cleanup.TryLoad(manifestPath, out PersistedLaunchSession retry));
+                Assert.Equal(0, retry.GameProcessId);
+                Assert.Equal(targetPath, retry.DeploySites[0].Files[0].TargetPath);
+
+                cleanup.ReconcileStaleSessionForAppId(retryAppId);
+
+                Assert.Equal(LaunchDeployTestHarness.OriginalFileMarker, File.ReadAllBytes(targetPath)[0]);
+                Assert.False(File.Exists(backupPath));
+                Assert.False(File.Exists(manifestPath));
+            }
+            finally
+            {
+                try { File.Delete(manifestPath); } catch { }
+                try { Directory.Delete(workDir, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
         public void TryExecuteCleanup_removes_load_dlls_folder()
         {
             string loadDlls = TestFileHelper.CreateTempDirectory("sge-cleanup-loaddlls-");

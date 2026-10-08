@@ -16,11 +16,9 @@ namespace SmartGoldbergEmu.Services
 
         public static UriParseResult ParseRunCommand(string uriArgument)
         {
-            // Check for null/empty
             if (string.IsNullOrWhiteSpace(uriArgument))
                 return UriParseResult.FailureResult("URI argument is empty");
 
-            // Normalize to lowercase
             string normalizedUri = uriArgument.ToLowerInvariant();
 
             if (!normalizedUri.StartsWith(ApplicationConstants.UriProtocolCommandPrefix))
@@ -30,11 +28,9 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrWhiteSpace(appIdString))
                 return UriParseResult.FailureResult($"AppID is missing. Expected format: {ApplicationConstants.UriProtocolCommandPrefix}appid");
 
-            // Parse App ID
             if (!ulong.TryParse(appIdString, out ulong appId))
                 return UriParseResult.FailureResult($"Invalid AppID '{appIdString}'. AppID must be a valid number.");
 
-            // AppId must be a valid non-zero Steam app id.
             if (appId == 0)
                 return UriParseResult.FailureResult("AppID must be a valid non-zero Steam App ID.");
 

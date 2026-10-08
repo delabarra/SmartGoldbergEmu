@@ -33,6 +33,8 @@ namespace SmartGoldbergEmu.Models
     public sealed class PersistedDeploySite
     {
         public string MirroredSteamSettingsPath { get; set; }
+        // Game-owned steam_settings folder renamed aside while the junction is in place.
+        public string SteamSettingsBackupPath { get; set; }
         public List<PersistedFileDeployment> Files { get; set; }
     }
 

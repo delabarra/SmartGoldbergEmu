@@ -246,7 +246,7 @@ namespace SmartGoldbergEmu.Helpers
                 return buttonId;
             }
 
-            // Fallback: first button as Yes/OK-ish, second as No/Cancel when possible.
+            // MessageBox fallback: first custom button maps to Yes/OK, second to No.
             string fallbackBody = BuildFallbackCustomBody(content, customButtons);
             if (!string.IsNullOrEmpty(verificationText))
                 fallbackBody = fallbackBody + "\n\n(" + verificationText + " is not available in fallback mode.)";

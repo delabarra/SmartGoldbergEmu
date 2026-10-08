@@ -3,58 +3,31 @@ using SmartGoldbergEmu.Constants;
 
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// Represents a launch option for a game, extracted from Steam app product info (PICS KeyValue tree).
-    /// </summary>
+    // Launch option from Steam PICS product info, or a user-defined entry.
     public class LaunchOption
     {
-        /// <summary>
-        /// Gets or sets the description of the launch option (e.g., "Default", "Game", "Editor").
-        /// </summary>
         public string Description { get; set; }
 
-        /// <summary>
-        /// Gets or sets the executable path or name for this launch option.
-        /// </summary>
         public string Executable { get; set; }
 
-        /// <summary>
-        /// Gets or sets the type of launch option (e.g., "default", "config", "betakey").
-        /// </summary>
         public string Type { get; set; }
 
-        /// <summary>
-        /// Gets or sets the launch parameters/arguments for this launch option.
-        /// If set, these parameters will override the game's default parameters.
-        /// </summary>
+        // Overrides the game's parameters when set.
         public string Parameters { get; set; }
 
-        /// <summary>
-        /// Gets or sets the working directory for this launch option.
-        /// If set, this working directory will override the game's default working directory.
-        /// This is relative to the base game folder.
-        /// </summary>
+        // Relative to the base game folder; overrides the game's working directory when set.
         public string WorkingDir { get; set; }
 
-        /// <summary>
-        /// Steam branch from PICS <c>config/BetaKey</c> when present; indicates a beta/dev depot branch.
-        /// </summary>
+        // PICS config/BetaKey; marks a beta/dev depot branch.
         public string BetaKey { get; set; }
 
-        /// <summary>
-        /// PICS <c>config/osarch</c> when present (e.g. 32, 64, arm64). Used to restrict the entry to matching host architecture.
-        /// </summary>
+        // PICS config/osarch (e.g. 32, 64, arm64); restricts the entry to a matching host architecture.
         public string OsArch { get; set; }
 
-        /// <summary>
-        /// When <see cref="ApplicationSettings.FullLaunchOptions"/> is off, these entries are hidden and excluded from auto-pick;
-        /// launch falls back to the game's settings executable if nothing remains after filtering.
-        /// </summary>
+        // Hidden and excluded from auto-pick when FullLaunchOptions is off.
         public bool IsHiddenWhenFullLaunchOptionsOff()
         {
-            // User-defined options should stay visible in the UI, but still get the "[user]" tag.
-            // Tag rendering is based on this "hidden when full launch options are off" flag,
-            // so we intentionally mark user options as hidden for tag purposes.
+            // User options stay visible in the UI; returning true here only drives the "[user]" tag.
             if (!string.IsNullOrEmpty(Type) && Type.Equals(SteamPicsKeyNames.LaunchOptionTypeUser, StringComparison.OrdinalIgnoreCase))
                 return true;
 
@@ -63,9 +36,6 @@ namespace SmartGoldbergEmu.Models
             return IsRestrictedLaunchOptionType(Type);
         }
 
-        /// <summary>
-        /// PICS <c>type</c> values treated as config/beta/dev tooling when full launch options are off.
-        /// </summary>
         public static bool IsRestrictedLaunchOptionType(string type)
         {
             if (string.IsNullOrEmpty(type))
@@ -77,17 +47,13 @@ namespace SmartGoldbergEmu.Models
                    type.Equals(SteamPicsKeyNames.LaunchOptionTypeDeveloper, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>
-        /// Sets <see cref="AppSettings.IsBetaBranch"/> and <see cref="AppSettings.BranchName"/> from this PICS launch option
-        /// (<c>config/BetaKey</c> and <c>type</c>), matching Game Settings when a Steam launch option is applied.
-        /// </summary>
+        // Must match what Game Settings writes when a Steam launch option is applied.
         public static void ApplyBetaBranchToAppSettings(LaunchOption opt, AppSettings app)
         {
             if (opt == null || app == null)
                 return;
 
-            // Custom user launch options are explicit executable/arguments overrides and
-            // should not force branch/app settings changes.
+            // User launch options override only executable and arguments; they never change the branch.
             if (!string.IsNullOrEmpty(opt.Type) && opt.Type.Equals(SteamPicsKeyNames.LaunchOptionTypeUser, StringComparison.OrdinalIgnoreCase))
                 return;
 

@@ -14,14 +14,11 @@ using SmartGoldbergEmu.Extensions;
 namespace SteamKit
 {
 
-/// <summary>
-/// Steam client implementation for anonymous connections without external packages.
-/// Based on SteamKit2 architecture.
-/// </summary>
+// Anonymous-only Steam CM client modeled on SteamKit2.
 public class SteamClient
 {
     private const uint TcpMagic = 0x31305456; // 'VT01' in little-endian framing
-    /// <summary>Public universe + AnonUser account type (64-bit SteamID layout).</summary>
+    // Public universe + AnonUser account type (64-bit SteamID layout).
     private const ulong AnonymousSteamId = (1ul << 56) | (10ul << 52);
 
     public event Action OnConnected;
@@ -129,14 +126,12 @@ public class SteamClient
             logon.ProtoHeader.client_sessionid = 0;
             logon.ProtoHeader.steamid = AnonymousSteamId;
 
-            // Set required fields
             logon.Body.protocol_version = 65581; // MsgClientLogon.CurrentProtocol
             logon.Body.client_os_type = (uint)GetOSType();
             logon.Body.client_language = "english";
             logon.Body.cell_id = 0;
             logon.Body.machine_id = GetMachineID();
 
-            // Send logon message
             Send(logon);
         }
         catch (Exception ex)
@@ -364,7 +359,6 @@ public class SteamClient
 
     private void ProcessAccumulatedPackets(List<byte> accumulated)
     {
-        // Parse as many complete packets as available.
         while (accumulated.Count >= 8)
         {
             int packetLength = BitConverter.ToInt32(accumulated.ToArray(), 0);
@@ -417,7 +411,6 @@ public class SteamClient
     {
         try
         {
-            // Parse message header (simplified - real implementation would be more robust)
             if (length < 4)
                 return;
 
@@ -717,8 +710,6 @@ public class SteamClient
         Send(hello);
     }
 
-    // ── PICS product info ────────────────────────────
-
     private uint _sessionId;
     private ulong _loggedOnSteamID;
     public ulong LoggedOnSteamId => _loggedOnSteamID;
@@ -819,7 +810,6 @@ public class SteamClient
 
     private static ulong GetMachineID()
     {
-        // Generate a unique machine ID based on environment
         using (var sha256 = SHA256.Create())
         {
             var machineGuid = sha256.ComputeHash(

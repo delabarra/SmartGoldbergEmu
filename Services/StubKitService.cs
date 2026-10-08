@@ -338,8 +338,8 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                // Keep the full PE buffer inside this worker only — do not return it to the async
-                // state machine (that pinned multi‑MB LOH arrays after patch/restore).
+                // Keep the full PE buffer inside this worker; returning it to the async state machine
+                // keeps multi-MB LOH arrays alive after patch/restore.
                 StubKitApplyResult result = await Task.Run(
                         () => ApplyOnBackground(executablePath, backupPath, log),
                         cancellationToken)

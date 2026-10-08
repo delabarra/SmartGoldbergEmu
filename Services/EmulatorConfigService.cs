@@ -160,6 +160,9 @@ namespace SmartGoldbergEmu.Services
             m.OverlayAlwaysShowFps = MergeFlag(gameSpecific.OverlayAlwaysShowFps, global.OverlayAlwaysShowFps, d.OverlayAlwaysShowFps);
             m.OverlayAlwaysShowFrametime = MergeFlag(gameSpecific.OverlayAlwaysShowFrametime, global.OverlayAlwaysShowFrametime, d.OverlayAlwaysShowFrametime);
             m.OverlayAlwaysShowPlaytime = MergeFlag(gameSpecific.OverlayAlwaysShowPlaytime, global.OverlayAlwaysShowPlaytime, d.OverlayAlwaysShowPlaytime);
+            m.EnableScreenshot = MergeFlag(gameSpecific.EnableScreenshot, global.EnableScreenshot, d.EnableScreenshot);
+            m.ScreenshotCombo = MergeStringOrGlobal(gameSpecific.ScreenshotCombo, global.ScreenshotCombo, d.ScreenshotCombo);
+            m.OverlayKeyCombo = MergeStringOrGlobal(gameSpecific.OverlayKeyCombo, global.OverlayKeyCombo, d.OverlayKeyCombo);
 
             m.FontOverride = MergeStringOrGlobal(gameSpecific.FontOverride, global.FontOverride, d.FontOverride);
             m.FontSize = MergeScalar(gameSpecific.FontSize, global.FontSize, d.FontSize);
@@ -207,6 +210,14 @@ namespace SmartGoldbergEmu.Services
             m.NotificationDurationChat = MergeScalar(gameSpecific.NotificationDurationChat, global.NotificationDurationChat, d.NotificationDurationChat);
 
             m.AchievementUnlockDatetimeFormat = MergeStringOrGlobal(gameSpecific.AchievementUnlockDatetimeFormat, global.AchievementUnlockDatetimeFormat, d.AchievementUnlockDatetimeFormat);
+            m.ScreenshotDatetimeFormat = MergeStringOrGlobal(gameSpecific.ScreenshotDatetimeFormat, global.ScreenshotDatetimeFormat, d.ScreenshotDatetimeFormat);
+            m.NotificationDurationScreenshot = MergeScalar(gameSpecific.NotificationDurationScreenshot, global.NotificationDurationScreenshot, d.NotificationDurationScreenshot);
+            m.AchievementNotificationDelay = MergeScalar(gameSpecific.AchievementNotificationDelay, global.AchievementNotificationDelay, d.AchievementNotificationDelay);
+            m.ShowNotificationHistory = MergeFlag(gameSpecific.ShowNotificationHistory, global.ShowNotificationHistory, d.ShowNotificationHistory);
+            m.ShowAchievementList = MergeFlag(gameSpecific.ShowAchievementList, global.ShowAchievementList, d.ShowAchievementList);
+            m.UnlockedExpanded = MergeFlag(gameSpecific.UnlockedExpanded, global.UnlockedExpanded, d.UnlockedExpanded);
+            m.LockedExpanded = MergeFlag(gameSpecific.LockedExpanded, global.LockedExpanded, d.LockedExpanded);
+            m.ShowPlaytimeInUserInfo = MergeFlag(gameSpecific.ShowPlaytimeInUserInfo, global.ShowPlaytimeInUserInfo, d.ShowPlaytimeInUserInfo);
 
             m.PosAchievement = MergeStringOrGlobal(gameSpecific.PosAchievement, global.PosAchievement, d.PosAchievement);
             m.PosInvitation = MergeStringOrGlobal(gameSpecific.PosInvitation, global.PosInvitation, d.PosInvitation);
@@ -232,7 +243,9 @@ namespace SmartGoldbergEmu.Services
 
             m.NewAppTicket = MergeFlag(gameSpecific.NewAppTicket, global.NewAppTicket, d.NewAppTicket);
             m.GcToken = MergeFlag(gameSpecific.GcToken, global.GcToken, d.GcToken);
-            m.SteamDeck = MergeFlag(gameSpecific.SteamDeck, global.SteamDeck, d.SteamDeck);
+            m.SteamHardwareType = MergeScalar(gameSpecific.SteamHardwareType, global.SteamHardwareType, d.SteamHardwareType);
+            m.SteamHardwareDefaultConfig = MergeScalar(gameSpecific.SteamHardwareDefaultConfig, global.SteamHardwareDefaultConfig, d.SteamHardwareDefaultConfig);
+            m.IsUnderProton = MergeFlag(gameSpecific.IsUnderProton, global.IsUnderProton, d.IsUnderProton);
             m.EnableAccountAvatar = MergeFlag(gameSpecific.EnableAccountAvatar, global.EnableAccountAvatar, d.EnableAccountAvatar);
             m.EnableVoiceChat = MergeFlag(gameSpecific.EnableVoiceChat, global.EnableVoiceChat, d.EnableVoiceChat);
 
@@ -242,6 +255,8 @@ namespace SmartGoldbergEmu.Services
             m.SaveOnlyHigherStatAchievementProgress = MergeFlag(gameSpecific.SaveOnlyHigherStatAchievementProgress, global.SaveOnlyHigherStatAchievementProgress, d.SaveOnlyHigherStatAchievementProgress);
             m.PaginatedAchievementsIcons = MergeScalar(gameSpecific.PaginatedAchievementsIcons, global.PaginatedAchievementsIcons, d.PaginatedAchievementsIcons);
             m.RecordPlaytime = MergeFlag(gameSpecific.RecordPlaytime, global.RecordPlaytime, d.RecordPlaytime);
+            m.PauseTotalWhenUnfocused = MergeFlag(gameSpecific.PauseTotalWhenUnfocused, global.PauseTotalWhenUnfocused, d.PauseTotalWhenUnfocused);
+            m.PauseSessionWhenUnfocused = MergeFlag(gameSpecific.PauseSessionWhenUnfocused, global.PauseSessionWhenUnfocused, d.PauseSessionWhenUnfocused);
 
             m.BlockUnknownClients = PerGameOnlyBool(gameSpecific.BlockUnknownClients, d.BlockUnknownClients);
             m.ImmediateGameserverStats = PerGameOnlyBool(gameSpecific.ImmediateGameserverStats, d.ImmediateGameserverStats);
@@ -406,7 +421,7 @@ namespace SmartGoldbergEmu.Services
                 if (File.Exists(globalConfigPath))
                 {
                     var mainSettings = LoadMainSettings(globalConfigPath);
-                    settings.SteamDeck = mainSettings.SteamDeck;
+                    settings.SteamHardwareType = mainSettings.SteamHardwareType;
                     settings.EnableAccountAvatar = mainSettings.EnableAccountAvatar;
                 }
 
@@ -498,10 +513,14 @@ namespace SmartGoldbergEmu.Services
                 var installedAppIds = BuildInstalledAppIds(installedAppIdsPath, gameConfig, metadata, packageData, localInstall);
 
                 WriteBranchesJsonIfAbsent(steamSettingsPath, gameConfig, packageData, currentBranch);
-                if (await TryEnsureStatsJsonAsync(gameConfig, cancellationToken).ConfigureAwait(false))
+                // Callers hand in a catalog fetched during this operation (add collect, import enrich, catalog refresh).
+                StatsSection fetchedStats = gameConfig.Catalog != null && gameConfig.Catalog.AppId == gameConfig.AppId
+                    ? gameConfig.Catalog.Stats
+                    : null;
+                if (await TryEnsureStatsJsonAsync(gameConfig, appData, fetchedStats).ConfigureAwait(false))
                     anyFileGenerated = true;
-                WriteAchievementsFromPicsIfAbsent(steamSettingsPath, gameConfig, appData?.Achievements, ref anyFileGenerated);
-                TryFetchAchievementsOnlineIfMissing(steamSettingsPath, gameConfig);
+                // achievements.json and items.json are not written here: every caller (add-save, import, catalog refresh)
+                // runs GoldbergArtifactService generation right after, which replaces both files.
 
                 WriteSteamAppId(steamSettingsPath, gameConfig.AppId, ref anyFileGenerated);
                 WriteSupportedLanguages(steamSettingsPath, gameConfig, metadata, ref anyFileGenerated);
@@ -511,7 +530,6 @@ namespace SmartGoldbergEmu.Services
                 WriteLeaderboardsIfAbsent(steamSettingsPath, gameConfig, appData?.Leaderboards, ref anyFileGenerated);
                 TryFetchLeaderboardsOnlineIfMissing(steamSettingsPath, gameConfig);
                 WriteSteamInterfacesIfSourceAvailable(steamSettingsPath, gameConfig, ref anyFileGenerated);
-                ServiceLocator.GoldbergArtifactService.TryGenerateItemsOnlineIfMissing(gameConfig);
                 CopyDefaultItemsIfSourceAvailable(steamSettingsPath, gameConfig, ref anyFileGenerated);
 
                 return anyFileGenerated;
@@ -764,7 +782,7 @@ namespace SmartGoldbergEmu.Services
             }
 
             await ServiceLocator.SteamProductInfoService.WarmGameConfigAppInfoAsync(gameConfig, cancellationToken).ConfigureAwait(false);
-            // ExtractAppDataFromAppRoot still walks SteamKit KeyValue (stats/depots/leaderboards/achievements extraction is package-PICS-shaped);
+            // ExtractAppDataFromAppRoot still walks SteamKit KeyValue (stats/depots/leaderboards extraction is package-PICS-shaped);
             // convert once at this boundary rather than migrating that large extractor.
             KeyValue appRootForExtraction = AppDataKitBridgeService.ConvertToSteamKit(gameConfig.AppInfo);
             return ServiceLocator.SteamProductInfoService.ExtractAppDataFromAppRoot(appRootForExtraction, appId.ToString());
@@ -772,32 +790,53 @@ namespace SmartGoldbergEmu.Services
 
         public async Task<bool> TryEnsureStatsJsonAsync(GameConfig gameConfig, CancellationToken cancellationToken = default)
         {
+            if (gameConfig == null || gameConfig.AppId == 0 || File.Exists(GetStatsJsonPath(gameConfig.AppId)))
+                return false;
+
+            AppDataExtractionResult appData = await TryLoadAppInfoDataAsync(gameConfig, cancellationToken).ConfigureAwait(false);
+            return await TryEnsureStatsJsonAsync(gameConfig, appData, fetchedStats: null).ConfigureAwait(false);
+        }
+
+        // appData: PICS extraction the caller already ran; fetchedStats: stats section from a catalog fetched in the current operation (null calls the Web API live).
+        private async Task<bool> TryEnsureStatsJsonAsync(
+            GameConfig gameConfig,
+            AppDataExtractionResult appData,
+            StatsSection fetchedStats)
+        {
             if (gameConfig == null || gameConfig.AppId == 0)
                 return false;
 
             string steamSettingsPath = GetGameSteamSettingsPath(gameConfig.AppId);
-            string statsPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergStatsJsonFileName);
-            if (File.Exists(statsPath))
+            if (File.Exists(GetStatsJsonPath(gameConfig.AppId)))
                 return false;
 
             Directory.CreateDirectory(steamSettingsPath);
             var statsGenerator = ServiceLocator.StatsGenerator;
             ulong appId = gameConfig.AppId;
 
-            AppDataExtractionResult appData = await TryLoadAppInfoDataAsync(gameConfig, cancellationToken).ConfigureAwait(false);
             if (statsGenerator.TryWriteStatsJsonIfAbsent(steamSettingsPath, appData?.Stats, appId))
                 return true;
 
             if (_steamApiKeyService.TryGetValidFormatKey(out string apiKey))
             {
-                string language = GetLanguageForAchievements(appId);
-                string apiJson = await statsGenerator.GetStatsJsonFromSteamApiAsync(appId.ToString(), language, apiKey)
-                    .ConfigureAwait(false);
+                // With a key, a full catalog fetch already called GetSchemaForGame. Only Ok is trusted:
+                // metadata-only catalogs (import, dialog App ID lookup) carry an Unavailable section that was never fetched.
+                // A stats_db body means the catalog was fetched before the key existed; that path is handled below.
+                bool fetchedFromWebApi = fetchedStats != null
+                    && fetchedStats.Status == SnapshotSectionStatus.Ok
+                    && string.IsNullOrWhiteSpace(fetchedStats.StatsDbJson);
+                string apiJson = fetchedFromWebApi
+                    ? StatsGenerator.BuildGoldbergStatsJson(fetchedStats)
+                    : await statsGenerator.GetStatsJsonFromSteamApiAsync(appId.ToString(), GetLanguageForAchievements(appId), apiKey)
+                        .ConfigureAwait(false);
                 if (statsGenerator.TryWriteStatsJsonIfAbsent(steamSettingsPath, apiJson, appId))
                     return true;
             }
 
-            string statsDbJson = await StatsGenerator.TryGetGoldbergStatsJsonFromStatsDbAsync(appId.ToString()).ConfigureAwait(false);
+            // Without a key the catalog fetch already downloaded stats_db.json; convert that body instead of downloading again.
+            string statsDbJson = !string.IsNullOrWhiteSpace(fetchedStats?.StatsDbJson)
+                ? StatsGenerator.TryConvertStatsDbJsonToGoldbergFormat(fetchedStats.StatsDbJson)
+                : await StatsGenerator.TryGetGoldbergStatsJsonFromStatsDbAsync(appId.ToString()).ConfigureAwait(false);
             if (statsGenerator.TryWriteStatsJsonIfAbsent(steamSettingsPath, statsDbJson, appId))
                 return true;
 
@@ -1261,9 +1300,8 @@ namespace SmartGoldbergEmu.Services
                         changed = true;
                     }
                 }
-                // Do not write placeholder DLC names from ID-only metadata.
-                // We only persist DLCs when a reliable name is available.
 
+                // Persist DLCs only with a reliable name; never write placeholder names from ID-only metadata.
                 if (!changed)
                     return;
 
@@ -1275,85 +1313,6 @@ namespace SmartGoldbergEmu.Services
             {
                 ServiceLocator.LogService.LogWarning($"Failed to populate {PathConstants.GoldbergAppIniFileName} for app {gameConfig.AppId}: {ex.Message}");
             }
-        }
-
-        private static void WriteAchievementsFromPicsIfAbsent(string steamSettingsPath, GameConfig gameConfig, string achievementsJson, ref bool anyFileGenerated)
-        {
-            if (string.IsNullOrEmpty(achievementsJson))
-                return;
-
-            var achievementsPath = Path.Combine(steamSettingsPath, AchievementConstants.AchievementsFileName);
-            if (File.Exists(achievementsPath))
-                return;
-
-            File.WriteAllText(achievementsPath, achievementsJson);
-            anyFileGenerated = true;
-            ServiceLocator.LogService.LogDebug($"Generated {AchievementConstants.AchievementsFileName} from game assets for app {gameConfig.AppId}");
-        }
-
-        private void TryFetchAchievementsOnlineIfMissing(string steamSettingsPath, GameConfig gameConfig)
-        {
-            var achievementsPath = Path.Combine(steamSettingsPath, AchievementConstants.AchievementsFileName);
-            if (File.Exists(achievementsPath))
-                return;
-
-            string language = GetLanguageForAchievements(gameConfig.AppId);
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    CancellationToken ct = ServiceLocator.ApplicationLifetimeToken;
-                    ct.ThrowIfCancellationRequested();
-                    ServiceLocator.LogService.LogDebug($"Attempting to fetch achievements for app {gameConfig.AppId}");
-                    AchievementsSection section = await ServiceLocator.AppDataKitBridgeService
-                        .FetchAchievementsAsync(gameConfig.AppId, language, ct)
-                        .ConfigureAwait(false);
-                    if (section == null
-                        || section.Status != SnapshotSectionStatus.Ok
-                        || section.Items == null
-                        || section.Items.Count == 0)
-                        return;
-
-                    var achievementsList = section.Items
-                        .Where(a => a != null && !string.IsNullOrWhiteSpace(a.Name))
-                        .Select(a => new
-                        {
-                            name = a.Name,
-                            displayName = a.DisplayName,
-                            description = a.Description,
-                            icon = ExtractAchievementIconFileName(a.IconUrl),
-                            icongray = ExtractAchievementIconFileName(a.IconGrayUrl),
-                            hidden = a.Hidden ? 1 : 0
-                        }).ToList();
-
-                    if (achievementsList.Count == 0 || File.Exists(achievementsPath))
-                        return;
-
-                    File.WriteAllText(achievementsPath, JsonConvert.SerializeObject(achievementsList, JsonFormatting.Indented));
-                    ServiceLocator.LogService.LogDebug($"Generated {AchievementConstants.AchievementsFileName} from AppDataKit with {achievementsList.Count} achievement(s) for app {gameConfig.AppId}");
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (Exception ex)
-                {
-                    ServiceLocator.LogService.LogError($"Failed to fetch achievements from AppDataKit for app {gameConfig.AppId}", ex);
-                }
-            }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(ServiceLocator.LogService, nameof(TryFetchAchievementsOnlineIfMissing));
-        }
-
-        // Schema writes expect the CDN file name (hash.jpg), not a full URL.
-        private static string ExtractAchievementIconFileName(string iconUrlOrName)
-        {
-            if (string.IsNullOrWhiteSpace(iconUrlOrName))
-                return string.Empty;
-
-            string trimmed = iconUrlOrName.Trim();
-            if (Uri.TryCreate(trimmed, UriKind.Absolute, out Uri uri))
-                return Path.GetFileName(uri.AbsolutePath) ?? string.Empty;
-
-            return Path.GetFileName(trimmed.Replace('\\', '/')) ?? trimmed;
         }
 
         private static void CopyDefaultItemsIfSourceAvailable(string steamSettingsPath, GameConfig gameConfig, ref bool anyFileGenerated)
@@ -1476,6 +1435,11 @@ namespace SmartGoldbergEmu.Services
             return PathConstants.CombineGameSteamSettingsDirectory(_gamesDirectory, appId.ToString());
         }
 
+        private string GetStatsJsonPath(ulong appId)
+        {
+            return Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergStatsJsonFileName);
+        }
+
         public string GetGameSavesPath(ulong appId)
         {
             if (appId == 0)
@@ -1594,8 +1558,20 @@ namespace SmartGoldbergEmu.Services
                                     settings.BlockUnknownClients = isEnabled;
                                 break;
                             case "steam_deck":
+                                if (currentSection == "main::general" && isEnabled && settings.SteamHardwareType == 0)
+                                    settings.SteamHardwareType = 1;
+                                break;
+                            case "steam_hardware_type":
+                                if (currentSection == "main::general" && int.TryParse(value, out int hardwareType))
+                                    settings.SteamHardwareType = hardwareType;
+                                break;
+                            case "steam_hardware_default_config":
+                                if (currentSection == "main::general" && int.TryParse(value, out int hardwareDefaultConfig))
+                                    settings.SteamHardwareDefaultConfig = hardwareDefaultConfig;
+                                break;
+                            case "is_under_proton":
                                 if (currentSection == "main::general")
-                                    settings.SteamDeck = isEnabled;
+                                    settings.IsUnderProton = isEnabled;
                                 break;
                             case "enable_account_avatar":
                                 if (currentSection == "main::general")
@@ -1641,6 +1617,14 @@ namespace SmartGoldbergEmu.Services
                             case "record_playtime":
                                 if (currentSection == "main::stats")
                                     settings.RecordPlaytime = isEnabled;
+                                break;
+                            case "pause_total_when_unfocused":
+                                if (currentSection == "main::stats")
+                                    settings.PauseTotalWhenUnfocused = isEnabled;
+                                break;
+                            case "pause_session_when_unfocused":
+                                if (currentSection == "main::stats")
+                                    settings.PauseSessionWhenUnfocused = isEnabled;
                                 break;
                             // main::connectivity
                             case "disable_lan_only":
@@ -1762,7 +1746,6 @@ namespace SmartGoldbergEmu.Services
                 if (string.IsNullOrWhiteSpace(displayName))
                     continue;
 
-                // Try to find exact match first
                 if (languageMap.TryGetValue(displayName, out string code))
                 {
                     if (!languageCodes.Contains(code))
@@ -1770,7 +1753,7 @@ namespace SmartGoldbergEmu.Services
                 }
                 else
                 {
-                    // Fallback: convert to lowercase (might already be a code like "english")
+                    // The display name may already be a code like "english".
                     var lowerName = displayName.ToLowerInvariant();
                     if (!languageCodes.Contains(lowerName))
                         languageCodes.Add(lowerName);
@@ -1849,24 +1832,20 @@ namespace SmartGoldbergEmu.Services
 
         private SaveResult SaveOverlaySettings(string filePath, OverlaySettings settings)
         {
+            if (settings == null)
+                return SaveResult.Failure("Overlay settings cannot be null");
+
             try
             {
-                var cache = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-                string examplePath = null;
-                var content = new StringBuilder();
-                GoldbergIniDocumentationHelper.AppendIniHeader(content);
-                GoldbergIniDocumentationHelper.AppendSection(content, "overlay::general");
-                GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(
-                    content, examplePath, "overlay::general", "enable_experimental_overlay", BoolToInt(settings.EnableExperimentalOverlay), cache,
-                    "1=enable the experimental overlay, might cause crashes", "default=0");
-                GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(
-                    content, examplePath, "overlay::general", "disable_achievement_notification", BoolToInt(settings.DisableAchievementNotification), cache,
-                    "1=disable the achievements notifications", "default=0");
-                GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(
-                    content, examplePath, "overlay::general", "disable_friend_notification", BoolToInt(settings.DisableFriendNotification), cache,
-                    "1=disable friends invitations and messages notifications", "default=0");
+                var directory = Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
 
-                File.WriteAllText(filePath, content.ToString());
+                var iniFile = File.Exists(filePath)
+                    ? ServiceLocator.IniFileService.ParseFile(filePath)
+                    : new IniFile();
+                _goldbergCfgService.ApplyOverlayToIni(iniFile, settings);
+                GoldbergIniDocumentationHelper.WriteIniFile(filePath, iniFile.Lines);
                 return SaveResult.Success(1);
             }
             catch (Exception ex)
@@ -1937,7 +1916,8 @@ namespace SmartGoldbergEmu.Services
             var iniService = ServiceLocator.IniFileService;
             foreach (var key in new[]
             {
-                "new_app_ticket", "gc_token", "steam_deck", "enable_account_avatar", "enable_voice_chat",
+                "new_app_ticket", "gc_token", "steam_deck", "steam_hardware_type", "steam_hardware_default_config",
+                "is_under_proton", "enable_account_avatar", "enable_voice_chat",
                 "crash_printer_location"
             })
                 iniService.RemoveValue(iniFile, "main::general", key);
@@ -1983,7 +1963,8 @@ namespace SmartGoldbergEmu.Services
             {
                 "disable_leaderboards_create_unknown", "allow_unknown_stats",
                 "stat_achievement_progress_functionality", "save_only_higher_stat_achievement_progress",
-                "paginated_achievements_icons", "record_playtime"
+                "paginated_achievements_icons", "record_playtime", "pause_total_when_unfocused",
+                "pause_session_when_unfocused"
             })
                 iniService.RemoveValue(iniFile, "main::stats", key);
 
@@ -2008,8 +1989,12 @@ namespace SmartGoldbergEmu.Services
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::general", "gc_token", BoolToInt(settings.GcToken), cache, "1=generate/embed Game Coordinator token inside the new auth ticket", "default=1");
                 if (settings.BlockUnknownClients != d.BlockUnknownClients)
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::general", "block_unknown_clients", BoolToInt(settings.BlockUnknownClients), cache, "1=game server will only allow connections from legit Steam clients and known Steam emulators", "default=0");
-                if (settings.SteamDeck != d.SteamDeck)
-                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::general", "steam_deck", BoolToInt(settings.SteamDeck), cache, "1=pretend the app is running on a steam deck", "default=0");
+                if (settings.SteamHardwareType != d.SteamHardwareType)
+                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::general", "steam_hardware_type", settings.SteamHardwareType.ToString(), cache, "0=not on a steam hardware device; 1=steam deck; 2=steam machine; 3=steam frame", "default=0");
+                if (settings.SteamHardwareDefaultConfig != d.SteamHardwareDefaultConfig)
+                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::general", "steam_hardware_default_config", settings.SteamHardwareDefaultConfig.ToString(), cache, "default config preset for Steam_Utils::GetSteamHardwareDefaultConfig()", "default=0");
+                if (settings.IsUnderProton != d.IsUnderProton)
+                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::general", "is_under_proton", BoolToInt(settings.IsUnderProton), cache, "1=pretend the app is running on proton", "default=0");
                 if (settings.EnableAccountAvatar != d.EnableAccountAvatar)
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::general", "enable_account_avatar", BoolToInt(settings.EnableAccountAvatar), cache, "1=enable avatar functionality", "default=0");
                 if (settings.EnableVoiceChat != d.EnableVoiceChat)
@@ -2034,6 +2019,10 @@ namespace SmartGoldbergEmu.Services
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::stats", "paginated_achievements_icons", settings.PaginatedAchievementsIcons.ToString(), cache, "this value controls how many icons to load each iteration when callbacks are triggered", "default=10");
                 if (settings.RecordPlaytime != d.RecordPlaytime)
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::stats", "record_playtime", BoolToInt(settings.RecordPlaytime), cache, "1=enable the functionality that allows the emu to record the user's playtime", "default=0");
+                if (settings.PauseTotalWhenUnfocused != d.PauseTotalWhenUnfocused)
+                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::stats", "pause_total_when_unfocused", BoolToInt(settings.PauseTotalWhenUnfocused), cache, "when enabled, total playtime pauses when the game window loses focus (ALT+TAB)", "default=0");
+                if (settings.PauseSessionWhenUnfocused != d.PauseSessionWhenUnfocused)
+                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::stats", "pause_session_when_unfocused", BoolToInt(settings.PauseSessionWhenUnfocused), cache, "when enabled, session playtime pauses when the game window loses focus (ALT+TAB)", "default=0");
 
                 GoldbergIniDocumentationHelper.AppendSection(content, "main::connectivity");
                 if (settings.DisableLanOnly != d.DisableLanOnly)
@@ -2086,7 +2075,7 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                // Load existing file to preserve DLC entries and app paths
+                // Preserve existing DLC entries and app paths.
                 var existingLines = new List<string>();
                 if (File.Exists(filePath))
                 {
@@ -2155,9 +2144,8 @@ namespace SmartGoldbergEmu.Services
             if (settings == null)
                 return SaveResult.Failure("Settings cannot be null");
 
-            // Save location lives only in the global configs.user.ini. Strip these keys here so
-            // a per-game configs.user.ini never carries them, which is what triggered gbe_fork's
-            // "local_save_path detected" warning and made it ignore the global settings folder.
+            // Save location lives only in the global configs.user.ini; in a per-game file gbe_fork
+            // warns "local_save_path detected" and ignores the global settings folder.
             settings = new UserSettings
             {
                 AccountName = settings.AccountName,
@@ -2201,8 +2189,7 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                // If no force override fields are set, check if we should delete the file
-                // Only delete if ALL fields (including non-force-override) are empty/default
+                // Delete the file (falling back to global settings) only when every field is empty/default.
                 if (!hasForceOverride)
                 {
                     bool hasOtherSettings = !string.IsNullOrEmpty(settings.Ticket) ||
@@ -2211,12 +2198,11 @@ namespace SmartGoldbergEmu.Services
 
                     if (!hasOtherSettings)
                     {
-                        // All fields are empty/default - delete the file to fall back to global settings
                         if (!hasExistingUserLaunchOptions && File.Exists(filePath))
                         {
                             File.Delete(filePath);
                         }
-                        return SaveResult.Success(0); // File deleted, no content written (or preserved because user launch options exist)
+                        return SaveResult.Success(0); // Nothing written; the file is deleted unless user launch options keep it
                     }
                 }
 
@@ -2247,7 +2233,6 @@ namespace SmartGoldbergEmu.Services
                             }
                             else
                             {
-                                // Stop at next section header.
                                 if (trimmed.StartsWith("[") && trimmed.EndsWith("]") && !trimmed.Equals("[user::launch_options]", StringComparison.OrdinalIgnoreCase))
                                     break;
                                 sectionBuilder.AppendLine(lines[i]);
@@ -2261,7 +2246,6 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
                 
-                // [user::general]
                 GoldbergIniDocumentationHelper.AppendSection(content, "user::general");
                 if (!string.IsNullOrEmpty(settings.AccountName))
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "account_name", settings.AccountName, cache, "user account name", "default=gse orca");
@@ -2273,7 +2257,7 @@ namespace SmartGoldbergEmu.Services
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "alt_steamid", settings.AltSteamId, cache, "Alt SteamId for encrypted savegames.");
                 if (!string.IsNullOrEmpty(settings.AltSteamId) && settings.AltSteamIdCount != 5)
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "alt_steamid_count", settings.AltSteamIdCount.ToString(), cache, "How many calls before swapping out the SteamId to Alt", "default=5");
-                // Always save language if explicitly set (not empty) - empty means "use global", any value means "override to this"
+                // Empty language means "use global"; any value overrides it.
                 if (!string.IsNullOrEmpty(settings.Language))
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "language", settings.Language, cache, "the language reported to the app/game", $"this must exist in '{PathConstants.GoldbergSupportedLanguagesFileName}', otherwise it will be ignored by the emu", $"look for the column 'API language code' here: {ApplicationConstants.SteamPartnerLocalizationLanguagesUrl}", "default=english");
                 if (!string.IsNullOrEmpty(settings.IpCountry) && settings.IpCountry != "US")
@@ -2303,9 +2287,95 @@ namespace SmartGoldbergEmu.Services
             if (original == null)
                 original = LoadGameSettingsSnapshot(snapshot.AppId);
 
-            return snapshot.Overlay.EnableExperimentalOverlay != original.Overlay.EnableExperimentalOverlay ||
-                   snapshot.Overlay.DisableAchievementNotification != original.Overlay.DisableAchievementNotification ||
-                   snapshot.Overlay.DisableFriendNotification != original.Overlay.DisableFriendNotification;
+            return !OverlaySettingsEqual(snapshot.Overlay, original.Overlay);
+        }
+
+        private static bool OverlaySettingsEqual(OverlaySettings a, OverlaySettings b)
+        {
+            if (a == null && b == null)
+                return true;
+            if (a == null || b == null)
+                return false;
+
+            return a.EnableExperimentalOverlay == b.EnableExperimentalOverlay &&
+                   a.HookDelaySec == b.HookDelaySec &&
+                   a.RendererDetectorTimeoutSec == b.RendererDetectorTimeoutSec &&
+                   a.DisableAchievementNotification == b.DisableAchievementNotification &&
+                   a.DisableFriendNotification == b.DisableFriendNotification &&
+                   a.DisableAchievementProgress == b.DisableAchievementProgress &&
+                   a.DisableWarningAny == b.DisableWarningAny &&
+                   a.DisableWarningBadAppId == b.DisableWarningBadAppId &&
+                   a.DisableWarningLocalSave == b.DisableWarningLocalSave &&
+                   a.UploadAchievementsIconsToGpu == b.UploadAchievementsIconsToGpu &&
+                   a.FpsAveragingWindow == b.FpsAveragingWindow &&
+                   a.OverlayAlwaysShowUserInfo == b.OverlayAlwaysShowUserInfo &&
+                   a.OverlayAlwaysShowFps == b.OverlayAlwaysShowFps &&
+                   a.OverlayAlwaysShowFrametime == b.OverlayAlwaysShowFrametime &&
+                   a.OverlayAlwaysShowPlaytime == b.OverlayAlwaysShowPlaytime &&
+                   a.EnableScreenshot == b.EnableScreenshot &&
+                   string.Equals(a.ScreenshotCombo ?? string.Empty, b.ScreenshotCombo ?? string.Empty, StringComparison.Ordinal) &&
+                   string.Equals(a.OverlayKeyCombo ?? string.Empty, b.OverlayKeyCombo ?? string.Empty, StringComparison.Ordinal) &&
+                   string.Equals(a.FontOverride ?? string.Empty, b.FontOverride ?? string.Empty, StringComparison.Ordinal) &&
+                   Math.Abs(a.FontSize - b.FontSize) <= FloatMergeEpsilon &&
+                   Math.Abs(a.IconSize - b.IconSize) <= FloatMergeEpsilon &&
+                   Math.Abs(a.FontGlyphExtraSpacingX - b.FontGlyphExtraSpacingX) <= FloatMergeEpsilon &&
+                   Math.Abs(a.FontGlyphExtraSpacingY - b.FontGlyphExtraSpacingY) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationR - b.NotificationR) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationG - b.NotificationG) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationB - b.NotificationB) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationA - b.NotificationA) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationRounding - b.NotificationRounding) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationMarginX - b.NotificationMarginX) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationMarginY - b.NotificationMarginY) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationAnimation - b.NotificationAnimation) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationDurationProgress - b.NotificationDurationProgress) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationDurationAchievement - b.NotificationDurationAchievement) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationDurationInvitation - b.NotificationDurationInvitation) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationDurationChat - b.NotificationDurationChat) <= FloatMergeEpsilon &&
+                   Math.Abs(a.NotificationDurationScreenshot - b.NotificationDurationScreenshot) <= FloatMergeEpsilon &&
+                   Math.Abs(a.AchievementNotificationDelay - b.AchievementNotificationDelay) <= FloatMergeEpsilon &&
+                   string.Equals(a.AchievementUnlockDatetimeFormat ?? string.Empty, b.AchievementUnlockDatetimeFormat ?? string.Empty, StringComparison.Ordinal) &&
+                   string.Equals(a.ScreenshotDatetimeFormat ?? string.Empty, b.ScreenshotDatetimeFormat ?? string.Empty, StringComparison.Ordinal) &&
+                   a.ShowNotificationHistory == b.ShowNotificationHistory &&
+                   a.ShowAchievementList == b.ShowAchievementList &&
+                   a.UnlockedExpanded == b.UnlockedExpanded &&
+                   a.LockedExpanded == b.LockedExpanded &&
+                   a.ShowPlaytimeInUserInfo == b.ShowPlaytimeInUserInfo &&
+                   Math.Abs(a.BackgroundR - b.BackgroundR) <= FloatMergeEpsilon &&
+                   Math.Abs(a.BackgroundG - b.BackgroundG) <= FloatMergeEpsilon &&
+                   Math.Abs(a.BackgroundB - b.BackgroundB) <= FloatMergeEpsilon &&
+                   Math.Abs(a.BackgroundA - b.BackgroundA) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementR - b.ElementR) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementG - b.ElementG) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementB - b.ElementB) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementA - b.ElementA) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementHoveredR - b.ElementHoveredR) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementHoveredG - b.ElementHoveredG) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementHoveredB - b.ElementHoveredB) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementHoveredA - b.ElementHoveredA) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementActiveR - b.ElementActiveR) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementActiveG - b.ElementActiveG) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementActiveB - b.ElementActiveB) <= FloatMergeEpsilon &&
+                   Math.Abs(a.ElementActiveA - b.ElementActiveA) <= FloatMergeEpsilon &&
+                   string.Equals(a.FontOverrideAchievementTitle ?? string.Empty, b.FontOverrideAchievementTitle ?? string.Empty, StringComparison.Ordinal) &&
+                   string.Equals(a.FontOverrideAchievementDescription ?? string.Empty, b.FontOverrideAchievementDescription ?? string.Empty, StringComparison.Ordinal) &&
+                   Math.Abs(a.FontSizeFps - b.FontSizeFps) <= FloatMergeEpsilon &&
+                   Math.Abs(a.FontSizeAchievementTitle - b.FontSizeAchievementTitle) <= FloatMergeEpsilon &&
+                   Math.Abs(a.FontSizeAchievementDescription - b.FontSizeAchievementDescription) <= FloatMergeEpsilon &&
+                   a.FontAchievementTitleBold == b.FontAchievementTitleBold &&
+                   string.Equals(a.PosAchievement ?? string.Empty, b.PosAchievement ?? string.Empty, StringComparison.Ordinal) &&
+                   string.Equals(a.PosInvitation ?? string.Empty, b.PosInvitation ?? string.Empty, StringComparison.Ordinal) &&
+                   string.Equals(a.PosChatMsg ?? string.Empty, b.PosChatMsg ?? string.Empty, StringComparison.Ordinal) &&
+                   Math.Abs(a.StatsBackgroundR - b.StatsBackgroundR) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsBackgroundG - b.StatsBackgroundG) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsBackgroundB - b.StatsBackgroundB) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsBackgroundA - b.StatsBackgroundA) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsTextR - b.StatsTextR) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsTextG - b.StatsTextG) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsTextB - b.StatsTextB) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsTextA - b.StatsTextA) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsPosX - b.StatsPosX) <= FloatMergeEpsilon &&
+                   Math.Abs(a.StatsPosY - b.StatsPosY) <= FloatMergeEpsilon;
         }
 
         private bool HasNetworkMainChanges(GameSettingsSnapshot snapshot, GameSettingsSnapshot original = null)

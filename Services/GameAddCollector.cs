@@ -92,11 +92,22 @@ namespace SmartGoldbergEmu.Services
                     ?? new Dictionary<long, string>();
                 game.DlcCheckPerformed = true;
 
-                (AchievementPreviewKind kind, string previewJson) = await ServiceLocator.GoldbergArtifactService
-                    .BuildAddModeAchievementPreviewAsync(game)
+                AchievementAddModePreview preview = await ServiceLocator.GoldbergArtifactService
+                    .BuildAddModeAchievementPreviewAsync(game, setupResult.Catalog)
                     .ConfigureAwait(false);
-                bundle.AchievementPreview = kind;
-                bundle.AchievementsPreviewJson = previewJson ?? string.Empty;
+                bundle.AchievementPreview = preview.Kind;
+                bundle.AchievementsPreviewJson = preview.PreviewJson ?? string.Empty;
+
+                // Full catalog fetch already includes the item archive; add-save writes from these instead of fetching again.
+                bundle.PrefetchedSchemas = new AddGamePrefetchedSchemas
+                {
+                    AppId = game.AppId,
+                    Items = setupResult.Catalog != null && setupResult.Catalog.AppId == game.AppId
+                        ? setupResult.Catalog.Items
+                        : null,
+                    Achievements = preview.Schema,
+                    AchievementsLanguage = preview.Language
+                };
 
                 if (ServiceLocator.GoldbergFilesService.ShouldAutoGenerateItems(game.AppId))
                 {

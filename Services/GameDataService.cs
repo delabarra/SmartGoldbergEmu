@@ -363,7 +363,7 @@ namespace SmartGoldbergEmu.Services
             });
         }
 
-        // Same gates as the former save-time add duplicate UI: path first, then AppId + path.
+        // Matches by executable path first, then by AppId + path.
         public GameConfig FindDuplicateForAdd(string executablePath, ulong appId, out bool matchedByExecutable)
         {
             matchedByExecutable = false;

@@ -107,7 +107,7 @@ namespace SmartGoldbergEmu.StubKit
 
             if (isV30)
             {
-                // V3.0: TLS OEP override before code decrypt (matches prior behavior).
+                // V3.0: TLS OEP override before code decrypt.
                 state.ResolvedOep = state.OriginalEntryPoint;
                 bool flagged = state.HasTlsCallback == 1;
                 if (flagged || TlsOep.FirstCallbackInBind(pe, bind))

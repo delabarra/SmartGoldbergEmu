@@ -360,7 +360,7 @@ namespace SmartGoldbergEmu.Constants
                 }
                 catch
                 {
-                    // Best-effort helper only. Leave map empty if parsing fails.
+                    // Best-effort: leave the map empty if parsing fails.
                 }
 
                 _windowsSteamworksVersionByHash = map;
