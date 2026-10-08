@@ -517,7 +517,6 @@ namespace SmartGoldbergEmu.Services
 
                 ThrowIfUpdateCancelled(cancellationCheck);
 
-                // Ensure we have the download URL
                 if (string.IsNullOrEmpty(_downloadUrl))
                 {
                     progressCallback?.Invoke("Fetching latest release information...", ProgressFetch);
@@ -551,7 +550,6 @@ namespace SmartGoldbergEmu.Services
 
                 ThrowIfUpdateCancelled(cancellationCheck);
 
-                // Download archive (10 min timeout, cancellable)
                 try
                 {
                     var forkSource = GetConfiguredGoldbergForkSource();
@@ -580,7 +578,7 @@ namespace SmartGoldbergEmu.Services
 
                 ThrowIfUpdateCancelled(cancellationCheck);
 
-                // Extract — byte progress across selected install entries (solid 7z decode included)
+                // Extraction progress is by bytes across the selected install entries, including solid 7z decode.
                 try
                 {
                     await Task.Run(() =>
@@ -614,7 +612,6 @@ namespace SmartGoldbergEmu.Services
 
                 ThrowIfUpdateCancelled(cancellationCheck);
 
-                // Copy files to final destinations
                 try
                 {
                     await Task.Run(() => CopyFilesFromTempSync(tempGoldbergFolder, tempUserAssetsFolder, cancellationCheck, progressCallback)).ConfigureAwait(false);
@@ -1295,7 +1292,6 @@ namespace SmartGoldbergEmu.Services
 
             ThrowIfUpdateCancelled(cancellationCheck);
 
-            // Copy user assets
             string targetSettingsPath = PathConstants.GlobalSettingsPath;
             string tempSettingsFolder = Path.Combine(tempUserAssetsFolder, PathConstants.GoldbergGlobalSettingsFolderName);
             
@@ -1303,7 +1299,6 @@ namespace SmartGoldbergEmu.Services
             {
                 Directory.CreateDirectory(targetSettingsPath);
 
-                // Copy avatar (only if doesn't exist)
                 string avatarSource = Path.Combine(tempSettingsFolder, PathConstants.GlobalAccountAvatarFileName);
                 if (File.Exists(avatarSource) && !File.Exists(PathConstants.GlobalAccountAvatarPath))
                 {
@@ -1312,13 +1307,12 @@ namespace SmartGoldbergEmu.Services
 
                 ThrowIfUpdateCancelled(cancellationCheck);
 
-                // Copy fonts
                 string tempFontsPath = Path.Combine(tempSettingsFolder, PathConstants.GoldbergGlobalFontsFolderName);
                 if (Directory.Exists(tempFontsPath))
                 {
                     string targetFontsPath = PathConstants.GlobalFontsPath;
                     Directory.CreateDirectory(targetFontsPath);
-                    CopyDirectoryContents(tempFontsPath, targetFontsPath, false, cancellationCheck); // false = only if doesn't exist
+                    CopyDirectoryContents(tempFontsPath, targetFontsPath, false, cancellationCheck); // false = copy only files that do not exist yet
                 }
 
                 ThrowIfUpdateCancelled(cancellationCheck);
@@ -1690,7 +1684,7 @@ namespace SmartGoldbergEmu.Services
         private static bool RunDownloadAndInstallWithProgressForm(ILogService logger)
         {
             var task = RunDownloadAndInstallWithProgressFormAsync(logger);
-            // Install work runs off the UI thread; TP uses Control.Invoke for progress/cleanup — pump so those complete.
+            // Install work runs on the thread pool and uses Control.Invoke for progress/cleanup; pump so those calls complete.
             while (!task.IsCompleted)
             {
                 Application.DoEvents();

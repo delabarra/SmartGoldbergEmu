@@ -39,7 +39,7 @@ namespace SmartGoldbergEmu.Helpers
                 if (suffix == null)
                     continue;
 
-                // Current repack publishes .7z; keep .zip for older releases.
+                // Prefer .7z (current repack); .zip is only for older releases.
                 if (matchedSuffix == GoldbergForkConstants.RepackWinAssetSuffix7z
                     && suffix == GoldbergForkConstants.RepackWinAssetSuffixZip)
                 {

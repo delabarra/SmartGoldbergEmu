@@ -9,7 +9,7 @@ namespace SmartGoldbergEmu.StubKit
         // Cap for contiguous detect prefix. Larger spans use headers-only (.bind) classification.
         private const int DetectPrefixCapBytes = 512 * 1024;
 
-        // Read-only: does not copy or mutate peBytes (classifier only inspects the image).
+        // Does not copy or mutate peBytes.
         public static DetectResult Detect(byte[] peBytes)
         {
             if (peBytes == null || peBytes.Length == 0)

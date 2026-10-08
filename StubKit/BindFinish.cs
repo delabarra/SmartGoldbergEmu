@@ -5,7 +5,7 @@ namespace SmartGoldbergEmu.StubKit
     public sealed class UnpackOptions
     {
         public bool KeepBind;
-        // Zero IMAGE_DIRECTORY_ENTRY_SECURITY (Authenticode). Default true.
+        // Zero IMAGE_DIRECTORY_ENTRY_SECURITY (Authenticode).
         public bool ClearSecurity = true;
 
         public static UnpackOptions Default => new UnpackOptions();

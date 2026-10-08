@@ -6,14 +6,9 @@ using SmartGoldbergEmu.Validation;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Resolves stored game executable paths relative to the game folder (StartFolder), matching Steam installdir semantics.
-    /// </summary>
+    // Stored game paths are relative to the game folder (StartFolder), matching Steam installdir semantics.
     public static class GameFolderPathHelper
     {
-        /// <summary>
-        /// Base folder for resolving stored Path and WorkingDirectory: StartFolder if it exists, otherwise the directory of an absolute Path.
-        /// </summary>
         public static bool TryGetResolutionBaseFolder(GameConfig game, out string baseFolder)
         {
             baseFolder = null;
@@ -40,9 +35,6 @@ namespace SmartGoldbergEmu.Helpers
             return false;
         }
 
-        /// <summary>
-        /// Base folder for launch-time path resolution (broader fallbacks than <see cref="TryGetResolutionBaseFolder"/>).
-        /// </summary>
         public static string GetLaunchBaseGameFolder(GameConfig game)
         {
             if (game == null)
@@ -61,9 +53,7 @@ namespace SmartGoldbergEmu.Helpers
             return Path.GetDirectoryName(pathTrim) ?? Environment.CurrentDirectory;
         }
 
-        /// <summary>
-        /// Resolves a stored path relative to <paramref name="baseGameFolder"/>; returns trimmed stored path when unresolved.
-        /// </summary>
+        // Returns the trimmed stored path when it cannot be resolved to an existing file.
         public static string ResolveStoredPathUnderBase(string baseGameFolder, string pathStored)
         {
             if (string.IsNullOrWhiteSpace(pathStored))
@@ -80,9 +70,7 @@ namespace SmartGoldbergEmu.Helpers
             return pathTrim;
         }
 
-        /// <summary>
-        /// Resolves the primary game executable (default launch option) to a full path when the file exists.
-        /// </summary>
+        // Primary executable = the default launch option.
         public static bool TryResolvePrimaryExecutable(GameConfig game, out string fullExecutablePath)
         {
             fullExecutablePath = null;
@@ -112,7 +100,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        // Resolves executable for SteamStub removal: launch base, then settings fields, then library stored path.
         public static bool TryResolveExecutableForStubRemoval(GameConfig game, out string fullExecutablePath)
         {
             fullExecutablePath = null;
@@ -128,9 +115,7 @@ namespace SmartGoldbergEmu.Helpers
             return TryResolveStoredExecutable(game, out fullExecutablePath);
         }
 
-        /// <summary>
-        /// Resolves <see cref="GameConfig.Path"/> to a full path: relative to game folder, or legacy absolute path.
-        /// </summary>
+        // GameConfig.Path is relative to the game folder, or a legacy absolute path.
         public static bool TryResolveStoredExecutable(GameConfig game, out string fullExePath)
         {
             fullExePath = null;
@@ -172,9 +157,6 @@ namespace SmartGoldbergEmu.Helpers
             return !string.IsNullOrEmpty(directory) && Directory.Exists(directory);
         }
 
-        /// <summary>
-        /// Directory containing the game executable (resolved <see cref="GameConfig.Path"/> when possible).
-        /// </summary>
         public static bool TryGetExecutableDirectory(GameConfig game, out string directory)
         {
             directory = null;
@@ -220,9 +202,6 @@ namespace SmartGoldbergEmu.Helpers
             return true;
         }
 
-        /// <summary>
-        /// True if two games refer to the same executable (resolved paths when possible, else path + start folder text).
-        /// </summary>
         public static bool ExecutablesReferToSameGame(GameConfig a, GameConfig b)
         {
             if (a == null || b == null)
@@ -234,9 +213,6 @@ namespace SmartGoldbergEmu.Helpers
             return string.Equals(CompositePathKey(a), CompositePathKey(b), StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>
-        /// Resolves the file path used for shell icons (custom .ico/.exe or game executable): relative to the game folder when stored as relative, otherwise legacy absolute paths.
-        /// </summary>
         public static bool TryResolveIconSourcePath(GameConfig game, out string fullPath)
         {
             if (TryResolveCustomIconPath(game, out fullPath))
@@ -245,9 +221,6 @@ namespace SmartGoldbergEmu.Helpers
             return TryResolveStoredExecutable(game, out fullPath);
         }
 
-        /// <summary>
-        /// Icons list view: custom icon, then Steam resources icon, then game executable.
-        /// </summary>
         public static bool TryResolveListViewIconSourcePath(
             GameConfig game,
             string steamResourceIconPath,
@@ -316,11 +289,7 @@ namespace SmartGoldbergEmu.Helpers
             return null;
         }
 
-        /// <summary>
-        /// If <paramref name="fullExecutablePath"/> contains a path segment equal to the Steam <c>installdir</c> folder name,
-        /// returns that folder as the game root and the remainder as a relative executable path.
-        /// Prefer the canonical Steam layout <c>...\steamapps\common\{installdir}\...</c> when present; otherwise first match wins.
-        /// </summary>
+        // Prefers a ...\steamapps\common\{installdir}\ segment; otherwise the first segment matching installdir wins.
         public static bool TrySplitExecutableAtSteamInstallDir(string fullExecutablePath, string installDirFolderName, out string gameRootFullPath, out string relativeExecutablePath)
         {
             gameRootFullPath = null;
@@ -393,11 +362,7 @@ namespace SmartGoldbergEmu.Helpers
             return true;
         }
 
-        /// <summary>
-        /// Resolves the full path to the game executable from the folder + executable fields (as shown in settings).
-        /// Uses a directory-prefix check stricter than <see cref="PathValidationHelper.IsPathWithinBase"/> so paths like
-        /// <c>...\Game</c> vs <c>...\Game_DLC\file.exe</c> are not confused.
-        /// </summary>
+        // Stricter than PathValidationHelper.IsPathWithinBase so ...\Game does not match ...\Game_DLC\file.exe.
         public static bool TryResolveExecutableFromGameFolderFields(string startFolder, string executablePathOrName, out string fullExecutablePath)
         {
             fullExecutablePath = null;

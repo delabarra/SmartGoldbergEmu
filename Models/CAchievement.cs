@@ -1,6 +1,6 @@
 namespace SmartGoldbergEmu.Models
 {
-    // Achievement model for Goldberg achievements.json format
+    // One entry in Goldberg achievements.json; property names match the file keys.
     public class CAchievement
     {
         public string name { get; set; }

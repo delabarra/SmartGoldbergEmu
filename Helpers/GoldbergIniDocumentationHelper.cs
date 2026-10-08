@@ -7,9 +7,6 @@ using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Builds Goldberg-style INI output: header, section spacing, and per-key lines.
-    /// </summary>
     public static class GoldbergIniDocumentationHelper
     {
         public static void AppendIniHeader(StringBuilder content)
@@ -28,9 +25,7 @@ namespace SmartGoldbergEmu.Helpers
             content.AppendLine("[" + section + "]");
         }
 
-        /// <summary>
-        /// Comment lines immediately after a section header (before the first key=value), e.g. [app::paths] block intro.
-        /// </summary>
+        // # lines between a section header and its first key=value, e.g. the [app::paths] intro.
         public static IReadOnlyList<string> GetSectionHeaderCommentLines(
             string exampleIniPath,
             string sectionName,
@@ -73,13 +68,7 @@ namespace SmartGoldbergEmu.Helpers
             return Array.Empty<string>();
         }
 
-        /// <summary>
-        /// All consecutive # comment lines immediately above <paramref name="key"/>= in <paramref name="sectionName"/>.
-        /// Lines are returned as in the example (trimmed), including the leading #.
-        /// </summary>
-        /// <summary>
-        /// Consecutive # lines immediately after <paramref name="key"/>= (e.g. <c># format: ID=name</c> after <c>unlock_all</c>).
-        /// </summary>
+        // e.g. "# format: ID=name" following unlock_all=.
         public static IReadOnlyList<string> GetConsecutiveCommentLinesAfterKey(
             string exampleIniPath,
             string sectionName,
@@ -183,9 +172,6 @@ namespace SmartGoldbergEmu.Helpers
             return Array.Empty<string>();
         }
 
-        /// <summary>
-        /// Writes example comment block (if any) then <c>key=value</c>. If no example comments, writes <paramref name="fallbackDocs"/> as # lines.
-        /// </summary>
         public static void AppendOptionWithExampleOrFallback(
             StringBuilder sb,
             string exampleIniPath,

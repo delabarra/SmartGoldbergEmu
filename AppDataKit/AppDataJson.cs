@@ -4,13 +4,9 @@ using System.Globalization;
 
 namespace AppDataKit
 {
-    /// <summary>Serializes app data sections as separate top-level JSON nodes.</summary>
     public static class AppDataJson
     {
-        /// <summary>
-        /// Builds a dictionary with one JSON node per section:
-        /// metadata, dlc, assets, achievements, stats, items.
-        /// </summary>
+        // One top-level node per section: metadata, dlc, assets, achievements, stats, items.
         public static Dictionary<string, object> BuildNodes(
             uint appId,
             DateTime fetchedAtUtc,
@@ -165,7 +161,6 @@ namespace AppDataKit
             return node;
         }
 
-        /// <summary>Flat JSON for a dedicated items request: appid, success, error, and items when available.</summary>
         public static Dictionary<string, object> BuildItemsResponse(uint appId, ItemsSection section)
         {
             var root = new Dictionary<string, object>();

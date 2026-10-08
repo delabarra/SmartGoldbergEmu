@@ -4,7 +4,7 @@ using System.Text;
 
 namespace SteamKit
 {
-    /// <summary>Steam wire message ids needed for anonymous CM logon and PICS product info.</summary>
+    // Only the message ids needed for anonymous CM logon and PICS product info.
     public enum EMsg : uint
     {
         Multi = 1,
@@ -24,7 +24,7 @@ namespace SteamKit
         Public = 1,
     }
 
-    /// <summary>Valve KeyValues tree for PICS app (text) and package (binary) payloads.</summary>
+    // PICS app payloads are text KeyValues; package payloads are binary.
     public class KeyValue
     {
         // Real Steam PICS trees are shallow; cap recursion so hostile input cannot blow the stack.

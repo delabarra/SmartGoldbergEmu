@@ -93,9 +93,7 @@ namespace SmartGoldbergEmu.Services
             return urls;
         }
 
-        /// <summary>
-        /// Parses <c>/steamcommunity/public/images/apps/{appId}/{file}</c> from a Steam Web API icon URL.
-        /// </summary>
+        // Parses /steamcommunity/public/images/apps/{appId}/{file} from a Steam Web API icon URL path.
         internal static bool TryParseSteamCommunityAppImagePath(string absolutePath, out ulong appId, out string fileName)
         {
             appId = 0;

@@ -92,7 +92,6 @@ namespace SmartGoldbergEmu.Constants
             return fork == GoldbergForkSource.Alex ? RepositoryWebUrlAlex : RepositoryWebUrlDetanup;
         }
 
-        // Browser page for Windows release assets (and other packages).
         public static string GetReleasesWebUrl(GoldbergForkSource fork)
         {
             return GetRepositoryWebUrl(fork).TrimEnd('/') + "/releases";

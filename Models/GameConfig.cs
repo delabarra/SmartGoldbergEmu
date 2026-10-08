@@ -4,83 +4,43 @@ using AppDataKit;
 
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// Represents a game configuration with only the essential identity properties.
-    /// Emulation settings are stored in Goldberg config files, not here.
-    /// </summary>
+    // Game identity only; emulation settings live in Goldberg config files.
     public class GameConfig
     {
-        /// <summary>
-        /// Gets or sets the display name of the game.
-        /// </summary>
         public string AppName { get; set; }
 
-        /// <summary>
-        /// Gets or sets the Steam App ID.
-        /// </summary>
         public ulong AppId { get; set; }
 
-        /// <summary>
-        /// Gets or sets the game's start folder path.
-        /// </summary>
         public string StartFolder { get; set; }
 
-        /// <summary>
-        /// Gets or sets the path to the game executable (relative to <see cref="StartFolder"/> when not rooted, like Steam manifest executable).
-        /// </summary>
+        // Relative to StartFolder when not rooted, like the Steam manifest executable.
         public string Path { get; set; }
 
-        /// <summary>
-        /// Gets or sets the launch parameters for the game.
-        /// </summary>
         public string Parameters { get; set; }
 
-        /// <summary>
-        /// Optional working directory when launching (relative to <see cref="StartFolder"/> when not rooted, or absolute under that folder).
-        /// Used when no Steam (PICS) launch option supplies a working directory.
-        /// </summary>
+        // Relative to StartFolder when not rooted; used only when no Steam (PICS) launch option supplies one.
         public string WorkingDirectory { get; set; }
 
-        /// <summary>
-        /// Gets or sets the path to a custom icon file (.exe, .bat, or .ico).
-        /// </summary>
+        // .exe, .bat, or .ico file.
         public string CustomIcon { get; set; }
 
-        /// <summary>
-        /// Gets or sets the unique GUID for this game entry.
-        /// </summary>
         public Guid GameGuid { get; set; }
 
-        /// <summary>
-        /// Goldberg launch mode for this game (Steam client, Experimental steam_api, Steam.dll beside exe, or no emulation).
-        /// </summary>
         public GoldbergLaunchMode LaunchMode { get; set; }
 
-        /// <summary>
-        /// Runtime-only Steam app product info as <see cref="AppInfoKeyValue"/> (not persisted).
-        /// </summary>
         [XmlIgnore]
         public AppInfoKeyValue AppInfo { get; set; }
 
-        /// <summary>
-        /// Gets or sets runtime-only pre-fetched DLC data (not persisted).
-        /// </summary>
         [XmlIgnore]
         public System.Collections.Generic.Dictionary<long, string> PreFetchedDlcData { get; set; }
 
-        // Kit-first catalog SoT for this app (resources/{appId}.json); not persisted here, loaded/saved via AppCatalogSnapshotStore.
+        // Persisted separately as resources/{appId}.json via AppCatalogSnapshotStore.
         [XmlIgnore]
         public AppCatalogSnapshot Catalog { get; set; }
 
-        /// <summary>
-        /// Gets or sets runtime-only supported languages (not persisted).
-        /// </summary>
         [XmlIgnore]
         public System.Collections.Generic.List<string> SupportedLanguages { get; set; }
 
-        /// <summary>
-        /// Gets or sets a flag indicating whether DLC check has been performed (not persisted).
-        /// </summary>
         [XmlIgnore]
         public bool DlcCheckPerformed { get; set; }
 
@@ -96,9 +56,6 @@ namespace SmartGoldbergEmu.Models
             SupportedLanguages = null;
         }
 
-        /// <summary>
-        /// Initializes a new instance of the GameConfig class.
-        /// </summary>
         public GameConfig()
         {
             AppName = string.Empty;

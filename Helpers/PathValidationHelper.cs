@@ -4,17 +4,8 @@ using SmartGoldbergEmu.Constants;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper class for path validation and sanitization to prevent path traversal attacks.
-    /// </summary>
     public static class PathValidationHelper
     {
-        /// <summary>
-        /// Validates that a resolved path is within the base directory (prevents path traversal).
-        /// </summary>
-        /// <param name="basePath">The base directory that the path must be within.</param>
-        /// <param name="resolvedPath">The resolved path to validate.</param>
-        /// <returns>True if the path is safe (within base directory), false otherwise.</returns>
         public static bool IsPathWithinBase(string basePath, string resolvedPath)
         {
             if (string.IsNullOrWhiteSpace(basePath) || string.IsNullOrWhiteSpace(resolvedPath))
@@ -22,27 +13,17 @@ namespace SmartGoldbergEmu.Helpers
 
             try
             {
-                // Normalize paths to full paths for comparison
                 string normalizedBase = Path.GetFullPath(basePath);
                 string normalizedResolved = Path.GetFullPath(resolvedPath);
 
-                // Check if resolved path starts with base path
                 return normalizedResolved.StartsWith(normalizedBase, StringComparison.OrdinalIgnoreCase);
             }
             catch
             {
-                // If path is invalid, it's not safe
                 return false;
             }
         }
 
-        /// <summary>
-        /// Resolves a relative path and validates it's within the base directory.
-        /// </summary>
-        /// <param name="basePath">The base directory.</param>
-        /// <param name="relativePath">The relative path to resolve.</param>
-        /// <param name="resolvedPath">Output parameter for the resolved path if valid.</param>
-        /// <returns>True if the path is valid and within base directory, false otherwise.</returns>
         public static bool TryResolveAndValidatePath(string basePath, string relativePath, out string resolvedPath)
         {
             resolvedPath = null;
@@ -52,11 +33,9 @@ namespace SmartGoldbergEmu.Helpers
 
             try
             {
-                // Normalize path separators
                 string normalizedRelative = relativePath.Replace('/', Path.DirectorySeparatorChar);
                 normalizedRelative = normalizedRelative.Replace('\\', Path.DirectorySeparatorChar);
 
-                // If it's already an absolute path, validate it's within base
                 if (Path.IsPathRooted(normalizedRelative))
                 {
                     string fullPath = Path.GetFullPath(normalizedRelative);
@@ -68,11 +47,9 @@ namespace SmartGoldbergEmu.Helpers
                     return false;
                 }
 
-                // Resolve relative path
                 string combined = Path.Combine(basePath, normalizedRelative);
                 string fullResolved = Path.GetFullPath(combined);
 
-                // Validate it's within base directory
                 if (IsPathWithinBase(basePath, fullResolved))
                 {
                     resolvedPath = fullResolved;
@@ -87,13 +64,7 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Validates that a file path is safe to use with Process.Start.
-        /// Checks for path traversal and ensures the file is within allowed directories.
-        /// </summary>
-        /// <param name="filePath">The file path to validate.</param>
-        /// <param name="allowedBasePaths">Array of allowed base paths. If empty, only validates format.</param>
-        /// <returns>True if the path is safe, false otherwise.</returns>
+        // Guards paths passed to Process.Start. With no allowedBasePaths, only the path format is checked.
         public static bool IsSafeFilePath(string filePath, params string[] allowedBasePaths)
         {
             if (string.IsNullOrWhiteSpace(filePath))
@@ -101,19 +72,15 @@ namespace SmartGoldbergEmu.Helpers
 
             try
             {
-                // Check for invalid characters
                 if (filePath.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
                     return false;
 
-                // If no allowed base paths specified, just validate format
                 if (allowedBasePaths == null || allowedBasePaths.Length == 0)
                 {
-                    // Basic format validation
                     string fullPath = Path.GetFullPath(filePath);
                     return !string.IsNullOrEmpty(fullPath);
                 }
 
-                // Check if path is within any allowed base path
                 string normalizedFilePath = Path.GetFullPath(filePath);
                 foreach (string allowedBase in allowedBasePaths)
                 {
@@ -132,11 +99,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Validates that a URL is safe to open (basic validation).
-        /// </summary>
-        /// <param name="url">The URL to validate.</param>
-        /// <returns>True if the URL appears safe, false otherwise.</returns>
         public static bool IsSafeUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -147,11 +109,6 @@ namespace SmartGoldbergEmu.Helpers
                    lowerUrl.StartsWith(ApplicationConstants.HttpsUriSchemePrefix, StringComparison.Ordinal);
         }
 
-        /// <summary>
-        /// Sanitizes a file name by removing invalid characters.
-        /// </summary>
-        /// <param name="fileName">The file name to sanitize.</param>
-        /// <returns>Sanitized file name.</returns>
         public static string SanitizeFileName(string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName))

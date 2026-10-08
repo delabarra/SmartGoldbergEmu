@@ -354,7 +354,7 @@ namespace SmartGoldbergEmu.Services
             {
                 string appIdText = gameConfig.AppId.ToString();
 
-                // Already have a root from setup/edit load (AppInfo or the catalog snapshot) → skip the PICS re-warm.
+                // A root from setup/edit load (AppInfo or the catalog snapshot) makes the PICS re-warm unnecessary.
                 AppInfoKeyValue picsData = gameConfig.AppInfo ?? gameConfig.Catalog?.AppInfo;
                 if (picsData != null)
                 {

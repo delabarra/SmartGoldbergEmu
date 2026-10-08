@@ -99,9 +99,7 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        /// <summary>
-        /// Returns the single preferred Valve steam_api path for interface generation (Path-adjacent), or empty.
-        /// </summary>
+        // Returns at most one path: the preferred Valve steam_api beside the game (Path-adjacent), or empty.
         public IReadOnlyList<string> CollectSteamApiDllPathsForGame(GameConfig gameConfig)
         {
             var scanPaths = new List<string>();
@@ -309,9 +307,7 @@ namespace SmartGoldbergEmu.Services
             return anyFileGenerated && File.Exists(targetPath);
         }
 
-        /// <summary>
-        /// Overwrites steam_interfaces.txt from the Valve steam_api resolved for <paramref name="launchExePath"/> (or stored Path).
-        /// </summary>
+        // Overwrites steam_interfaces.txt from the Valve steam_api resolved for launchExePath (or the stored Path).
         public bool TryRefreshSteamInterfacesForLaunch(
             string steamSettingsPath,
             GameConfig gameConfig,

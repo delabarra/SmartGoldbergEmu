@@ -214,7 +214,7 @@ namespace SmartGoldbergEmu.Forms
         {
             UpdateThemeIcon();
             UpdateThemeMenuCheckMarks();
-            // Avoid mosaic reload during first handle create (before games load); match prior ThemeChanged-only behavior.
+            // Skip mosaic reload during the first handle creation, before games are loaded.
             if (Visible)
                 ReloadMosaicTileImagesIfNeeded();
         }

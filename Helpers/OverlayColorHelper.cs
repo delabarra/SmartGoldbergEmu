@@ -3,14 +3,8 @@ using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper for RGBA color conversion between overlay settings (0.0-1.0 floats) and System.Drawing.Color.
-    /// </summary>
     public static class OverlayColorHelper
     {
-        /// <summary>
-        /// Converts RGBA float values (0.0-1.0) to a System.Drawing.Color.
-        /// </summary>
         public static System.Drawing.Color RgbaToColor(float r, float g, float b, float a)
         {
             r = Math.Max(0.0f, Math.Min(1.0f, r));
@@ -24,17 +18,11 @@ namespace SmartGoldbergEmu.Helpers
             return System.Drawing.Color.FromArgb(alpha, red, green, blue);
         }
 
-        /// <summary>
-        /// Converts a System.Drawing.Color to RGBA float values (0.0-1.0).
-        /// </summary>
         public static float ColorToR(System.Drawing.Color color) => color.R / 255.0f;
         public static float ColorToG(System.Drawing.Color color) => color.G / 255.0f;
         public static float ColorToB(System.Drawing.Color color) => color.B / 255.0f;
         public static float ColorToA(System.Drawing.Color color) => color.A / 255.0f;
 
-        /// <summary>
-        /// Gets default overlay color by name from OverlaySettings defaults.
-        /// </summary>
         public static System.Drawing.Color GetDefaultOverlayColor(OverlaySettings defaults, string colorName)
         {
             switch (colorName)

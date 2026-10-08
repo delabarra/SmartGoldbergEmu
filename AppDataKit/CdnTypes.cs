@@ -1,6 +1,5 @@
 namespace AppDataKit
 {
-    /// <summary>Depot reference parsed from appinfo.</summary>
     public sealed class DepotInfo
     {
         public uint DepotId { get; set; }

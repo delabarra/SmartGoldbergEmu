@@ -15,7 +15,7 @@ namespace SmartGoldbergEmu.Constants
         public const string NoApiKeyAchievementDescription = "Could not load an achievement schema for this app. Community data was unavailable, and no Steam Web API key is configured.";
         public const string NoAchievementsAchievementDescription = "This game doesn't have any achievements defined on Steam.";
 
-        // Per-icon GET; keep modest so failed CDN candidates fail over quickly.
+        // Seconds per icon GET; keep modest so failed CDN candidates fail over quickly.
         public const int HttpRequestLongTimeout = 15;
     }
 }

@@ -3,67 +3,33 @@ using System.Globalization;
 
 namespace SmartGoldbergEmu.Constants
 {
-    /// <summary>
-    /// Centralized constants for the SmartGoldbergEmu application.
-    /// Contains view modes, sort options, and other magic strings used throughout the application.
-    /// </summary>
     public static class ApplicationConstants
     {
         #region View Modes
 
-        /// <summary>
-        /// Wide horizontal library art (Steam-style header / store banner layout).
-        /// </summary>
+        // Wide horizontal library art (store header / banner layout).
         public const string ViewModeTile = "Store Banner";
 
-        /// <summary>
-        /// Tall portrait library art (vertical capsule / library cover layout).
-        /// </summary>
+        // Tall portrait library art (library cover layout).
         public const string ViewModeCompactTiles = "Library Cover";
 
-        /// <summary>
-        /// Legacy INI value for <see cref="ViewModeTile"/> before rename.
-        /// </summary>
+        // Legacy persisted view_mode values; NormalizeViewMode maps them to the current ones.
         public const string ViewModeTileLegacy = "Tile";
 
-        /// <summary>
-        /// Legacy INI value for <see cref="ViewModeTile"/> (Store Capsule label).
-        /// </summary>
         public const string ViewModeTileLegacyStoreCapsule = "Store Capsule";
 
-        /// <summary>
-        /// Legacy INI value for <see cref="ViewModeCompactTiles"/> before rename.
-        /// </summary>
         public const string ViewModeCompactTilesLegacy = "Compact Tiles";
 
-        /// <summary>
-        /// Legacy INI value for <see cref="ViewModeCompactTiles"/> (Digital Cover label).
-        /// </summary>
         public const string ViewModeCompactTilesLegacyDigitalCover = "Digital Cover";
 
-        /// <summary>
-        /// Icons view mode - displays games as large icons.
-        /// </summary>
         public const string ViewModeIcons = "Icons";
 
-        /// <summary>
-        /// Logos view mode - displays games as logo tiles.
-        /// </summary>
         public const string ViewModeLogos = "Logos";
 
-        /// <summary>
-        /// Details view mode - displays games in a detailed list with columns.
-        /// </summary>
         public const string ViewModeDetails = "Details";
 
-        /// <summary>
-        /// Default view mode when no preference is saved.
-        /// </summary>
         public const string ViewModeDefault = ViewModeTile;
 
-        /// <summary>
-        /// Maps persisted view mode strings to current canonical values (handles legacy INI entries).
-        /// </summary>
         public static string NormalizeViewMode(string viewMode)
         {
             if (string.IsNullOrWhiteSpace(viewMode))
@@ -81,77 +47,39 @@ namespace SmartGoldbergEmu.Constants
 
         #region Sort Options
 
-        /// <summary>
-        /// Sort by game name.
-        /// </summary>
         public const string SortByName = "Name";
 
-        /// <summary>
-        /// Sort by App ID.
-        /// </summary>
         public const string SortByAppId = "AppId";
 
-        /// <summary>
-        /// No sorting applied.
-        /// </summary>
         public const string SortByNone = "None";
 
-        /// <summary>
-        /// Default sort option when no preference is saved.
-        /// </summary>
         public const string SortByDefault = SortByNone;
 
-        /// <summary>
-        /// Ascending sort direction.
-        /// </summary>
         public const string SortDirectionAsc = "Asc";
 
-        /// <summary>
-        /// Descending sort direction.
-        /// </summary>
         public const string SortDirectionDesc = "Desc";
 
-        /// <summary>
-        /// Default sort direction when no preference is saved.
-        /// </summary>
         public const string SortDirectionDefault = SortDirectionAsc;
 
         #endregion
 
         #region Game images
 
-        /// <summary>
-        /// Community site for custom library artwork when automatic Steam downloads are incomplete.
-        /// </summary>
         public const string SteamGridDbHomeUrl = "https://www.steamgriddb.com/";
 
         #endregion
 
         #region Column Names
 
-        /// <summary>
-        /// Name column header text.
-        /// </summary>
         public const string ColumnName = "Name";
 
-        /// <summary>
-        /// App ID column header text.
-        /// </summary>
         public const string ColumnAppId = "App ID";
 
-        /// <summary>
-        /// Path column header text.
-        /// </summary>
         public const string ColumnPath = "Path";
 
-        /// <summary>
-        /// Default column order for Details view.
-        /// </summary>
         public const string DefaultColumnOrder = "Name,App ID,Path";
 
-        /// <summary>
-        /// Default Details data column widths (px) for Name, App ID, Path. Path stretches to the list client edge on layout.
-        /// </summary>
+        // Pixel widths for Name, App ID, Path; Path stretches to the list's client edge on layout.
         public const string DefaultDetailsColumnWidths = "200,100,300";
 
         public const int DetailsColumnWidthMin = 40;
@@ -162,64 +90,33 @@ namespace SmartGoldbergEmu.Constants
 
         #region Application Settings Keys
 
-        /// <summary>
-        /// INI file key for view mode setting.
-        /// </summary>
         public const string SettingKeyViewMode = "view_mode";
 
-        /// <summary>
-        /// INI file key for sort by setting.
-        /// </summary>
         public const string SettingKeySortBy = "sort_by";
 
-        /// <summary>
-        /// INI file key for sort direction setting.
-        /// </summary>
         public const string SettingKeySortDirection = "sort_direction";
 
-        /// <summary>
-        /// INI file key for details column order setting.
-        /// </summary>
         public const string SettingKeyDetailsColumnOrder = "details_column_order";
 
-        /// <summary>
-        /// INI file key for Details data column widths (Name, App ID, Path).
-        /// </summary>
         public const string SettingKeyDetailsColumnWidths = "details_column_widths";
 
-        /// <summary>
-        /// INI file key for Logos view ImageList drop shadow (debug/tuning).
-        /// </summary>
+        // Debug/tuning toggle for the Logos view ImageList drop shadow.
         public const string SettingKeyLogosViewDropShadow = "logos_view_drop_shadow";
 
-        /// <summary>
-        /// INI file key for theme mode (Light, Dark, System).
-        /// </summary>
+        // Light, Dark, or System.
         public const string SettingKeyThemeMode = "theme_mode";
 
-        /// <summary>
-        /// INI file section for main window layout.
-        /// </summary>
         public const string SettingSectionWindow = "window";
 
-        /// <summary>
-        /// INI file key for main window size (width,height).
-        /// </summary>
+        // Stored as "width,height".
         public const string SettingKeyWindowSize = "size";
 
-        /// <summary>
-        /// INI file key for main window location (x,y).
-        /// </summary>
+        // Stored as "x,y".
         public const string SettingKeyWindowLocation = "location";
 
-        /// <summary>
-        /// INI file key for main window state (Normal, Maximized, Minimized).
-        /// </summary>
+        // Normal, Maximized, or Minimized.
         public const string SettingKeyWindowState = "state";
 
-        /// <summary>
-        /// INI file section name for application settings.
-        /// </summary>
         public const string SettingSectionApplication = "application";
 
         // Last OpenFileDialog / FolderBrowserDialog directories per FileDialogBrowseHelper.Purpose (ui_settings.ini).
@@ -229,68 +126,34 @@ namespace SmartGoldbergEmu.Constants
 
         #region File Extensions
 
-        /// <summary>
-        /// Executable file extension filter for game selection.
-        /// </summary>
         public const string ExecutableFileFilter = "Executable Files (*.exe;*.bat)|*.exe;*.bat|All Files (*.*)|*.*";
 
-        /// <summary>
-        /// Shortcut file extension filter.
-        /// </summary>
         public const string ShortcutFileFilter = "Internet Shortcut (*.url)|*.url";
 
         #endregion
 
         #region URI Protocol
 
-        /// <summary>
-        /// URI protocol scheme for SmartGoldbergEmu.
-        /// </summary>
         public const string UriProtocolScheme = "sge";
 
-        /// <summary>
-        /// Scheme plus authority separator (e.g. <c>sge://</c>).
-        /// </summary>
         public const string UriProtocolAuthorityPrefix = UriProtocolScheme + "://";
 
-        /// <summary>
-        /// Run command segment after the authority (e.g. <c>run/</c>).
-        /// </summary>
         public const string UriProtocolRunCommandSegment = "run/";
 
-        /// <summary>
-        /// Full prefix for <c>sge://run/</c> launch URIs.
-        /// </summary>
         public const string UriProtocolCommandPrefix = UriProtocolAuthorityPrefix + UriProtocolRunCommandSegment;
 
-        /// <summary>
-        /// HKCU root for per-user protocol and class registrations.
-        /// </summary>
+        // Under HKCU (per-user protocol registration).
         public const string UriProtocolCurrentUserClassesRegistryRoot = @"Software\Classes";
 
-        /// <summary>
-        /// ProgId default value uses this prefix plus <see cref="UriProtocolRegistrationFriendlyDescription"/>.
-        /// </summary>
+        // ProgId default value is this prefix plus UriProtocolRegistrationFriendlyDescription.
         public const string UriProtocolRegistryUrlClassPrefix = "URL:";
 
-        /// <summary>
-        /// Human-readable protocol name stored in the registry ProgId default value.
-        /// </summary>
         public const string UriProtocolRegistrationFriendlyDescription = "SmartGoldbergEmu Protocol";
 
-        /// <summary>
-        /// Registry value name marking a URL protocol handler.
-        /// </summary>
         public const string UriProtocolRegistryUrlProtocolMarkerValueName = "URL Protocol";
 
-        /// <summary>
-        /// Subkey for DefaultIcon under the protocol ProgId.
-        /// </summary>
         public const string UriProtocolRegistryDefaultIconSubKey = "DefaultIcon";
 
-        /// <summary>
-        /// Subkey for shell open command under the protocol ProgId.
-        /// </summary>
         public const string UriProtocolRegistryShellOpenCommandSubKey = @"shell\open\command";
 
         public const string HttpUriSchemePrefix = "http://";
@@ -310,26 +173,15 @@ namespace SmartGoldbergEmu.Constants
 
         #region Window Management
 
-        /// <summary>
-        /// Window title for the main application form.
-        /// </summary>
         public const string WindowTitle = "SmartGoldbergEmu Launcher";
 
-        /// <summary>
-        /// Mutex name for single instance enforcement.
-        /// </summary>
         public const string MutexName = "SmartGoldbergEmu_SingleInstance_Mutex";
 
-        /// <summary>
-        /// Headless mode: wait for a game PID from a launch-session manifest, then run Goldberg deploy cleanup.
-        /// Usage: <c>SmartGoldbergEmu.exe --launch-cleanup-watcher "path\to\manifest.json"</c>
-        /// </summary>
+        // Headless mode: wait for the game PID from a launch-session manifest, then run Goldberg deploy cleanup.
+        // Usage: SmartGoldbergEmu.exe --launch-cleanup-watcher "path\to\manifest.json"
         public const string LaunchCleanupWatcherCliFlag = "launch-cleanup-watcher";
 
-        /// <summary>
-        /// After launch, Steam registry redirects (ActiveProcess / SourceModInstallPath) are restored
-        /// once this window elapses so games keep running with loaded Goldberg DLLs.
-        /// </summary>
+        // Steam registry redirects (ActiveProcess / SourceModInstallPath) are restored after this window; the game keeps the Goldberg DLLs it already loaded.
         public const int LaunchRegistryRedirectDurationMs = 15_000;
 
         #endregion
@@ -369,52 +221,31 @@ namespace SmartGoldbergEmu.Constants
 
         #region Default Values
 
-        /// <summary>
-        /// Default saves folder name used by Goldberg emulator.
-        /// </summary>
         public const string DefaultSavesFolderName = PathConstants.GseSavesFolderName;
 
         // Settings UI: steam\userdata\{Steam3AccountID}\{AppID}\
         public const string SteamUserdataPathDisplayFormat = "steam\\userdata\\{0}\\{1}\\";
 
-        /// <summary>
-        /// Default account name for Goldberg emulator.
-        /// </summary>
         public const string DefaultAccountName = "SmartGoldberg";
 
-        /// <summary>
-        /// Default Steam ID for Goldberg emulator.
-        /// </summary>
         public const string DefaultSteamId = "76561197960287930";
 
         // Steam64 ID range (Steam3AccountID folder name is Steam64 minus base).
         public const ulong SteamId64Base = 76561197960265728UL;
         public const ulong SteamId64Max = 76561202255233023UL;
 
-        /// <summary>
-        /// Default language for Goldberg emulator.
-        /// </summary>
         public const string DefaultLanguage = "english";
 
-        /// <summary>
-        /// Default IP country code for Goldberg emulator.
-        /// </summary>
         public const string DefaultIpCountry = "US";
 
         #endregion
 
         #region Diagnostics
 
-        /// <summary>
-        /// Default diagnostic log file next to the executable (plain text).
-        /// </summary>
         public const string ApplicationLogFileName = "console.log";
 
         #endregion
 
-        /// <summary>
-        /// Parses comma-separated Details widths for Name, App ID, Path.
-        /// </summary>
         public static bool TryParseDetailsColumnWidths(string raw, out int nameWidth, out int appIdWidth, out int pathWidth)
         {
             nameWidth = appIdWidth = pathWidth = 0;
@@ -438,9 +269,6 @@ namespace SmartGoldbergEmu.Constants
             return true;
         }
 
-        /// <summary>
-        /// Returns a valid comma-separated width string for Name, App ID, Path.
-        /// </summary>
         public static string NormalizeDetailsColumnWidths(string raw)
         {
             return TryParseDetailsColumnWidths(raw, out int w0, out int w1, out int w2)
@@ -449,4 +277,3 @@ namespace SmartGoldbergEmu.Constants
         }
     }
 }
-

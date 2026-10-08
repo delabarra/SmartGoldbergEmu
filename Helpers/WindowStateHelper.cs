@@ -6,16 +6,8 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper class for managing form window state (size, position, window state).
-    /// </summary>
     public static class WindowStateHelper
     {
-        /// <summary>
-        /// Restores the window state from saved settings.
-        /// </summary>
-        /// <param name="form">The form to restore state for.</param>
-        /// <param name="appDataService">The app data service to retrieve saved state.</param>
         public static void RestoreWindowState(Form form, AppDataService appDataService)
         {
             if (form == null)
@@ -25,7 +17,7 @@ namespace SmartGoldbergEmu.Helpers
 
             try
             {
-                // First run with no saved layout: center once. Otherwise restore from ui_settings.ini (or settings.ini fallback).
+                // First run with no saved layout: center once. Otherwise restore from ui_settings.ini (settings.ini fallback).
                 if (appDataService.IsFirstRun() && !appDataService.HasPersistedWindowLayout())
                 {
                     CenterFormOnScreen(form);
@@ -37,10 +29,8 @@ namespace SmartGoldbergEmu.Helpers
 
                 if (windowState != null)
                 {
-                    // Validate and restore size
                     if (windowState.Size.Width > 0 && windowState.Size.Height > 0)
                     {
-                        // Ensure minimum size
                         var size = windowState.Size;
                         size.Width = Math.Max(size.Width, form.MinimumSize.Width);
                         size.Height = Math.Max(size.Height, form.MinimumSize.Height);
@@ -48,7 +38,6 @@ namespace SmartGoldbergEmu.Helpers
                         hasValidState = true;
                     }
 
-                    // Validate and restore location; center when missing or off-screen
                     if (appDataService.HasPersistedWindowLocation() && IsLocationValid(windowState.Location))
                     {
                         form.StartPosition = FormStartPosition.Manual;
@@ -61,7 +50,6 @@ namespace SmartGoldbergEmu.Helpers
                         hasValidState = true;
                     }
 
-                    // Restore window state (Normal, Maximized, Minimized)
                     if (windowState.State == FormWindowState.Maximized ||
                         windowState.State == FormWindowState.Minimized ||
                         windowState.State == FormWindowState.Normal)
@@ -71,7 +59,6 @@ namespace SmartGoldbergEmu.Helpers
                     }
                 }
 
-                // If no valid saved state, center the form
                 if (!hasValidState)
                 {
                     CenterFormOnScreen(form);
@@ -80,16 +67,10 @@ namespace SmartGoldbergEmu.Helpers
             catch (Exception ex)
             {
                 Program.LogService?.LogError($"Failed to restore window state: {ex.Message}");
-                // Fallback: center the form
                 CenterFormOnScreen(form);
             }
         }
 
-        /// <summary>
-        /// Saves the current window state to settings.
-        /// </summary>
-        /// <param name="form">The form to save state for.</param>
-        /// <param name="appDataService">The app data service to save state to.</param>
         public static void SaveWindowState(Form form, AppDataService appDataService)
         {
             if (form == null)
@@ -99,7 +80,6 @@ namespace SmartGoldbergEmu.Helpers
 
             try
             {
-                // Only save if window is not minimized (to avoid saving minimized state)
                 if (form.WindowState == FormWindowState.Minimized)
                 {
                     return;
@@ -120,10 +100,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Centers the form on the primary screen.
-        /// </summary>
-        /// <param name="form">The form to center.</param>
         public static void CenterFormOnScreen(Form form)
         {
             if (form == null)
@@ -146,16 +122,10 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Checks if a location is valid (within screen bounds).
-        /// </summary>
-        /// <param name="location">The location to validate.</param>
-        /// <returns>True if the location is within any screen bounds.</returns>
         public static bool IsLocationValid(Point location)
         {
             try
             {
-                // Check if location is within any screen bounds
                 foreach (Screen screen in Screen.AllScreens)
                 {
                     if (screen.WorkingArea.Contains(location))

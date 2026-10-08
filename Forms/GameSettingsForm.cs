@@ -594,16 +594,14 @@ namespace SmartGoldbergEmu.Forms
                 var appConfigData = service.LoadAppConfigDlcAndPaths(_gameConfig.AppId);
                 var dlcDataFromFile = appConfigData.DlcData;
 
-                // Populate DLC list textbox - use PreFetchedDlcData for proper names if available
-                // This prevents depot-file names from overwriting proper Steam API names
+                // Prefer PreFetchedDlcData names so depot-file names do not overwrite Steam names.
                 if (txtDLCList != null && dlcDataFromFile.Count > 0)
                 {
                     SetTextBoxText(txtDLCList, DlcService.BuildDlcListTextWithPreferredNames(dlcDataFromFile, _gameConfig.PreFetchedDlcData));
                 }
                 else if (txtDLCList != null && dlcDataFromFile.Count == 0)
                 {
-                    // In edit mode, DlcCheckPerformed is runtime-only and not persisted.
-                    // Show explicit no-DLC state when config has no DLC entries.
+                    // DlcCheckPerformed is runtime-only, so edit mode shows the no-DLC state from config.
                     SetTextBoxText(txtDLCList, "No DLC found for this game.");
                 }
 
@@ -621,7 +619,6 @@ namespace SmartGoldbergEmu.Forms
 
             try
             {
-                // Extract DLC data from txtDLCList - user edits are preserved
                 Dictionary<long, string> dlcData = txtDLCList != null
                     ? DlcService.ParseDlcListText(txtDLCList.Text, _gameConfig.PreFetchedDlcData)
                     : null;
@@ -649,7 +646,6 @@ namespace SmartGoldbergEmu.Forms
                     if (txtAppID != null)
                         SetTextBoxText(txtAppID, searchForm.SelectedAppId.Value.ToString());
                     RequestRefreshSteamLaunchOptionsCombo();
-                    // Trigger metadata fetch
                     _ = Task.Run(async () =>
                     {
                         await FetchMetadataForAppIdAsync(searchForm.SelectedAppId.Value.ToString());
@@ -843,7 +839,6 @@ namespace SmartGoldbergEmu.Forms
                         folderDialog.SelectedPath);
                     if (txtGameFolder != null)
                         SetTextBoxText(txtGameFolder, folderDialog.SelectedPath);
-                    // Validate Steam API DLLs after folder selection
                     ValidateSteamApiDlls();
                     UpdateGameFolderInstallDirHintVisibility();
                 }
@@ -940,7 +935,6 @@ namespace SmartGoldbergEmu.Forms
                     }
                     else
                     {
-                        // Auto-update game folder if empty
                         if (txtGameFolder != null && string.IsNullOrEmpty(txtGameFolder.Text))
                         {
                             SetTextBoxText(txtGameFolder, Path.GetDirectoryName(selected));
@@ -1100,7 +1094,6 @@ namespace SmartGoldbergEmu.Forms
                 btnFindDLCs.Enabled = false;
                 btnFindDLCs.Text = "Searching...";
 
-                // Clear the DLC list at the start
                 if (txtDLCList != null)
                 {
                     ClearTextBox(txtDLCList);
@@ -1113,12 +1106,10 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing)
                     return;
 
-                // Mark that DLC check has been performed
                 _gameConfig.DlcCheckPerformed = true;
 
                 if (dlcData != null && dlcData.Count > 0)
                 {
-                    // Update GameConfig with DLC data
                     if (_gameConfig.PreFetchedDlcData == null)
                     {
                         _gameConfig.PreFetchedDlcData = new Dictionary<long, string>();
@@ -1136,17 +1127,13 @@ namespace SmartGoldbergEmu.Forms
                         AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
                     }
 
-                    // Populate DLC list textbox
                     if (txtDLCList != null)
                         SetTextBoxText(txtDLCList, DlcService.BuildDlcListText(dlcData));
 
-                    // Note: Metadata files (including installed_app_ids.txt and supported_languages.txt) 
-                    // are only generated when adding a new game, not when editing
-
+                    // installed_app_ids.txt and supported_languages.txt are written on add and by catalog refresh, not by edit-mode saves.
                 }
                 else
                 {
-                    // Show message in the list when no DLC is found
                     if (txtDLCList != null)
                     {
                         SetTextBoxText(txtDLCList, "No DLC found for this game.");
@@ -1157,7 +1144,6 @@ namespace SmartGoldbergEmu.Forms
             {
                 LogAndShowErrorWithExceptionMessage("Error finding DLCs", ex);
                 
-                // Show error message in the list as well
                 if (txtDLCList != null)
                 {
                     SetTextBoxText(txtDLCList, "Error: " + ex.Message);
@@ -1347,8 +1333,6 @@ namespace SmartGoldbergEmu.Forms
 
         private void TxtGameFolder_TextChanged(object sender, EventArgs e)
         {
-            // Debounce validation to avoid excessive calls while typing
-            // Only validate if text is not empty and looks like a valid path
             string folder = txtGameFolder?.Text?.Trim();
             if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder))
             {

@@ -5,25 +5,8 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper class for updating menu check marks based on current application state.
-    /// </summary>
     public static class MenuCheckMarkHelper
     {
-        /// <summary>
-        /// Updates the check marks for view menu items based on the current view mode.
-        /// </summary>
-        /// <param name="appDataService">The app data service to get view mode from.</param>
-        /// <param name="tilesViewMenuItem">Main menu tiles view item.</param>
-        /// <param name="compactTilesViewMenuItem">Main menu compact tiles view item.</param>
-        /// <param name="logosViewMenuItem">Main menu logos view item.</param>
-        /// <param name="iconViewMenuItem">Main menu icon view item.</param>
-        /// <param name="detailsMenuItem">Main menu details view item.</param>
-        /// <param name="tileContextMenuItem">Context menu tile view item.</param>
-        /// <param name="capsuleTilesContextMenuItem">Context menu capsule tiles view item.</param>
-        /// <param name="logosContextMenuItem">Context menu logos view item.</param>
-        /// <param name="largeIconsContextMenuItem">Context menu large icons view item.</param>
-        /// <param name="detailsContextMenuItem">Context menu details view item.</param>
         public static void UpdateViewMenuCheckMarks(
             AppDataService appDataService,
             ToolStripMenuItem tilesViewMenuItem,
@@ -42,7 +25,6 @@ namespace SmartGoldbergEmu.Helpers
 
             var currentViewMode = appDataService.GetViewMode();
 
-            // Update main menu view items
             if (tilesViewMenuItem != null)
                 tilesViewMenuItem.Checked = (currentViewMode == ApplicationConstants.ViewModeTile);
             if (compactTilesViewMenuItem != null)
@@ -54,7 +36,6 @@ namespace SmartGoldbergEmu.Helpers
             if (detailsMenuItem != null)
                 detailsMenuItem.Checked = (currentViewMode == ApplicationConstants.ViewModeDetails);
 
-            // Update list background context menu view items
             if (tileContextMenuItem != null)
                 tileContextMenuItem.Checked = (currentViewMode == ApplicationConstants.ViewModeTile);
             if (capsuleTilesContextMenuItem != null)
@@ -67,20 +48,6 @@ namespace SmartGoldbergEmu.Helpers
                 detailsContextMenuItem.Checked = (currentViewMode == ApplicationConstants.ViewModeDetails);
         }
 
-        /// <summary>
-        /// Updates the check marks for sort menu items based on the current sort settings.
-        /// </summary>
-        /// <param name="appDataService">The app data service to get sort settings from.</param>
-        /// <param name="ascNameContextMenuItem">Context menu ascending name sort item.</param>
-        /// <param name="descNameContextMenuItem">Context menu descending name sort item.</param>
-        /// <param name="ascAppIdContextMenuItem">Context menu ascending AppId sort item.</param>
-        /// <param name="descAppIdContextMenuItem">Context menu descending AppId sort item.</param>
-        /// <param name="noneContextMenuItem">Context menu no sort item.</param>
-        /// <param name="ascNameMenuItem">Main menu ascending name sort item.</param>
-        /// <param name="descNameMenuItem">Main menu descending name sort item.</param>
-        /// <param name="ascAppIdMenuItem">Main menu ascending AppId sort item.</param>
-        /// <param name="descAppIdMenuItem">Main menu descending AppId sort item.</param>
-        /// <param name="noneMenuItem">Main menu no sort item.</param>
         public static void UpdateSortMenuCheckMarks(
             AppDataService appDataService,
             ToolStripMenuItem ascNameContextMenuItem,
@@ -100,7 +67,6 @@ namespace SmartGoldbergEmu.Helpers
             var sortBy = appDataService.GetSortBy();
             var sortDirection = appDataService.GetSortDirection();
 
-            // Clear all check marks first
             if (ascNameContextMenuItem != null)
                 ascNameContextMenuItem.Checked = false;
             if (descNameContextMenuItem != null)
@@ -122,7 +88,6 @@ namespace SmartGoldbergEmu.Helpers
             if (noneMenuItem != null)
                 noneMenuItem.Checked = false;
 
-            // Set check marks based on current sort settings
             if (sortBy == ApplicationConstants.SortByNone)
             {
                 if (noneContextMenuItem != null)
@@ -166,13 +131,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Updates the check marks for theme menu items based on the current theme.
-        /// </summary>
-        /// <param name="appDataService">The app data service to get theme from.</param>
-        /// <param name="lightThemeMenuItem">Light theme menu item.</param>
-        /// <param name="darkThemeMenuItem">Dark theme menu item.</param>
-        /// <param name="systemThemeMenuItem">System theme menu item.</param>
         public static void UpdateThemeMenuCheckMarks(
             AppDataService appDataService,
             ToolStripMenuItem lightThemeMenuItem,

@@ -12,7 +12,7 @@ namespace SmartGoldbergEmu.Helpers
         Edit
     }
 
-    // Edit = open local entry; Cancel = abort add. (Re-collect/update-same-GUID may return later.)
+    // Edit = open the local entry; Cancel = abort the add.
     public static class DuplicateGameDialogHelper
     {
         private const int IdEdit = 100;

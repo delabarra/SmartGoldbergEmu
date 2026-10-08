@@ -51,7 +51,7 @@ namespace SmartGoldbergEmu.Services
                         friendPath));
                 }
 
-                // One VZip decompress for both WAVs (previously decompressed twice in RAM).
+                // One VZip decompress for both WAVs.
                 global::SmartGoldbergEmu.ExtractKit.ExtractKit.ExtractVzipEntriesToFiles(tempVzipPath, mappings);
                 OverlayNotificationSoundsStaging.EnsureLibraryAliasesInSoundsFolder(soundsPath);
                 return ValidationResult.Success();

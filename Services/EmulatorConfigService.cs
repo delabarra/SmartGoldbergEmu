@@ -1300,9 +1300,8 @@ namespace SmartGoldbergEmu.Services
                         changed = true;
                     }
                 }
-                // Do not write placeholder DLC names from ID-only metadata.
-                // We only persist DLCs when a reliable name is available.
 
+                // Persist DLCs only with a reliable name; never write placeholder names from ID-only metadata.
                 if (!changed)
                     return;
 
@@ -1747,7 +1746,6 @@ namespace SmartGoldbergEmu.Services
                 if (string.IsNullOrWhiteSpace(displayName))
                     continue;
 
-                // Try to find exact match first
                 if (languageMap.TryGetValue(displayName, out string code))
                 {
                     if (!languageCodes.Contains(code))
@@ -1755,7 +1753,7 @@ namespace SmartGoldbergEmu.Services
                 }
                 else
                 {
-                    // Fallback: convert to lowercase (might already be a code like "english")
+                    // The display name may already be a code like "english".
                     var lowerName = displayName.ToLowerInvariant();
                     if (!languageCodes.Contains(lowerName))
                         languageCodes.Add(lowerName);
@@ -2077,7 +2075,7 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                // Load existing file to preserve DLC entries and app paths
+                // Preserve existing DLC entries and app paths.
                 var existingLines = new List<string>();
                 if (File.Exists(filePath))
                 {
@@ -2146,9 +2144,8 @@ namespace SmartGoldbergEmu.Services
             if (settings == null)
                 return SaveResult.Failure("Settings cannot be null");
 
-            // Save location lives only in the global configs.user.ini. Strip these keys here so
-            // a per-game configs.user.ini never carries them, which is what triggered gbe_fork's
-            // "local_save_path detected" warning and made it ignore the global settings folder.
+            // Save location lives only in the global configs.user.ini; in a per-game file gbe_fork
+            // warns "local_save_path detected" and ignores the global settings folder.
             settings = new UserSettings
             {
                 AccountName = settings.AccountName,
@@ -2192,8 +2189,7 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                // If no force override fields are set, check if we should delete the file
-                // Only delete if ALL fields (including non-force-override) are empty/default
+                // Delete the file (falling back to global settings) only when every field is empty/default.
                 if (!hasForceOverride)
                 {
                     bool hasOtherSettings = !string.IsNullOrEmpty(settings.Ticket) ||
@@ -2202,12 +2198,11 @@ namespace SmartGoldbergEmu.Services
 
                     if (!hasOtherSettings)
                     {
-                        // All fields are empty/default - delete the file to fall back to global settings
                         if (!hasExistingUserLaunchOptions && File.Exists(filePath))
                         {
                             File.Delete(filePath);
                         }
-                        return SaveResult.Success(0); // File deleted, no content written (or preserved because user launch options exist)
+                        return SaveResult.Success(0); // Nothing written; the file is deleted unless user launch options keep it
                     }
                 }
 
@@ -2238,7 +2233,6 @@ namespace SmartGoldbergEmu.Services
                             }
                             else
                             {
-                                // Stop at next section header.
                                 if (trimmed.StartsWith("[") && trimmed.EndsWith("]") && !trimmed.Equals("[user::launch_options]", StringComparison.OrdinalIgnoreCase))
                                     break;
                                 sectionBuilder.AppendLine(lines[i]);
@@ -2252,7 +2246,6 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
                 
-                // [user::general]
                 GoldbergIniDocumentationHelper.AppendSection(content, "user::general");
                 if (!string.IsNullOrEmpty(settings.AccountName))
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "account_name", settings.AccountName, cache, "user account name", "default=gse orca");
@@ -2264,7 +2257,7 @@ namespace SmartGoldbergEmu.Services
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "alt_steamid", settings.AltSteamId, cache, "Alt SteamId for encrypted savegames.");
                 if (!string.IsNullOrEmpty(settings.AltSteamId) && settings.AltSteamIdCount != 5)
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "alt_steamid_count", settings.AltSteamIdCount.ToString(), cache, "How many calls before swapping out the SteamId to Alt", "default=5");
-                // Always save language if explicitly set (not empty) - empty means "use global", any value means "override to this"
+                // Empty language means "use global"; any value overrides it.
                 if (!string.IsNullOrEmpty(settings.Language))
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "language", settings.Language, cache, "the language reported to the app/game", $"this must exist in '{PathConstants.GoldbergSupportedLanguagesFileName}', otherwise it will be ignored by the emu", $"look for the column 'API language code' here: {ApplicationConstants.SteamPartnerLocalizationLanguagesUrl}", "default=english");
                 if (!string.IsNullOrEmpty(settings.IpCountry) && settings.IpCountry != "US")

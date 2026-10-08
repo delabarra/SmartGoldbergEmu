@@ -2,9 +2,7 @@ using System.Collections.Generic;
 
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// In-memory snapshot of an existing library game for edit mode (loaded once per dialog open).
-    /// </summary>
+    // Loaded once per edit-dialog open.
     public class GameEditBundle
     {
         public GameConfig Game { get; set; }
@@ -15,10 +13,10 @@ namespace SmartGoldbergEmu.Models
 
         public Dictionary<long, string> DlcData { get; set; }
 
-        // Kit-first catalog SoT loaded from resources/{appId}.json when present (null when not yet fetched).
+        // Loaded from resources/{appId}.json; null when not yet fetched.
         public AppCatalogSnapshot Catalog { get; set; }
 
-        /// <summary>Ticket/alt values loaded from registry when absent in per-game INI (display recovery).</summary>
+        // Ticket and alt SteamID recovered from the registry for display when absent from the per-game INI.
         public string RegistryTicket { get; set; }
 
         public string RegistryAltSteamId { get; set; }

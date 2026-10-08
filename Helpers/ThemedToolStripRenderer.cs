@@ -34,7 +34,7 @@ namespace SmartGoldbergEmu.Helpers
         }
 
         // Keep the stock check bitmap; tint RGB to HighlightText and preserve alpha (shape/AA).
-        // Full invert was wrong when the OS glyph was already light (white became black).
+        // Do not invert instead: an already-light OS glyph would turn black.
         protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
         {
             if (_themeMode != ThemeMode.Dark)

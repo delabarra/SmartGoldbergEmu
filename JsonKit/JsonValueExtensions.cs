@@ -57,7 +57,6 @@ namespace SmartGoldbergEmu.JsonKit
                 : 0;
         }
 
-        // Compatibility with prior JToken.ToObject<T>() call sites.
         public static T ToObject<T>(this JsonValue token)
         {
             if (typeof(T) == typeof(bool))

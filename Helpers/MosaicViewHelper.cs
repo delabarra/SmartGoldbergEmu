@@ -6,14 +6,9 @@ using System.Runtime.InteropServices;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// ImageList tile sizing and display bitmap helpers for the main game list views.
-    /// </summary>
     public static class MosaicViewHelper
     {
-        /// <summary>
-        /// Store Banner ImageList cell and normal artwork: 256×120.
-        /// </summary>
+        // Store Banner view cell and artwork.
         public const int TileViewImageWidth = 256;
         public const int TileViewImageHeight = 120;
 
@@ -22,15 +17,12 @@ namespace SmartGoldbergEmu.Helpers
         public const int WaitingMosaicShadowOffsetY = 2;
         private const float WaitingMosaicShadowAlpha = 0.38f;
 
-        // Waiting spinner only: narrower than the cell so FixWidthCropHeight keeps more of the square
-        // (still crops top/bottom). Centered in the cell — does not affect game art spacing.
-        // Height leaves room for the light-mode silhouette shadow offset.
+        // Waiting spinner only: narrower than the cell so FixWidthCropHeight keeps more of the square; centered,
+        // so game art spacing is unaffected. Height leaves room for the light-mode shadow offset.
         public const int TileViewWaitingArtworkWidth = 200;
         public const int TileViewWaitingArtworkHeight = TileViewImageHeight - WaitingMosaicShadowOffsetY;
 
-        /// <summary>
-        /// Library Cover ImageList cell / artwork: 171×256.
-        /// </summary>
+        // Library Cover view cell and artwork.
         public const int CompactTilesViewImageWidth = 171;
         public const int CompactTilesViewImageHeight = 256;
 
@@ -40,74 +32,34 @@ namespace SmartGoldbergEmu.Helpers
         // Library Cover fills the ImageList cell.
         public static Size CompactTilesArtworkSize => CompactTilesViewImageSize;
 
-        /// <summary>
-        /// Logos view cell dimensions: 200×170 pixels. Logos are letterboxed inside to preserve aspect ratio.
-        /// </summary>
         public const int LogoViewImageWidth = 200;
         public const int LogoViewImageHeight = 170;
 
-        /// <summary>
-        /// Logo mosaic cell image size (same as <see cref="LogoViewImageWidth"/> × <see cref="LogoViewImageHeight"/>).
-        /// </summary>
         public static Size LogoViewImageSize => new Size(LogoViewImageWidth, LogoViewImageHeight);
 
-        /// <summary>
-        /// ListView internal padding for Tile view.
-        /// </summary>
         public const int TileViewPadding = 2;
 
-        /// <summary>
-        /// ListView internal padding for Library Cover (portrait capsule) view.
-        /// </summary>
         public const int CompactTilesViewPadding = 2;
 
-        /// <summary>
-        /// ListView internal padding for Logos view.
-        /// </summary>
         public const int LogoViewPadding = 4;
 
-        /// <summary>
-        /// Subtle drop-shadow offset for logos view ImageList tiles (display only).
-        /// </summary>
         public const int LogoViewShadowOffsetX = 2;
 
-        /// <summary>
-        /// Subtle drop-shadow offset for logos view ImageList tiles (display only).
-        /// </summary>
         public const int LogoViewShadowOffsetY = 2;
 
         private const float LogoViewShadowAlpha = 0.38f;
 
-        /// <summary>
-        /// Tile view total dimensions for ListView.TileSize.
-        /// Includes ListView's internal padding (2px on each side = 4px total per dimension).
-        /// This ensures the clickable area matches the image display area.
-        /// ImageList size = 256x120, TileSize = 260x124 (image + 4px padding)
-        /// </summary>
-        public const int TileViewWidth = TileViewImageWidth + (TileViewPadding * 2);   // 256 + 4 = 260
-        public const int TileViewHeight = TileViewImageHeight + (TileViewPadding * 2); // 120 + 4 = 124
+        // ListView.TileSize includes the ListView's internal padding on each side so the clickable area matches the image.
+        public const int TileViewWidth = TileViewImageWidth + (TileViewPadding * 2);
+        public const int TileViewHeight = TileViewImageHeight + (TileViewPadding * 2);
 
-        /// <summary>
-        /// Compact tiles view total dimensions for ListView.TileSize.
-        /// Includes ListView's internal padding (2px on each side = 4px total per dimension).
-        /// This ensures the clickable area matches the image display area.
-        /// ImageList size = 171x256, TileSize = 175x260 (image + 4px padding)
-        /// </summary>
-        public const int CompactTilesViewWidth = CompactTilesViewImageWidth + (CompactTilesViewPadding * 2);   // 171 + 4 = 175
-        public const int CompactTilesViewHeight = CompactTilesViewImageHeight + (CompactTilesViewPadding * 2); // 256 + 4 = 260
+        public const int CompactTilesViewWidth = CompactTilesViewImageWidth + (CompactTilesViewPadding * 2);
+        public const int CompactTilesViewHeight = CompactTilesViewImageHeight + (CompactTilesViewPadding * 2);
 
-        /// <summary>
-        /// Logos view total dimensions for ListView.TileSize.
-        /// Includes ListView's internal padding (4px on each side = 8px total per dimension).
-        /// ImageList = 200×170, TileSize = 208×178 (image + padding).
-        /// </summary>
-        public const int LogoViewWidth = LogoViewImageWidth + (LogoViewPadding * 2);   // 200 + 8 = 208
-        public const int LogoViewHeight = LogoViewImageHeight + (LogoViewPadding * 2); // 170 + 8 = 178
+        public const int LogoViewWidth = LogoViewImageWidth + (LogoViewPadding * 2);
+        public const int LogoViewHeight = LogoViewImageHeight + (LogoViewPadding * 2);
 
-        /// <summary>
-        /// Composites a logos-view cell with a light drop shadow so logos read clearly on pale ListView backgrounds.
-        /// On-disk <c>logo.png</c> files are unchanged; this is only for the ImageList bitmap.
-        /// </summary>
+        // Display-only ImageList bitmap with a light drop shadow for pale backgrounds; on-disk logo.png is unchanged.
         public static Bitmap CreateLogoViewDisplayBitmap(Image source, bool dropShadow = true)
         {
             if (source == null)

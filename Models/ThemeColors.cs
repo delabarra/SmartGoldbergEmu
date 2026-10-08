@@ -2,16 +2,11 @@ using System.Drawing;
 
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// Represents a color scheme for a theme.
-    /// </summary>
     public class ThemeColors
     {
         public Color Background { get; set; }
         public Color Foreground { get; set; }
-        /// <summary>
-        /// Background for text boxes, combo boxes, numeric inputs, and list boxes (classic light UI: window white on gray dialogs).
-        /// </summary>
+        // Text boxes, combo boxes, numeric inputs, and list boxes (classic light UI: window white on gray dialogs).
         public Color FieldBackground { get; set; }
         // Text on FieldBackground (WinForms WindowText on Window).
         public Color FieldForeground { get; set; }
@@ -26,21 +21,17 @@ namespace SmartGoldbergEmu.Models
         public Color ListViewBackground { get; set; }
         public Color ListViewForeground { get; set; }
         public Color ListViewAlternate { get; set; }
-        /// <summary>
-        /// Background for owner-drawn ListView column headers (main game list, mods, achievements preview).
-        /// </summary>
+        // Owner-drawn ListView column headers (main game list, mods, achievements preview).
         public Color ListViewColumnHeaderBackground { get; set; }
         public Color Border { get; set; }
         public Color Highlight { get; set; }
         public Color HighlightText { get; set; }
         public Color LinkColor { get; set; }
         public Color ImageMarginBackground { get; set; }
-        
-        // Disabled control colors
+
         public Color DisabledBackground { get; set; }
         public Color DisabledForeground { get; set; }
-        
-        // Semantic colors (success, error, warning, info)
+
         public Color SuccessColor { get; set; }
         public Color ErrorColor { get; set; }
         public Color WarningColor { get; set; }

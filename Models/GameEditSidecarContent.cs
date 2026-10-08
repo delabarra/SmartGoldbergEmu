@@ -1,8 +1,6 @@
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// Text/JSON sidecar payloads loaded from <c>games/{appId}/steam_settings/</c> for edit mode.
-    /// </summary>
+    // Text/JSON sidecar files loaded from games/{appId}/steam_settings/ for edit mode.
     public class GameEditSidecarContent
     {
         public string Leaderboards { get; set; } = string.Empty;

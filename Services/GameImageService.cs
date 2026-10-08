@@ -15,7 +15,7 @@ namespace SmartGoldbergEmu.Services
 {
     public class GameImageService : IDisposable
     {
-        // Store Banner list + essentials: rebuild contract — header.jpg (PICS header_image may alias).
+        // Store Banner fallback; BuildStoreBannerPreferredFileNames tries the PICS header_image file name first.
         private static readonly string[] StoreBannerPreferredFileNames =
         {
             PathConstants.SteamGameResourcesHeaderImageFileName

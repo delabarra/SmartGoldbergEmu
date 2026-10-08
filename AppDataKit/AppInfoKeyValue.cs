@@ -4,7 +4,7 @@ using System.Text;
 
 namespace AppDataKit
 {
-    /// <summary>Valve KeyValues tree for steamcmd appinfo payloads.</summary>
+    // Valve KeyValues tree for steamcmd appinfo payloads.
     public class AppInfoKeyValue
     {
         private const int MaxParseDepth = 64;

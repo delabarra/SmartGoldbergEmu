@@ -1,18 +1,16 @@
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// In-memory data for add-game preview before any <c>games/{appId}/</c> folder or <c>games.ini</c> row exists.
-    /// </summary>
+    // In-memory add-game preview data, before any games/{appId}/ folder or games.ini row exists.
     public class GameAddBundle
     {
         public GameConfig Game { get; set; }
 
         public OnlineAppData Metadata { get; set; }
 
-        // Kit-first catalog SoT captured during add-game collect (resources/{appId}.json shape).
+        // Catalog captured during add-game collect (resources/{appId}.json shape).
         public AppCatalogSnapshot Catalog { get; set; }
 
-        /// <summary>Form defaults (add: global merge; update: per-game steam_settings merged).</summary>
+        // Add: global settings merged; update: per-game steam_settings merged.
         public GameSettingsSnapshot FormDefaults { get; set; }
 
         // True when collect is refreshing an existing library GUID (duplicate Update choice).
@@ -20,7 +18,7 @@ namespace SmartGoldbergEmu.Models
 
         public AchievementPreviewKind AchievementPreview { get; set; }
 
-        /// <summary>Preview JSON for achievements list (includes synthetic rows when <see cref="AchievementPreview"/> is not <see cref="AchievementPreviewKind.RealList"/>).</summary>
+        // Includes synthetic rows unless AchievementPreview is RealList.
         public string AchievementsPreviewJson { get; set; }
 
         public string ItemsJson { get; set; }

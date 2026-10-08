@@ -2,9 +2,6 @@ using AppDataKit;
 
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// Outcome of <see cref="SmartGoldbergEmu.Generators.ItemGenerator.GenerateAndSaveAsync"/>.
-    /// </summary>
     public sealed class ItemGeneratorResult
     {
         public bool Success { get; private set; }

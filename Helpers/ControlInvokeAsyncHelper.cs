@@ -4,9 +4,6 @@ using System.Windows.Forms;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Marshals async work onto a WinForms control's UI thread without blocking the message loop.
-    /// </summary>
     public static class ControlInvokeAsyncHelper
     {
         public static Task<T> InvokeAsync<T>(Control control, Func<Task<T>> work)

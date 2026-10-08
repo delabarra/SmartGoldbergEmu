@@ -7,9 +7,7 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// Helper class for managing URI file watcher for inter-instance communication.
-    /// </summary>
+    // Picks up URI protocol handoff files written by a second app instance.
     public class UriFileWatcherHelper : IDisposable
     {
         private FileSystemWatcher _fileWatcher;
@@ -17,20 +15,12 @@ namespace SmartGoldbergEmu.Helpers
         private Action<ulong> _onUriProcessed;
         private bool _disposed;
 
-        /// <summary>
-        /// Initializes a new instance of the UriFileWatcherHelper.
-        /// </summary>
-        /// <param name="control">The control to use for thread marshalling (BeginInvoke).</param>
-        /// <param name="onUriProcessed">Callback when a URI is processed successfully. Parameter is the AppId.</param>
         public UriFileWatcherHelper(Control control, Action<ulong> onUriProcessed)
         {
             _control = control ?? throw new ArgumentNullException(nameof(control));
             _onUriProcessed = onUriProcessed ?? throw new ArgumentNullException(nameof(onUriProcessed));
         }
 
-        /// <summary>
-        /// Sets up the file system watcher to monitor for URI protocol files.
-        /// </summary>
         public void Setup()
         {
             if (_disposed)
@@ -65,9 +55,7 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Checks for existing URI files (in case files were created before watcher started).
-        /// </summary>
+        // Handoff files may have been written before the watcher started.
         private void CheckExistingUriFiles(string handoffDir)
         {
             try
@@ -87,14 +75,11 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Handles the creation of a new URI file from another instance.
-        /// </summary>
         private void FileWatcher_Created(object sender, FileSystemEventArgs e)
         {
             if (_disposed)
                 return;
-            // Use BeginInvoke to process on UI thread
+            // Watcher events arrive on a thread-pool thread; process on the UI thread.
             if (_control != null && !_control.IsDisposed && !_control.Disposing)
             {
                 string fullPath = e.FullPath;
@@ -107,9 +92,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Processes a URI file by reading it and invoking the callback if valid.
-        /// </summary>
         private void ProcessUriFile(string filePath)
         {
             try
@@ -119,10 +101,8 @@ namespace SmartGoldbergEmu.Helpers
                 if (!File.Exists(filePath))
                     return;
 
-                // Read the URI from the file
                 string uri = File.ReadAllText(filePath, System.Text.Encoding.UTF8).Trim();
 
-                // Delete the file after reading
                 try
                 {
                     File.Delete(filePath);
@@ -132,7 +112,6 @@ namespace SmartGoldbergEmu.Helpers
                     Program.LogService?.LogWarning($"Failed to delete URI temp file: {ex.Message}");
                 }
 
-                // Parse and invoke callback
                 var parseResult = UriProtocolService.ParseRunCommand(uri);
                 if (parseResult.Success)
                 {
@@ -151,9 +130,6 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        /// <summary>
-        /// Disposes of the file watcher resources.
-        /// </summary>
         public void Dispose()
         {
             _disposed = true;

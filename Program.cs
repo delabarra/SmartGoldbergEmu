@@ -31,9 +31,6 @@ namespace SmartGoldbergEmu
 
         public static ILogService LogService => BootstrapService.LogService;
 
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
         [STAThread]
         static void Main(string[] args)
         {
@@ -55,10 +52,8 @@ namespace SmartGoldbergEmu
                 }
                 _mutex = null;
 
-                // Another instance is already running focus it
                 FocusExistingWindow();
 
-                // URI
                 if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
                 {
                     if (UriProtocolService.IsValidUri(args[0]))
@@ -96,7 +91,6 @@ namespace SmartGoldbergEmu
                     }
                 }
 
-                // Bootstrap: logging, TLS, config, URI protocol, WinForms init
                 if (!BootstrapService.Initialize())
                 {
                     return;

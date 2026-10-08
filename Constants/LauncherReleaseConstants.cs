@@ -5,7 +5,6 @@ namespace SmartGoldbergEmu.Constants
 {
     public static class LauncherReleaseConstants
     {
-        // Launcher Update and release zips: delabarra/SmartGoldbergEmu (https://github.com/delabarra/SmartGoldbergEmu/releases).
         public const string GitHubOwner = "delabarra";
         public const string GitHubRepo = "SmartGoldbergEmu";
 

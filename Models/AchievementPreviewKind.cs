@@ -1,17 +1,13 @@
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// How achievements are represented in the add-game preview (before save writes disk).
-    /// </summary>
+    // How achievements appear in the add-game preview, before save writes to disk.
     public enum AchievementPreviewKind
     {
-        /// <summary>Steam Web API key missing — only the No_Key reminder row is shown.</summary>
+        // Steam Web API key missing; only the No_Key reminder row is shown.
         NoApiKey,
 
-        /// <summary>Key present; Steam reports no achievements for this app.</summary>
         NoAchievementsOnSteam,
 
-        /// <summary>Key present; real achievement schema loaded for preview.</summary>
         RealList
     }
 }

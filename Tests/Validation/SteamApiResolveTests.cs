@@ -123,7 +123,7 @@ namespace SmartGoldbergEmu.Tests.Validation
             RegisterHash(SteamApiValidator.SteamApiDll64, x64Bytes);
 
             string exe = CopySystemCmdAsExe(Path.Combine(_root, "game.exe"));
-            // Force x86 resolve path regardless of cmd.exe arch: resolve interfaces source with useX64 false via validator.
+            // Force the x86 resolve path regardless of cmd.exe arch.
             Assert.True(SteamApiValidator.TryResolveSteamApiSourceForInterfaces(
                 _root, exe, useX64: false, out string source));
             Assert.True(PathsEqual(source, rootApi));

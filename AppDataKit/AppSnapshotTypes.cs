@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace AppDataKit
 {
-    /// <summary>Overall status for one section of app data.</summary>
     public enum SnapshotSectionStatus
     {
         Ok = 0,
@@ -12,7 +11,6 @@ namespace AppDataKit
         Error = 3,
     }
 
-    /// <summary>Where app metadata or DLC details were loaded from.</summary>
     public enum AppInfoSource
     {
         Unknown = 0,
@@ -27,7 +25,6 @@ namespace AppDataKit
         public string Error { get; set; }
     }
 
-    /// <summary>PICS or steamcmd appinfo payload.</summary>
     public sealed class AppMetadataSection : SnapshotSection
     {
         public AppInfoSource AppInfoSource { get; set; } = AppInfoSource.Unknown;
@@ -80,7 +77,7 @@ namespace AppDataKit
     public sealed class StatsSection : SnapshotSection
     {
         public IReadOnlyList<StatSchemaEntry> Items { get; set; } = Array.Empty<StatSchemaEntry>();
-        // Raw games-infos stats_db.json body (no-key fallback), converted to Goldberg stats.json on save; in-memory only, not persisted.
+        // Raw games-infos stats_db.json (no-key fallback); converted to Goldberg stats.json on save, never persisted as-is.
         public string StatsDbJson { get; set; }
     }
 
@@ -109,27 +106,23 @@ namespace AppDataKit
         public string IconUrl { get; set; }
     }
 
-    /// <summary>Options for <see cref="AppDataService"/>.</summary>
     public sealed class AppSnapshotOptions
     {
         public const string DefaultSteamCmdInfoUrl = "https://api.steamcmd.net/v1/info/";
 
-        /// <summary>Steam Web API key for achievements, stats, and items. Optional.</summary>
+        // Optional; achievements, stats, and items need it.
         public string SteamWebApiKey { get; set; }
 
-        /// <summary>Schema language for GetSchemaForGame (<c>l=</c>). Default english.</summary>
         public string Language { get; set; } = "english";
 
-        /// <summary>When true, HEAD-probes asset candidate URLs and picks the first reachable one.</summary>
+        // HEAD-probes asset candidate URLs and keeps the first reachable one.
         public bool ProbeAssetUrls { get; set; } = true;
 
-        /// <summary>Maximum concurrent Steam Store lookups for DLC names.</summary>
         public int DlcBatchConcurrency { get; set; } = 16;
 
-        /// <summary>Base URL for steamcmd.net appinfo (trailing slash optional).</summary>
+        // Trailing slash optional.
         public string SteamCmdInfoUrl { get; set; } = DefaultSteamCmdInfoUrl;
 
-        /// <summary>HTTP timeout for steamcmd and Web API calls.</summary>
         public TimeSpan HttpTimeout { get; set; } = TimeSpan.FromSeconds(30);
     }
 
@@ -141,7 +134,6 @@ namespace AppDataKit
         public string Error { get; set; }
     }
 
-    // Typed full catalog fetch result (replaces GetAllJsonNodesAsync Dictionary path).
     public sealed class AppDataSectionsResult
     {
         public uint AppId { get; set; }

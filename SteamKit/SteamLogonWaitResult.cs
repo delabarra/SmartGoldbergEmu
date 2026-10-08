@@ -1,24 +1,18 @@
 namespace SteamKit
 {
-    /// <summary>
-    /// Outcomes used while <see cref="SteamClient"/> establishes an anonymous CM session and the host
-    /// awaits <see cref="SteamClient.OnLoggedOn"/>. Values 996–999 are local to this app, not official
-    /// Steam EResult wire constants (except <see cref="Ok"/>, which matches Steam OK).
-    /// </summary>
+    // Values 996-999 are local to this app, not Steam EResult wire constants; Ok matches Steam OK.
     public static class SteamLogonWaitResult
     {
         public const uint Ok = 1;
 
-        /// <summary>No terminal signal before the wait budget elapsed.</summary>
         public const uint WaitTimedOut = 996;
 
-        /// <summary><see cref="ClientMsgProtobuf.TryParseLogOnResponse"/> failed.</summary>
         public const uint LogonResponseParseFailed = 997;
 
-        /// <summary>Socket closed before logon completed (includes intentional <see cref="SteamClient.Disconnect"/>).</summary>
+        // Includes an intentional SteamClient.Disconnect before logon completed.
         public const uint DisconnectedWhileWaiting = 998;
 
-        /// <summary><see cref="SteamClient.OnConnectionFailed"/> (no CM / handshake completed).</summary>
+        // No CM handshake completed.
         public const uint ConnectionFailed = 999;
     }
 }

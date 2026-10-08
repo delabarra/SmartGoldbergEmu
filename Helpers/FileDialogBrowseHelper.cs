@@ -8,9 +8,8 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // Isolates OpenFileDialog / FolderBrowserDialog start folders per purpose.
-    // WinForms otherwise reuses one process-wide last directory across all pickers.
-    // Last folders are persisted in ui_settings.ini so they survive app restarts.
+    // Per-purpose picker start folders; WinForms otherwise shares one process-wide last directory.
+    // Last folders persist in ui_settings.ini across restarts.
     public static class FileDialogBrowseHelper
     {
         public enum Purpose

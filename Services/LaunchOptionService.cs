@@ -28,7 +28,7 @@ namespace SmartGoldbergEmu.Services
 
         private string GetUserLaunchOptionsIniPath(ulong appId)
         {
-            // INI path: parent of EmulatorConfigService.GetGameSteamSettingsPath (same as games\{appId}\), file name PathConstants.LauncherUserLaunchOptionsIniFileName beside steam_settings.
+            // Lives in games\{appId}\, beside steam_settings (not inside it).
             var steamSettingsPath = ServiceLocator.EmulatorConfigService.GetGameSteamSettingsPath(appId);
             var gameDir = Path.GetDirectoryName(steamSettingsPath);
             if (string.IsNullOrEmpty(gameDir))
@@ -163,10 +163,9 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                // New storage location
                 TryLoadFrom(GetUserLaunchOptionsIniPath(appId));
 
-                // Legacy fallback
+                // Legacy fallback: steam_settings\configs.user.ini.
                 var steamSettingsPath = ServiceLocator.EmulatorConfigService.GetGameSteamSettingsPath(appId);
                 var legacyIniPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergUserIniFileName);
                 TryLoadFrom(legacyIniPath);
@@ -200,8 +199,7 @@ namespace SmartGoldbergEmu.Services
 
                 var iniFile = ServiceLocator.IniFileService.ParseFile(iniPath);
 
-                // Prevent duplicate entries for the same name: if multiple indices exist,
-                // keep the first and remove the rest.
+                // Keep the first entry for this name and remove any duplicates.
                 var existingIndices = FindUserLaunchOptionIndicesByName(iniFile, customName);
                 int index;
                 if (existingIndices.Count > 0)
@@ -937,8 +935,7 @@ namespace SmartGoldbergEmu.Services
                 if (opt == null)
                     return false;
 
-                // Even though user options are marked as "hidden" for tag purposes,
-                // they must never be filtered out by the "extra options" checkbox.
+                // User options are tagged "hidden" but must never be filtered out by the "extra options" checkbox.
                 if (!string.IsNullOrEmpty(opt.Type) && opt.Type.Equals("user", StringComparison.OrdinalIgnoreCase))
                     return true;
 

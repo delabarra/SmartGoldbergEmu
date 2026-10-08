@@ -11,7 +11,7 @@ namespace SmartGoldbergEmu.Models
         Unavailable
     }
 
-    // Kit-first catalog SoT for one AppID (persisted as resources/{appId}.json).
+    // Catalog source of truth for one AppID, persisted as resources/{appId}.json.
     public sealed class AppCatalogSnapshot
     {
         public uint AppId { get; set; }
@@ -24,10 +24,10 @@ namespace SmartGoldbergEmu.Models
         public StatsSection Stats { get; set; }
         public ItemsSection Items { get; set; }
 
-        // Thin display adapter (not a parallel SoT).
+        // Display adapter only; not a second source of truth.
         public OnlineAppData Online { get; set; }
 
-        // AppInfoKeyValue is the catalog SoT tree (steamcmd or PICS-recovered, converted once).
+        // Source-of-truth app info tree (from steamcmd or recovered from PICS, converted once).
         public AppInfoKeyValue AppInfo => Metadata?.AppInfo;
 
         public IReadOnlyList<uint> AppDepotIds { get; set; } = Array.Empty<uint>();

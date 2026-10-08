@@ -5,9 +5,7 @@ using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    /// <summary>
-    /// In-memory achievement preview JSON for add-game (before save writes disk).
-    /// </summary>
+    // In-memory preview for the add-game flow, before achievements are written to disk.
     public static class AchievementPreviewHelper
     {
         public static (string name, string displayName, string description) GetDummyFields(DummyAchievementReason reason)

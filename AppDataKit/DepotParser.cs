@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace AppDataKit
 {
-    /// <summary>Parses depot/manifest metadata from PICS <see cref="AppInfoKeyValue"/> app info.</summary>
     public static class DepotParser
     {
         public static IReadOnlyList<DepotInfo> ParseDepots(AppInfoKeyValue appInfo, uint appId, string branch = "public", string osFilter = null)

@@ -2,18 +2,12 @@ using System;
 
 namespace SmartGoldbergEmu.Models
 {
-    /// <summary>
-    /// GitHub release source for downloading the Windows Goldberg emulator archive.
-    /// </summary>
     public enum GoldbergForkSource
     {
         Detanup,
         Alex
     }
 
-    /// <summary>
-    /// Parses and formats <see cref="GoldbergForkSource"/> for INI storage.
-    /// </summary>
     public static class GoldbergForkSourceIni
     {
         public const string ValueDetanup = "detanup";

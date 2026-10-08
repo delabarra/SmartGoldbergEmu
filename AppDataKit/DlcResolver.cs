@@ -106,7 +106,7 @@ namespace AppDataKit
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                // 1) Store appdetails (fastest when the package is listed).
+                // Store appdetails first: fastest when the package is listed.
                 StoreAppDetailsClient.BasicInfo store = await StoreAppDetailsClient.TryGetBasicAsync(
                     dlcId,
                     http,
@@ -118,7 +118,7 @@ namespace AppDataKit
                     return;
                 }
 
-                // 2) steamcmd appinfo — covers packages Store omits; cheaper than PICS.
+                // steamcmd appinfo covers packages the Store omits and is cheaper than PICS.
                 if (TryNameFromSteamCmd(await AppInfoClient.FetchFromSteamCmdAsync(
                         dlcId, options, http, cancellationToken).ConfigureAwait(false), out string steamCmdName, out string steamCmdType))
                 {
