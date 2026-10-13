@@ -134,9 +134,6 @@ namespace SmartGoldbergEmu.Forms
             SetupContextMenus();
             InitializeTheme();
             SetupListViewOwnerDraw();
-
-            _uriFileWatcherHelper = new UriFileWatcherHelper(this, LaunchGameByAppId);
-            _uriFileWatcherHelper.Setup();
         }
 
         private void InitializeApiKeyStatusIndicator()
@@ -3920,6 +3917,13 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("Failed to load form state", ex);
+            }
+
+            // Needs a window handle for BeginInvoke; handoff files written during startup are picked up by Setup's initial scan.
+            if (!IsDisposed && !Disposing && !FormLifetimeToken.IsCancellationRequested && _uriFileWatcherHelper == null)
+            {
+                _uriFileWatcherHelper = new UriFileWatcherHelper(this, LaunchGameByAppId);
+                _uriFileWatcherHelper.Setup();
             }
         }
 

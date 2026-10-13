@@ -112,6 +112,7 @@ namespace SmartGoldbergEmu.Constants
         public const string LauncherUriProtocolPendingFilePrefix = "uri_";
         public const string LauncherUriProtocolPendingFileExtension = ".txt";
         public const string LauncherUriProtocolPendingFileSearchPattern = LauncherUriProtocolPendingFilePrefix + "*.txt";
+        public const string LauncherUriProtocolPartialFileSuffix = ".partial";
 
         // Detached launch-cleanup watcher: per-AppId session manifests under LocalAppDataPerUserDirectory.
         public const string LaunchSessionManifestFolderName = "launch_sessions";

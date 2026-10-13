@@ -734,7 +734,8 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                if (!File.Exists(targetCfg) && File.Exists(legacyCfg))
+                // 2.x XML stays in place for TryImportAsync, which removes it after a successful import.
+                if (!File.Exists(targetCfg) && File.Exists(legacyCfg) && !IsLegacyXmlConfig(legacyCfg))
                 {
                     File.Copy(legacyCfg, targetCfg);
                     Program.LogService?.LogMessage("Migration: copied application settings from LocalAppData to the install folder.");
@@ -975,42 +976,22 @@ namespace SmartGoldbergEmu.Services
             return GoldbergLaunchMode.SteamClient;
         }
 
+        // The per-user folder is live (ui_settings.ini, CDN cache, URI handoff, launch sessions); only remove the
+        // superseded INI-style cfg once settings.ini exists. 2.x XML is left for TryImportAsync.
         private static void TryCleanupLocalAppDataPerUserFolder()
         {
-            string dir = PathConstants.LocalAppDataPerUserDirectory;
-            if (!Directory.Exists(dir))
+            string legacyCfg = PathConstants.LegacyLocalAppDataConfigFilePath;
+            if (!File.Exists(legacyCfg) || !File.Exists(PathConstants.ConfigFilePath) || IsLegacyXmlConfig(legacyCfg))
                 return;
 
             try
             {
-                foreach (string file in Directory.GetFiles(dir))
-                {
-                    string fileName = Path.GetFileName(file);
-                    if (fileName.Equals(PathConstants.UiSettingsIniFileName, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    TryDeleteFileQuiet(file);
-                }
-
-                if (Directory.GetFiles(dir).Length == 0 && Directory.GetDirectories(dir).Length == 0)
-                    Directory.Delete(dir, false);
+                File.Delete(legacyCfg);
+                Program.LogService?.LogMessage("Migration: removed superseded LocalAppData SmartGoldbergEmu.cfg.");
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogWarning($"Migration: could not clean LocalAppData launcher folder: {ex.Message}");
-            }
-        }
-
-        private static void TryDeleteFileQuiet(string path)
-        {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-                return;
-
-            try
-            {
-                File.Delete(path);
-            }
-            catch
-            {
+                Program.LogService?.LogWarning($"Migration: could not remove LocalAppData SmartGoldbergEmu.cfg: {ex.Message}");
             }
         }
     }

@@ -136,15 +136,38 @@ namespace SmartGoldbergEmu.Services
             TryExecuteRegistryRestore(manifestPath);
         }
 
-        public bool IsProcessAlive(int processId)
+        public static long TryGetProcessStartTimeUtcTicks(Process process)
         {
-            if (processId <= 0)
+            try
+            {
+                return process.StartTime.ToUniversalTime().Ticks;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        public bool IsSessionProcessAlive(PersistedLaunchSession session)
+        {
+            if (session == null || session.GameProcessId <= 0)
                 return false;
 
             try
             {
-                using (Process process = Process.GetProcessById(processId))
-                    return !process.HasExited;
+                using (Process process = Process.GetProcessById(session.GameProcessId))
+                {
+                    if (process.HasExited)
+                        return false;
+                    if (session.GameProcessStartTimeUtcTicks == 0)
+                        return true;
+
+                    long startTicks = TryGetProcessStartTimeUtcTicks(process);
+                    // Unreadable start time (e.g. elevated game): cannot prove reuse, so treat as the same process.
+                    if (startTicks == 0)
+                        return true;
+                    return Math.Abs(startTicks - session.GameProcessStartTimeUtcTicks) <= TimeSpan.TicksPerSecond;
+                }
             }
             catch
             {
@@ -161,7 +184,7 @@ namespace SmartGoldbergEmu.Services
             if (!TryLoad(path, out PersistedLaunchSession session))
                 return false;
 
-            return IsProcessAlive(session.GameProcessId);
+            return IsSessionProcessAlive(session);
         }
 
         public bool HasAnyLiveLaunchSession()
@@ -175,7 +198,7 @@ namespace SmartGoldbergEmu.Services
                 if (!TryLoad(manifestPath, out PersistedLaunchSession session))
                     continue;
 
-                if (IsProcessAlive(session.GameProcessId))
+                if (IsSessionProcessAlive(session))
                     return true;
             }
 
@@ -194,7 +217,7 @@ namespace SmartGoldbergEmu.Services
             if (!TryLoad(manifestPath, out PersistedLaunchSession session))
                 return;
 
-            if (IsProcessAlive(session.GameProcessId))
+            if (IsSessionProcessAlive(session))
                 return;
 
             _logger.LogDebug(
@@ -213,7 +236,7 @@ namespace SmartGoldbergEmu.Services
                 if (!TryLoad(manifestPath, out PersistedLaunchSession session))
                     continue;
 
-                if (IsProcessAlive(session.GameProcessId))
+                if (IsSessionProcessAlive(session))
                     continue;
 
                 _logger.LogDebug(
@@ -353,7 +376,7 @@ namespace SmartGoldbergEmu.Services
                 }
             });
 
-            WaitForGameProcessExit(watchedProcessId);
+            WaitForGameProcessExit(session);
 
             if (!File.Exists(manifestPath))
             {
@@ -380,10 +403,14 @@ namespace SmartGoldbergEmu.Services
             TryExecuteCleanup(manifestPath, null);
         }
 
-        private void WaitForGameProcessExit(int processId)
+        private void WaitForGameProcessExit(PersistedLaunchSession session)
         {
-            if (processId <= 0)
+            int processId = session.GameProcessId;
+            if (!IsSessionProcessAlive(session))
+            {
+                _logger.LogDebug($"Launch cleanup watcher: PID {processId} is not running.");
                 return;
+            }
 
             try
             {

@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Abstractions;
+using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
@@ -87,6 +90,45 @@ namespace SmartGoldbergEmu.Helpers
 
                 throw;
             }
+        }
+
+        // Invariant culture so log lines read the same on every locale ("48.3s", not "48,3s").
+        public static string FormatSeconds(TimeSpan elapsed)
+        {
+            return elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s";
+        }
+
+        public static bool IsNotFound(Exception ex)
+        {
+            return ex is HttpStatusException status && status.StatusCode == HttpStatusCode.NotFound;
+        }
+
+        // HttpClient reports its own Timeout as TaskCanceledException; callers must not pass a cancelled token.
+        public static bool IsTimeout(Exception ex)
+        {
+            return ex is TaskCanceledException
+                || (ex is WebException web && web.Status == WebExceptionStatus.Timeout);
+        }
+
+        // Short reason for the log: status code, timeout, or the innermost network error (DNS, TLS, connection reset).
+        public static string DescribeDownloadFailure(Exception ex, TimeSpan elapsed)
+        {
+            if (ex == null)
+                return "unknown error";
+            if (ex is HttpStatusException status)
+                return status.Message;
+            if (IsTimeout(ex))
+                return "timed out after " + FormatSeconds(elapsed);
+
+            Exception innermost = ex;
+            while (innermost.InnerException != null)
+                innermost = innermost.InnerException;
+
+            if (innermost is WebException web && web.Status != WebExceptionStatus.UnknownError)
+                return $"{web.Status}: {web.Message}";
+            if (innermost is IOException && !(ex is HttpRequestException))
+                return "file error: " + innermost.Message;
+            return $"{innermost.GetType().Name}: {innermost.Message}";
         }
 
         public static async Task ForEachBoundedAsync<T>(

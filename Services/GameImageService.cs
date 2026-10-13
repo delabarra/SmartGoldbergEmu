@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -118,6 +119,35 @@ namespace SmartGoldbergEmu.Services
             public string[] CandidateUrls { get; set; }
         }
 
+        internal enum AssetDownloadOutcome
+        {
+            Skipped,
+            AlreadyPresent,
+            Downloaded,
+            NotFound,
+            Failed
+        }
+
+        internal sealed class AssetUrlAttempt
+        {
+            public string Host { get; set; }
+            public TimeSpan Elapsed { get; set; }
+            public bool Succeeded { get; set; }
+            public bool IsNotFound { get; set; }
+            public bool IsTimeout { get; set; }
+            public string Failure { get; set; }
+        }
+
+        internal sealed class AssetDownloadResult
+        {
+            public string FileName { get; set; }
+            public AssetDownloadOutcome Outcome { get; set; }
+            public List<AssetUrlAttempt> Attempts { get; } = new List<AssetUrlAttempt>();
+        }
+
+        private static readonly TimeSpan SlowAssetAttemptThreshold = TimeSpan.FromSeconds(10);
+        private const int MaxAssetFilesListedInLog = 25;
+
         private readonly IHttpService _httpService;
         private readonly string _gamesDirectory;
         private readonly ITaskReportService _taskReportService;
@@ -195,38 +225,26 @@ namespace SmartGoldbergEmu.Services
                 onProgress?.Invoke(0, totalDownloads);
 
                 if (_disposed)
-                    return ApplyDownloadOutcomeFeedback(
-                        gamePath, totalDownloads, displayName, appId, reportFeedback: false, downloadedCount: 0, failedFiles: null, picsData: picsData);
+                    return ApplyDownloadOutcomeFeedback(gamePath, displayName, appId, reportFeedback: false, picsData: picsData);
 
                 var completed = 0;
-                var downloadedCount = 0;
-                var failedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var results = new List<AssetDownloadResult>(totalDownloads);
                 var lockObj = new object();
+                var stopwatch = Stopwatch.StartNew();
 
-                await HttpHelpers.ForEachBoundedAsync(
-                    downloadRequests,
-                    HttpHelpers.DefaultMaxConcurrentDownloads,
-                    async request =>
+                // All files start at once; per-host sockets are capped by ServicePointManager.DefaultConnectionLimit (BootstrapService).
+                await Task.WhenAll(downloadRequests.Select(async request =>
                     {
-                        int outcome = await DownloadImageAsync(
+                        AssetDownloadResult result = await DownloadImageAsync(
                             remoteAppId,
                             gamePath,
                             request.FileName,
                             request.CandidateUrls).ConfigureAwait(false);
-                        if (outcome > 0)
-                            System.Threading.Interlocked.Increment(ref downloadedCount);
-                        else if (outcome < 0)
-                        {
-                            lock (lockObj)
-                                failedFiles.Add(request.FileName);
-                        }
-
-                        if (_disposed || (!reportFeedback && onProgress == null))
-                            return;
 
                         lock (lockObj)
                         {
-                            if (_disposed)
+                            results.Add(result);
+                            if (_disposed || (!reportFeedback && onProgress == null))
                                 return;
                             completed++;
                             if (reportFeedback)
@@ -236,20 +254,19 @@ namespace SmartGoldbergEmu.Services
                             }
                             onProgress?.Invoke(completed, totalDownloads);
                         }
-                    }).ConfigureAwait(false);
+                    })).ConfigureAwait(false);
 
-                if (downloadedCount > 0)
+                stopwatch.Stop();
+                if (results.Any(result => result.Outcome == AssetDownloadOutcome.Downloaded))
                     compactLoh = true;
 
-                return ApplyDownloadOutcomeFeedback(
-                    gamePath,
-                    totalDownloads,
-                    displayName,
-                    appId,
-                    reportFeedback && !_disposed,
-                    downloadedCount,
-                    failedFiles,
-                    picsData);
+                if (!_disposed)
+                {
+                    foreach (var line in BuildAssetDownloadReport(appId, remoteAppId, results, stopwatch.Elapsed))
+                        WriteReportLine(line.Key, line.Value);
+                }
+
+                return ApplyDownloadOutcomeFeedback(gamePath, displayName, appId, reportFeedback && !_disposed, picsData);
             }
             catch (Exception ex)
             {
@@ -537,12 +554,9 @@ namespace SmartGoldbergEmu.Services
 
         private bool ApplyDownloadOutcomeFeedback(
             string resourcesDirectory,
-            int totalDownloads,
             string gameDisplayName,
             ulong appId,
             bool reportFeedback,
-            int downloadedCount,
-            HashSet<string> failedFiles,
             AppInfoKeyValue picsData)
         {
             UpdateMissingAssetsNote(resourcesDirectory, gameDisplayName, appId, picsData);
@@ -554,11 +568,7 @@ namespace SmartGoldbergEmu.Services
                 ResolvePreferredImagePath(resourcesDirectory, BuildLibraryCoverPreferredFileNames(picsData)));
             bool essentialsOk = hasHeader && hasIcon && hasCapsule;
 
-            if (downloadedCount > 0 && essentialsOk)
-            {
-                Program.LogService?.LogMessage($"Assets for AppId {appId} downloaded.");
-            }
-            else if (!essentialsOk)
+            if (!essentialsOk)
             {
                 var missing = new List<string>(4);
                 if (!hasHeader)
@@ -568,16 +578,8 @@ namespace SmartGoldbergEmu.Services
                 if (!hasIcon)
                     missing.Add("client icon (.ico)");
 
-                string failedDetail = string.Empty;
-                if (failedFiles != null && failedFiles.Count > 0)
-                {
-                    var names = new List<string>(failedFiles);
-                    names.Sort(StringComparer.OrdinalIgnoreCase);
-                    failedDetail = "; download failed: " + string.Join(", ", names);
-                }
-
                 Program.LogService?.LogWarning(
-                    $"Assets for AppId {appId} incomplete: missing {string.Join(", ", missing)}{failedDetail}");
+                    $"Assets for AppId {appId} incomplete; the game list will show placeholders for: {string.Join(", ", missing)}");
             }
 
             if (!reportFeedback)
@@ -705,50 +707,165 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private async Task<bool> TryDownloadImageFromUrlAsync(string url, string imagePath)
+        private async Task<AssetUrlAttempt> TryDownloadImageFromUrlAsync(string url, string imagePath)
         {
-            if (_disposed)
-                return false;
-            if (string.IsNullOrEmpty(url))
-                return false;
-
+            var attempt = new AssetUrlAttempt { Host = GetUrlHostForLog(url) };
+            var stopwatch = Stopwatch.StartNew();
             try
             {
                 await HttpHelpers.DownloadFileAtomicAsync(_httpService, url, imagePath).ConfigureAwait(false);
-                return !_disposed;
+                attempt.Succeeded = true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return false;
+                attempt.IsNotFound = HttpHelpers.IsNotFound(ex);
+                attempt.IsTimeout = HttpHelpers.IsTimeout(ex);
+                attempt.Failure = HttpHelpers.DescribeDownloadFailure(ex, stopwatch.Elapsed);
             }
+
+            attempt.Elapsed = stopwatch.Elapsed;
+            return attempt;
         }
 
-        // 1 = newly downloaded, 0 = skipped (exists / no URLs), -1 = attempted and failed.
-        private async Task<int> DownloadImageAsync(
+        private async Task<AssetDownloadResult> DownloadImageAsync(
             ulong appId,
             string gamePath,
             string fileName,
-            params string[] candidateUrls)
+            string[] candidateUrls)
         {
+            var result = new AssetDownloadResult { FileName = fileName, Outcome = AssetDownloadOutcome.Skipped };
             if (_disposed)
-                return 0;
+                return result;
 
             var imagePath = Path.Combine(gamePath, fileName);
             if (File.Exists(imagePath))
-                return 0;
+            {
+                result.Outcome = AssetDownloadOutcome.AlreadyPresent;
+                return result;
+            }
 
             if (candidateUrls == null || candidateUrls.Length == 0)
-                return 0;
+                return result;
 
             foreach (var url in candidateUrls)
             {
-                if (!await TryDownloadImageFromUrlAsync(url, imagePath))
+                if (_disposed || string.IsNullOrEmpty(url))
                     continue;
-                Program.LogService?.LogDebug($"Downloaded {fileName} for App ID {appId}");
-                return 1;
+
+                AssetUrlAttempt attempt = await TryDownloadImageFromUrlAsync(url, imagePath).ConfigureAwait(false);
+                result.Attempts.Add(attempt);
+                if (!attempt.Succeeded)
+                    continue;
+
+                result.Outcome = AssetDownloadOutcome.Downloaded;
+                Program.LogService?.LogDebug(
+                    $"Downloaded {fileName} for AppId {appId} from {attempt.Host} in {HttpHelpers.FormatSeconds(attempt.Elapsed)}");
+                return result;
             }
 
-            return -1;
+            if (_disposed || result.Attempts.Count == 0)
+                return result;
+
+            result.Outcome = result.Attempts.All(attempt => attempt.IsNotFound)
+                ? AssetDownloadOutcome.NotFound
+                : AssetDownloadOutcome.Failed;
+            return result;
+        }
+
+        private static string GetUrlHostForLog(string url)
+        {
+            return Uri.TryCreate(url, UriKind.Absolute, out Uri uri) ? uri.Host : (url ?? string.Empty);
+        }
+
+        private static void WriteReportLine(LogLevel level, string message)
+        {
+            var log = Program.LogService;
+            if (log == null)
+                return;
+            if (level >= LogLevel.Warning)
+                log.LogWarning(message);
+            else
+                log.LogMessage(message);
+        }
+
+        // Summary always; failures with per-mirror reasons, 404-only names, and slow/timed-out hosts only when present.
+        internal static List<KeyValuePair<LogLevel, string>> BuildAssetDownloadReport(
+            ulong appId,
+            ulong remoteAppId,
+            IReadOnlyCollection<AssetDownloadResult> results,
+            TimeSpan elapsed)
+        {
+            var lines = new List<KeyValuePair<LogLevel, string>>();
+            if (results == null)
+                return lines;
+
+            string appLabel = remoteAppId != 0 && remoteAppId != appId
+                ? $"AppId {appId} (Steam AppId {remoteAppId})"
+                : $"AppId {appId}";
+
+            var failed = results.Where(r => r.Outcome == AssetDownloadOutcome.Failed)
+                .OrderBy(r => r.FileName, StringComparer.OrdinalIgnoreCase).ToList();
+            var notFound = results.Where(r => r.Outcome == AssetDownloadOutcome.NotFound)
+                .OrderBy(r => r.FileName, StringComparer.OrdinalIgnoreCase).ToList();
+            int downloaded = results.Count(r => r.Outcome == AssetDownloadOutcome.Downloaded);
+            int present = results.Count(r => r.Outcome == AssetDownloadOutcome.AlreadyPresent);
+            int skipped = results.Count(r => r.Outcome == AssetDownloadOutcome.Skipped);
+
+            string summary = $"Assets for {appLabel}: {results.Count} requested in {HttpHelpers.FormatSeconds(elapsed)}; "
+                + $"{downloaded} downloaded, {present} already on disk, {notFound.Count} not on CDN, {failed.Count} failed";
+            if (skipped > 0)
+                summary += $", {skipped} skipped";
+            lines.Add(new KeyValuePair<LogLevel, string>(failed.Count > 0 ? LogLevel.Warning : LogLevel.Info, summary + "."));
+
+            if (failed.Count > 0)
+            {
+                var details = failed.Select(r => r.FileName + " ["
+                    + string.Join("; ", r.Attempts.Select(a => a.Host + ": " + a.Failure)) + "]");
+                lines.Add(new KeyValuePair<LogLevel, string>(
+                    LogLevel.Warning,
+                    $"Asset downloads failed for {appLabel}: {JoinLimited(details)}"));
+            }
+
+            if (notFound.Count > 0)
+            {
+                lines.Add(new KeyValuePair<LogLevel, string>(
+                    LogLevel.Info,
+                    $"Assets for {appLabel} not on any CDN mirror (HTTP 404): {JoinLimited(notFound.Select(r => r.FileName))}"));
+            }
+
+            var slowHosts = results
+                .SelectMany(r => r.Attempts)
+                .GroupBy(a => a.Host, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new
+                {
+                    Host = g.Key,
+                    Requests = g.Count(),
+                    Timeouts = g.Count(a => a.IsTimeout),
+                    Slow = g.Count(a => !a.IsTimeout && a.Elapsed >= SlowAssetAttemptThreshold)
+                })
+                .Where(h => h.Timeouts > 0 || h.Slow > 0)
+                .OrderByDescending(h => h.Timeouts)
+                .ThenByDescending(h => h.Slow)
+                .ToList();
+            if (slowHosts.Count > 0)
+            {
+                var hostDetails = slowHosts.Select(h =>
+                    $"{h.Host} {h.Timeouts} timed out, {h.Slow} over {SlowAssetAttemptThreshold.TotalSeconds:0}s (of {h.Requests} requests)");
+                lines.Add(new KeyValuePair<LogLevel, string>(
+                    LogLevel.Warning,
+                    $"Slow CDN responses for {appLabel}: {string.Join("; ", hostDetails)}"));
+            }
+
+            return lines;
+        }
+
+        private static string JoinLimited(IEnumerable<string> items)
+        {
+            var list = items.ToList();
+            if (list.Count <= MaxAssetFilesListedInLog)
+                return string.Join(", ", list);
+            return string.Join(", ", list.Take(MaxAssetFilesListedInLog))
+                + $", and {list.Count - MaxAssetFilesListedInLog} more";
         }
 
         private static List<AssetDownloadRequest> BuildAssetDownloadRequests(

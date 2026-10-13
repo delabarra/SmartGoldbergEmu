@@ -1168,7 +1168,7 @@ namespace SmartGoldbergEmu.Forms
             this.numAltSteamIdCount.TabIndex = 2;
             this.toolTip.SetToolTip(this.numAltSteamIdCount, "How many calls before switching to the alternate Steam ID.\r\n\r\nDefault: 5");
             this.numAltSteamIdCount.Value = new decimal(new int[] {
-            1,
+            5,
             0,
             0,
             0});

@@ -459,12 +459,7 @@ namespace SmartGoldbergEmu.Services
                 Directory.CreateDirectory(steamSettingsPath);
                 Directory.CreateDirectory(Path.Combine(steamSettingsPath, PathConstants.GoldbergSteamSettingsModsFolderName));
 
-                var overlayPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergOverlayIniFileName);
-                if (!File.Exists(overlayPath))
-                {
-                    SaveOverlaySettings(overlayPath, new OverlaySettings());
-                }
-
+                // No per-game configs.overlay.ini: Goldberg lets local keys override global ones, so a default copy would mask Settings changes.
                 var mainPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergMainIniFileName);
                 if (!File.Exists(mainPath))
                 {
@@ -1485,6 +1480,46 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 return SaveResult.Failure($"Failed to strip per-game save location for app {appId}: {ex.Message}");
+            }
+        }
+
+        // Earlier builds wrote an app-default configs.overlay.ini into every game, which overrides the global overlay file.
+        // Delete it only while it is still byte-identical to that default and the global file exists to supply the same defaults.
+        public void RemoveUntouchedDefaultPerGameOverlayIni(ulong appId)
+        {
+            if (appId == 0)
+                return;
+
+            string globalPath = Path.Combine(_globalSettingsPath, PathConstants.GoldbergOverlayIniFileName);
+            string perGamePath = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergOverlayIniFileName);
+            if (!File.Exists(globalPath) || !File.Exists(perGamePath))
+                return;
+
+            string defaultPath = Path.Combine(Path.GetTempPath(), "sge_overlay_default_" + Guid.NewGuid().ToString("N") + ".ini");
+            try
+            {
+                if (!SaveOverlaySettings(defaultPath, new OverlaySettings()).IsSuccess)
+                    return;
+
+                if (string.Equals(File.ReadAllText(defaultPath), File.ReadAllText(perGamePath), StringComparison.Ordinal))
+                {
+                    File.Delete(perGamePath);
+                    LogRedactionHelper.WriteDebug($"Removed default per-game overlay settings for app {appId}; global overlay settings apply.");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogRedactionHelper.WriteDebug($"Per-game overlay cleanup failed for app {appId}: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(defaultPath))
+                        File.Delete(defaultPath);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
         }
 

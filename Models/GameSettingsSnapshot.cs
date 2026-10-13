@@ -199,7 +199,8 @@ namespace SmartGoldbergEmu.Models
         public string AccountSteamId { get; set; } = string.Empty;
         public string Ticket { get; set; } = string.Empty;
         public string AltSteamId { get; set; } = string.Empty;
-        public int AltSteamIdCount { get; set; } = 1;
+        // Goldberg's default for alt_steamid_count; writers omit the key at this value.
+        public int AltSteamIdCount { get; set; } = 5;
         public string Language { get; set; } = ApplicationConstants.DefaultLanguage;
         public string IpCountry { get; set; } = ApplicationConstants.DefaultIpCountry;
 

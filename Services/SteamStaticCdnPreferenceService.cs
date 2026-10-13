@@ -7,6 +7,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
 using SmartGoldbergEmu.Models;
 
@@ -259,9 +260,10 @@ namespace SmartGoldbergEmu.Services
                 catch (OperationCanceledException)
                 {
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Best-effort background probe; defaults remain usable.
+                    Program.LogService?.LogWarning("Steam CDN probe failed; using the default host order: " + ex.Message);
                 }
             }, ServiceLocator.ApplicationLifetimeToken);
         }
@@ -328,34 +330,48 @@ namespace SmartGoldbergEmu.Services
 
         private static async Task<SteamStaticCdnPreferences> ProbePreferencesAsync(CancellationToken cancellationToken)
         {
+            var probeReport = new List<string>();
+
             var storeItemAssetsHosts = await RankHostsAsync(
+                "store assets",
                 SteamStaticCdnConstants.DefaultStoreItemAssetsHosts,
                 host => BuildHttpsUrl(host, SteamStaticCdnConstants.ProbeStoreItemAssetsPath),
+                probeReport,
                 cancellationToken).ConfigureAwait(false);
 
             var sharedFastlyHosts = await RankHostsAsync(
+                "community assets",
                 SteamStaticCdnConstants.DefaultSharedFastlyHosts,
                 host => BuildHttpsUrl(host, SteamStaticCdnConstants.ProbeStoreItemAssetsPath),
+                probeReport,
                 cancellationToken).ConfigureAwait(false);
 
             var steamAppsBareHosts = await RankHostsAsync(
+                "steam/apps mirrors",
                 SteamStaticCdnConstants.DefaultSteamAppsBareHosts,
                 host => BuildHttpsUrl(
                     host,
                     $"steam/apps/{SteamStaticCdnConstants.ProbeAppId}/{SteamStaticCdnConstants.ProbeBareAssetPath}"),
+                probeReport,
                 cancellationToken).ConfigureAwait(false);
 
             var generalCdnHosts = await RankHostsAsync(
+                "general CDN",
                 SteamStaticCdnConstants.DefaultGeneralCdnHosts,
                 host => BuildHttpsUrl(
                     host,
                     $"steam/apps/{SteamStaticCdnConstants.ProbeAppId}/{SteamStaticCdnConstants.ProbeBareAssetPath}"),
+                probeReport,
                 cancellationToken).ConfigureAwait(false);
 
             var clientPackageHosts = await RankHostsAsync(
+                "client packages",
                 SteamStaticCdnConstants.DefaultClientPackageHosts,
                 host => BuildHttpsUrl(host, SteamStaticCdnConstants.ClientSoundsPackageRelativePath),
+                probeReport,
                 cancellationToken).ConfigureAwait(false);
+
+            Program.LogService?.LogMessage("Steam CDN probe (fastest first): " + string.Join(" | ", probeReport));
 
             return NormalizePreferences(new SteamStaticCdnPreferences
             {
@@ -369,8 +385,10 @@ namespace SmartGoldbergEmu.Services
         }
 
         private static async Task<List<string>> RankHostsAsync(
+            string purpose,
             IReadOnlyList<string> hosts,
             Func<string, string> buildProbeUrl,
+            List<string> probeReport,
             CancellationToken cancellationToken)
         {
             var probeTasks = hosts
@@ -378,11 +396,11 @@ namespace SmartGoldbergEmu.Services
                 .Select(async host =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var latency = await ProbeUrlLatencyMsAsync(
+                    var probe = await ProbeUrlLatencyMsAsync(
                         buildProbeUrl(host),
                         SteamStaticCdnConstants.ProbeTimeoutMs,
                         cancellationToken).ConfigureAwait(false);
-                    return new { Host = host, Latency = latency };
+                    return new { Host = host, Latency = probe.LatencyMs, probe.Failure };
                 })
                 .ToArray();
 
@@ -392,6 +410,13 @@ namespace SmartGoldbergEmu.Services
                 .OrderBy(result => result.Latency.Value)
                 .Select(result => result.Host)
                 .ToList();
+
+            var described = results
+                .OrderBy(result => result.Latency ?? long.MaxValue)
+                .Select(result => result.Latency.HasValue
+                    ? $"{result.Host} {result.Latency.Value}ms"
+                    : $"{result.Host} failed ({result.Failure})");
+            probeReport?.Add($"{purpose}: {string.Join(", ", described)}");
 
             if (ranked.Count == 0)
                 ranked.AddRange(hosts);
@@ -406,7 +431,7 @@ namespace SmartGoldbergEmu.Services
             return ranked;
         }
 
-        private static async Task<long?> ProbeUrlLatencyMsAsync(
+        private static async Task<(long? LatencyMs, string Failure)> ProbeUrlLatencyMsAsync(
             string url,
             int timeoutMs,
             CancellationToken cancellationToken)
@@ -414,9 +439,9 @@ namespace SmartGoldbergEmu.Services
             return await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var stopwatch = Stopwatch.StartNew();
                 try
                 {
-                    var stopwatch = Stopwatch.StartNew();
                     var request = (HttpWebRequest)WebRequest.Create(url);
                     request.Method = "GET";
                     request.Timeout = timeoutMs;
@@ -428,17 +453,19 @@ namespace SmartGoldbergEmu.Services
                     {
                         var statusCode = (int)response.StatusCode;
                         if (statusCode >= 200 && statusCode < 400)
-                        {
-                            stopwatch.Stop();
-                            return (long?)stopwatch.ElapsedMilliseconds;
-                        }
+                            return ((long?)stopwatch.ElapsedMilliseconds, (string)null);
+                        return ((long?)null, $"HTTP {statusCode}");
                     }
                 }
-                catch
+                catch (WebException ex) when (ex.Response is HttpWebResponse errorResponse)
                 {
+                    using (errorResponse)
+                        return ((long?)null, $"HTTP {(int)errorResponse.StatusCode}");
                 }
-
-                return null;
+                catch (Exception ex)
+                {
+                    return ((long?)null, HttpHelpers.DescribeDownloadFailure(ex, stopwatch.Elapsed));
+                }
             }, cancellationToken).ConfigureAwait(false);
         }
 

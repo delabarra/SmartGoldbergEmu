@@ -629,21 +629,13 @@ namespace SmartGoldbergEmu.Forms
 
         private void OnRandomizeSteamID_Click(object sender, EventArgs e)
         {
-            txtSteamID.Text = GenerateRandomSteam64Id();
+            txtSteamID.Text = SteamIdHelper.GenerateRandomSteamId64();
             if (txtUsername != null)
                 txtUsername.Text = ApplicationConstants.DefaultAccountName;
             if (cmbSaveLocation != null && cmbSaveLocation.SelectedIndex == SaveLocationSteamUserdata)
                 RefreshSavePathDisplayText();
             if (!_isLoading)
                 CheckForChanges();
-        }
-
-        private static string GenerateRandomSteam64Id()
-        {
-            var rng = new Random();
-            ulong range = ApplicationConstants.SteamId64Max - ApplicationConstants.SteamId64Base + 1;
-            ulong steamId = ApplicationConstants.SteamId64Base + (ulong)(rng.NextDouble() * range);
-            return steamId.ToString();
         }
 
         private void OnColorElement_Click(object sender, EventArgs e) => ShowColorDialog(btnColorElements);
@@ -1582,8 +1574,9 @@ namespace SmartGoldbergEmu.Forms
 
                 if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
                 {
-                    using (var fileStream = new FileStream(imagePath, FileMode.Open, FileAccess.Read))
-                        picAvatar.Image = Image.FromStream(fileStream);
+                    // GDI+ reads GIF frames (and some lazily decoded formats) from the source stream for the image's lifetime;
+                    // an in-memory copy keeps it valid without locking the file.
+                    picAvatar.Image = Image.FromStream(new MemoryStream(File.ReadAllBytes(imagePath)));
                 }
                 else
                     picAvatar.Image = Resources.gold_steam_128_logo;

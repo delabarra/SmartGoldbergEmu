@@ -712,15 +712,36 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing || snapshot == null)
                 return;
 
+            // A slower lookup for an App ID that is no longer in the box must not overwrite the newer one.
+            if (snapshot.AppId != 0 && snapshot.AppId != GetEnteredAppId())
+                return;
+
             if (_gameConfig != null && snapshot.Failure == AppMetadataFetchFailure.None && snapshot.IsUsable)
             {
                 // Catalog and AppInfo move together so GetRuntimeAppDataAppId stays accurate.
                 _gameConfig.Catalog = snapshot;
                 _gameConfig.AppInfo = snapshot.AppInfo;
                 _gameConfig.PreFetchedDlcData = snapshot.ToDlcDictionary();
+
+                // Save reads the DLC box; in add mode (or after switching apps) it must show the looked-up app's DLCs.
+                if (txtDLCList != null && (!_isEditMode || snapshot.AppId != _gameConfig.AppId))
+                {
+                    if (_gameConfig.PreFetchedDlcData.Count > 0)
+                        SetTextBoxText(txtDLCList, DlcService.BuildDlcListText(_gameConfig.PreFetchedDlcData));
+                    else
+                        ClearTextBox(txtDLCList);
+                }
             }
 
             ApplyFetchedAppMetadata(snapshot.Online);
+        }
+
+        // Save commits the App ID box, so lookups and DLC searches follow it rather than the App ID the dialog opened with.
+        private ulong GetEnteredAppId()
+        {
+            if (txtAppID != null && ulong.TryParse(txtAppID.Text.Trim(), out ulong entered) && entered != 0)
+                return entered;
+            return _gameConfig?.AppId ?? 0;
         }
 
         // Lookups attach Catalog/AppInfo for the looked-up app before Save commits that App ID to _gameConfig.AppId.
@@ -1083,7 +1104,8 @@ namespace SmartGoldbergEmu.Forms
 
         private async void OnFindDLCs_Click(object sender, EventArgs e)
         {
-            if (!HasCurrentGameWithValidAppId())
+            ulong appId = GetEnteredAppId();
+            if (_gameConfig == null || appId == 0)
             {
                 AppTaskDialogHelper.ShowOk(this, "App ID is required to find DLCs.", MessageBoxIcon.Warning);
                 return;
@@ -1100,31 +1122,37 @@ namespace SmartGoldbergEmu.Forms
                 }
 
                 var dlcData = await ServiceLocator.AppDataKitBridgeService
-                    .FetchDlcAsync(_gameConfig.AppId)
+                    .FetchDlcAsync(appId)
                     .ConfigureAwait(true);
 
                 if (IsDisposed || Disposing)
                     return;
 
-                _gameConfig.DlcCheckPerformed = true;
+                // Runtime DLC/catalog state belongs to one app; a search for another App ID only fills the box.
+                bool runtimeDataIsForThisApp = GetRuntimeAppDataAppId() == appId;
+                if (runtimeDataIsForThisApp)
+                    _gameConfig.DlcCheckPerformed = true;
 
                 if (dlcData != null && dlcData.Count > 0)
                 {
-                    if (_gameConfig.PreFetchedDlcData == null)
+                    if (runtimeDataIsForThisApp)
                     {
-                        _gameConfig.PreFetchedDlcData = new Dictionary<long, string>();
-                    }
-                    foreach (var kvp in dlcData)
-                    {
-                        _gameConfig.PreFetchedDlcData[kvp.Key] = kvp.Value;
-                    }
+                        if (_gameConfig.PreFetchedDlcData == null)
+                        {
+                            _gameConfig.PreFetchedDlcData = new Dictionary<long, string>();
+                        }
+                        foreach (var kvp in dlcData)
+                        {
+                            _gameConfig.PreFetchedDlcData[kvp.Key] = kvp.Value;
+                        }
 
-                    _gameConfig.Catalog?.ApplyDlcDictionary(_gameConfig.PreFetchedDlcData);
+                        _gameConfig.Catalog?.ApplyDlcDictionary(_gameConfig.PreFetchedDlcData);
 
-                    if (_gameConfig.Catalog != null && _isEditMode
-                        && Directory.Exists(PathConstants.CombineGameFolder(PathConstants.GamesDirectory, _gameConfig.AppId.ToString())))
-                    {
-                        AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
+                        if (_gameConfig.Catalog != null && _isEditMode && appId == _gameConfig.AppId
+                            && Directory.Exists(PathConstants.CombineGameFolder(PathConstants.GamesDirectory, _gameConfig.AppId.ToString())))
+                        {
+                            AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
+                        }
                     }
 
                     if (txtDLCList != null)

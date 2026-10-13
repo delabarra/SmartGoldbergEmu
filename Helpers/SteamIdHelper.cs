@@ -1,3 +1,4 @@
+using System;
 using SmartGoldbergEmu.Constants;
 
 namespace SmartGoldbergEmu.Helpers
@@ -19,6 +20,14 @@ namespace SmartGoldbergEmu.Helpers
 
             steam3AccountId = (id - ApplicationConstants.SteamId64Base).ToString();
             return true;
+        }
+
+        public static string GenerateRandomSteamId64()
+        {
+            var rng = new Random();
+            ulong range = ApplicationConstants.SteamId64Max - ApplicationConstants.SteamId64Base + 1;
+            ulong steamId = ApplicationConstants.SteamId64Base + (ulong)(rng.NextDouble() * range);
+            return steamId.ToString();
         }
     }
 }

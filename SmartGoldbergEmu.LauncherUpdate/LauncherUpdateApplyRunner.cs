@@ -13,6 +13,9 @@ namespace SmartGoldbergEmu.LauncherUpdate
         private const int TempCleanupDelaySeconds = 3;
         private static readonly string[] SkipFileExtensions = { ".cfg", ".ini", ".log" };
         private const string LegacySideBySideDirectoryPrefix = "SmartGoldbergEmu-";
+        private const string RollbackFolderPrefix = "_update_rollback_";
+        private const int IoRetryAttempts = 5;
+        private const int IoRetryDelayMs = 500;
 
         public static void Run(string manifestPath)
         {
@@ -42,7 +45,17 @@ namespace SmartGoldbergEmu.LauncherUpdate
                 Thread.Sleep(PostExitSettleMs);
 
                 Log(logPath, "Applying staged files from " + stageRoot + " to " + installRoot + ".");
-                ApplyPayload(stageRoot, installRoot, manifest["skipDirectoryNames"] as JsonArray, logPath);
+                try
+                {
+                    ApplyPayload(stageRoot, installRoot, manifest["skipDirectoryNames"] as JsonArray, logPath);
+                }
+                catch (Exception ex)
+                {
+                    // ApplyPayload rolled back to the previous version; restart it so the launcher does not just vanish.
+                    Log(logPath, "Apply failed and was rolled back: " + ex.Message);
+                    TryStartLauncher(exePath, installRoot, logPath);
+                    throw;
+                }
 
                 RemoveLegacySideBySideDirectories(installRoot, logPath);
 
@@ -82,34 +95,143 @@ namespace SmartGoldbergEmu.LauncherUpdate
             }
         }
 
+        private sealed class AppliedEntry
+        {
+            public string DestinationPath;
+            public string BackupPath;
+        }
+
+        // Existing entries are moved into a rollback folder inside installRoot (same volume, so moves are cheap and atomic)
+        // before each copy; any failure restores them so the install is never left half old, half new.
         private static void ApplyPayload(string stageRoot, string installRoot, JsonArray skipDirectoryNames, string logPath)
         {
             if (!Directory.Exists(stageRoot))
                 throw new DirectoryNotFoundException("Staged update folder not found: " + stageRoot);
 
             Directory.CreateDirectory(installRoot);
+            string rollbackRoot = Path.Combine(installRoot, RollbackFolderPrefix + DateTime.Now.Ticks);
+            var applied = new System.Collections.Generic.List<AppliedEntry>();
 
-            foreach (string entryPath in Directory.EnumerateFileSystemEntries(stageRoot))
+            try
             {
-                string name = Path.GetFileName(entryPath);
-                if (ShouldSkipEntry(name, entryPath, skipDirectoryNames))
+                foreach (string entryPath in Directory.EnumerateFileSystemEntries(stageRoot))
                 {
-                    Log(logPath, "Skipping " + name + ".");
-                    continue;
-                }
+                    string name = Path.GetFileName(entryPath);
+                    if (ShouldSkipEntry(name, entryPath, skipDirectoryNames))
+                    {
+                        Log(logPath, "Skipping " + name + ".");
+                        continue;
+                    }
 
-                string destinationPath = Path.Combine(installRoot, name);
-                if (Directory.Exists(entryPath))
-                {
-                    if (Directory.Exists(destinationPath))
-                        Directory.Delete(destinationPath, true);
+                    string destinationPath = Path.Combine(installRoot, name);
+                    var entry = new AppliedEntry { DestinationPath = destinationPath };
+                    if (Directory.Exists(destinationPath) || File.Exists(destinationPath))
+                    {
+                        Directory.CreateDirectory(rollbackRoot);
+                        entry.BackupPath = Path.Combine(rollbackRoot, name);
+                        RetryOnIoError(() => MoveEntry(destinationPath, entry.BackupPath));
+                    }
 
-                    CopyDirectory(entryPath, destinationPath);
+                    applied.Add(entry);
+                    if (Directory.Exists(entryPath))
+                        CopyDirectory(entryPath, destinationPath);
+                    else
+                        RetryOnIoError(() => File.Copy(entryPath, destinationPath, true));
                 }
-                else
+            }
+            catch
+            {
+                Rollback(applied, logPath);
+                TryDeleteDirectory(rollbackRoot, logPath);
+                throw;
+            }
+
+            TryDeleteDirectory(rollbackRoot, logPath);
+        }
+
+        private static void Rollback(System.Collections.Generic.List<AppliedEntry> applied, string logPath)
+        {
+            for (int i = applied.Count - 1; i >= 0; i--)
+            {
+                AppliedEntry entry = applied[i];
+                try
                 {
-                    File.Copy(entryPath, destinationPath, true);
+                    if (Directory.Exists(entry.DestinationPath))
+                        Directory.Delete(entry.DestinationPath, true);
+                    else if (File.Exists(entry.DestinationPath))
+                        File.Delete(entry.DestinationPath);
+
+                    if (entry.BackupPath != null)
+                        MoveEntry(entry.BackupPath, entry.DestinationPath);
                 }
+                catch (Exception ex)
+                {
+                    Log(logPath, "Rollback failed for " + entry.DestinationPath + ": " + ex.Message);
+                }
+            }
+        }
+
+        private static void MoveEntry(string sourcePath, string destinationPath)
+        {
+            if (Directory.Exists(sourcePath))
+                Directory.Move(sourcePath, destinationPath);
+            else
+                File.Move(sourcePath, destinationPath);
+        }
+
+        // Antivirus scanners briefly lock freshly written executables.
+        private static void RetryOnIoError(Action action)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    action();
+                    return;
+                }
+                catch (IOException) when (attempt < IoRetryAttempts)
+                {
+                    Thread.Sleep(IoRetryDelayMs);
+                }
+                catch (UnauthorizedAccessException) when (attempt < IoRetryAttempts)
+                {
+                    Thread.Sleep(IoRetryDelayMs);
+                }
+            }
+        }
+
+        private static void TryDeleteDirectory(string path, string logPath)
+        {
+            if (!Directory.Exists(path))
+                return;
+
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (Exception ex)
+            {
+                Log(logPath, "Could not remove " + path + ": " + ex.Message);
+            }
+        }
+
+        private static void TryStartLauncher(string exePath, string installRoot, string logPath)
+        {
+            if (!File.Exists(exePath))
+                return;
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    WorkingDirectory = installRoot,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Log(logPath, "Could not restart " + exePath + ": " + ex.Message);
             }
         }
 
@@ -149,7 +271,7 @@ namespace SmartGoldbergEmu.LauncherUpdate
                 if (!string.IsNullOrEmpty(destinationDirectory))
                     Directory.CreateDirectory(destinationDirectory);
 
-                File.Copy(filePath, destinationFile, true);
+                RetryOnIoError(() => File.Copy(filePath, destinationFile, true));
             }
         }
 

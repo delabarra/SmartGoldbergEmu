@@ -12,7 +12,8 @@ namespace SmartGoldbergEmu.Constants
         // Steam zip entry installed as overlay_friend_notification.wav.
         public const string SteamClientFriendSoundInnerPath = "steamui/sounds/recording_highlight.wav";
 
-        public const string AccountAvatarUrl = GithubBaseUrl + "/account_avatar.jpg";
+        // Upstream name; saved locally as PathConstants.GlobalAccountAvatarFileName (the name Goldberg reads).
+        public const string AccountAvatarUrl = GithubBaseUrl + "/account_avatar.EXAMPLE.jpg";
 
         public const string FontRobotoUrl = GithubBaseUrl + "/fonts.EXAMPLE/Roboto-Medium.ttf";
 

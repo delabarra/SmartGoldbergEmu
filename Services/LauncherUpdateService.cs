@@ -42,6 +42,10 @@ namespace SmartGoldbergEmu.Services
         private static string _downloadUrl;
         private static string _latestVersion;
         private static string _lastCancelledUpdateVersion;
+        private static volatile bool _exitRequestedForStagedUpdate;
+
+        // Application.Exit() before Application.Run does not stop startup; Program checks this and exits so the updater can apply.
+        public static bool ExitRequestedForStagedUpdate => _exitRequestedForStagedUpdate;
 
         public static string GetInstalledVersion() => ApplicationVersionHelper.GetVersionForComparison();
 
@@ -883,6 +887,7 @@ namespace SmartGoldbergEmu.Services
 
                     progressForm.Hide();
                     logger?.LogMessage("Launcher update staged; exiting to apply.");
+                    _exitRequestedForStagedUpdate = true;
                     Application.Exit();
                 }
                 catch (Exception ex)

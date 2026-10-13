@@ -227,6 +227,51 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void CreateDefaultConfigFiles_does_not_write_per_game_overlay_ini()
+        {
+            using (var ctx = new EmulatorConfigTestContext())
+            {
+                Assert.True(ctx.Service.CreateDefaultConfigFiles(TestAppId));
+
+                string overlayPath = Path.Combine(ctx.GetGameSteamSettingsPath(TestAppId), PathConstants.GoldbergOverlayIniFileName);
+                Assert.False(File.Exists(overlayPath));
+            }
+        }
+
+        [Fact]
+        public void RemoveUntouchedDefaultPerGameOverlayIni_deletes_default_copy_when_global_exists()
+        {
+            using (var ctx = new EmulatorConfigTestContext())
+            {
+                ctx.CfgService.SaveGlobalOverlaySettings(new OverlaySettings());
+                string globalPath = Path.Combine(ctx.GlobalRoot, PathConstants.GoldbergOverlayIniFileName);
+                ctx.WriteGameOverlayIni(TestAppId, File.ReadAllText(globalPath));
+
+                ctx.Service.RemoveUntouchedDefaultPerGameOverlayIni(TestAppId);
+
+                string overlayPath = Path.Combine(ctx.GetGameSteamSettingsPath(TestAppId), PathConstants.GoldbergOverlayIniFileName);
+                Assert.False(File.Exists(overlayPath));
+            }
+        }
+
+        [Fact]
+        public void RemoveUntouchedDefaultPerGameOverlayIni_keeps_customized_or_unbacked_file()
+        {
+            using (var ctx = new EmulatorConfigTestContext())
+            {
+                string overlayPath = Path.Combine(ctx.GetGameSteamSettingsPath(TestAppId), PathConstants.GoldbergOverlayIniFileName);
+                ctx.WriteGameOverlayIni(TestAppId, "[overlay::general]\r\nenable_experimental_overlay=0\r\n");
+
+                ctx.Service.RemoveUntouchedDefaultPerGameOverlayIni(TestAppId);
+                Assert.True(File.Exists(overlayPath));
+
+                ctx.CfgService.SaveGlobalOverlaySettings(new OverlaySettings());
+                ctx.Service.RemoveUntouchedDefaultPerGameOverlayIni(TestAppId);
+                Assert.True(File.Exists(overlayPath));
+            }
+        }
+
+        [Fact]
         public void LoadGameSettingsSnapshot_loads_per_game_app_settings_without_global_merge()
         {
             using (var ctx = new EmulatorConfigTestContext())

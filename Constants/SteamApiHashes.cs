@@ -136,6 +136,7 @@ namespace SmartGoldbergEmu.Constants
                 "eb17909a76668cf9ae0b92a618a34a50f6c73d3a6787cb4dd8ce36a8b10bfb75",//164
                 "e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d",//165
                 "8de54d32508e216c9135b8bf025749243d44e404c1c22a8e5fe35acecabe7a9c",//Grim Dawn
+                "350831f9df19d95d4e132cc6b0ead207bd50b67d3a3262596e6ad292144f3540",//Quake
             },
             ["libsteam_api.so"] = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase) {
                 "759fda30fadc1ebb94af842ae261090fdd69f748a8c806f3b817e0472d5e4a1c",//106, 107

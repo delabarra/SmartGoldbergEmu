@@ -173,6 +173,7 @@
     <Compile Include="Models\UpdateCheckResult.cs" />
     <Compile Include="Models\ChangelogDialogContent.cs" />
     <Compile Include="Models\UpdateException.cs" />
+    <Compile Include="Models\HttpStatusException.cs" />
     <Compile Include="Models\UriParseResult.cs" />
     <Compile Include="Models\ValidationResult.cs" />
     <Compile Include="Models\ThemeMode.cs" />

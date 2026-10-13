@@ -52,11 +52,12 @@ namespace SmartGoldbergEmu.Helpers
                 .Replace(escaped, RedactedSecret);
         }
 
-        // Visual Studio debug output only; redacted like file log (not ILogService).
+        // DEBUG-level file log line (written when SGE_LOG_LEVEL=debug) plus Visual Studio output; Debug.WriteLine alone is stripped from Release builds.
         public static void WriteDebug(string message)
         {
             if (string.IsNullOrEmpty(message))
                 return;
+            Program.LogService?.LogDebug(message);
             Debug.WriteLine(RedactForLog(message));
         }
     }

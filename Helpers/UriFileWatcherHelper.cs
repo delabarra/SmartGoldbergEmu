@@ -27,13 +27,7 @@ namespace SmartGoldbergEmu.Helpers
                 return;
             try
             {
-                if (_fileWatcher != null)
-                {
-                    _fileWatcher.EnableRaisingEvents = false;
-                    _fileWatcher.Created -= FileWatcher_Created;
-                    _fileWatcher.Dispose();
-                    _fileWatcher = null;
-                }
+                DisposeFileWatcher();
 
                 string handoffDir = PathConstants.LocalAppDataPerUserDirectory;
                 Directory.CreateDirectory(handoffDir);
@@ -45,7 +39,9 @@ namespace SmartGoldbergEmu.Helpers
                     EnableRaisingEvents = true
                 };
 
+                // The second instance renames a finished .partial file into place (Renamed); Created covers older writers.
                 _fileWatcher.Created += FileWatcher_Created;
+                _fileWatcher.Renamed += FileWatcher_Renamed;
 
                 CheckExistingUriFiles(handoffDir);
             }
@@ -77,18 +73,34 @@ namespace SmartGoldbergEmu.Helpers
 
         private void FileWatcher_Created(object sender, FileSystemEventArgs e)
         {
-            if (_disposed)
+            QueueUriFile(e.FullPath);
+        }
+
+        private void FileWatcher_Renamed(object sender, RenamedEventArgs e)
+        {
+            if (!e.Name.EndsWith(PathConstants.LauncherUriProtocolPendingFileExtension, StringComparison.OrdinalIgnoreCase))
                 return;
-            // Watcher events arrive on a thread-pool thread; process on the UI thread.
-            if (_control != null && !_control.IsDisposed && !_control.Disposing)
+            QueueUriFile(e.FullPath);
+        }
+
+        // Watcher events arrive on a thread-pool thread; an exception here would terminate the process.
+        private void QueueUriFile(string fullPath)
+        {
+            if (_disposed || _control == null || _control.IsDisposed || _control.Disposing || !_control.IsHandleCreated)
+                return;
+
+            try
             {
-                string fullPath = e.FullPath;
                 _control.BeginInvoke(new Action(() =>
                 {
                     if (_disposed || _control == null || _control.IsDisposed || _control.Disposing)
                         return;
                     ProcessUriFile(fullPath);
                 }));
+            }
+            catch (Exception ex) when (ex is InvalidOperationException || ex is ObjectDisposedException)
+            {
+                Program.LogService?.LogWarning($"URI handoff skipped while the main window is closing: {ex.Message}");
             }
         }
 
@@ -133,14 +145,20 @@ namespace SmartGoldbergEmu.Helpers
         public void Dispose()
         {
             _disposed = true;
-            if (_fileWatcher != null)
-            {
-                _fileWatcher.EnableRaisingEvents = false;
-                _fileWatcher.Created -= FileWatcher_Created;
-                _fileWatcher.Dispose();
-                _fileWatcher = null;
-            }
+            DisposeFileWatcher();
             _onUriProcessed = null;
+        }
+
+        private void DisposeFileWatcher()
+        {
+            if (_fileWatcher == null)
+                return;
+
+            _fileWatcher.EnableRaisingEvents = false;
+            _fileWatcher.Created -= FileWatcher_Created;
+            _fileWatcher.Renamed -= FileWatcher_Renamed;
+            _fileWatcher.Dispose();
+            _fileWatcher = null;
         }
     }
 }
