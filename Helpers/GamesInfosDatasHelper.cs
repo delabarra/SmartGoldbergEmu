@@ -64,7 +64,13 @@ namespace SmartGoldbergEmu.Helpers
             if (body == null)
                 return null;
 
-            return ParseAchievementsDb(body, language);
+            AchievementsSection section = ParseAchievementsDb(body, language);
+            await SteamWebApiClient.ApplyGlobalAchievementPercentagesAsync(
+                appId,
+                section,
+                new AppSnapshotOptions { HttpTimeout = TimeSpan.FromSeconds(HttpTimeoutSeconds) },
+                cancellationToken).ConfigureAwait(false);
+            return section;
         }
 
         public static async Task<StatsSection> TryFetchStatsSectionAsync(

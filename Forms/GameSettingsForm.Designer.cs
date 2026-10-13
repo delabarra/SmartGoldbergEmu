@@ -67,10 +67,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblSteamApiHint = new System.Windows.Forms.Label();
             this.lblPatchOpMessage = new System.Windows.Forms.Label();
             this.lblLaunchMode = new System.Windows.Forms.Label();
-            this.rdoLaunchSteamClient = new System.Windows.Forms.RadioButton();
-            this.rdoLaunchExperimentalMode = new System.Windows.Forms.RadioButton();
-            this.rdoLaunchSteamDll = new System.Windows.Forms.RadioButton();
-            this.rdoLaunchNoEmulation = new System.Windows.Forms.RadioButton();
+            this.cmbLaunchMode = new System.Windows.Forms.ComboBox();
             this.btnRestoreDlls = new System.Windows.Forms.Button();
             this.tabDLCContent = new System.Windows.Forms.TabPage();
             this.grpSubscribedGroups = new System.Windows.Forms.GroupBox();
@@ -613,10 +610,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpBasicInfo.Controls.Add(this.lblSteamApiHint);
             this.grpBasicInfo.Controls.Add(this.lblPatchOpMessage);
             this.grpBasicInfo.Controls.Add(this.lblLaunchMode);
-            this.grpBasicInfo.Controls.Add(this.rdoLaunchSteamClient);
-            this.grpBasicInfo.Controls.Add(this.rdoLaunchExperimentalMode);
-            this.grpBasicInfo.Controls.Add(this.rdoLaunchSteamDll);
-            this.grpBasicInfo.Controls.Add(this.rdoLaunchNoEmulation);
+            this.grpBasicInfo.Controls.Add(this.cmbLaunchMode);
             this.grpBasicInfo.Controls.Add(this.btnRestoreDlls);
             this.grpBasicInfo.Location = new System.Drawing.Point(20, 10);
             this.grpBasicInfo.Name = "grpBasicInfo";
@@ -735,62 +729,21 @@ namespace SmartGoldbergEmu.Forms
             // lblLaunchMode
             // 
             this.lblLaunchMode.AutoSize = true;
-            this.lblLaunchMode.Location = new System.Drawing.Point(20, 81);
+            this.lblLaunchMode.Location = new System.Drawing.Point(20, 85);
             this.lblLaunchMode.Name = "lblLaunchMode";
             this.lblLaunchMode.Size = new System.Drawing.Size(75, 13);
             this.lblLaunchMode.TabIndex = 50;
             this.lblLaunchMode.Text = "Launch mode:";
             this.toolTip.SetToolTip(this.lblLaunchMode, "How the launcher starts this game with Goldberg.");
             // 
-            // rdoLaunchSteamClient
+            // cmbLaunchMode
             // 
-            this.rdoLaunchSteamClient.AutoSize = true;
-            this.rdoLaunchSteamClient.Checked = true;
-            this.rdoLaunchSteamClient.Location = new System.Drawing.Point(150, 79);
-            this.rdoLaunchSteamClient.Name = "rdoLaunchSteamClient";
-            this.rdoLaunchSteamClient.Size = new System.Drawing.Size(114, 17);
-            this.rdoLaunchSteamClient.TabIndex = 0;
-            this.rdoLaunchSteamClient.TabStop = true;
-            this.rdoLaunchSteamClient.Text = "Steam Client Mode";
-            this.toolTip.SetToolTip(this.rdoLaunchSteamClient, "Use Goldberg Steam client mode.\r\n\r\nCopies steamclient DLLs and sets registry so t" +
-        "he game uses the emulator.");
-            this.rdoLaunchSteamClient.UseVisualStyleBackColor = true;
-            // 
-            // rdoLaunchExperimentalMode
-            // 
-            this.rdoLaunchExperimentalMode.AutoSize = true;
-            this.rdoLaunchExperimentalMode.Location = new System.Drawing.Point(272, 79);
-            this.rdoLaunchExperimentalMode.Name = "rdoLaunchExperimentalMode";
-            this.rdoLaunchExperimentalMode.Size = new System.Drawing.Size(115, 17);
-            this.rdoLaunchExperimentalMode.TabIndex = 1;
-            this.rdoLaunchExperimentalMode.Text = "Experimental Mode";
-            this.toolTip.SetToolTip(this.rdoLaunchExperimentalMode, "Use experimental steam_api beside the game.\r\n\r\nReplaces steam_api.dll in the game" +
-        " folder and links steam_settings.");
-            this.rdoLaunchExperimentalMode.UseVisualStyleBackColor = true;
-            // 
-            // rdoLaunchSteamDll
-            // 
-            this.rdoLaunchSteamDll.AutoSize = true;
-            this.rdoLaunchSteamDll.Location = new System.Drawing.Point(395, 79);
-            this.rdoLaunchSteamDll.Name = "rdoLaunchSteamDll";
-            this.rdoLaunchSteamDll.Size = new System.Drawing.Size(98, 17);
-            this.rdoLaunchSteamDll.TabIndex = 2;
-            this.rdoLaunchSteamDll.Text = "Steam.dll Mode";
-            this.toolTip.SetToolTip(this.rdoLaunchSteamDll, "Copy Steam.dll next to the game .exe.\r\n\r\nFor older games that load a local Steam." +
-        "dll without the overlay.");
-            this.rdoLaunchSteamDll.UseVisualStyleBackColor = true;
-            // 
-            // rdoLaunchNoEmulation
-            // 
-            this.rdoLaunchNoEmulation.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.rdoLaunchNoEmulation.AutoSize = true;
-            this.rdoLaunchNoEmulation.Location = new System.Drawing.Point(496, 79);
-            this.rdoLaunchNoEmulation.Name = "rdoLaunchNoEmulation";
-            this.rdoLaunchNoEmulation.Size = new System.Drawing.Size(87, 17);
-            this.rdoLaunchNoEmulation.TabIndex = 3;
-            this.rdoLaunchNoEmulation.Text = "No emulation";
-            this.toolTip.SetToolTip(this.rdoLaunchNoEmulation, "Start the game .exe directly.\r\n\r\nNo Goldberg DLLs or registry setup.");
-            this.rdoLaunchNoEmulation.UseVisualStyleBackColor = true;
+            this.cmbLaunchMode.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbLaunchMode.FormattingEnabled = true;
+            this.cmbLaunchMode.Location = new System.Drawing.Point(150, 81);
+            this.cmbLaunchMode.Name = "cmbLaunchMode";
+            this.cmbLaunchMode.Size = new System.Drawing.Size(180, 21);
+            this.cmbLaunchMode.TabIndex = 7;
             // 
             // btnRestoreDlls
             // 
@@ -2433,10 +2386,7 @@ namespace SmartGoldbergEmu.Forms
         private Label lblUserLaunchOptionName;
         private Label lblHintGameFolder;
         private Label lblLaunchMode;
-        private RadioButton rdoLaunchSteamClient;
-        private RadioButton rdoLaunchExperimentalMode;
-        private RadioButton rdoLaunchSteamDll;
-        private RadioButton rdoLaunchNoEmulation;
+        private ComboBox cmbLaunchMode;
         private System.Windows.Forms.ListView lstInventoryItems;
         private System.Windows.Forms.ColumnHeader colInventoryItemDefId;
         private System.Windows.Forms.ColumnHeader colInventoryDisplayName;

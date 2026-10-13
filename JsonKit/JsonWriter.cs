@@ -271,6 +271,10 @@ namespace SmartGoldbergEmu.JsonKit
                     continue;
                 }
 
+                // Unset Nullable<T> properties are optional keys; write nothing rather than "null".
+                if (propValue == null && Nullable.GetUnderlyingType(prop.PropertyType) != null)
+                    continue;
+
                 if (!first)
                     sb.Append(',');
                 first = false;

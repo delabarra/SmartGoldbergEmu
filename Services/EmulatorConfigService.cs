@@ -161,6 +161,16 @@ namespace SmartGoldbergEmu.Services
             m.OverlayAlwaysShowFrametime = MergeFlag(gameSpecific.OverlayAlwaysShowFrametime, global.OverlayAlwaysShowFrametime, d.OverlayAlwaysShowFrametime);
             m.OverlayAlwaysShowPlaytime = MergeFlag(gameSpecific.OverlayAlwaysShowPlaytime, global.OverlayAlwaysShowPlaytime, d.OverlayAlwaysShowPlaytime);
             m.EnableScreenshot = MergeFlag(gameSpecific.EnableScreenshot, global.EnableScreenshot, d.EnableScreenshot);
+            m.ShowButtonUserInfo = MergeFlag(gameSpecific.ShowButtonUserInfo, global.ShowButtonUserInfo, d.ShowButtonUserInfo);
+            m.ShowButtonAchievements = MergeFlag(gameSpecific.ShowButtonAchievements, global.ShowButtonAchievements, d.ShowButtonAchievements);
+            m.ShowButtonTestAchievement = MergeFlag(gameSpecific.ShowButtonTestAchievement, global.ShowButtonTestAchievement, d.ShowButtonTestAchievement);
+            m.ShowButtonCopyId = MergeFlag(gameSpecific.ShowButtonCopyId, global.ShowButtonCopyId, d.ShowButtonCopyId);
+            m.ShowButtonScreenshots = MergeFlag(gameSpecific.ShowButtonScreenshots, global.ShowButtonScreenshots, d.ShowButtonScreenshots);
+            m.ShowButtonHistory = MergeFlag(gameSpecific.ShowButtonHistory, global.ShowButtonHistory, d.ShowButtonHistory);
+            m.ShowButtonSettings = MergeFlag(gameSpecific.ShowButtonSettings, global.ShowButtonSettings, d.ShowButtonSettings);
+            m.ShowCheckboxFps = MergeFlag(gameSpecific.ShowCheckboxFps, global.ShowCheckboxFps, d.ShowCheckboxFps);
+            m.ShowCheckboxFrametime = MergeFlag(gameSpecific.ShowCheckboxFrametime, global.ShowCheckboxFrametime, d.ShowCheckboxFrametime);
+            m.ShowCheckboxPlaytime = MergeFlag(gameSpecific.ShowCheckboxPlaytime, global.ShowCheckboxPlaytime, d.ShowCheckboxPlaytime);
             m.ScreenshotCombo = MergeStringOrGlobal(gameSpecific.ScreenshotCombo, global.ScreenshotCombo, d.ScreenshotCombo);
             m.OverlayKeyCombo = MergeStringOrGlobal(gameSpecific.OverlayKeyCombo, global.OverlayKeyCombo, d.OverlayKeyCombo);
 
@@ -2348,6 +2358,7 @@ namespace SmartGoldbergEmu.Services
                    a.OverlayAlwaysShowFrametime == b.OverlayAlwaysShowFrametime &&
                    a.OverlayAlwaysShowPlaytime == b.OverlayAlwaysShowPlaytime &&
                    a.EnableScreenshot == b.EnableScreenshot &&
+                   OverlaySettings.ButtonTogglesEqual(a, b) &&
                    string.Equals(a.ScreenshotCombo ?? string.Empty, b.ScreenshotCombo ?? string.Empty, StringComparison.Ordinal) &&
                    string.Equals(a.OverlayKeyCombo ?? string.Empty, b.OverlayKeyCombo ?? string.Empty, StringComparison.Ordinal) &&
                    string.Equals(a.FontOverride ?? string.Empty, b.FontOverride ?? string.Empty, StringComparison.Ordinal) &&

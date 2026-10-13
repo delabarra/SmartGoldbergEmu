@@ -130,6 +130,8 @@ namespace AppDataKit
                         item["icon_url"] = entry.IconUrl;
                     if (!string.IsNullOrEmpty(entry.IconGrayUrl))
                         item["icon_gray_url"] = entry.IconGrayUrl;
+                    if (entry.UnlockPercentage.HasValue)
+                        item["unlock_percentage"] = entry.UnlockPercentage.Value;
                     items.Add(item);
                 }
             }
@@ -382,7 +384,10 @@ namespace AppDataKit
                     Description = ReadString(item, "description"),
                     IconUrl = ReadOptionalString(item, "icon_url"),
                     IconGrayUrl = ReadOptionalString(item, "icon_gray_url"),
-                    Hidden = ReadBool(item, "hidden")
+                    Hidden = ReadBool(item, "hidden"),
+                    UnlockPercentage = item.TryGetValue("unlock_percentage", out object unlockPercentage)
+                        ? JsonUtil.ReadOptionalDouble(unlockPercentage)
+                        : null
                 });
             }
 

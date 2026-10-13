@@ -46,6 +46,16 @@ namespace SmartGoldbergEmu.Models
         public bool OverlayAlwaysShowFrametime { get; set; } = false;
         public bool OverlayAlwaysShowPlaytime { get; set; } = false;
         public bool EnableScreenshot { get; set; } = true;
+        public bool ShowButtonUserInfo { get; set; } = true;
+        public bool ShowButtonAchievements { get; set; } = true;
+        public bool ShowButtonTestAchievement { get; set; } = true;
+        public bool ShowButtonCopyId { get; set; } = true;
+        public bool ShowButtonScreenshots { get; set; } = true;
+        public bool ShowButtonHistory { get; set; } = true;
+        public bool ShowButtonSettings { get; set; } = true;
+        public bool ShowCheckboxFps { get; set; } = true;
+        public bool ShowCheckboxFrametime { get; set; } = true;
+        public bool ShowCheckboxPlaytime { get; set; } = true;
         public string ScreenshotCombo { get; set; } = "f12";
         public string OverlayKeyCombo { get; set; } = "shift + tab";
 
@@ -133,6 +143,20 @@ namespace SmartGoldbergEmu.Models
         // Stats position (percentage)
         public float StatsPosX { get; set; } = 0.0f;
         public float StatsPosY { get; set; } = 0.0f;
+
+        public static bool ButtonTogglesEqual(OverlaySettings a, OverlaySettings b)
+        {
+            return a.ShowButtonUserInfo == b.ShowButtonUserInfo &&
+                   a.ShowButtonAchievements == b.ShowButtonAchievements &&
+                   a.ShowButtonTestAchievement == b.ShowButtonTestAchievement &&
+                   a.ShowButtonCopyId == b.ShowButtonCopyId &&
+                   a.ShowButtonScreenshots == b.ShowButtonScreenshots &&
+                   a.ShowButtonHistory == b.ShowButtonHistory &&
+                   a.ShowButtonSettings == b.ShowButtonSettings &&
+                   a.ShowCheckboxFps == b.ShowCheckboxFps &&
+                   a.ShowCheckboxFrametime == b.ShowCheckboxFrametime &&
+                   a.ShowCheckboxPlaytime == b.ShowCheckboxPlaytime;
+        }
     }
 
     public class MainSettings

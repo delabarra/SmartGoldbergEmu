@@ -95,6 +95,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
+            InitializeLaunchModeDropdown();
             WireAchievementsPreviewListEvents();
             WireModsSummaryListEvents();
             WireInventoryListEvents();
@@ -1431,10 +1432,11 @@ namespace SmartGoldbergEmu.Forms
 
             WireCheckedWithSecondary(chkUnlockAllDLC, ChkUnlockAllDLC_CheckedChanged);
             WireCheckedWithSecondary(chkBetaBranch, ChkBetaBranch_CheckedChanged);
-            WireLaunchModeRadio(rdoLaunchSteamClient);
-            WireLaunchModeRadio(rdoLaunchExperimentalMode);
-            WireLaunchModeRadio(rdoLaunchSteamDll);
-            WireLaunchModeRadio(rdoLaunchNoEmulation);
+            if (cmbLaunchMode != null)
+            {
+                cmbLaunchMode.SelectedIndexChanged += Control_Changed;
+                cmbLaunchMode.SelectedIndexChanged += CmbLaunchMode_SelectedIndexChanged;
+            }
 
             if (tabMods != null)
                 tabMods.Enter += TabMods_Enter;
@@ -2295,14 +2297,7 @@ namespace SmartGoldbergEmu.Forms
 
         private int GetLaunchModeBlockBottom()
         {
-            int bottom = 0;
-            foreach (Control control in new Control[] { rdoLaunchSteamClient, rdoLaunchExperimentalMode, rdoLaunchSteamDll, rdoLaunchNoEmulation })
-            {
-                if (control != null && control.Visible)
-                    bottom = Math.Max(bottom, control.Bottom);
-            }
-
-            return bottom;
+            return cmbLaunchMode != null && cmbLaunchMode.Visible ? cmbLaunchMode.Bottom : 0;
         }
 
         private void ReflowSteamApiPanels()
@@ -3564,30 +3559,67 @@ namespace SmartGoldbergEmu.Forms
             }, token).ForgetFaults(Program.LogService, nameof(RefreshModsSummaryList));
         }
 
-        private void SelectLaunchModeUi(GoldbergLaunchMode mode)
+        private sealed class LaunchModeOption
         {
-            if (rdoLaunchSteamClient == null || rdoLaunchExperimentalMode == null || rdoLaunchSteamDll == null || rdoLaunchNoEmulation == null)
+            public LaunchModeOption(GoldbergLaunchMode mode, string label, string description)
+            {
+                Mode = mode;
+                Label = label;
+                Description = description;
+            }
+
+            public GoldbergLaunchMode Mode { get; }
+            public string Label { get; }
+            public string Description { get; }
+
+            public override string ToString() => Label;
+        }
+
+        private static readonly LaunchModeOption[] LaunchModeOptions =
+        {
+            new LaunchModeOption(GoldbergLaunchMode.SteamClient, "Steam Client Mode",
+                "Use Goldberg Steam client mode.\r\n\r\nCopies steamclient DLLs and sets registry so the game uses the emulator."),
+            new LaunchModeOption(GoldbergLaunchMode.StandardSteamApi, "Experimental Mode",
+                "Use experimental steam_api beside the game.\r\n\r\nReplaces steam_api.dll in the game folder and links steam_settings."),
+            new LaunchModeOption(GoldbergLaunchMode.SteamDllBesideExe, "Steam.dll Mode",
+                "Copy Steam.dll next to the game .exe.\r\n\r\nFor older games that load a local Steam.dll without the overlay."),
+            new LaunchModeOption(GoldbergLaunchMode.NoEmulation, "No emulation",
+                "Start the game .exe directly.\r\n\r\nNo Goldberg DLLs or registry setup."),
+        };
+
+        private void InitializeLaunchModeDropdown()
+        {
+            if (cmbLaunchMode == null)
                 return;
 
-            if (mode == GoldbergLaunchMode.NoEmulation)
-                rdoLaunchNoEmulation.Checked = true;
-            else if (mode == GoldbergLaunchMode.SteamDllBesideExe)
-                rdoLaunchSteamDll.Checked = true;
-            else if (mode == GoldbergLaunchMode.StandardSteamApi)
-                rdoLaunchExperimentalMode.Checked = true;
-            else
-                rdoLaunchSteamClient.Checked = true;
+            cmbLaunchMode.Items.Clear();
+            cmbLaunchMode.Items.AddRange(LaunchModeOptions);
+            SelectLaunchModeUi(GoldbergLaunchMode.SteamClient);
+        }
+
+        private void SelectLaunchModeUi(GoldbergLaunchMode mode)
+        {
+            if (cmbLaunchMode == null)
+                return;
+
+            int index = Array.FindIndex(LaunchModeOptions, option => option.Mode == mode);
+            cmbLaunchMode.SelectedIndex = index >= 0 ? index : 0;
+            UpdateLaunchModeToolTip();
         }
 
         private GoldbergLaunchMode GetSelectedLaunchModeFromUi()
         {
-            if (rdoLaunchNoEmulation != null && rdoLaunchNoEmulation.Checked)
-                return GoldbergLaunchMode.NoEmulation;
-            if (rdoLaunchSteamDll != null && rdoLaunchSteamDll.Checked)
-                return GoldbergLaunchMode.SteamDllBesideExe;
-            if (rdoLaunchExperimentalMode != null && rdoLaunchExperimentalMode.Checked)
-                return GoldbergLaunchMode.StandardSteamApi;
-            return GoldbergLaunchMode.SteamClient;
+            var option = cmbLaunchMode?.SelectedItem as LaunchModeOption;
+            return option != null ? option.Mode : GoldbergLaunchMode.SteamClient;
+        }
+
+        private void UpdateLaunchModeToolTip()
+        {
+            if (cmbLaunchMode == null || toolTip == null)
+                return;
+
+            var option = cmbLaunchMode.SelectedItem as LaunchModeOption;
+            toolTip.SetToolTip(cmbLaunchMode, option?.Description ?? string.Empty);
         }
 
         private void ApplyLaunchModeFromUiToGameConfig()
@@ -3598,24 +3630,13 @@ namespace SmartGoldbergEmu.Forms
             _gameConfig.LaunchMode = GetSelectedLaunchModeFromUi();
         }
 
-        private void RdoLaunchMode_CheckedChanged(object sender, EventArgs e)
+        private void CmbLaunchMode_SelectedIndexChanged(object sender, EventArgs e)
         {
+            UpdateLaunchModeToolTip();
             if (_isLoading)
                 return;
 
-            var radio = sender as RadioButton;
-            if (radio == null || !radio.Checked)
-                return;
-
             ApplyLaunchModeFromUiToGameConfig();
-        }
-
-        private void WireLaunchModeRadio(RadioButton radio)
-        {
-            if (radio == null)
-                return;
-            radio.CheckedChanged += Control_Changed;
-            radio.CheckedChanged += RdoLaunchMode_CheckedChanged;
         }
 
         private string _initialCustomStats = string.Empty;

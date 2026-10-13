@@ -164,6 +164,16 @@ namespace SmartGoldbergEmu.Services
             SetBoolIfNotDefault(iniFile, "overlay::general", "overlay_always_show_frametime", settings.OverlayAlwaysShowFrametime, d.OverlayAlwaysShowFrametime);
             SetBoolIfNotDefault(iniFile, "overlay::general", "overlay_always_show_playtime", settings.OverlayAlwaysShowPlaytime, d.OverlayAlwaysShowPlaytime);
             SetBoolIfNotDefault(iniFile, "overlay::general", "enable_screenshot", settings.EnableScreenshot, d.EnableScreenshot);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_user_info", settings.ShowButtonUserInfo, d.ShowButtonUserInfo);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_achievements", settings.ShowButtonAchievements, d.ShowButtonAchievements);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_test_achievement", settings.ShowButtonTestAchievement, d.ShowButtonTestAchievement);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_copy_id", settings.ShowButtonCopyId, d.ShowButtonCopyId);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_screenshots", settings.ShowButtonScreenshots, d.ShowButtonScreenshots);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_history", settings.ShowButtonHistory, d.ShowButtonHistory);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_settings", settings.ShowButtonSettings, d.ShowButtonSettings);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_checkbox_fps", settings.ShowCheckboxFps, d.ShowCheckboxFps);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_checkbox_frametime", settings.ShowCheckboxFrametime, d.ShowCheckboxFrametime);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_checkbox_playtime", settings.ShowCheckboxPlaytime, d.ShowCheckboxPlaytime);
 
             SetValueIfNotDefault(iniFile, "overlay::hotkeys", "key_combo", settings.OverlayKeyCombo, d.OverlayKeyCombo);
             SetValueIfNotDefault(iniFile, "overlay::hotkeys", "screenshot_combo", settings.ScreenshotCombo, d.ScreenshotCombo);
@@ -413,6 +423,36 @@ namespace SmartGoldbergEmu.Services
                         break;
                     case "enable_screenshot":
                         settings.EnableScreenshot = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_user_info":
+                        settings.ShowButtonUserInfo = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_achievements":
+                        settings.ShowButtonAchievements = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_test_achievement":
+                        settings.ShowButtonTestAchievement = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_copy_id":
+                        settings.ShowButtonCopyId = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_screenshots":
+                        settings.ShowButtonScreenshots = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_history":
+                        settings.ShowButtonHistory = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_settings":
+                        settings.ShowButtonSettings = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_checkbox_fps":
+                        settings.ShowCheckboxFps = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_checkbox_frametime":
+                        settings.ShowCheckboxFrametime = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_checkbox_playtime":
+                        settings.ShowCheckboxPlaytime = IniParseHelper.StringToBool(value);
                         break;
                 }
             }

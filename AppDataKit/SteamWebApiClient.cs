@@ -16,6 +16,8 @@ namespace AppDataKit
             "https://api.steampowered.com/IInventoryService/GetItemDefMeta/v1";
         private const string ItemDefArchiveEndpoint =
             "https://api.steampowered.com/IGameInventory/GetItemDefArchive/v0001";
+        private const string GlobalAchievementPercentagesUrl =
+            "https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/";
 
         public static async Task<AchievementsSection> FetchAchievementsAsync(
             uint appId,
@@ -44,6 +46,7 @@ namespace AppDataKit
             }
 
             PopulateAchievementsFromSchema(json, appId, section);
+            await ApplyGlobalAchievementPercentagesAsync(appId, section, options, cancellationToken).ConfigureAwait(false);
             return section;
         }
 
@@ -107,7 +110,92 @@ namespace AppDataKit
 
             PopulateAchievementsFromSchema(json, appId, achievements);
             PopulateStatsFromSchema(json, stats);
+            await ApplyGlobalAchievementPercentagesAsync(appId, achievements, options, cancellationToken).ConfigureAwait(false);
             return Tuple.Create(achievements, stats);
+        }
+
+        // Best effort and keyless: on any failure the entries keep UnlockPercentage = null.
+        internal static async Task ApplyGlobalAchievementPercentagesAsync(
+            uint appId,
+            AchievementsSection section,
+            AppSnapshotOptions options,
+            CancellationToken cancellationToken)
+        {
+            if (section?.Items == null || section.Items.Count == 0)
+                return;
+
+            string url = GlobalAchievementPercentagesUrl + "?gameid=" + appId;
+            string json;
+            try
+            {
+                using (var http = CreateHttpClient(options))
+                using (HttpResponseMessage response = await http.GetAsync(url, cancellationToken).ConfigureAwait(false))
+                {
+                    if (!response.IsSuccessStatusCode)
+                        return;
+                    json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                return;
+            }
+
+            Dictionary<string, double> percentages = ParseGlobalAchievementPercentages(json);
+            if (percentages.Count == 0)
+                return;
+
+            foreach (AchievementSchemaEntry entry in section.Items)
+            {
+                if (entry != null
+                    && !string.IsNullOrEmpty(entry.Name)
+                    && percentages.TryGetValue(entry.Name, out double percent))
+                {
+                    entry.UnlockPercentage = percent;
+                }
+            }
+        }
+
+        internal static Dictionary<string, double> ParseGlobalAchievementPercentages(string json)
+        {
+            var result = new Dictionary<string, double>(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(json))
+                return result;
+
+            Dictionary<string, object> root;
+            try
+            {
+                root = JsonUtil.AsObject(JsonUtil.Parse(json));
+            }
+            catch
+            {
+                return result;
+            }
+
+            object[] achievements = ReadArray(root, "achievementpercentages", "achievements");
+            if (achievements == null)
+                return result;
+
+            foreach (object item in achievements)
+            {
+                Dictionary<string, object> obj = item as Dictionary<string, object>;
+                if (obj == null)
+                    continue;
+
+                string name = ReadString(obj, "name");
+                if (string.IsNullOrEmpty(name) || !obj.TryGetValue("percent", out object rawPercent))
+                    continue;
+
+                double? percent = JsonUtil.ReadOptionalDouble(rawPercent);
+                if (percent.HasValue && percent.Value >= 0 && percent.Value <= 100)
+                    result[name] = percent.Value;
+            }
+
+            return result;
         }
 
         private static async Task<string> FetchSchemaForGameJsonAsync(

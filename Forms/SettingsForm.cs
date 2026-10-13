@@ -368,6 +368,16 @@ namespace SmartGoldbergEmu.Forms
                 (chkLockedExpanded, "1=Expand locked achievements in the overlay list."),
                 (numNotificationDurationScreenshot, "Duration for screenshot notifications in seconds."),
                 (numAchievementNotificationDelay, "Delay before achievement notifications in seconds."),
+                (chkShowButtonUserInfo, "Show the User info button in the overlay."),
+                (chkShowButtonAchievements, "Show the Achievements button in the overlay."),
+                (chkShowButtonTestAchievement, "Show the Test achievement button in the overlay."),
+                (chkShowButtonCopyId, "Show the Copy ID button in the overlay."),
+                (chkShowButtonScreenshots, "Show the Screenshots button in the overlay."),
+                (chkShowButtonHistory, "Show the notification History button in the overlay."),
+                (chkShowButtonSettings, "Show the Settings button in the overlay."),
+                (chkShowCheckboxFps, "Show the FPS checkbox in the overlay."),
+                (chkShowCheckboxFrametime, "Show the frametime checkbox in the overlay."),
+                (chkShowCheckboxPlaytime, "Show the playtime checkbox in the overlay."),
                 (txtUsername, "Account name reported to games. Saved with the Steam ID as a profile when you click Save."),
                 (txtSteamID, "Steam64 account ID. The list shows saved profiles as name and ID; you can still type a new ID."),
                 (cmbLanguage, "Language reported to games (must be in supported_languages.txt)."),
@@ -1892,6 +1902,9 @@ namespace SmartGoldbergEmu.Forms
             numNotificationDurationScreenshot.ValueChanged += Control_Changed;
             numAchievementNotificationDelay.ValueChanged += Control_Changed;
 
+            foreach (CheckBox chk in GetOverlayButtonToggleCheckBoxes())
+                chk.CheckedChanged += Control_Changed;
+
             chkDisableWarningLocalSave.CheckedChanged += Control_Changed;
             txtSavesFolderName.TextChanged += TxtSavesFolderName_TextChanged;
 
@@ -2042,6 +2055,7 @@ namespace SmartGoldbergEmu.Forms
                    a.UnlockedExpanded == b.UnlockedExpanded &&
                    a.LockedExpanded == b.LockedExpanded &&
                    a.ShowPlaytimeInUserInfo == b.ShowPlaytimeInUserInfo &&
+                   OverlaySettings.ButtonTogglesEqual(a, b) &&
                    Math.Abs(a.NotificationDurationScreenshot - b.NotificationDurationScreenshot) < 0.001f &&
                    Math.Abs(a.AchievementNotificationDelay - b.AchievementNotificationDelay) < 0.001f &&
                    a.OverlayKeyCombo == b.OverlayKeyCombo &&
@@ -2120,6 +2134,7 @@ namespace SmartGoldbergEmu.Forms
                 LoadOverlayNotifications(overlaySettings);
                 LoadOverlayMetrics(overlaySettings);
                 LoadOverlayExtras(overlaySettings);
+                LoadOverlayButtonToggles(overlaySettings);
                 LoadSaveManagement(overlaySettings, userSettings);
             }
             catch (Exception ex)
@@ -2240,6 +2255,31 @@ namespace SmartGoldbergEmu.Forms
             SetNudFloatIfDiff(numAchievementNotificationDelay, o.AchievementNotificationDelay, d.AchievementNotificationDelay);
         }
 
+        private CheckBox[] GetOverlayButtonToggleCheckBoxes()
+        {
+            return new[]
+            {
+                chkShowButtonUserInfo, chkShowButtonAchievements, chkShowButtonTestAchievement, chkShowButtonCopyId,
+                chkShowButtonScreenshots, chkShowButtonHistory, chkShowButtonSettings,
+                chkShowCheckboxFps, chkShowCheckboxFrametime, chkShowCheckboxPlaytime
+            };
+        }
+
+        private void LoadOverlayButtonToggles(OverlaySettings o)
+        {
+            var d = _overlayDefaults;
+            SetChkIfDiff(chkShowButtonUserInfo, o.ShowButtonUserInfo, d.ShowButtonUserInfo);
+            SetChkIfDiff(chkShowButtonAchievements, o.ShowButtonAchievements, d.ShowButtonAchievements);
+            SetChkIfDiff(chkShowButtonTestAchievement, o.ShowButtonTestAchievement, d.ShowButtonTestAchievement);
+            SetChkIfDiff(chkShowButtonCopyId, o.ShowButtonCopyId, d.ShowButtonCopyId);
+            SetChkIfDiff(chkShowButtonScreenshots, o.ShowButtonScreenshots, d.ShowButtonScreenshots);
+            SetChkIfDiff(chkShowButtonHistory, o.ShowButtonHistory, d.ShowButtonHistory);
+            SetChkIfDiff(chkShowButtonSettings, o.ShowButtonSettings, d.ShowButtonSettings);
+            SetChkIfDiff(chkShowCheckboxFps, o.ShowCheckboxFps, d.ShowCheckboxFps);
+            SetChkIfDiff(chkShowCheckboxFrametime, o.ShowCheckboxFrametime, d.ShowCheckboxFrametime);
+            SetChkIfDiff(chkShowCheckboxPlaytime, o.ShowCheckboxPlaytime, d.ShowCheckboxPlaytime);
+        }
+
         private void LoadSaveManagement(OverlaySettings o, UserSettings userSettings)
         {
             SetChkIfDiff(chkDisableWarningLocalSave, o.DisableWarningLocalSave, _overlayDefaults.DisableWarningLocalSave);
@@ -2280,6 +2320,16 @@ namespace SmartGoldbergEmu.Forms
                 OverlayAlwaysShowFrametime = chkAlwaysShowFrametime.Checked,
                 OverlayAlwaysShowPlaytime = chkAlwaysShowPlaytime.Checked,
                 EnableScreenshot = chkEnableScreenshot.Checked,
+                ShowButtonUserInfo = chkShowButtonUserInfo.Checked,
+                ShowButtonAchievements = chkShowButtonAchievements.Checked,
+                ShowButtonTestAchievement = chkShowButtonTestAchievement.Checked,
+                ShowButtonCopyId = chkShowButtonCopyId.Checked,
+                ShowButtonScreenshots = chkShowButtonScreenshots.Checked,
+                ShowButtonHistory = chkShowButtonHistory.Checked,
+                ShowButtonSettings = chkShowButtonSettings.Checked,
+                ShowCheckboxFps = chkShowCheckboxFps.Checked,
+                ShowCheckboxFrametime = chkShowCheckboxFrametime.Checked,
+                ShowCheckboxPlaytime = chkShowCheckboxPlaytime.Checked,
                 ShowNotificationHistory = chkShowNotificationHistory.Checked,
                 ShowAchievementList = chkShowAchievementList.Checked,
                 ShowPlaytimeInUserInfo = chkShowPlaytimeInUserInfo.Checked,

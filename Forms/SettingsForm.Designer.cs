@@ -183,6 +183,17 @@ namespace SmartGoldbergEmu.Forms
             this.chkShowAchievementList = new System.Windows.Forms.CheckBox();
             this.chkShowNotificationHistory = new System.Windows.Forms.CheckBox();
             this.chkEnableScreenshot = new System.Windows.Forms.CheckBox();
+            this.grpOverlayButtons = new System.Windows.Forms.GroupBox();
+            this.chkShowButtonUserInfo = new System.Windows.Forms.CheckBox();
+            this.chkShowButtonAchievements = new System.Windows.Forms.CheckBox();
+            this.chkShowButtonTestAchievement = new System.Windows.Forms.CheckBox();
+            this.chkShowButtonCopyId = new System.Windows.Forms.CheckBox();
+            this.chkShowButtonScreenshots = new System.Windows.Forms.CheckBox();
+            this.chkShowButtonHistory = new System.Windows.Forms.CheckBox();
+            this.chkShowButtonSettings = new System.Windows.Forms.CheckBox();
+            this.chkShowCheckboxFps = new System.Windows.Forms.CheckBox();
+            this.chkShowCheckboxFrametime = new System.Windows.Forms.CheckBox();
+            this.chkShowCheckboxPlaytime = new System.Windows.Forms.CheckBox();
             this.tabEmulator = new System.Windows.Forms.TabPage();
             this.grpEmulatorWorkarounds = new System.Windows.Forms.GroupBox();
             this.chkUse32BitInventoryItemIds = new System.Windows.Forms.CheckBox();
@@ -246,6 +257,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabMetrics.SuspendLayout();
             this.grpFPSDisplay.SuspendLayout();
             this.grpOverlayExtras.SuspendLayout();
+            this.grpOverlayButtons.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.numAchievementNotificationDelay)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numNotificationDurationScreenshot)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numFpsAveragingWindow)).BeginInit();
@@ -1711,6 +1723,7 @@ namespace SmartGoldbergEmu.Forms
             // 
             // tabMetrics
             // 
+            this.tabMetrics.Controls.Add(this.grpOverlayButtons);
             this.tabMetrics.Controls.Add(this.grpOverlayExtras);
             this.tabMetrics.Controls.Add(this.grpFPSDisplay);
             this.tabMetrics.Location = new System.Drawing.Point(4, 22);
@@ -2078,6 +2091,147 @@ namespace SmartGoldbergEmu.Forms
             this.chkEnableScreenshot.TabIndex = 0;
             this.chkEnableScreenshot.Text = "Enable screenshot";
             this.chkEnableScreenshot.UseVisualStyleBackColor = true;
+            // 
+            // grpOverlayButtons
+            // 
+            this.grpOverlayButtons.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpOverlayButtons.Controls.Add(this.chkShowButtonUserInfo);
+            this.grpOverlayButtons.Controls.Add(this.chkShowButtonAchievements);
+            this.grpOverlayButtons.Controls.Add(this.chkShowButtonTestAchievement);
+            this.grpOverlayButtons.Controls.Add(this.chkShowButtonCopyId);
+            this.grpOverlayButtons.Controls.Add(this.chkShowButtonScreenshots);
+            this.grpOverlayButtons.Controls.Add(this.chkShowButtonHistory);
+            this.grpOverlayButtons.Controls.Add(this.chkShowButtonSettings);
+            this.grpOverlayButtons.Controls.Add(this.chkShowCheckboxFps);
+            this.grpOverlayButtons.Controls.Add(this.chkShowCheckboxFrametime);
+            this.grpOverlayButtons.Controls.Add(this.chkShowCheckboxPlaytime);
+            this.grpOverlayButtons.Location = new System.Drawing.Point(12, 343);
+            this.grpOverlayButtons.Name = "grpOverlayButtons";
+            this.grpOverlayButtons.Size = new System.Drawing.Size(568, 125);
+            this.grpOverlayButtons.TabIndex = 2;
+            this.grpOverlayButtons.TabStop = false;
+            this.grpOverlayButtons.Text = "Overlay buttons (gbe_fork)";
+            // 
+            // chkShowButtonUserInfo
+            // 
+            this.chkShowButtonUserInfo.AutoSize = true;
+            this.chkShowButtonUserInfo.Checked = true;
+            this.chkShowButtonUserInfo.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowButtonUserInfo.Location = new System.Drawing.Point(16, 24);
+            this.chkShowButtonUserInfo.Name = "chkShowButtonUserInfo";
+            this.chkShowButtonUserInfo.Size = new System.Drawing.Size(70, 17);
+            this.chkShowButtonUserInfo.TabIndex = 0;
+            this.chkShowButtonUserInfo.Text = "User info";
+            this.chkShowButtonUserInfo.UseVisualStyleBackColor = true;
+            // 
+            // chkShowButtonAchievements
+            // 
+            this.chkShowButtonAchievements.AutoSize = true;
+            this.chkShowButtonAchievements.Checked = true;
+            this.chkShowButtonAchievements.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowButtonAchievements.Location = new System.Drawing.Point(16, 48);
+            this.chkShowButtonAchievements.Name = "chkShowButtonAchievements";
+            this.chkShowButtonAchievements.Size = new System.Drawing.Size(93, 17);
+            this.chkShowButtonAchievements.TabIndex = 1;
+            this.chkShowButtonAchievements.Text = "Achievements";
+            this.chkShowButtonAchievements.UseVisualStyleBackColor = true;
+            // 
+            // chkShowButtonTestAchievement
+            // 
+            this.chkShowButtonTestAchievement.AutoSize = true;
+            this.chkShowButtonTestAchievement.Checked = true;
+            this.chkShowButtonTestAchievement.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowButtonTestAchievement.Location = new System.Drawing.Point(16, 72);
+            this.chkShowButtonTestAchievement.Name = "chkShowButtonTestAchievement";
+            this.chkShowButtonTestAchievement.Size = new System.Drawing.Size(108, 17);
+            this.chkShowButtonTestAchievement.TabIndex = 2;
+            this.chkShowButtonTestAchievement.Text = "Test achievement";
+            this.chkShowButtonTestAchievement.UseVisualStyleBackColor = true;
+            // 
+            // chkShowButtonCopyId
+            // 
+            this.chkShowButtonCopyId.AutoSize = true;
+            this.chkShowButtonCopyId.Checked = true;
+            this.chkShowButtonCopyId.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowButtonCopyId.Location = new System.Drawing.Point(16, 96);
+            this.chkShowButtonCopyId.Name = "chkShowButtonCopyId";
+            this.chkShowButtonCopyId.Size = new System.Drawing.Size(62, 17);
+            this.chkShowButtonCopyId.TabIndex = 3;
+            this.chkShowButtonCopyId.Text = "Copy ID";
+            this.chkShowButtonCopyId.UseVisualStyleBackColor = true;
+            // 
+            // chkShowButtonScreenshots
+            // 
+            this.chkShowButtonScreenshots.AutoSize = true;
+            this.chkShowButtonScreenshots.Checked = true;
+            this.chkShowButtonScreenshots.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowButtonScreenshots.Location = new System.Drawing.Point(200, 24);
+            this.chkShowButtonScreenshots.Name = "chkShowButtonScreenshots";
+            this.chkShowButtonScreenshots.Size = new System.Drawing.Size(85, 17);
+            this.chkShowButtonScreenshots.TabIndex = 4;
+            this.chkShowButtonScreenshots.Text = "Screenshots";
+            this.chkShowButtonScreenshots.UseVisualStyleBackColor = true;
+            // 
+            // chkShowButtonHistory
+            // 
+            this.chkShowButtonHistory.AutoSize = true;
+            this.chkShowButtonHistory.Checked = true;
+            this.chkShowButtonHistory.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowButtonHistory.Location = new System.Drawing.Point(200, 48);
+            this.chkShowButtonHistory.Name = "chkShowButtonHistory";
+            this.chkShowButtonHistory.Size = new System.Drawing.Size(58, 17);
+            this.chkShowButtonHistory.TabIndex = 5;
+            this.chkShowButtonHistory.Text = "History";
+            this.chkShowButtonHistory.UseVisualStyleBackColor = true;
+            // 
+            // chkShowButtonSettings
+            // 
+            this.chkShowButtonSettings.AutoSize = true;
+            this.chkShowButtonSettings.Checked = true;
+            this.chkShowButtonSettings.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowButtonSettings.Location = new System.Drawing.Point(200, 72);
+            this.chkShowButtonSettings.Name = "chkShowButtonSettings";
+            this.chkShowButtonSettings.Size = new System.Drawing.Size(64, 17);
+            this.chkShowButtonSettings.TabIndex = 6;
+            this.chkShowButtonSettings.Text = "Settings";
+            this.chkShowButtonSettings.UseVisualStyleBackColor = true;
+            // 
+            // chkShowCheckboxFps
+            // 
+            this.chkShowCheckboxFps.AutoSize = true;
+            this.chkShowCheckboxFps.Checked = true;
+            this.chkShowCheckboxFps.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowCheckboxFps.Location = new System.Drawing.Point(380, 24);
+            this.chkShowCheckboxFps.Name = "chkShowCheckboxFps";
+            this.chkShowCheckboxFps.Size = new System.Drawing.Size(97, 17);
+            this.chkShowCheckboxFps.TabIndex = 7;
+            this.chkShowCheckboxFps.Text = "FPS checkbox";
+            this.chkShowCheckboxFps.UseVisualStyleBackColor = true;
+            // 
+            // chkShowCheckboxFrametime
+            // 
+            this.chkShowCheckboxFrametime.AutoSize = true;
+            this.chkShowCheckboxFrametime.Checked = true;
+            this.chkShowCheckboxFrametime.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowCheckboxFrametime.Location = new System.Drawing.Point(380, 48);
+            this.chkShowCheckboxFrametime.Name = "chkShowCheckboxFrametime";
+            this.chkShowCheckboxFrametime.Size = new System.Drawing.Size(125, 17);
+            this.chkShowCheckboxFrametime.TabIndex = 8;
+            this.chkShowCheckboxFrametime.Text = "Frametime checkbox";
+            this.chkShowCheckboxFrametime.UseVisualStyleBackColor = true;
+            // 
+            // chkShowCheckboxPlaytime
+            // 
+            this.chkShowCheckboxPlaytime.AutoSize = true;
+            this.chkShowCheckboxPlaytime.Checked = true;
+            this.chkShowCheckboxPlaytime.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkShowCheckboxPlaytime.Location = new System.Drawing.Point(380, 72);
+            this.chkShowCheckboxPlaytime.Name = "chkShowCheckboxPlaytime";
+            this.chkShowCheckboxPlaytime.Size = new System.Drawing.Size(118, 17);
+            this.chkShowCheckboxPlaytime.TabIndex = 9;
+            this.chkShowCheckboxPlaytime.Text = "Playtime checkbox";
+            this.chkShowCheckboxPlaytime.UseVisualStyleBackColor = true;
             // 
             // tabEmulator
             // 
@@ -2484,6 +2638,8 @@ namespace SmartGoldbergEmu.Forms
             this.grpFPSDisplay.PerformLayout();
             this.grpOverlayExtras.ResumeLayout(false);
             this.grpOverlayExtras.PerformLayout();
+            this.grpOverlayButtons.ResumeLayout(false);
+            this.grpOverlayButtons.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.numAchievementNotificationDelay)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numNotificationDurationScreenshot)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numFpsAveragingWindow)).EndInit();
@@ -2634,6 +2790,17 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.Label lblFontSpacing;
         private System.Windows.Forms.GroupBox grpFPSDisplay;
         private System.Windows.Forms.GroupBox grpOverlayExtras;
+        private System.Windows.Forms.GroupBox grpOverlayButtons;
+        private System.Windows.Forms.CheckBox chkShowButtonUserInfo;
+        private System.Windows.Forms.CheckBox chkShowButtonAchievements;
+        private System.Windows.Forms.CheckBox chkShowButtonTestAchievement;
+        private System.Windows.Forms.CheckBox chkShowButtonCopyId;
+        private System.Windows.Forms.CheckBox chkShowButtonScreenshots;
+        private System.Windows.Forms.CheckBox chkShowButtonHistory;
+        private System.Windows.Forms.CheckBox chkShowButtonSettings;
+        private System.Windows.Forms.CheckBox chkShowCheckboxFps;
+        private System.Windows.Forms.CheckBox chkShowCheckboxFrametime;
+        private System.Windows.Forms.CheckBox chkShowCheckboxPlaytime;
         private System.Windows.Forms.CheckBox chkEnableScreenshot;
         private System.Windows.Forms.CheckBox chkShowNotificationHistory;
         private System.Windows.Forms.CheckBox chkShowAchievementList;

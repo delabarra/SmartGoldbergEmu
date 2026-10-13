@@ -10,5 +10,7 @@ namespace SmartGoldbergEmu.Models
         public string icon { get; set; }
         public string icongray { get; set; }
         public string icon_gray { get; set; }
+        // gbe_fork overlay shows this global unlock rate (0-100); omitted from JSON when null.
+        public double? unlock_percentage { get; set; }
     }
 }

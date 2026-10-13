@@ -376,7 +376,8 @@ namespace SmartGoldbergEmu.Services
                     hidden = entry.Hidden ? 1 : 0,
                     icon = entry.IconUrl ?? string.Empty,
                     icongray = entry.IconGrayUrl ?? string.Empty,
-                    icon_gray = entry.IconGrayUrl ?? string.Empty
+                    icon_gray = entry.IconGrayUrl ?? string.Empty,
+                    unlock_percentage = entry.UnlockPercentage
                 });
             }
 

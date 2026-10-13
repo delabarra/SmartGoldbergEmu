@@ -72,6 +72,8 @@ namespace AppDataKit
         public string IconUrl { get; set; }
         public string IconGrayUrl { get; set; }
         public bool Hidden { get; set; }
+        // Global unlock rate 0-100 from ISteamUserStats.GetGlobalAchievementPercentagesForApp; null when unknown.
+        public double? UnlockPercentage { get; set; }
     }
 
     public sealed class StatsSection : SnapshotSection

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using SmartGoldbergEmu.JsonKit;
+using SmartGoldbergEmu.Models;
 using Xunit;
 
 namespace SmartGoldbergEmu.Tests.JsonKit
@@ -39,6 +40,26 @@ namespace SmartGoldbergEmu.Tests.JsonKit
             var items = reparsed["items"] as JsonArray;
             Assert.NotNull(items);
             Assert.Equal(2, items.Count);
+        }
+
+        [Fact]
+        public void SerializeObject_omits_unset_achievement_unlock_percentage()
+        {
+            string json = JsonConvert.SerializeObject(new List<CAchievement> { new CAchievement { name = "ACH_A" } });
+            Assert.DoesNotContain("unlock_percentage", json);
+        }
+
+        [Fact]
+        public void Achievement_unlock_percentage_round_trips()
+        {
+            string json = JsonConvert.SerializeObject(new List<CAchievement>
+            {
+                new CAchievement { name = "ACH_A", unlock_percentage = 12.5 }
+            });
+
+            List<CAchievement> roundTrip = JsonConvert.DeserializeAchievementList(json);
+            Assert.Single(roundTrip);
+            Assert.Equal(12.5, roundTrip[0].unlock_percentage);
         }
     }
 }
