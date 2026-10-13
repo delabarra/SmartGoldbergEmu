@@ -297,7 +297,6 @@ namespace SmartGoldbergEmu.Services
             SetBoolIfNotDefault(iniFile, "main::connectivity", "share_leaderboards_over_network", settings.ShareLeaderboardsOverNetwork, d.ShareLeaderboardsOverNetwork);
             SetBoolIfNotDefault(iniFile, "main::connectivity", "disable_lobby_creation", settings.DisableLobbyCreation, d.DisableLobbyCreation);
             SetBoolIfNotDefault(iniFile, "main::connectivity", "download_steamhttp_requests", settings.DownloadSteamhttpRequests, d.DownloadSteamhttpRequests);
-            SetIntIfNotDefault(iniFile, "main::connectivity", "old_p2p_packet_sharing_mode", settings.OldP2PPacketSharingMode, d.OldP2PPacketSharingMode);
         }
 
         private void ApplyGlobalMainToIni(IniFile iniFile, MainSettings settings)
@@ -342,6 +341,7 @@ namespace SmartGoldbergEmu.Services
             _iniService.RemoveValue(iniFile, "main::general", "matchmaking_server_list_actual_type");
             _iniService.RemoveValue(iniFile, "main::general", "matchmaking_server_details_via_source_query");
 
+            // old_p2p_packet_sharing_mode is not read by either fork; strip it from configs written by older app versions.
             foreach (var key in new[]
             {
                 "disable_lan_only", "disable_networking", "listen_port", "offline",
@@ -768,10 +768,6 @@ namespace SmartGoldbergEmu.Services
                         break;
                     case "download_steamhttp_requests":
                         settings.DownloadSteamhttpRequests = value == "1";
-                        break;
-                    case "old_p2p_packet_sharing_mode":
-                        if (int.TryParse(value, out int p2pMode))
-                            settings.OldP2PPacketSharingMode = p2pMode;
                         break;
                 }
             }

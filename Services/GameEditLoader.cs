@@ -100,7 +100,7 @@ namespace SmartGoldbergEmu.Services
             sidecars.CustomBroadcasts = _goldbergFilesService.LoadCustomBroadcasts(appId) ?? string.Empty;
             sidecars.SubscribedGroups = _goldbergFilesService.LoadSubscribedGroups(appId) ?? string.Empty;
             sidecars.SubscribedGroupsClans = _goldbergFilesService.LoadSubscribedGroupsClans(appId) ?? string.Empty;
-            sidecars.AutoAcceptInvite = _goldbergFilesService.LoadAutoAcceptInvite(appId) ?? string.Empty;
+            sidecars.AutoAcceptInvite = _goldbergFilesService.LoadAutoAcceptInvite(appId);
             sidecars.BranchesJson = _goldbergFilesService.LoadBranches(appId) ?? string.Empty;
             sidecars.SteamInterfaces = _goldbergFilesService.LoadSteamSettingsTextFile(appId, PathConstants.GoldbergSteamInterfacesFileName);
             sidecars.AchievementsJson = _goldbergFilesService.LoadAchievements(appId) ?? string.Empty;

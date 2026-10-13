@@ -22,8 +22,7 @@ namespace SmartGoldbergEmu.Helpers
                 DisableSourceQuery = s.DisableSourceQuery,
                 ShareLeaderboardsOverNetwork = s.ShareLeaderboardsOverNetwork,
                 DisableLobbyCreation = s.DisableLobbyCreation,
-                DownloadSteamhttpRequests = s.DownloadSteamhttpRequests,
-                OldP2PPacketSharingMode = s.OldP2PPacketSharingMode
+                DownloadSteamhttpRequests = s.DownloadSteamhttpRequests
             };
         }
 
@@ -45,7 +44,6 @@ namespace SmartGoldbergEmu.Helpers
             target.ShareLeaderboardsOverNetwork = network.ShareLeaderboardsOverNetwork;
             target.DisableLobbyCreation = network.DisableLobbyCreation;
             target.DownloadSteamhttpRequests = network.DownloadSteamhttpRequests;
-            target.OldP2PPacketSharingMode = network.OldP2PPacketSharingMode;
         }
 
         public static bool NetworkSlicesEqual(MainSettings a, MainSettings b)
@@ -67,8 +65,7 @@ namespace SmartGoldbergEmu.Helpers
                    a.DisableSourceQuery == b.DisableSourceQuery &&
                    a.ShareLeaderboardsOverNetwork == b.ShareLeaderboardsOverNetwork &&
                    a.DisableLobbyCreation == b.DisableLobbyCreation &&
-                   a.DownloadSteamhttpRequests == b.DownloadSteamhttpRequests &&
-                   a.OldP2PPacketSharingMode == b.OldP2PPacketSharingMode;
+                   a.DownloadSteamhttpRequests == b.DownloadSteamhttpRequests;
         }
 
         public static MainSettings ExtractStatsAchievementsSlice(MainSettings source)

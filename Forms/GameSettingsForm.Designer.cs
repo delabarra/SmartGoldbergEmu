@@ -132,8 +132,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkStatAchievementProgressFunctionality = new System.Windows.Forms.CheckBox();
             this.tabServerMultiplayer = new System.Windows.Forms.TabPage();
             this.grpNetworkSettings = new System.Windows.Forms.GroupBox();
-            this.numOldP2PPacketSharingMode = new System.Windows.Forms.NumericUpDown();
-            this.lblOldP2PPacketSharingMode = new System.Windows.Forms.Label();
             this.chkOffline = new System.Windows.Forms.CheckBox();
             this.chkDisableNetworking = new System.Windows.Forms.CheckBox();
             this.chkShareLeaderboardsOverNetwork = new System.Windows.Forms.CheckBox();
@@ -150,6 +148,9 @@ namespace SmartGoldbergEmu.Forms
             this.chkImmediateGameserverStats = new System.Windows.Forms.CheckBox();
             this.chkMatchmakingServerListActualType = new System.Windows.Forms.CheckBox();
             this.chkMatchmakingServerDetailsViaSourceQuery = new System.Windows.Forms.CheckBox();
+            this.grpCustomBroadcasts = new System.Windows.Forms.GroupBox();
+            this.lblCustomBroadcastsHint = new System.Windows.Forms.Label();
+            this.txtCustomBroadcasts = new System.Windows.Forms.TextBox();
             this.tabInventory = new System.Windows.Forms.TabPage();
             this.grpInventoryEditor = new System.Windows.Forms.GroupBox();
             this.lblInventoryHint = new System.Windows.Forms.Label();
@@ -208,9 +209,9 @@ namespace SmartGoldbergEmu.Forms
             ((System.ComponentModel.ISupportInitialize)(this.numIconsPerIteration)).BeginInit();
             this.tabServerMultiplayer.SuspendLayout();
             this.grpNetworkSettings.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.numOldP2PPacketSharingMode)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numForcePort)).BeginInit();
             this.grpMatchmakingSettings.SuspendLayout();
+            this.grpCustomBroadcasts.SuspendLayout();
             this.tabInventory.SuspendLayout();
             this.grpInventoryEditor.SuspendLayout();
             this.pnlInventoryButtons.SuspendLayout();
@@ -1490,6 +1491,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabServerMultiplayer.AutoScroll = true;
             this.tabServerMultiplayer.Controls.Add(this.grpNetworkSettings);
             this.tabServerMultiplayer.Controls.Add(this.grpMatchmakingSettings);
+            this.tabServerMultiplayer.Controls.Add(this.grpCustomBroadcasts);
             this.tabServerMultiplayer.Location = new System.Drawing.Point(4, 22);
             this.tabServerMultiplayer.Name = "tabServerMultiplayer";
             this.tabServerMultiplayer.Padding = new System.Windows.Forms.Padding(3);
@@ -1502,8 +1504,6 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.grpNetworkSettings.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.grpNetworkSettings.Controls.Add(this.numOldP2PPacketSharingMode);
-            this.grpNetworkSettings.Controls.Add(this.lblOldP2PPacketSharingMode);
             this.grpNetworkSettings.Controls.Add(this.chkOffline);
             this.grpNetworkSettings.Controls.Add(this.chkDisableNetworking);
             this.grpNetworkSettings.Controls.Add(this.chkShareLeaderboardsOverNetwork);
@@ -1521,32 +1521,17 @@ namespace SmartGoldbergEmu.Forms
             this.grpNetworkSettings.TabStop = false;
             this.grpNetworkSettings.Text = "Connectivity";
             // 
-            // numOldP2PPacketSharingMode
-            // 
-            this.numOldP2PPacketSharingMode.Location = new System.Drawing.Point(472, 117);
-            this.numOldP2PPacketSharingMode.Name = "numOldP2PPacketSharingMode";
-            this.numOldP2PPacketSharingMode.Size = new System.Drawing.Size(68, 20);
-            this.numOldP2PPacketSharingMode.TabIndex = 6;
-            this.toolTip.SetToolTip(this.numOldP2PPacketSharingMode, "Legacy P2P packet sharing workaround.\r\n\r\nDefault: 0");
-            // 
-            // lblOldP2PPacketSharingMode
-            // 
-            this.lblOldP2PPacketSharingMode.AutoSize = true;
-            this.lblOldP2PPacketSharingMode.Location = new System.Drawing.Point(327, 119);
-            this.lblOldP2PPacketSharingMode.Name = "lblOldP2PPacketSharingMode";
-            this.lblOldP2PPacketSharingMode.Size = new System.Drawing.Size(141, 13);
-            this.lblOldP2PPacketSharingMode.TabIndex = 13;
-            this.lblOldP2PPacketSharingMode.Text = "Legacy P2P packet sharing:";
-            // 
             // chkOffline
             // 
             this.chkOffline.AutoSize = true;
             this.chkOffline.Location = new System.Drawing.Point(20, 118);
             this.chkOffline.Name = "chkOffline";
-            this.chkOffline.Size = new System.Drawing.Size(129, 17);
+            this.chkOffline.Size = new System.Drawing.Size(142, 17);
             this.chkOffline.TabIndex = 4;
-            this.chkOffline.Text = "Offline (no Steam link)";
-            this.toolTip.SetToolTip(this.chkOffline, "Pretend Steam is in offline mode.\r\n\r\nDefault: off");
+            this.chkOffline.Text = "Report Steam as Offline";
+            this.toolTip.SetToolTip(this.chkOffline, "Tell the game that Steam is in offline mode (not logged on).\r\n\r\nSome games that c" +
+        "onnect to their own online servers only work with this on.\r\n\r\nLAN play still wo" +
+        "rks.\r\n\r\nDefault: off");
             this.chkOffline.UseVisualStyleBackColor = true;
             // 
             // chkDisableNetworking
@@ -1566,7 +1551,7 @@ namespace SmartGoldbergEmu.Forms
             this.chkShareLeaderboardsOverNetwork.Location = new System.Drawing.Point(330, 22);
             this.chkShareLeaderboardsOverNetwork.Name = "chkShareLeaderboardsOverNetwork";
             this.chkShareLeaderboardsOverNetwork.Size = new System.Drawing.Size(191, 17);
-            this.chkShareLeaderboardsOverNetwork.TabIndex = 7;
+            this.chkShareLeaderboardsOverNetwork.TabIndex = 5;
             this.chkShareLeaderboardsOverNetwork.Text = "Share Leaderboards Over Network";
             this.toolTip.SetToolTip(this.chkShareLeaderboardsOverNetwork, "Share leaderboard scores with others on the same LAN (experimental).\r\n\r\nDefault: " +
         "off");
@@ -1587,7 +1572,7 @@ namespace SmartGoldbergEmu.Forms
             0});
             this.numForcePort.Name = "numForcePort";
             this.numForcePort.Size = new System.Drawing.Size(68, 20);
-            this.numForcePort.TabIndex = 11;
+            this.numForcePort.TabIndex = 9;
             this.toolTip.SetToolTip(this.numForcePort, "UDP/TCP port the emulator listens on. Everyone on the LAN must use the same port." +
         "\r\n\r\nDefault: 47584");
             this.numForcePort.Value = new decimal(new int[] {
@@ -1602,7 +1587,7 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableLanOnly.Location = new System.Drawing.Point(20, 46);
             this.chkDisableLanOnly.Name = "chkDisableLanOnly";
             this.chkDisableLanOnly.Size = new System.Drawing.Size(109, 17);
-            this.chkDisableLanOnly.TabIndex = 2;
+            this.chkDisableLanOnly.TabIndex = 1;
             this.chkDisableLanOnly.Text = "Disable LAN Only";
             this.toolTip.SetToolTip(this.chkDisableLanOnly, "Allow the game to reach the real internet instead of LAN-only hooks.\r\n\r\nNeeded fo" +
         "r some HTTP downloads.\r\n\r\nDefault: off");
@@ -1614,7 +1599,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblForcePort.Location = new System.Drawing.Point(327, 95);
             this.lblForcePort.Name = "lblForcePort";
             this.lblForcePort.Size = new System.Drawing.Size(59, 13);
-            this.lblForcePort.TabIndex = 4;
+            this.lblForcePort.TabIndex = 8;
             this.lblForcePort.Text = "Listen port:";
             // 
             // chkDisableSharingStatsWithGameserver
@@ -1646,7 +1631,7 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableLobbyCreation.Location = new System.Drawing.Point(330, 46);
             this.chkDisableLobbyCreation.Name = "chkDisableLobbyCreation";
             this.chkDisableLobbyCreation.Size = new System.Drawing.Size(135, 17);
-            this.chkDisableLobbyCreation.TabIndex = 8;
+            this.chkDisableLobbyCreation.TabIndex = 6;
             this.chkDisableLobbyCreation.Text = "Disable Lobby Creation";
             this.toolTip.SetToolTip(this.chkDisableLobbyCreation, "Block creating lobbies in Steam matchmaking.\r\n\r\nDefault: off");
             this.chkDisableLobbyCreation.UseVisualStyleBackColor = true;
@@ -1657,7 +1642,7 @@ namespace SmartGoldbergEmu.Forms
             this.chkDownloadSteamhttpRequests.Location = new System.Drawing.Point(330, 70);
             this.chkDownloadSteamhttpRequests.Name = "chkDownloadSteamhttpRequests";
             this.chkDownloadSteamhttpRequests.Size = new System.Drawing.Size(187, 17);
-            this.chkDownloadSteamhttpRequests.TabIndex = 9;
+            this.chkDownloadSteamhttpRequests.TabIndex = 7;
             this.chkDownloadSteamhttpRequests.Text = "Download Steam HTTP Requests";
             this.toolTip.SetToolTip(this.chkDownloadSteamhttpRequests, "Save Steam HTTP downloads under steam_settings\\http\\.\r\n\r\nNeeds LAN-only off and n" +
         "etworking on.\r\n\r\nDefault: off");
@@ -1736,6 +1721,44 @@ namespace SmartGoldbergEmu.Forms
             this.toolTip.SetToolTip(this.chkMatchmakingServerDetailsViaSourceQuery, "Query servers for matchmaking details instead of LAN discovery.\r\n\r\nNot recommende" +
         "d; can break some games.\r\n\r\nDefault: off");
             this.chkMatchmakingServerDetailsViaSourceQuery.UseVisualStyleBackColor = true;
+            // 
+            // grpCustomBroadcasts
+            // 
+            this.grpCustomBroadcasts.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.grpCustomBroadcasts.Controls.Add(this.lblCustomBroadcastsHint);
+            this.grpCustomBroadcasts.Controls.Add(this.txtCustomBroadcasts);
+            this.grpCustomBroadcasts.Location = new System.Drawing.Point(20, 298);
+            this.grpCustomBroadcasts.Name = "grpCustomBroadcasts";
+            this.grpCustomBroadcasts.Size = new System.Drawing.Size(640, 180);
+            this.grpCustomBroadcasts.TabIndex = 2;
+            this.grpCustomBroadcasts.TabStop = false;
+            this.grpCustomBroadcasts.Text = "Friends\' IPs (VPN / Internet)";
+            // 
+            // lblCustomBroadcastsHint
+            // 
+            this.lblCustomBroadcastsHint.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.lblCustomBroadcastsHint.Location = new System.Drawing.Point(17, 22);
+            this.lblCustomBroadcastsHint.Name = "lblCustomBroadcastsHint";
+            this.lblCustomBroadcastsHint.Size = new System.Drawing.Size(606, 30);
+            this.lblCustomBroadcastsHint.TabIndex = 0;
+            this.lblCustomBroadcastsHint.Text = "Playing over a VPN (Radmin, ZeroTier, Tailscale, Hamachi) or another network? Ent" +
+    "er each friend\'s IP address or hostname, one per line. Leave empty for normal LAN play.";
+            // 
+            // txtCustomBroadcasts
+            // 
+            this.txtCustomBroadcasts.AcceptsReturn = true;
+            this.txtCustomBroadcasts.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.txtCustomBroadcasts.Location = new System.Drawing.Point(20, 58);
+            this.txtCustomBroadcasts.Multiline = true;
+            this.txtCustomBroadcasts.Name = "txtCustomBroadcasts";
+            this.txtCustomBroadcasts.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
+            this.txtCustomBroadcasts.Size = new System.Drawing.Size(600, 105);
+            this.txtCustomBroadcasts.TabIndex = 1;
+            this.toolTip.SetToolTip(this.txtCustomBroadcasts, "Goldberg also sends its discovery packets to these addresses.\r\n\r\nEveryone must us" +
+        "e the same listen port.\r\n\r\nSaved to steam_settings\\custom_broadcasts.txt.");
             // 
             // tabInventory
             // 
@@ -2188,10 +2211,11 @@ namespace SmartGoldbergEmu.Forms
             this.tabServerMultiplayer.ResumeLayout(false);
             this.grpNetworkSettings.ResumeLayout(false);
             this.grpNetworkSettings.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.numOldP2PPacketSharingMode)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numForcePort)).EndInit();
             this.grpMatchmakingSettings.ResumeLayout(false);
             this.grpMatchmakingSettings.PerformLayout();
+            this.grpCustomBroadcasts.ResumeLayout(false);
+            this.grpCustomBroadcasts.PerformLayout();
             this.tabInventory.ResumeLayout(false);
             this.grpInventoryEditor.ResumeLayout(false);
             this.grpInventoryEditor.PerformLayout();
@@ -2340,8 +2364,9 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.TextBox txtForceIpCountry;
         private System.Windows.Forms.Label lblForceIpCountry;
         private System.Windows.Forms.CheckBox chkOffline;
-        private System.Windows.Forms.NumericUpDown numOldP2PPacketSharingMode;
-        private System.Windows.Forms.Label lblOldP2PPacketSharingMode;
+        private System.Windows.Forms.GroupBox grpCustomBroadcasts;
+        private System.Windows.Forms.Label lblCustomBroadcastsHint;
+        private System.Windows.Forms.TextBox txtCustomBroadcasts;
         
         // Additional Main Settings Controls
         private System.Windows.Forms.CheckBox chkEnableVoiceChat;

@@ -280,9 +280,14 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 var path = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergCustomBroadcastsFileName);
-                if (!string.IsNullOrWhiteSpace(content))
+                // Goldberg resolves each line as-is, so surrounding whitespace would break the address.
+                var lines = (content ?? string.Empty)
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => line.Length > 0)
+                    .ToArray();
+                if (lines.Length > 0)
                 {
-                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     Directory.CreateDirectory(Path.GetDirectoryName(path));
                     File.WriteAllLines(path, lines);
                     return SaveResult.Success(1);
@@ -402,6 +407,7 @@ namespace SmartGoldbergEmu.Services
 
         #region Auto Accept Invite
 
+        // Returns null when the file is missing; an empty string means the file exists and accepts invites from anyone.
         public string LoadAutoAcceptInvite(ulong appId)
         {
             try
@@ -417,27 +423,30 @@ namespace SmartGoldbergEmu.Services
             {
                 ServiceLocator.LogService?.LogError($"Failed to load {PathConstants.GoldbergAutoAcceptInviteFileName}: {ex.Message}", ex);
             }
-            return string.Empty;
+            return null;
         }
 
+        // null deletes the file; empty or whitespace writes an empty file, which Goldberg treats as "accept invites from anyone".
         public SaveResult SaveAutoAcceptInvite(ulong appId, string content)
         {
             try
             {
                 var path = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergAutoAcceptInviteFileName);
-                if (!string.IsNullOrWhiteSpace(content))
+                if (content == null)
                 {
-                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    Directory.CreateDirectory(Path.GetDirectoryName(path));
-                    File.WriteAllLines(path, lines);
-                    return SaveResult.Success(1);
-                }
-                else if (File.Exists(path))
-                {
-                    File.Delete(path);
+                    if (File.Exists(path))
+                        File.Delete(path);
                     return SaveResult.Success(0);
                 }
-                return SaveResult.Success(0);
+
+                var lines = content
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => line.Length > 0)
+                    .ToArray();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllLines(path, lines);
+                return SaveResult.Success(1);
             }
             catch (Exception ex)
             {

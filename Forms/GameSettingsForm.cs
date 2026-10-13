@@ -331,6 +331,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 SetSubscribedGroupLines(lstSubscribedGroups, sidecars.SubscribedGroups);
                 SetSubscribedGroupLines(lstSubscribedGroupsClans, sidecars.SubscribedGroupsClans);
+                SetTextBoxText(txtCustomBroadcasts, sidecars.CustomBroadcasts);
 
                 ReloadAchievementsPreviewFromDisk();
 
@@ -445,7 +446,6 @@ namespace SmartGoldbergEmu.Forms
             BindCheck(chkShareLeaderboardsOverNetwork, v => main.ShareLeaderboardsOverNetwork = v);
             BindCheck(chkDisableLobbyCreation, v => main.DisableLobbyCreation = v);
             BindCheck(chkDownloadSteamhttpRequests, v => main.DownloadSteamhttpRequests = v);
-            BindNum(numOldP2PPacketSharingMode, v => main.OldP2PPacketSharingMode = v);
         }
 
         private void LoadNetworkMainToForm(MainSettings main)
@@ -466,7 +466,6 @@ namespace SmartGoldbergEmu.Forms
             LoadCheck(chkShareLeaderboardsOverNetwork, main.ShareLeaderboardsOverNetwork);
             LoadCheck(chkDisableLobbyCreation, main.DisableLobbyCreation);
             LoadCheck(chkDownloadSteamhttpRequests, main.DownloadSteamhttpRequests);
-            LoadNum(numOldP2PPacketSharingMode, main.OldP2PPacketSharingMode);
         }
 
         private void ApplyStatsAchievementsMainFromForm(MainSettings main)
@@ -1410,7 +1409,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 txtAppID, txtGameName, txtGameFolder, txtGameExecutable, txtLaunchParameters, txtWorkingDirectory, txtCustomIcon,
                 txtForceAccountName, txtForceSteamId, txtUserTicket, txtAltSteamId, txtForceIpCountry,
-                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw
+                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw, txtCustomBroadcasts
             })
                 WireTextChanged(tb);
 
@@ -1427,7 +1426,7 @@ namespace SmartGoldbergEmu.Forms
             })
                 WireChecked(chk);
 
-            foreach (var nud in new[] { numForcePort, numOldP2PPacketSharingMode, numAltSteamIdCount, numIconsPerIteration })
+            foreach (var nud in new[] { numForcePort, numAltSteamIdCount, numIconsPerIteration })
                 WireValueChanged(nud);
 
             WireCheckedWithSecondary(chkUnlockAllDLC, ChkUnlockAllDLC_CheckedChanged);
@@ -3922,6 +3921,8 @@ namespace SmartGoldbergEmu.Forms
 
                 LoadGoldbergTextIntoListBox(lstSubscribedGroupsClans, service.LoadSubscribedGroupsClans);
 
+                LoadGoldbergTextIntoTextBox(txtCustomBroadcasts, service.LoadCustomBroadcasts);
+
                 ReloadAchievementsPreviewFromDisk();
 
                 LoadInventoryEditorFromDisk();
@@ -3965,6 +3966,8 @@ namespace SmartGoldbergEmu.Forms
                 SubscribedGroups = GetSubscribedGroupLinesText(lstSubscribedGroups),
                 HasSubscribedGroupsClans = lstSubscribedGroupsClans != null,
                 SubscribedGroupsClans = GetSubscribedGroupLinesText(lstSubscribedGroupsClans),
+                HasCustomBroadcasts = txtCustomBroadcasts != null,
+                CustomBroadcasts = txtCustomBroadcasts?.Text ?? string.Empty,
                 HasAchievements = _isEditMode && !string.IsNullOrWhiteSpace(_achievementsRawJson),
                 AchievementsJson = _achievementsRawJson ?? string.Empty,
                 ItemsJson = GetInventoryItemsJsonForSave(),
@@ -4021,6 +4024,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 GetSubscribedGroupLinesText(lstSubscribedGroups),
                 GetSubscribedGroupLinesText(lstSubscribedGroupsClans),
+                txtCustomBroadcasts?.Text ?? string.Empty,
                 _achievementsRawJson ?? string.Empty,
                 GetInventoryItemsStateFingerprint()
             };

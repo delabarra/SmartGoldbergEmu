@@ -194,7 +194,6 @@ namespace SmartGoldbergEmu.Models
         public bool ShareLeaderboardsOverNetwork { get; set; } = false;
         public bool DisableLobbyCreation { get; set; } = false;
         public bool DownloadSteamhttpRequests { get; set; } = false;
-        public int OldP2PPacketSharingMode { get; set; } = 0;
 
         // [main::misc]
         public bool AchievementsBypass { get; set; } = false;

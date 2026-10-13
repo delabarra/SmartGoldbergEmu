@@ -281,7 +281,6 @@ namespace SmartGoldbergEmu.Services
             m.ShareLeaderboardsOverNetwork = PerGameOnlyBool(gameSpecific.ShareLeaderboardsOverNetwork, d.ShareLeaderboardsOverNetwork);
             m.DisableLobbyCreation = PerGameOnlyBool(gameSpecific.DisableLobbyCreation, d.DisableLobbyCreation);
             m.DownloadSteamhttpRequests = PerGameOnlyBool(gameSpecific.DownloadSteamhttpRequests, d.DownloadSteamhttpRequests);
-            m.OldP2PPacketSharingMode = PerGameOnlyInt(gameSpecific.OldP2PPacketSharingMode, d.OldP2PPacketSharingMode);
 
             m.AchievementsBypass = MergeFlag(gameSpecific.AchievementsBypass, global.AchievementsBypass, d.AchievementsBypass);
             m.ForceSteamhttpSuccess = MergeFlag(gameSpecific.ForceSteamhttpSuccess, global.ForceSteamhttpSuccess, d.ForceSteamhttpSuccess);
@@ -1708,10 +1707,6 @@ namespace SmartGoldbergEmu.Services
                                 if (currentSection == "main::connectivity")
                                     settings.DownloadSteamhttpRequests = isEnabled;
                                 break;
-                            case "old_p2p_packet_sharing_mode":
-                                if (currentSection == "main::connectivity" && int.TryParse(value, out int p2pMode))
-                                    settings.OldP2PPacketSharingMode = p2pMode;
-                                break;
                             // main::misc
                             case "achievements_bypass":
                                 if (currentSection == "main::misc")
@@ -1988,6 +1983,7 @@ namespace SmartGoldbergEmu.Services
             })
                 iniService.RemoveValue(iniFile, "main::general", key);
 
+            // old_p2p_packet_sharing_mode is not read by either fork; strip it from configs written by older app versions.
             foreach (var key in new[]
             {
                 "disable_lan_only", "disable_networking", "listen_port", "offline",
@@ -2088,8 +2084,6 @@ namespace SmartGoldbergEmu.Services
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::connectivity", "disable_lobby_creation", BoolToInt(settings.DisableLobbyCreation), cache, "1=prevent lobby creation in steam matchmaking interface", "default=0");
                 if (settings.DownloadSteamhttpRequests != d.DownloadSteamhttpRequests)
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::connectivity", "download_steamhttp_requests", BoolToInt(settings.DownloadSteamhttpRequests), cache, $"1=attempt to download external HTTP(S) requests made via Steam_HTTP::SendHTTPRequest() inside \"{PathConstants.SteamSettingsFolderName}/{PathConstants.GoldbergSteamSettingsHttpFolderName}/\"", "default=0");
-                if (settings.OldP2PPacketSharingMode != d.OldP2PPacketSharingMode)
-                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::connectivity", "old_p2p_packet_sharing_mode", settings.OldP2PPacketSharingMode.ToString(), cache, "legacy p2p packet sharing mode", "default=0");
 
                 GoldbergIniDocumentationHelper.AppendSection(content, "main::misc");
                 if (settings.AchievementsBypass != d.AchievementsBypass)
