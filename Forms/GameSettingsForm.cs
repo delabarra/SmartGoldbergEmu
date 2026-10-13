@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -1194,9 +1193,10 @@ namespace SmartGoldbergEmu.Forms
 
             try
             {
-                ReloadAchievementsPreviewFromDisk();
+                // Clear first: the reload rebuilds unfiltered and cancels the debounce the clear just started.
                 if (txtAchievementsFilter != null)
                     ClearTextBox(txtAchievementsFilter);
+                ReloadAchievementsPreviewFromDisk();
             }
             catch (Exception ex)
             {
@@ -1245,6 +1245,7 @@ namespace SmartGoldbergEmu.Forms
         {
             CancelModsListResolve();
             StopAndDisposeRestoreMessageHideTimer();
+            StopAndDisposeAchievementsFilterDebounceTimer();
             ClearSteamApiFindingLabels();
             // Designer ImageList.Dispose owns remaining Depth32Bit originals.
             _achievementPreviewOwnedImages.ReleaseOwnership();
@@ -1491,6 +1492,12 @@ namespace SmartGoldbergEmu.Forms
         private int _achievementsPreviewSortColumn;
         private bool _achievementsPreviewSortAscending = true;
         private readonly ImageListOwnedImages _achievementPreviewOwnedImages = new ImageListOwnedImages();
+        // Preview icons are keyed by icon path and reused across filter/sort rebuilds until the data reloads.
+        private bool _achievementPreviewIconsStale = true;
+        private string _achievementPreviewIconsSteamSettingsPath;
+        private System.Windows.Forms.Timer _achievementsFilterDebounceTimer;
+        private const int AchievementsFilterDebounceMs = 150;
+        private const string AchievementPreviewPlaceholderIconKey = "<placeholder>";
         private const string AchievementsPreviewColumnAchievement = "Achievement";
         private const string AchievementsPreviewColumnDescription = "Description";
         private bool _balancingAchievementsColumns;
@@ -1512,6 +1519,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             _achievementsPreviewListCache = null;
+            _achievementPreviewIconsStale = true;
             if (_achievementsPreviewRevealedSecrets != null)
                 _achievementsPreviewRevealedSecrets.Clear();
             else
@@ -1555,7 +1563,32 @@ namespace SmartGoldbergEmu.Forms
 
         private void TxtAchievementsFilter_TextChanged(object sender, EventArgs e)
         {
+            if (_achievementsFilterDebounceTimer == null)
+            {
+                _achievementsFilterDebounceTimer = new System.Windows.Forms.Timer { Interval = AchievementsFilterDebounceMs };
+                _achievementsFilterDebounceTimer.Tick += AchievementsFilterDebounceTimer_Tick;
+            }
+
+            _achievementsFilterDebounceTimer.Stop();
+            _achievementsFilterDebounceTimer.Start();
+        }
+
+        private void AchievementsFilterDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            _achievementsFilterDebounceTimer?.Stop();
+            if (IsDisposed || Disposing)
+                return;
             RebuildAchievementsPreviewItems();
+        }
+
+        private void StopAndDisposeAchievementsFilterDebounceTimer()
+        {
+            if (_achievementsFilterDebounceTimer == null)
+                return;
+            _achievementsFilterDebounceTimer.Stop();
+            _achievementsFilterDebounceTimer.Tick -= AchievementsFilterDebounceTimer_Tick;
+            _achievementsFilterDebounceTimer.Dispose();
+            _achievementsFilterDebounceTimer = null;
         }
 
         private void LstAchievementsPreview_ColumnClick(object sender, ColumnClickEventArgs e)
@@ -1586,9 +1619,9 @@ namespace SmartGoldbergEmu.Forms
             if (_achievementsPreviewSortApplied)
             {
                 if (_achievementsPreviewSortColumn == 0)
-                    nameCol += _achievementsPreviewSortAscending ? " â–²" : " â–¼";
+                    nameCol += _achievementsPreviewSortAscending ? " \u25B2" : " \u25BC";
                 else
-                    descCol += _achievementsPreviewSortAscending ? " â–²" : " â–¼";
+                    descCol += _achievementsPreviewSortAscending ? " \u25B2" : " \u25BC";
             }
 
             lstAchievementsPreview.Columns[0].Text = nameCol;
@@ -1665,6 +1698,7 @@ namespace SmartGoldbergEmu.Forms
             if (lstAchievementsPreview == null || imgAchievementsPreview == null)
                 return;
 
+            _achievementsFilterDebounceTimer?.Stop();
             UpdateAchievementPreviewColumnHeaders();
 
             if (_achievementsPreviewListCache == null || _achievementsPreviewListCache.Count == 0)
@@ -1674,6 +1708,8 @@ namespace SmartGoldbergEmu.Forms
                 {
                     lstAchievementsPreview.Items.Clear();
                     _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
+                    _achievementPreviewIconsStale = false;
+                    _achievementPreviewIconsSteamSettingsPath = null;
                 }
                 finally
                 {
@@ -1697,9 +1733,16 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 lstAchievementsPreview.Items.Clear();
-                _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
+                // Cleared only together with Items: the native ListView caches image indices, and removals shift them.
+                if (_achievementPreviewIconsStale
+                    || !string.Equals(_achievementPreviewIconsSteamSettingsPath, steamSettingsPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
+                    _achievementPreviewIconsStale = false;
+                    _achievementPreviewIconsSteamSettingsPath = steamSettingsPath;
+                }
 
-                int imageIndex = 0;
+                var items = new List<ListViewItem>(indices.Count);
                 foreach (int srcIdx in indices)
                 {
                     var achievement = _achievementsPreviewListCache[srcIdx];
@@ -1707,9 +1750,12 @@ namespace SmartGoldbergEmu.Forms
                     if (string.IsNullOrWhiteSpace(iconPath))
                         iconPath = achievement.IconPath;
 
-                    Image previewIcon = _achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize);
-                    string imageKey = imageIndex.ToString(CultureInfo.InvariantCulture);
-                    _achievementPreviewOwnedImages.Set(imgAchievementsPreview, imageKey, previewIcon);
+                    string imageKey = string.IsNullOrWhiteSpace(iconPath) ? AchievementPreviewPlaceholderIconKey : iconPath;
+                    if (!_achievementPreviewOwnedImages.ContainsKey(imageKey))
+                    {
+                        Image previewIcon = _achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize);
+                        _achievementPreviewOwnedImages.Set(imgAchievementsPreview, imageKey, previewIcon);
+                    }
 
                     var preview = _achievementService.BuildAchievementPreviewText(
                         ToAchievementPreviewData(achievement),
@@ -1718,14 +1764,14 @@ namespace SmartGoldbergEmu.Forms
                     string title = preview.Title;
                     string description = preview.Description;
 
-                    var item = new ListViewItem(title, imageIndex);
+                    var item = new ListViewItem(title, imageKey);
                     item.SubItems.Add(description);
                     item.Tag = srcIdx;
                     item.ToolTipText = preview.Tooltip;
-                    lstAchievementsPreview.Items.Add(item);
-                    imageIndex++;
+                    items.Add(item);
                 }
 
+                lstAchievementsPreview.Items.AddRange(items.ToArray());
                 AutoResizeAchievementsColumns();
             }
             catch (Exception ex)

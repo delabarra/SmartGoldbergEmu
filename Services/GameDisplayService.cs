@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Constants;
@@ -16,6 +17,11 @@ namespace SmartGoldbergEmu.Services
         // Depth32Bit ImageList Clear/Remove do not Dispose bitmaps; track what we Add.
         private readonly ImageListOwnedImages _largeIconOwnedImages = new ImageListOwnedImages();
         private readonly ImageListOwnedImages _smallIconOwnedImages = new ImageListOwnedImages();
+        // Source file write times for cached icons, so a refresh re-extracts icons whose file changed in place.
+        private readonly Dictionary<string, DateTime> _largeIconSourceWriteTimes =
+            new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> _smallIconSourceWriteTimes =
+            new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         public GameDisplayService() : this(ServiceLocator.IconService)
         {
@@ -46,20 +52,26 @@ namespace SmartGoldbergEmu.Services
             {
                 listView.Items.Clear();
 
+                string[] iconPaths = null;
                 if (loadIcons)
                 {
+                    iconPaths = new string[games.Count];
+                    for (int i = 0; i < games.Count; i++)
+                        TryResolveIconSourcePathForViewMode(games[i], viewMode, out iconPaths[i]);
+
+                    // Prune before adding items: the native ListView caches image indices, and removals shift them.
                     if (largeImageList != null && IsIconView(viewMode))
-                        _largeIconOwnedImages.Clear(largeImageList);
+                        PruneIconCache(largeImageList, _largeIconOwnedImages, _largeIconSourceWriteTimes, iconPaths);
                     if (smallImageList != null && IsDetailsView(viewMode))
-                        _smallIconOwnedImages.Clear(smallImageList);
+                        PruneIconCache(smallImageList, _smallIconOwnedImages, _smallIconSourceWriteTimes, iconPaths);
                 }
 
-                foreach (var game in games)
+                var items = new ListViewItem[games.Count];
+                for (int i = 0; i < games.Count; i++)
                 {
+                    var game = games[i];
                     var imageIndex = -1;
-                    string iconPath = null;
-                    if (loadIcons)
-                        TryResolveIconSourcePathForViewMode(game, viewMode, out iconPath);
+                    string iconPath = loadIcons ? iconPaths[i] : null;
 
                     if (loadIcons && !string.IsNullOrEmpty(iconPath))
                     {
@@ -69,12 +81,48 @@ namespace SmartGoldbergEmu.Services
                             imageIndex = LoadIconIntoImageList(iconPath, smallImageList, false);
                     }
 
-                    listView.Items.Add(CreateListViewItem(game, imageIndex, viewMode, isImportPending, isAddPending, isUpdatePending));
+                    items[i] = CreateListViewItem(game, imageIndex, viewMode, isImportPending, isAddPending, isUpdatePending);
                 }
+
+                listView.Items.AddRange(items);
             }
             finally
             {
                 listView.EndUpdate();
+            }
+        }
+
+        private static void PruneIconCache(
+            ImageList imageList,
+            ImageListOwnedImages ownedImages,
+            Dictionary<string, DateTime> sourceWriteTimes,
+            IEnumerable<string> neededPaths)
+        {
+            var needed = new HashSet<string>(
+                neededPaths.Where(path => !string.IsNullOrEmpty(path)),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (string key in ownedImages.GetKeys())
+            {
+                bool unchanged = sourceWriteTimes.TryGetValue(key, out DateTime cachedWriteTime)
+                    && cachedWriteTime == GetIconSourceWriteTimeUtc(key);
+                if (needed.Contains(key) && unchanged)
+                    continue;
+
+                ownedImages.Remove(imageList, key);
+                sourceWriteTimes.Remove(key);
+            }
+        }
+
+        private static DateTime GetIconSourceWriteTimeUtc(string filePath)
+        {
+            try
+            {
+                return File.GetLastWriteTimeUtc(filePath);
+            }
+            catch
+            {
+                return DateTime.MinValue;
             }
         }
 
@@ -254,6 +302,8 @@ namespace SmartGoldbergEmu.Services
 
                 var owned = largeIcon ? _largeIconOwnedImages : _smallIconOwnedImages;
                 owned.Set(imageList, filePath, bitmap);
+                var sourceWriteTimes = largeIcon ? _largeIconSourceWriteTimes : _smallIconSourceWriteTimes;
+                sourceWriteTimes[filePath] = GetIconSourceWriteTimeUtc(filePath);
                 return imageList.Images.IndexOfKey(filePath);
             }
             catch
@@ -389,25 +439,42 @@ namespace SmartGoldbergEmu.Services
                 return;
             }
 
+            var items = OrderBySortSetting(
+                listView.Items.Cast<ListViewItem>(),
+                sortBy,
+                sortDirection,
+                GetSortKeyName,
+                GetSortKeyAppId);
+            if (items == null)
+                return;
+
             listView.BeginUpdate();
             try
             {
-                var items = listView.Items.Cast<ListViewItem>().ToList();
-                var ascending = sortDirection.Equals("Asc", StringComparison.OrdinalIgnoreCase);
-
-                if (sortBy.Equals("Name", StringComparison.OrdinalIgnoreCase))
-                    items = (ascending ? items.OrderBy(GetSortKeyName) : items.OrderByDescending(GetSortKeyName)).ToList();
-                else if (sortBy.Equals("AppId", StringComparison.OrdinalIgnoreCase))
-                    items = (ascending ? items.OrderBy(GetSortKeyAppId) : items.OrderByDescending(GetSortKeyAppId)).ToList();
-
                 listView.Items.Clear();
-                foreach (var item in items)
-                    listView.Items.Add(item);
+                listView.Items.AddRange(items.ToArray());
             }
             finally
             {
                 listView.EndUpdate();
             }
+        }
+
+        // Null when sortBy names no sortable column ("None" or unknown).
+        private static List<T> OrderBySortSetting<T>(
+            IEnumerable<T> source,
+            string sortBy,
+            string sortDirection,
+            Func<T, string> nameKey,
+            Func<T, ulong> appIdKey)
+        {
+            var ascending = sortDirection.Equals("Asc", StringComparison.OrdinalIgnoreCase);
+
+            if (sortBy.Equals("Name", StringComparison.OrdinalIgnoreCase))
+                return (ascending ? source.OrderBy(nameKey) : source.OrderByDescending(nameKey)).ToList();
+            if (sortBy.Equals("AppId", StringComparison.OrdinalIgnoreCase))
+                return (ascending ? source.OrderBy(appIdKey) : source.OrderByDescending(appIdKey)).ToList();
+            return null;
         }
 
         private static string GetSortKeyName(ListViewItem item)
@@ -446,10 +513,24 @@ namespace SmartGoldbergEmu.Services
                 ? new List<GameConfig>(gamesOverride)
                 : gameDataService.GetAllGames();
 
+            string sortBy = applySort ? appDataService.GetSortBy() : null;
+            if (!string.IsNullOrEmpty(sortBy))
+            {
+                // Same order ApplySort would produce, without filling the list twice.
+                var sortedGames = OrderBySortSetting(
+                    games,
+                    sortBy,
+                    appDataService.GetSortDirection(),
+                    game => game.AppName ?? string.Empty,
+                    game => game.AppId);
+                if (sortedGames != null)
+                    games = sortedGames;
+            }
+
             PopulateListView(listView, games, viewMode, largeImageList, smallImageList, isImportPending, isAddPending, isUpdatePending);
             SetViewMode(listView, viewMode, largeImageList, smallImageList, appDataService.GetDetailsColumnOrder(), appDataService.GetDetailsColumnWidths());
-            if (applySort)
-                ApplySort(listView, appDataService.GetSortBy(), appDataService.GetSortDirection());
+            if (!string.IsNullOrEmpty(sortBy) && sortBy.Equals("None", StringComparison.OrdinalIgnoreCase))
+                listView.Sorting = SortOrder.None;
         }
 
         public static ListViewItem FindListItemByGameGuid(ListView listView, Guid gameGuid)

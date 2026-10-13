@@ -645,7 +645,7 @@ namespace SmartGoldbergEmu.Services
             }
             else if (achievement != null && achievement.IsHidden && achievement.IsUnlocked && !isRevealed)
             {
-                description = "â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ";
+                description = new string('\u2588', 20);
             }
 
             return new AchievementPreviewTextResult
