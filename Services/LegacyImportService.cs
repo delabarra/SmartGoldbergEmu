@@ -59,11 +59,14 @@ namespace SmartGoldbergEmu.Services
             TryMigrateApplicationConfigFromLocalAppData();
             TryMigrateApplicationConfigFromLegacyExeCfg();
             ServiceLocator.AppDataService.TryMigrateUiSettingsFromConfig();
-            TryMigrateApplicationConfigViewMode();
+            TryMigrateApplicationConfigViewMode(PathConstants.ConfigFilePath, ServiceLocator.IniFileService);
             TryImportLegacyApiKey(null, null);
             TryDeleteLegacyApiKeyFileIfRegistryHasKey();
             TryMigrateGamesIniLibrary();
             TryCleanupLocalAppDataPerUserFolder();
+            TryRemoveLegacyGenerateInterfacesFolder(PathConstants.LauncherInstallDirectory);
+            TryStripObsoleteP2pPacketSharingMode(PathConstants.GlobalSettingsPath, PathConstants.GamesDirectory, ServiceLocator.IniFileService);
+            TryMigrateUserLaunchOptions(PathConstants.GamesDirectory);
             // One-time: goldberg/steamclient_extra_dlls → steamclient_experimental/extra_dlls.
             GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(PathConstants.GoldbergDirectory);
             if (Directory.Exists(PathConstants.GoldbergDirectory))
@@ -452,6 +455,7 @@ namespace SmartGoldbergEmu.Services
             ValidationResult result = _steamApiKeyService.SetApiKey(candidate);
             if (result.IsValid)
             {
+                TryDeleteLegacyApiKeyFileIfRegistryHasKey();
                 Program.LogService?.LogMessage("Import: migrated Steam Web API key to registry.");
                 report?.SetMessageWithAutoClear("Steam Web API key imported from previous configuration.");
                 return true;
@@ -769,39 +773,51 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private void TryMigrateApplicationConfigViewMode()
+        // Rewrites renamed view_mode values; readers only understand the current names.
+        internal static bool TryMigrateApplicationConfigViewMode(string configPath, IniFileService iniService)
         {
-            string path = PathConstants.ConfigFilePath;
-            if (!File.Exists(path))
-                return;
+            if (!File.Exists(configPath))
+                return false;
 
             try
             {
-                var iniService = ServiceLocator.IniFileService;
-                var iniFile = iniService.ParseFile(path);
+                var iniFile = iniService.ParseFile(configPath);
                 string raw = iniService.GetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyViewMode);
-                if (string.IsNullOrWhiteSpace(raw))
-                    return;
-
-                string normalized = ApplicationConstants.NormalizeViewMode(raw);
-                if (string.Equals(raw, normalized, StringComparison.OrdinalIgnoreCase))
-                    return;
+                string current = MapLegacyViewMode(raw);
+                if (current == null)
+                    return false;
 
                 iniService.SetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyViewMode,
-                    normalized);
-                iniService.WriteFile(iniFile, path);
+                    current);
+                iniService.WriteFile(iniFile, configPath);
                 Program.LogService?.LogMessage("Migration: normalized application view mode in settings.ini.");
+                return true;
             }
             catch (Exception ex)
             {
                 Program.LogService?.LogWarning($"Migration: could not normalize view mode in config: {ex.Message}");
+                return false;
             }
+        }
+
+        // Returns the current name for a renamed view mode, or null when the value needs no migration.
+        private static string MapLegacyViewMode(string viewMode)
+        {
+            if (string.IsNullOrWhiteSpace(viewMode))
+                return null;
+            if (viewMode.Equals("Tile", StringComparison.OrdinalIgnoreCase)
+                || viewMode.Equals("Store Capsule", StringComparison.OrdinalIgnoreCase))
+                return ApplicationConstants.ViewModeTile;
+            if (viewMode.Equals("Compact Tiles", StringComparison.OrdinalIgnoreCase)
+                || viewMode.Equals("Digital Cover", StringComparison.OrdinalIgnoreCase))
+                return ApplicationConstants.ViewModeCompactTiles;
+            return null;
         }
 
         private void TryDeleteLegacyApiKeyFileIfRegistryHasKey()
@@ -974,6 +990,98 @@ namespace SmartGoldbergEmu.Services
             if (Enum.TryParse(value, true, out GoldbergLaunchMode parsed))
                 return parsed;
             return GoldbergLaunchMode.SteamClient;
+        }
+
+        // Older builds saved user launch options in steam_settings\configs.user.ini; they now live beside steam_settings.
+        internal static int TryMigrateUserLaunchOptions(string gamesDirectory)
+        {
+            if (!Directory.Exists(gamesDirectory))
+                return 0;
+
+            int moved = 0;
+            foreach (var gameFolder in Directory.GetDirectories(gamesDirectory))
+            {
+                string legacyIniPath = Path.Combine(
+                    PathConstants.CombineGameSteamSettingsDirectory(gamesDirectory, Path.GetFileName(gameFolder)),
+                    PathConstants.GoldbergUserIniFileName);
+                try
+                {
+                    moved += LaunchOptionService.MoveLegacyUserLaunchOptions(
+                        legacyIniPath,
+                        Path.Combine(gameFolder, PathConstants.LauncherUserLaunchOptionsIniFileName));
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogWarning($"Migration: could not move user launch options from {legacyIniPath}: {ex.Message}");
+                }
+            }
+
+            if (moved > 0)
+                Program.LogService?.LogMessage($"Migration: moved {moved} user launch option(s) to {PathConstants.LauncherUserLaunchOptionsIniFileName}.");
+            return moved;
+        }
+
+        // Older builds wrote old_p2p_packet_sharing_mode, which neither fork reads, into global and per-game configs.main.ini.
+        internal static int TryStripObsoleteP2pPacketSharingMode(string globalSettingsPath, string gamesDirectory, IniFileService iniService)
+        {
+            var candidates = new List<string> { Path.Combine(globalSettingsPath, PathConstants.GoldbergMainIniFileName) };
+            if (Directory.Exists(gamesDirectory))
+            {
+                foreach (var gameFolder in Directory.GetDirectories(gamesDirectory))
+                {
+                    candidates.Add(Path.Combine(
+                        PathConstants.CombineGameSteamSettingsDirectory(gamesDirectory, Path.GetFileName(gameFolder)),
+                        PathConstants.GoldbergMainIniFileName));
+                }
+            }
+
+            int stripped = 0;
+            foreach (var path in candidates)
+            {
+                if (!File.Exists(path))
+                    continue;
+
+                try
+                {
+                    var iniFile = iniService.ParseFile(path);
+                    if (!iniService.RemoveValue(iniFile, "main::connectivity", "old_p2p_packet_sharing_mode"))
+                        continue;
+
+                    iniService.WriteFile(iniFile, path);
+                    stripped++;
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogWarning($"Migration: could not strip old_p2p_packet_sharing_mode from {path}: {ex.Message}");
+                }
+            }
+
+            if (stripped > 0)
+                Program.LogService?.LogMessage($"Migration: removed old_p2p_packet_sharing_mode from {stripped} configs.main.ini file(s).");
+            return stripped;
+        }
+
+        // Older builds unpacked gbe_fork tools\generate_interfaces beside the launcher; the tools folder goes only if left empty.
+        internal static bool TryRemoveLegacyGenerateInterfacesFolder(string launcherInstallDirectory)
+        {
+            string toolsDir = Path.Combine(launcherInstallDirectory, PathConstants.LauncherDevToolsFolderName);
+            string generateInterfacesDir = Path.Combine(toolsDir, PathConstants.GoldbergGenerateInterfacesToolFolderName);
+            if (!Directory.Exists(generateInterfacesDir))
+                return false;
+
+            try
+            {
+                Directory.Delete(generateInterfacesDir, recursive: true);
+                if (Directory.GetFileSystemEntries(toolsDir).Length == 0)
+                    Directory.Delete(toolsDir);
+                Program.LogService?.LogMessage($"Migration: removed legacy {PathConstants.GoldbergGenerateInterfacesToolFolderName} folder.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning($"Migration: could not remove legacy {PathConstants.GoldbergGenerateInterfacesToolFolderName} folder: {ex.Message}");
+                return false;
+            }
         }
 
         // The per-user folder is live (ui_settings.ini, CDN cache, URI handoff, launch sessions); only remove the

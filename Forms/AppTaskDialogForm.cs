@@ -93,11 +93,6 @@ namespace SmartGoldbergEmu.Forms
             get { return VerificationStates.Count > 0 && VerificationStates[0]; }
         }
         public IReadOnlyList<bool> VerificationStates { get; }
-
-        public bool GetVerificationChecked(int index)
-        {
-            return index >= 0 && index < VerificationStates.Count && VerificationStates[index];
-        }
     }
 
     // Task Dialog–style chrome: growing body, optional checkbox strip, button footer.

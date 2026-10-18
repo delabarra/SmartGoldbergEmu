@@ -611,31 +611,6 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void SaveDlcListAndAppPaths()
-        {
-            if (!HasCurrentGameWithValidAppId())
-                return;
-
-            try
-            {
-                Dictionary<long, string> dlcData = txtDLCList != null
-                    ? DlcService.ParseDlcListText(txtDLCList.Text, _gameConfig.PreFetchedDlcData)
-                    : null;
-                if (dlcData == null && _gameConfig.PreFetchedDlcData != null && _gameConfig.PreFetchedDlcData.Count > 0)
-                    dlcData = _gameConfig.PreFetchedDlcData;
-
-                var saveResult = ServiceLocator.GoldbergFilesService.SaveAppConfigDlcAndPaths(_gameConfig.AppId, dlcData, null);
-                if (!saveResult.IsSuccess)
-                {
-                    LogSaveResultWarning(saveResult);
-                }
-            }
-            catch (Exception ex)
-            {
-                LogFailedSave("DLC list", ex);
-            }
-        }
-
         private void OnLookupAppID_Click(object sender, EventArgs e)
         {
             using (var searchForm = new GameSearchForm())
@@ -2247,22 +2222,6 @@ namespace SmartGoldbergEmu.Forms
         private void ClearSteamApiHint()
         {
             HideAndClearLabel(lblSteamApiHint);
-        }
-
-        private void SetSteamApiHint(string text, SteamApiDisplaySeverity severity)
-        {
-            if (lblSteamApiHint == null)
-                return;
-
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                ClearSteamApiHint();
-                return;
-            }
-
-            lblSteamApiHint.Text = text;
-            lblSteamApiHint.Visible = true;
-            ApplySteamApiStatusColor(lblSteamApiHint, severity);
         }
 
         private static string BuildSteamApiDisplayLine(
@@ -3992,14 +3951,6 @@ namespace SmartGoldbergEmu.Forms
             if (textBox == null || loader == null || _gameConfig == null)
                 return;
             textBox.Text = loader(_gameConfig.AppId);
-        }
-
-        private void LoadSteamSettingsTextFileIntoTextBox(TextBox textBox, string fileName)
-        {
-            if (textBox == null || _gameConfig == null || string.IsNullOrWhiteSpace(fileName))
-                return;
-
-            textBox.Text = ServiceLocator.GoldbergFilesService.LoadSteamSettingsTextFile(_gameConfig.AppId, fileName);
         }
 
         private GoldbergFilesService.AdditionalFilesSaveRequest BuildAdditionalFilesSaveRequest()

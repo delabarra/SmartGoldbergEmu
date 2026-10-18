@@ -233,7 +233,6 @@
     <Compile Include="Helpers\LauncherEmbeddedUpdaterHelper.cs" />
     <Compile Include="Helpers\LauncherUpdatePayloadHelper.cs" />
     <Compile Include="Helpers\OverlayColorHelper.cs" />
-    <Compile Include="Helpers\ProcessImagePathHelper.cs" />
     <Compile Include="Helpers\SteamIdHelper.cs" />
     <Compile Include="Helpers\SteamInstallationPathHelper.cs" />
     <Compile Include="Helpers\SteamClientManifestHelper.cs" />
@@ -262,7 +261,6 @@
     <Compile Include="Helpers\ApplicationVersionHelper.cs" />
     <Compile Include="Helpers\VersionComparisonHelper.cs" />
     <Compile Include="Constants\LauncherReleaseConstants.cs" />
-    <Compile Include="Helpers\ReleaseNotesLayoutBridge.cs" />
     <Compile Include="Helpers\WindowStateHelper.cs" />
     <Compile Include="Helpers\DesignTimeHelper.cs" />
     <Compile Include="Program.cs" />

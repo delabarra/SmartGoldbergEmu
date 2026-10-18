@@ -44,10 +44,5 @@ namespace SmartGoldbergEmu.Services
             if (!registryResult.IsValid)
                 ServiceLocator.LogService?.LogWarning($"Failed to save base64 token to registry: {registryResult.ErrorMessage}");
         }
-
-        public static void ClearTicketAndAltSteamId(ulong appId, IRegistryService registry, EmulatorConfigService emulatorConfig)
-        {
-            PersistTicketAndAltSteamId(appId, string.Empty, string.Empty, registry, emulatorConfig);
-        }
     }
 }

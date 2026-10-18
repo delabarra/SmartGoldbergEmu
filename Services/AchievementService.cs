@@ -1103,23 +1103,18 @@ namespace SmartGoldbergEmu.Services
             if (!Directory.Exists(imagesFolder))
                 Directory.CreateDirectory(imagesFolder);
 
-            // Every icon is still downloaded. Bound HTTP overlap so 64KB download buffers
-            // (color + gray per achievement) are not held for the whole schema at once.
             using (IHttpService http = HttpServiceFactory.Create(TimeSpan.FromSeconds(AchievementConstants.HttpRequestLongTimeout)))
             {
-                await HttpHelpers.ForEachBoundedAsync(
-                    achievements,
-                    HttpHelpers.DefaultMaxConcurrentDownloads,
-                    achievement => DownloadAchievementIconsWithProgressAsync(
-                        achievement,
-                        imagesFolder,
-                        http,
-                        app,
-                        progressMode,
-                        achievementCount,
-                        totalImages,
-                        () => Interlocked.Increment(ref achievementsCompleted),
-                        imagesForAchievement => Interlocked.Add(ref imagesDownloaded, imagesForAchievement))).ConfigureAwait(false);
+                await Task.WhenAll(achievements.Select(achievement => DownloadAchievementIconsWithProgressAsync(
+                    achievement,
+                    imagesFolder,
+                    http,
+                    app,
+                    progressMode,
+                    achievementCount,
+                    totalImages,
+                    () => Interlocked.Increment(ref achievementsCompleted),
+                    imagesForAchievement => Interlocked.Add(ref imagesDownloaded, imagesForAchievement)))).ConfigureAwait(false);
             }
 
             ReportAddSaveStep(progressMode, AddGameStatusMessages.WritingAchievementsFile(GetAddSaveGameDisplayName(app)));
@@ -1207,8 +1202,11 @@ namespace SmartGoldbergEmu.Services
             string iconPath = Path.Combine(imagesFolder, achievement.name + ".jpg");
             string iconGrayPath = Path.Combine(imagesFolder, achievement.name + "_gray.jpg");
 
-            bool colorOk = await EnsureAchievementImageAsync(achievement.icon, iconPath, http).ConfigureAwait(false);
-            bool grayOk = await EnsureAchievementImageAsync(achievement.icongray, iconGrayPath, http).ConfigureAwait(false);
+            bool[] downloaded = await Task.WhenAll(
+                EnsureAchievementImageAsync(achievement.icon, iconPath, http),
+                EnsureAchievementImageAsync(achievement.icongray, iconGrayPath, http)).ConfigureAwait(false);
+            bool colorOk = downloaded[0];
+            bool grayOk = downloaded[1];
 
             // Replace Steam CDN URLs with steam_settings-relative paths written into achievements.json.
             achievement.icon = GetAchievementImageRelativePath(achievement.name, false);

@@ -387,16 +387,6 @@ namespace SmartGoldbergEmu.Services
             return newGuid;
         }
 
-        public bool GameExists(ulong appId)
-        {
-            return GetGameByAppId(appId) != null;
-        }
-
-        public int GetGameCount()
-        {
-            return LoadGameLibrary().Count;
-        }
-
         public GameConfig FindDuplicateByExecutable(GameConfig candidate)
         {
             if (candidate == null || string.IsNullOrWhiteSpace(candidate.Path))
@@ -444,49 +434,11 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        public bool SearchAppIdInFolders(ulong appId)
-        {
-            try
-            {
-                if (!Directory.Exists(_gamesDirectory))
-                    return false;
-
-                foreach (var folder in Directory.GetDirectories(_gamesDirectory))
-                {
-                    if (GameFolderMatchesAppId(folder, appId))
-                        return true;
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug($"Failed to search appid in folders: {ex.Message}");
-                return false;
-            }
-        }
-
         private static bool ParseIniBool(string value)
         {
             return value == "1"
                 || value.Equals("true", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("yes", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool SteamAppIdFileMatches(string path, ulong appId)
-        {
-            if (!File.Exists(path))
-                return false;
-            var content = File.ReadAllText(path).Trim();
-            return ulong.TryParse(content, out ulong found) && found == appId;
-        }
-
-        private static bool GameFolderMatchesAppId(string gameFolder, ulong appId)
-        {
-            var name = Path.GetFileName(gameFolder);
-            if (ulong.TryParse(name, out ulong folderAppId) && folderAppId == appId)
-                return true;
-            return SteamAppIdFileMatches(Path.Combine(gameFolder, PathConstants.SteamAppIdFileName), appId)
-                || SteamAppIdFileMatches(Path.Combine(gameFolder, PathConstants.SteamSettingsFolderName, PathConstants.SteamAppIdFileName), appId);
         }
 
         private GameConfig TryQuery(Func<GameConfig> query, string debugPrefix)

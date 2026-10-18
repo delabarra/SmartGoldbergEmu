@@ -14,9 +14,6 @@ namespace SmartGoldbergEmu.Constants
         public const string ReleasesWebUrlFormat =
             "https://github.com/{0}/{1}/releases";
 
-        public const string ReleaseTagWebUrlFormat =
-            "https://github.com/{0}/{1}/releases/tag/v{2}";
-
         public const string RepositoryWebUrlFormat =
             "https://github.com/{0}/{1}";
 
@@ -44,27 +41,6 @@ namespace SmartGoldbergEmu.Constants
             }
 
             webUrl = string.Format(ReleasesWebUrlFormat, GitHubOwner, GitHubRepo);
-            return true;
-        }
-
-        public static bool TryGetReleaseTagWebUrl(string version, out string webUrl)
-        {
-            webUrl = null;
-            if (!IsReleaseRepositoryConfigured() || string.IsNullOrWhiteSpace(version))
-                return false;
-
-            version = version.Trim();
-            if (version.StartsWith("v", System.StringComparison.OrdinalIgnoreCase))
-                version = version.Substring(1);
-
-            int plus = version.IndexOf('+');
-            if (plus >= 0)
-                version = version.Substring(0, plus).Trim();
-
-            if (string.IsNullOrWhiteSpace(version))
-                return false;
-
-            webUrl = string.Format(ReleaseTagWebUrlFormat, GitHubOwner, GitHubRepo, version);
             return true;
         }
 

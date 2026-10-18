@@ -809,7 +809,8 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void DeleteLegacySteamApiDeploymentBackup(string targetPath)
+        // Older builds left *.sge.bak beside deployed DLLs inside game folders, which startup migration cannot enumerate.
+        internal static void DeleteLegacySteamApiDeploymentBackup(string targetPath)
         {
             if (string.IsNullOrEmpty(targetPath))
                 return;

@@ -232,7 +232,6 @@ namespace SmartGoldbergEmu.Services
                 var lockObj = new object();
                 var stopwatch = Stopwatch.StartNew();
 
-                // All files start at once; per-host sockets are capped by ServicePointManager.DefaultConnectionLimit (BootstrapService).
                 await Task.WhenAll(downloadRequests.Select(async request =>
                     {
                         AssetDownloadResult result = await DownloadImageAsync(
@@ -415,14 +414,13 @@ namespace SmartGoldbergEmu.Services
         // Same view → file mapping as the rebuild library binder. Details is text-only.
         public string ResolveArtworkPathForViewMode(ulong appId, string viewMode)
         {
-            string mode = ApplicationConstants.NormalizeViewMode(viewMode);
-            if (string.Equals(mode, ApplicationConstants.ViewModeTile, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(viewMode, ApplicationConstants.ViewModeTile, StringComparison.OrdinalIgnoreCase))
                 return GetHeaderImagePathOrFallback(appId);
-            if (string.Equals(mode, ApplicationConstants.ViewModeCompactTiles, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(viewMode, ApplicationConstants.ViewModeCompactTiles, StringComparison.OrdinalIgnoreCase))
                 return GetCapsuleImagePathOrFallback(appId);
-            if (string.Equals(mode, ApplicationConstants.ViewModeLogos, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(viewMode, ApplicationConstants.ViewModeLogos, StringComparison.OrdinalIgnoreCase))
                 return GetLogoImagePathOrFallback(appId);
-            if (string.Equals(mode, ApplicationConstants.ViewModeIcons, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(viewMode, ApplicationConstants.ViewModeIcons, StringComparison.OrdinalIgnoreCase))
                 return GetClientIconPathOrFallback(appId);
             return null;
         }
@@ -433,11 +431,6 @@ namespace SmartGoldbergEmu.Services
                 return null;
             var imagePath = Path.Combine(PathConstants.CombineGamesPerAppResourcesDirectory(_gamesDirectory, appId.ToString()), imageName);
             return File.Exists(imagePath) ? imagePath : null;
-        }
-
-        public bool ImageExists(ulong appId, string imageName)
-        {
-            return GetImagePath(appId, imageName) != null;
         }
 
         public void Dispose()

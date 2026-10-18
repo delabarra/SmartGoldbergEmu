@@ -66,26 +66,6 @@ namespace SmartGoldbergEmu.Services
             };
         }
 
-        // Same library GUID so SyncPendingAdd updates the existing list row instead of appending a second one.
-        public static GameConfig CreateUpdateDraft(GameConfig existing)
-        {
-            if (existing == null)
-                throw new ArgumentNullException(nameof(existing));
-
-            return new GameConfig
-            {
-                GameGuid = existing.GameGuid,
-                AppName = existing.AppName ?? string.Empty,
-                AppId = existing.AppId,
-                Path = existing.Path ?? string.Empty,
-                StartFolder = existing.StartFolder ?? string.Empty,
-                WorkingDirectory = existing.WorkingDirectory ?? string.Empty,
-                Parameters = existing.Parameters ?? string.Empty,
-                CustomIcon = existing.CustomIcon ?? string.Empty,
-                LaunchMode = existing.LaunchMode
-            };
-        }
-
         // Keeps the draft GameGuid when collect refreshes identity fields.
         public void ApplyCollectedGame(GameConfig collected)
         {

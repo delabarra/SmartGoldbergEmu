@@ -59,7 +59,7 @@ namespace SmartGoldbergEmu.Services
             return TrySaveIni(PathConstants.GoldbergMainIniFileName, "Failed to save main settings", ini =>
             {
                 ApplyGlobalMainToIni(ini, settings);
-                StripNetworkMainKeysFromIni(ini);
+                MainSettingsScopes.RemoveNetworkKeys(_iniService, ini);
             });
         }
 
@@ -329,27 +329,6 @@ namespace SmartGoldbergEmu.Services
             _iniService.SetValue(iniFile, "main::misc", "steam_game_stats_reports_dir", settings.SteamGameStatsReportsDir, skipIfDefault: true);
             SetBoolIfNotDefault(iniFile, "main::misc", "free_weekend", settings.FreeWeekend, d.FreeWeekend);
             SetBoolIfNotDefault(iniFile, "main::misc", "use_32bit_inventory_item_ids", settings.Use32BitInventoryItemIds, d.Use32BitInventoryItemIds);
-        }
-
-        private void StripNetworkMainKeysFromIni(IniFile iniFile)
-        {
-            if (iniFile == null)
-                return;
-
-            _iniService.RemoveValue(iniFile, "main::general", "block_unknown_clients");
-            _iniService.RemoveValue(iniFile, "main::general", "immediate_gameserver_stats");
-            _iniService.RemoveValue(iniFile, "main::general", "matchmaking_server_list_actual_type");
-            _iniService.RemoveValue(iniFile, "main::general", "matchmaking_server_details_via_source_query");
-
-            // old_p2p_packet_sharing_mode is not read by either fork; strip it from configs written by older app versions.
-            foreach (var key in new[]
-            {
-                "disable_lan_only", "disable_networking", "listen_port", "offline",
-                "disable_sharing_stats_with_gameserver", "disable_source_query",
-                "share_leaderboards_over_network", "disable_lobby_creation",
-                "download_steamhttp_requests", "old_p2p_packet_sharing_mode"
-            })
-                _iniService.RemoveValue(iniFile, "main::connectivity", key);
         }
 
         private void ApplyUserToIni(IniFile iniFile, UserSettings settings)

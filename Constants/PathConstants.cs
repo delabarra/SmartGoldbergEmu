@@ -21,10 +21,10 @@ namespace SmartGoldbergEmu.Constants
         // Under LauncherUpdateWorkDirectory.
         public const string LauncherUpdateExtractFolderName = "extracted";
 
-        // Legacy dev-tool folder beside the launcher, cleaned up after Goldberg update (not the repository tools/ folder).
+        // Legacy dev-tool folder beside the launcher, removed by startup migration (not the repository tools/ folder).
         public const string LauncherDevToolsFolderName = "tools";
 
-        // Legacy gbe_fork tool folder under LauncherDevToolsDirectory.
+        // Legacy gbe_fork tool folder under LauncherDevToolsFolderName.
         public const string GoldbergGenerateInterfacesToolFolderName = "generate_interfaces";
 
         public const string SteamSettingsFolderName = "steam_settings";
@@ -149,18 +149,11 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergSubscribedGroupsFileName = "subscribed_groups.txt";
         public const string GoldbergSubscribedGroupsClansFileName = "subscribed_groups_clans.txt";
         public const string GoldbergAutoAcceptInviteFileName = "auto_accept_invite.txt";
-        public const string GoldbergInternetServersFileName = "internet_servers.txt";
-        public const string GoldbergFavoriteServersFileName = "favorite_servers.txt";
-        public const string GoldbergHistoryServersFileName = "history_servers.txt";
         public const string GoldbergSteamInterfacesFileName = "steam_interfaces.txt";
         public const string GoldbergSteamInterfacesExampleFileName = "steam_interfaces.EXAMPLE.txt";
 
         public const string GoldbergDefaultItemsJsonFileName = "default_items.json";
         public const string GoldbergDefaultItemsExampleJsonFileName = "default_items.EXAMPLE.json";
-        public const string GoldbergGcJsonFileName = "gc.json";
-        public const string GoldbergPurchasedKeysFileName = "purchased_keys.txt";
-        public const string GoldbergModsJsonFileName = "mods.json";
-        public const string GoldbergModImagesFolderName = "mod_images";
         public const string GoldbergGlobalUserJsonFileName = "global_user.json";
 
         // Launcher extension, not a Goldberg file: per-game custom launch options next to steam_settings.
@@ -225,9 +218,6 @@ namespace SmartGoldbergEmu.Constants
         public static string CombineGoldbergSteamDllPath() =>
             Path.Combine(GoldbergSteamOldDirectory, GoldbergSteamDllFileName);
 
-        public static string CombineGoldbergSteamOriginalDllPath() =>
-            Path.Combine(GoldbergSteamOldDirectory, GoldbergSteamOriginalDllFileName);
-
         // Per-game extra-DLL folder under steam_settings; Goldberg loads each DLL with LoadLibraryW.
         public const string GoldbergLoadDllsFolderName = "load_dlls";
 
@@ -236,9 +226,6 @@ namespace SmartGoldbergEmu.Constants
 
         public static string CombineGameSteamSettingsSoundsDirectory(ulong appId) =>
             Path.Combine(GetGameSteamSettingsPath(appId), GoldbergGlobalSoundsFolderName);
-
-        public static string CombineSteamSettingsLoadDllsDirectory(string steamSettingsDirectory) =>
-            Path.Combine(steamSettingsDirectory, GoldbergLoadDllsFolderName);
 
         public const string SteamAppsDirectoryName = "steamapps";
 
@@ -384,8 +371,6 @@ namespace SmartGoldbergEmu.Constants
         public static string LauncherUpdateWorkDirectory =>
             Path.Combine(AppBaseDirectory, LauncherUpdateTempFolderName, LauncherUpdateWorkFolderName);
 
-        public const string LauncherBackupTempFolderName = "SmartGoldbergEmu_Backup";
-
         public static string AppBaseDirectory => AppDomain.CurrentDomain.BaseDirectory;
 
         // Preferred over AppBaseDirectory for optional bundled tools.
@@ -432,17 +417,8 @@ namespace SmartGoldbergEmu.Constants
                 : Path.Combine(directory, backupFileName);
         }
 
-        public static string ApplicationLogFilePath =>
-            Path.Combine(LauncherInstallDirectory, ApplicationConstants.ApplicationLogFileName);
-
         public static string LauncherMainExecutablePath =>
             Path.Combine(LauncherInstallDirectory, LauncherMainExecutableFileName);
-
-        public static string LauncherDevToolsDirectory =>
-            Path.Combine(LauncherInstallDirectory, LauncherDevToolsFolderName);
-
-        public static string GoldbergGenerateInterfacesInstallDirectory =>
-            Path.Combine(LauncherDevToolsDirectory, GoldbergGenerateInterfacesToolFolderName);
 
         public static string GamesIniPath => CombineGamesIniPath(GamesDirectory);
 
@@ -496,9 +472,6 @@ namespace SmartGoldbergEmu.Constants
 
         public static string CombineLaunchSessionManifestPath(ulong appId) =>
             Path.Combine(LaunchSessionManifestDirectory, appId.ToString() + LaunchSessionManifestFileExtension);
-
-        public static string LauncherBackupTempRootDirectory =>
-            Path.Combine(Path.GetTempPath(), LauncherBackupTempFolderName);
 
         public static string LegacyApiKeyFilePath => Path.Combine(AppBaseDirectory, LegacyApiKeyFileName);
 

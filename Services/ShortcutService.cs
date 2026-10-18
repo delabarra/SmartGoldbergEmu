@@ -66,35 +66,6 @@ namespace SmartGoldbergEmu.Services
                 return false;
             }
         }
-
-        public static string CreateDesktopShortcut(ulong appId, string gameName, string iconPath = null)
-        {
-            try
-            {
-                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                string sanitizedName = SanitizeFileName(gameName ?? $"Game_{appId}");
-                string shortcutPath = Path.Combine(desktopPath, $"{sanitizedName}.url");
-
-                int counter = 1;
-                string originalPath = shortcutPath;
-                while (File.Exists(shortcutPath))
-                {
-                    shortcutPath = Path.Combine(desktopPath, $"{sanitizedName} ({counter}).url");
-                    counter++;
-                }
-
-                if (Create(shortcutPath, appId, gameName, iconPath))
-                {
-                    return shortcutPath;
-                }
-
-                return null;
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
     }
 }
 

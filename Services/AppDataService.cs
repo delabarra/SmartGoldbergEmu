@@ -190,9 +190,8 @@ namespace SmartGoldbergEmu.Services
 
         private void LoadApplicationSettingsFromConfig(IniFile iniFile, ApplicationSettings settings)
         {
-            settings.ViewMode = ApplicationConstants.NormalizeViewMode(
-                _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, ApplicationConstants.SettingKeyViewMode)
-                ?? ApplicationConstants.ViewModeDefault);
+            string viewMode = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, ApplicationConstants.SettingKeyViewMode);
+            settings.ViewMode = string.IsNullOrWhiteSpace(viewMode) ? ApplicationConstants.ViewModeDefault : viewMode;
             settings.SortBy = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, ApplicationConstants.SettingKeySortBy) ?? ApplicationConstants.SortByDefault;
             settings.SortDirection = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, ApplicationConstants.SettingKeySortDirection) ?? ApplicationConstants.SortDirectionDefault;
             settings.DetailsColumnOrder = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, ApplicationConstants.SettingKeyDetailsColumnOrder) ?? ApplicationConstants.DefaultColumnOrder;
@@ -652,8 +651,7 @@ namespace SmartGoldbergEmu.Services
 
         public string GetViewMode()
         {
-            return ApplicationConstants.NormalizeViewMode(
-                GetAppStringSetting(s => s.ViewMode, ApplicationConstants.ViewModeDefault));
+            return GetAppStringSetting(s => s.ViewMode, ApplicationConstants.ViewModeDefault);
         }
 
         public ValidationResult SetViewMode(string viewMode)
@@ -672,11 +670,6 @@ namespace SmartGoldbergEmu.Services
                 LogRedactionHelper.WriteDebug($"Failed to read logos view drop shadow: {ex.Message}");
                 return true;
             }
-        }
-
-        public ValidationResult SetLogosViewDropShadow(bool enabled)
-        {
-            return SetAppSetting(s => { s.LogosViewDropShadow = enabled; }, "Failed to set logos view drop shadow");
         }
 
         public string GetSortBy()
@@ -724,16 +717,6 @@ namespace SmartGoldbergEmu.Services
 
             var normalized = ApplicationConstants.NormalizeDetailsColumnWidths(widths);
             return SetAppStringSetting(normalized, "Column widths cannot be null or empty", (s, v) => s.DetailsColumnWidths = v, "Failed to set column widths");
-        }
-
-        public bool GetAutoUpdate()
-        {
-            return GetAppSetting(s => s.AutoUpdate);
-        }
-
-        public ValidationResult SetAutoUpdate(bool autoUpdate)
-        {
-            return SetAppSetting(s => { s.AutoUpdate = autoUpdate; }, "Failed to set auto-update");
         }
 
         public bool GetAutoHandleSteamStubs()

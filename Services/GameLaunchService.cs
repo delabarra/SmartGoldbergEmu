@@ -545,13 +545,6 @@ namespace SmartGoldbergEmu.Services
             return true;
         }
 
-        private bool DetectGameArchitecture(string executablePath)
-        {
-            if (SteamApiValidator.TryDetectExecutableIsX64(executablePath, out bool isX64))
-                return isX64;
-            return true;
-        }
-
         private void RefreshSteamInterfacesForStandardLaunch(
             GameConfig game,
             string launchExePath,
@@ -994,7 +987,7 @@ namespace SmartGoldbergEmu.Services
                 File.Copy(targetPath, backupPath, overwrite: false);
             }
 
-            DeleteLegacySteamApiDeploymentBackup(targetPath);
+            LaunchSessionCleanupService.DeleteLegacySteamApiDeploymentBackup(targetPath);
             site.Files.Add(deployment);
             File.Copy(sourcePath, targetPath, overwrite: true);
         }
@@ -2030,24 +2023,6 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 _logger?.LogError($"Error during game cleanup: {ex.Message}", ex);
-            }
-        }
-
-        private static void DeleteLegacySteamApiDeploymentBackup(string targetPath)
-        {
-            if (string.IsNullOrEmpty(targetPath))
-                return;
-
-            string legacyPath = targetPath + PathConstants.SteamApiDllDeploymentLegacyBackupExtension;
-            if (!File.Exists(legacyPath))
-                return;
-
-            try
-            {
-                File.Delete(legacyPath);
-            }
-            catch
-            {
             }
         }
 
