@@ -363,14 +363,6 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        public void ApplyDataGridViewTheme(DataGridView dgv)
-        {
-            if (_disposed || dgv == null)
-                return;
-            ApplyThemeToDataGridView(dgv, GetThemeColors(EffectiveTheme));
-            EnsureDataGridViewThemingHooks(dgv);
-        }
-
         private void EnsureDataGridViewThemingHooks(DataGridView dgv)
         {
             if (dgv.Tag?.ToString() != ThemedDataGridViewTag)

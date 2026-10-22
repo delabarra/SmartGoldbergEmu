@@ -59,7 +59,7 @@ namespace SmartGoldbergEmu.Services
             return TrySaveIni(PathConstants.GoldbergMainIniFileName, "Failed to save main settings", ini =>
             {
                 ApplyGlobalMainToIni(ini, settings);
-                StripNetworkMainKeysFromIni(ini);
+                MainSettingsScopes.RemoveNetworkKeys(_iniService, ini);
             });
         }
 
@@ -164,6 +164,16 @@ namespace SmartGoldbergEmu.Services
             SetBoolIfNotDefault(iniFile, "overlay::general", "overlay_always_show_frametime", settings.OverlayAlwaysShowFrametime, d.OverlayAlwaysShowFrametime);
             SetBoolIfNotDefault(iniFile, "overlay::general", "overlay_always_show_playtime", settings.OverlayAlwaysShowPlaytime, d.OverlayAlwaysShowPlaytime);
             SetBoolIfNotDefault(iniFile, "overlay::general", "enable_screenshot", settings.EnableScreenshot, d.EnableScreenshot);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_user_info", settings.ShowButtonUserInfo, d.ShowButtonUserInfo);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_achievements", settings.ShowButtonAchievements, d.ShowButtonAchievements);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_test_achievement", settings.ShowButtonTestAchievement, d.ShowButtonTestAchievement);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_copy_id", settings.ShowButtonCopyId, d.ShowButtonCopyId);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_screenshots", settings.ShowButtonScreenshots, d.ShowButtonScreenshots);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_history", settings.ShowButtonHistory, d.ShowButtonHistory);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_button_settings", settings.ShowButtonSettings, d.ShowButtonSettings);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_checkbox_fps", settings.ShowCheckboxFps, d.ShowCheckboxFps);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_checkbox_frametime", settings.ShowCheckboxFrametime, d.ShowCheckboxFrametime);
+            SetBoolIfNotDefault(iniFile, "overlay::general", "show_checkbox_playtime", settings.ShowCheckboxPlaytime, d.ShowCheckboxPlaytime);
 
             SetValueIfNotDefault(iniFile, "overlay::hotkeys", "key_combo", settings.OverlayKeyCombo, d.OverlayKeyCombo);
             SetValueIfNotDefault(iniFile, "overlay::hotkeys", "screenshot_combo", settings.ScreenshotCombo, d.ScreenshotCombo);
@@ -287,7 +297,6 @@ namespace SmartGoldbergEmu.Services
             SetBoolIfNotDefault(iniFile, "main::connectivity", "share_leaderboards_over_network", settings.ShareLeaderboardsOverNetwork, d.ShareLeaderboardsOverNetwork);
             SetBoolIfNotDefault(iniFile, "main::connectivity", "disable_lobby_creation", settings.DisableLobbyCreation, d.DisableLobbyCreation);
             SetBoolIfNotDefault(iniFile, "main::connectivity", "download_steamhttp_requests", settings.DownloadSteamhttpRequests, d.DownloadSteamhttpRequests);
-            SetIntIfNotDefault(iniFile, "main::connectivity", "old_p2p_packet_sharing_mode", settings.OldP2PPacketSharingMode, d.OldP2PPacketSharingMode);
         }
 
         private void ApplyGlobalMainToIni(IniFile iniFile, MainSettings settings)
@@ -320,26 +329,6 @@ namespace SmartGoldbergEmu.Services
             _iniService.SetValue(iniFile, "main::misc", "steam_game_stats_reports_dir", settings.SteamGameStatsReportsDir, skipIfDefault: true);
             SetBoolIfNotDefault(iniFile, "main::misc", "free_weekend", settings.FreeWeekend, d.FreeWeekend);
             SetBoolIfNotDefault(iniFile, "main::misc", "use_32bit_inventory_item_ids", settings.Use32BitInventoryItemIds, d.Use32BitInventoryItemIds);
-        }
-
-        private void StripNetworkMainKeysFromIni(IniFile iniFile)
-        {
-            if (iniFile == null)
-                return;
-
-            _iniService.RemoveValue(iniFile, "main::general", "block_unknown_clients");
-            _iniService.RemoveValue(iniFile, "main::general", "immediate_gameserver_stats");
-            _iniService.RemoveValue(iniFile, "main::general", "matchmaking_server_list_actual_type");
-            _iniService.RemoveValue(iniFile, "main::general", "matchmaking_server_details_via_source_query");
-
-            foreach (var key in new[]
-            {
-                "disable_lan_only", "disable_networking", "listen_port", "offline",
-                "disable_sharing_stats_with_gameserver", "disable_source_query",
-                "share_leaderboards_over_network", "disable_lobby_creation",
-                "download_steamhttp_requests", "old_p2p_packet_sharing_mode"
-            })
-                _iniService.RemoveValue(iniFile, "main::connectivity", key);
         }
 
         private void ApplyUserToIni(IniFile iniFile, UserSettings settings)
@@ -413,6 +402,36 @@ namespace SmartGoldbergEmu.Services
                         break;
                     case "enable_screenshot":
                         settings.EnableScreenshot = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_user_info":
+                        settings.ShowButtonUserInfo = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_achievements":
+                        settings.ShowButtonAchievements = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_test_achievement":
+                        settings.ShowButtonTestAchievement = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_copy_id":
+                        settings.ShowButtonCopyId = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_screenshots":
+                        settings.ShowButtonScreenshots = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_history":
+                        settings.ShowButtonHistory = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_button_settings":
+                        settings.ShowButtonSettings = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_checkbox_fps":
+                        settings.ShowCheckboxFps = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_checkbox_frametime":
+                        settings.ShowCheckboxFrametime = IniParseHelper.StringToBool(value);
+                        break;
+                    case "show_checkbox_playtime":
+                        settings.ShowCheckboxPlaytime = IniParseHelper.StringToBool(value);
                         break;
                 }
             }
@@ -728,10 +747,6 @@ namespace SmartGoldbergEmu.Services
                         break;
                     case "download_steamhttp_requests":
                         settings.DownloadSteamhttpRequests = value == "1";
-                        break;
-                    case "old_p2p_packet_sharing_mode":
-                        if (int.TryParse(value, out int p2pMode))
-                            settings.OldP2PPacketSharingMode = p2pMode;
                         break;
                 }
             }

@@ -62,18 +62,6 @@ namespace SmartGoldbergEmu.Services
             return SetSteamApiKey(string.Empty);
         }
 
-        public void DeleteRegistryKey()
-        {
-            try
-            {
-                Registry.CurrentUser.DeleteSubKey(_registryKeyPath, false);
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug($"Failed to delete registry key: {ex.Message}");
-            }
-        }
-
         public ValidationResult SetBase64Token(ulong appId, string ticket, string altSteamId)
         {
             try

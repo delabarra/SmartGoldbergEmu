@@ -12,7 +12,6 @@ namespace SmartGoldbergEmu.Constants
         public const string IniKeyVersion = "goldberg_version";
 
         public const string RepackReleasesApiUrl = "https://api.github.com/repos/delabarra/GoldbergEmu-Forks-Repacked/releases/latest";
-        public const string RepackRepositoryWebUrl = "https://github.com/delabarra/GoldbergEmu-Forks-Repacked";
         public const string RepackWinAssetSuffix7z = "-win.7z";
         public const string RepackWinAssetSuffixZip = "-win.zip";
         public const string RepackDownloadArchiveFileName = "goldberg-download.zip";
@@ -95,11 +94,6 @@ namespace SmartGoldbergEmu.Constants
         public static string GetReleasesWebUrl(GoldbergForkSource fork)
         {
             return GetRepositoryWebUrl(fork).TrimEnd('/') + "/releases";
-        }
-
-        public static string GetReleasesApiUrl(GoldbergForkSource fork)
-        {
-            return GetUpstreamReleasesApiUrl(fork);
         }
 
         public static string GetForkDisplayName(GoldbergForkSource fork)

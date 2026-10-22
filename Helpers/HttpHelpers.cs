@@ -1,49 +1,17 @@
 using System;
-using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Net.Http;
-using System.Threading;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Abstractions;
+using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
     public static class HttpHelpers
     {
-        public const int DefaultMaxConcurrentDownloads = 8;
-
-        public static async Task<string> GetStringWithRetryAsync(string url, int maxRetries, int delayMs, int timeoutSeconds)
-        {
-            using (IHttpService service = HttpServiceFactory.Create(TimeSpan.FromSeconds(timeoutSeconds)))
-            {
-                for (int attempt = 0; attempt < maxRetries; attempt++)
-                {
-                    try
-                    {
-                        using (var response = await service.GetAsync(url).ConfigureAwait(false))
-                        {
-                            response.EnsureSuccessStatusCode();
-                            return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        if (attempt < maxRetries - 1)
-                        {
-                            await Task.Delay(delayMs).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            throw;
-                        }
-                    }
-                }
-            }
-
-            throw new HttpRequestException("Failed to get response after retries");
-        }
-
         public static async Task<byte[]> GetByteArrayAsync(string url, int timeoutSeconds)
         {
             using (IHttpService service = HttpServiceFactory.Create(TimeSpan.FromSeconds(timeoutSeconds)))
@@ -89,29 +57,43 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        public static async Task ForEachBoundedAsync<T>(
-            IEnumerable<T> items,
-            int maxConcurrency,
-            Func<T, Task> action)
+        // Invariant culture so log lines read the same on every locale ("48.3s", not "48,3s").
+        public static string FormatSeconds(TimeSpan elapsed)
         {
-            if (items == null)
-                throw new ArgumentNullException(nameof(items));
-            if (action == null)
-                throw new ArgumentNullException(nameof(action));
-            if (maxConcurrency < 1)
-                maxConcurrency = 1;
+            return elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + "s";
+        }
 
-            using (var gate = new SemaphoreSlim(maxConcurrency, maxConcurrency))
-            {
-                var tasks = new List<Task>();
-                foreach (T item in items)
-                {
-                    T captured = item;
-                    tasks.Add(RunBoundedItemAsync(gate, captured, action));
-                }
+        public static bool IsNotFound(Exception ex)
+        {
+            return ex is HttpStatusException status && status.StatusCode == HttpStatusCode.NotFound;
+        }
 
-                await Task.WhenAll(tasks).ConfigureAwait(false);
-            }
+        // HttpClient reports its own Timeout as TaskCanceledException; callers must not pass a cancelled token.
+        public static bool IsTimeout(Exception ex)
+        {
+            return ex is TaskCanceledException
+                || (ex is WebException web && web.Status == WebExceptionStatus.Timeout);
+        }
+
+        // Short reason for the log: status code, timeout, or the innermost network error (DNS, TLS, connection reset).
+        public static string DescribeDownloadFailure(Exception ex, TimeSpan elapsed)
+        {
+            if (ex == null)
+                return "unknown error";
+            if (ex is HttpStatusException status)
+                return status.Message;
+            if (IsTimeout(ex))
+                return "timed out after " + FormatSeconds(elapsed);
+
+            Exception innermost = ex;
+            while (innermost.InnerException != null)
+                innermost = innermost.InnerException;
+
+            if (innermost is WebException web && web.Status != WebExceptionStatus.UnknownError)
+                return $"{web.Status}: {web.Message}";
+            if (innermost is IOException && !(ex is HttpRequestException))
+                return "file error: " + innermost.Message;
+            return $"{innermost.GetType().Name}: {innermost.Message}";
         }
 
         public static string FormatByteSize(long bytes)
@@ -181,22 +163,6 @@ namespace SmartGoldbergEmu.Helpers
             divisor = 1.0;
             unit = "B";
             format = "0";
-        }
-
-        private static async Task RunBoundedItemAsync<T>(
-            SemaphoreSlim gate,
-            T item,
-            Func<T, Task> action)
-        {
-            await gate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                await action(item).ConfigureAwait(false);
-            }
-            finally
-            {
-                gate.Release();
-            }
         }
     }
 }

@@ -63,7 +63,10 @@ namespace SmartGoldbergEmu
                             string tempDir = PathConstants.LocalAppDataPerUserDirectory;
                             Directory.CreateDirectory(tempDir);
                             string uriFile = Path.Combine(tempDir, $"{PathConstants.LauncherUriProtocolPendingFilePrefix}{DateTime.Now.Ticks}{PathConstants.LauncherUriProtocolPendingFileExtension}");
-                            File.WriteAllText(uriFile, args[0], System.Text.Encoding.UTF8);
+                            // Write under a name the watcher ignores, then rename, so it never reads a half-written file.
+                            string partialFile = uriFile + PathConstants.LauncherUriProtocolPartialFileSuffix;
+                            File.WriteAllText(partialFile, args[0], System.Text.Encoding.UTF8);
+                            File.Move(partialFile, uriFile);
                         }
                         catch (Exception ex)
                         {
@@ -100,6 +103,12 @@ namespace SmartGoldbergEmu
                 TryReconcileOrphanedLaunchSessions();
 
                 LauncherUpdateService.CheckForUpdatesWithUISync(BootstrapService.LogService, isStartup: true);
+                if (LauncherUpdateService.ExitRequestedForStagedUpdate)
+                {
+                    ServiceLocator.DisposeApplicationResources();
+                    BootstrapService.LogShutdown();
+                    return;
+                }
 
                 if (!InitializationService.PerformStartupChecks())
                 {

@@ -13,15 +13,6 @@ namespace SmartGoldbergEmu.Constants
         // Tall portrait library art (library cover layout).
         public const string ViewModeCompactTiles = "Library Cover";
 
-        // Legacy persisted view_mode values; NormalizeViewMode maps them to the current ones.
-        public const string ViewModeTileLegacy = "Tile";
-
-        public const string ViewModeTileLegacyStoreCapsule = "Store Capsule";
-
-        public const string ViewModeCompactTilesLegacy = "Compact Tiles";
-
-        public const string ViewModeCompactTilesLegacyDigitalCover = "Digital Cover";
-
         public const string ViewModeIcons = "Icons";
 
         public const string ViewModeLogos = "Logos";
@@ -29,19 +20,6 @@ namespace SmartGoldbergEmu.Constants
         public const string ViewModeDetails = "Details";
 
         public const string ViewModeDefault = ViewModeTile;
-
-        public static string NormalizeViewMode(string viewMode)
-        {
-            if (string.IsNullOrWhiteSpace(viewMode))
-                return ViewModeDefault;
-            if (viewMode.Equals(ViewModeTileLegacy, StringComparison.OrdinalIgnoreCase)
-                || viewMode.Equals(ViewModeTileLegacyStoreCapsule, StringComparison.OrdinalIgnoreCase))
-                return ViewModeTile;
-            if (viewMode.Equals(ViewModeCompactTilesLegacy, StringComparison.OrdinalIgnoreCase)
-                || viewMode.Equals(ViewModeCompactTilesLegacyDigitalCover, StringComparison.OrdinalIgnoreCase))
-                return ViewModeCompactTiles;
-            return viewMode;
-        }
 
         #endregion
 
@@ -193,8 +171,6 @@ namespace SmartGoldbergEmu.Constants
         // Nemirtingas/games-infos-datas: steam/{appId}/{fileName} (achievements_db, stats_db, inventory_db, …).
         public const string GamesInfosDatasSteamFileUrlFormat =
             "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/{1}";
-        public static readonly string GamesInfosDatasSteamStatsDbUrlFormat =
-            "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/" + PathConstants.GoldbergStatsDbJsonFileName;
         public const string SteamCommunityLeaderboardsXmlUrlFormat = "https://steamcommunity.com/stats/{0}/leaderboards/?xml=1";
         public const string SteamPublishedFileDetailsApiUrlPrefix = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=";
         // Steam ranks CMs for this client (IP/load). GetCMList is a global TCP dump if ForConnect has no netfilter.

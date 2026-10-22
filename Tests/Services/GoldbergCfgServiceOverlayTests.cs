@@ -31,6 +31,30 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void ApplyOverlayToIni_writes_hidden_overlay_buttons_only()
+        {
+            using (var scope = new ServiceLocatorTestScope("sge-goldberg-overlay-"))
+            {
+                string globalRoot = TestFileHelper.CreateTempDirectory("sge-goldberg-global-");
+                try
+                {
+                    var cfgService = new GoldbergCfgService(globalRoot);
+                    var iniFile = new IniFile();
+                    cfgService.ApplyOverlayToIni(iniFile, new OverlaySettings { ShowButtonTestAchievement = false, ShowCheckboxFps = false });
+
+                    var ini = ServiceLocator.IniFileService;
+                    Assert.Equal("0", ini.GetValue(iniFile, "overlay::general", "show_button_test_achievement"));
+                    Assert.Equal("0", ini.GetValue(iniFile, "overlay::general", "show_checkbox_fps"));
+                    Assert.True(string.IsNullOrEmpty(ini.GetValue(iniFile, "overlay::general", "show_button_user_info")));
+                }
+                finally
+                {
+                    try { System.IO.Directory.Delete(globalRoot, recursive: true); } catch { }
+                }
+            }
+        }
+
+        [Fact]
         public void ApplyOverlayToIni_writes_keys_whose_goldberg_default_differs_from_app_default()
         {
             using (var scope = new ServiceLocatorTestScope("sge-goldberg-overlay-"))

@@ -62,19 +62,6 @@ namespace SmartGoldbergEmu.Helpers
             return major + "." + minor + "." + patch;
         }
 
-        public static bool TryGetBuildNumber(out int buildNumber)
-        {
-            buildNumber = 0;
-            if (!TryParseVersionComponents(out int _, out int _, out int _, out int _, out int build, out string _))
-                return false;
-
-            if (build <= 0)
-                return false;
-
-            buildNumber = build;
-            return true;
-        }
-
         public static string FormatVersionLabel(int major, int minor, int patch)
         {
             return FormatVersionLabel(major, minor, patch, 0);

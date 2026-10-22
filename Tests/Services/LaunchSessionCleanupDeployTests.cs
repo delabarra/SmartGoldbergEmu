@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
@@ -259,6 +261,35 @@ namespace SmartGoldbergEmu.Tests.Services
                 {
                     try { Directory.Delete(workDir, recursive: true); } catch { }
                 }
+            }
+        }
+
+        [Fact]
+        public void HasLiveSessionForAppId_is_false_when_pid_was_reused_by_another_process()
+        {
+            using (var harness = new LaunchDeployTestHarness())
+            using (Process current = Process.GetCurrentProcess())
+            {
+                long currentStartTicks = LaunchSessionCleanupService.TryGetProcessStartTimeUtcTicks(current);
+                Assert.NotEqual(0, currentStartTicks);
+
+                var reused = new PersistedLaunchSession
+                {
+                    AppId = LaunchDeployTestHarness.DefaultTestAppId,
+                    GameProcessId = current.Id,
+                    GameProcessStartTimeUtcTicks = currentStartTicks - TimeSpan.TicksPerHour,
+                };
+                harness.CleanupService.WriteSession(reused);
+                Assert.False(harness.CleanupService.HasLiveSessionForAppId(LaunchDeployTestHarness.DefaultTestAppId));
+
+                var same = new PersistedLaunchSession
+                {
+                    AppId = LaunchDeployTestHarness.DefaultTestAppId,
+                    GameProcessId = current.Id,
+                    GameProcessStartTimeUtcTicks = currentStartTicks,
+                };
+                harness.CleanupService.WriteSession(same);
+                Assert.True(harness.CleanupService.HasLiveSessionForAppId(LaunchDeployTestHarness.DefaultTestAppId));
             }
         }
     }

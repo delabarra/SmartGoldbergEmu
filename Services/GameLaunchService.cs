@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -312,6 +313,7 @@ namespace SmartGoldbergEmu.Services
                         var stripResult = _emulatorConfigService.StripSaveLocationFromPerGameUserIni(game.AppId);
                         if (!stripResult.IsSuccess)
                             _logger?.LogWarning($"Per-game save location cleanup failed for app {game.AppId}: {stripResult.ErrorMessage}");
+                        _emulatorConfigService.RemoveUntouchedDefaultPerGameOverlayIni(game.AppId);
                     }
                 }
 
@@ -540,13 +542,6 @@ namespace SmartGoldbergEmu.Services
                 return false;
 
             useX64 = storedIsX64;
-            return true;
-        }
-
-        private bool DetectGameArchitecture(string executablePath)
-        {
-            if (SteamApiValidator.TryDetectExecutableIsX64(executablePath, out bool isX64))
-                return isX64;
             return true;
         }
 
@@ -992,7 +987,7 @@ namespace SmartGoldbergEmu.Services
                 File.Copy(targetPath, backupPath, overwrite: false);
             }
 
-            DeleteLegacySteamApiDeploymentBackup(targetPath);
+            LaunchSessionCleanupService.DeleteLegacySteamApiDeploymentBackup(targetPath);
             site.Files.Add(deployment);
             File.Copy(sourcePath, targetPath, overwrite: true);
         }
@@ -1646,14 +1641,17 @@ namespace SmartGoldbergEmu.Services
                 _logger?.LogDebug($"Starting process: {startInfo.FileName}, WD: {startInfo.WorkingDirectory}, Args: {startInfo.Arguments}");
 
                 Process process;
-                bool started = TryStartProcess(startInfo, out process);
+                bool started = TryStartProcess(startInfo, out process, out string startError);
 
                 if (!started || process == null)
                 {
                     _logger?.LogError(
-                        $"Process.Start returned null: AppId={game.AppId}, name={game.AppName}, mode={game.LaunchMode}, exe={executablePath}, wd={workingDirectory}");
+                        $"Process.Start failed: AppId={game.AppId}, name={game.AppName}, mode={game.LaunchMode}, exe={executablePath}, wd={workingDirectory}: {startError ?? "no process returned"}");
                     // LaunchGame finally restores deploy/registry when launchHandedOffToSession stays false.
-                    return ValidationResult.Failure("Failed to start game process");
+                    return ValidationResult.Failure(
+                        string.IsNullOrEmpty(startError)
+                            ? "Failed to start game process."
+                            : "Failed to start game process: " + startError);
                 }
 
                 if (!TryGetProcessId(process, out int processId))
@@ -1714,6 +1712,7 @@ namespace SmartGoldbergEmu.Services
                         win32DeployState,
                         configureActiveProcessRegistry,
                         branchRestoreOnExit);
+                    persisted.GameProcessStartTimeUtcTicks = LaunchSessionCleanupService.TryGetProcessStartTimeUtcTicks(process);
                     string manifestPath = _launchSessionCleanup.WriteSession(persisted);
                     if (!string.IsNullOrEmpty(manifestPath))
                     {
@@ -2027,24 +2026,6 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static void DeleteLegacySteamApiDeploymentBackup(string targetPath)
-        {
-            if (string.IsNullOrEmpty(targetPath))
-                return;
-
-            string legacyPath = targetPath + PathConstants.SteamApiDllDeploymentLegacyBackupExtension;
-            if (!File.Exists(legacyPath))
-                return;
-
-            try
-            {
-                File.Delete(legacyPath);
-            }
-            catch
-            {
-            }
-        }
-
         private string ResolveLaunchExecutablePath(GameConfig game, LaunchOption launchOption)
         {
             try
@@ -2057,16 +2038,25 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static bool TryStartProcess(ProcessStartInfo startInfo, out Process process)
+        private const int ErrorElevationRequired = 740;
+
+        private static bool TryStartProcess(ProcessStartInfo startInfo, out Process process, out string error)
         {
             process = null;
+            error = null;
             try
             {
                 process = Process.Start(startInfo);
                 return process != null;
             }
-            catch
+            catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorElevationRequired)
             {
+                error = "the game requires administrator rights. Run SmartGoldbergEmu as administrator and try again.";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
                 return false;
             }
         }

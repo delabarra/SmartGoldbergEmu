@@ -280,9 +280,14 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 var path = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergCustomBroadcastsFileName);
-                if (!string.IsNullOrWhiteSpace(content))
+                // Goldberg resolves each line as-is, so surrounding whitespace would break the address.
+                var lines = (content ?? string.Empty)
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => line.Length > 0)
+                    .ToArray();
+                if (lines.Length > 0)
                 {
-                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     Directory.CreateDirectory(Path.GetDirectoryName(path));
                     File.WriteAllLines(path, lines);
                     return SaveResult.Success(1);
@@ -402,6 +407,7 @@ namespace SmartGoldbergEmu.Services
 
         #region Auto Accept Invite
 
+        // Returns null when the file is missing; an empty string means the file exists and accepts invites from anyone.
         public string LoadAutoAcceptInvite(ulong appId)
         {
             try
@@ -417,27 +423,30 @@ namespace SmartGoldbergEmu.Services
             {
                 ServiceLocator.LogService?.LogError($"Failed to load {PathConstants.GoldbergAutoAcceptInviteFileName}: {ex.Message}", ex);
             }
-            return string.Empty;
+            return null;
         }
 
+        // null deletes the file; empty or whitespace writes an empty file, which Goldberg treats as "accept invites from anyone".
         public SaveResult SaveAutoAcceptInvite(ulong appId, string content)
         {
             try
             {
                 var path = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergAutoAcceptInviteFileName);
-                if (!string.IsNullOrWhiteSpace(content))
+                if (content == null)
                 {
-                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    Directory.CreateDirectory(Path.GetDirectoryName(path));
-                    File.WriteAllLines(path, lines);
-                    return SaveResult.Success(1);
-                }
-                else if (File.Exists(path))
-                {
-                    File.Delete(path);
+                    if (File.Exists(path))
+                        File.Delete(path);
                     return SaveResult.Success(0);
                 }
-                return SaveResult.Success(0);
+
+                var lines = content
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => line.Length > 0)
+                    .ToArray();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllLines(path, lines);
+                return SaveResult.Success(1);
             }
             catch (Exception ex)
             {
@@ -751,37 +760,7 @@ namespace SmartGoldbergEmu.Services
 
         #endregion
 
-        #region Server Browser
-
-        public string LoadInternetServers(ulong appId)
-        {
-            return LoadTextFile(appId, PathConstants.GoldbergInternetServersFileName);
-        }
-
-        public SaveResult SaveInternetServers(ulong appId, string content)
-        {
-            return SaveTextFile(appId, PathConstants.GoldbergInternetServersFileName, content);
-        }
-
-        public string LoadFavoriteServers(ulong appId)
-        {
-            return LoadTextFile(appId, PathConstants.GoldbergFavoriteServersFileName);
-        }
-
-        public SaveResult SaveFavoriteServers(ulong appId, string content)
-        {
-            return SaveTextFile(appId, PathConstants.GoldbergFavoriteServersFileName, content);
-        }
-
-        public string LoadHistoryServers(ulong appId)
-        {
-            return LoadTextFile(appId, PathConstants.GoldbergHistoryServersFileName);
-        }
-
-        public SaveResult SaveHistoryServers(ulong appId, string content)
-        {
-            return SaveTextFile(appId, PathConstants.GoldbergHistoryServersFileName, content);
-        }
+        #region Text and JSON file helpers
 
         private static string[] NormalizeTextFileLines(string content)
         {
@@ -811,24 +790,6 @@ namespace SmartGoldbergEmu.Services
                 ServiceLocator.LogService?.LogError($"Failed to load {fileName}: {ex.Message}", ex);
                 return string.Empty;
             }
-        }
-
-        private string LoadTextFile(ulong appId, string fileName)
-        {
-            try
-            {
-                var path = Path.Combine(GetGameSteamSettingsPath(appId), fileName);
-                if (File.Exists(path))
-                {
-                    var lines = File.ReadAllLines(path);
-                    return string.Join(Environment.NewLine, lines);
-                }
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService?.LogError($"Failed to load {fileName}: {ex.Message}", ex);
-            }
-            return string.Empty;
         }
 
         private SaveResult SaveJsonFile(
@@ -876,86 +837,6 @@ namespace SmartGoldbergEmu.Services
             {
                 return SaveResult.Failure($"Failed to save {fileName}: {ex.Message}");
             }
-        }
-
-        private SaveResult SaveTextFile(ulong appId, string fileName, string content)
-        {
-            try
-            {
-                var path = Path.Combine(GetGameSteamSettingsPath(appId), fileName);
-                if (!string.IsNullOrWhiteSpace(content))
-                {
-                    var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    Directory.CreateDirectory(Path.GetDirectoryName(path));
-                    File.WriteAllLines(path, lines);
-                    return SaveResult.Success(1);
-                }
-                else if (File.Exists(path))
-                {
-                    File.Delete(path);
-                    return SaveResult.Success(0);
-                }
-                return SaveResult.Success(0);
-            }
-            catch (Exception ex)
-            {
-                return SaveResult.Failure($"Failed to save {fileName}: {ex.Message}");
-            }
-        }
-
-        #endregion
-
-        #region Game Coordinator and purchased keys
-
-        public string LoadGcJson(ulong appId)
-        {
-            return LoadOptionalJsonFile(appId, PathConstants.GoldbergGcJsonFileName);
-        }
-
-        public SaveResult SaveGcJson(ulong appId, string content)
-        {
-            return SaveOptionalJsonFile(appId, PathConstants.GoldbergGcJsonFileName, content);
-        }
-
-        public string LoadPurchasedKeys(ulong appId)
-        {
-            return LoadTextFile(appId, PathConstants.GoldbergPurchasedKeysFileName);
-        }
-
-        public SaveResult SavePurchasedKeys(ulong appId, string content)
-        {
-            return SaveTextFile(appId, PathConstants.GoldbergPurchasedKeysFileName, content);
-        }
-
-        private string LoadOptionalJsonFile(ulong appId, string fileName)
-        {
-            try
-            {
-                var path = Path.Combine(GetGameSteamSettingsPath(appId), fileName);
-                if (!File.Exists(path))
-                    return string.Empty;
-
-                var text = File.ReadAllText(path).Trim();
-                if (string.IsNullOrEmpty(text))
-                    return string.Empty;
-
-                var jsonObj = JsonConvert.DeserializeObject(text);
-                return JsonConvert.SerializeObject(jsonObj, JsonFormatting.Indented);
-            }
-            catch (JsonKitException)
-            {
-                return LoadTextFile(appId, fileName);
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService?.LogError($"Failed to load {fileName}: {ex.Message}", ex);
-                return string.Empty;
-            }
-        }
-
-        private SaveResult SaveOptionalJsonFile(ulong appId, string fileName, string content)
-        {
-            return SaveJsonFile(appId, fileName, content, JsonFormatting.Indented);
         }
 
         #endregion
@@ -1139,65 +1020,6 @@ namespace SmartGoldbergEmu.Services
             string dir = PathConstants.GoldbergSteamClientExtraDllsDirectory;
             Directory.CreateDirectory(dir);
             return dir;
-        }
-
-        public IReadOnlyList<string> ListSteamClientExtraDllFileNames()
-        {
-            string dir = PathConstants.GoldbergSteamClientExtraDllsDirectory;
-            if (!Directory.Exists(dir))
-                return Array.Empty<string>();
-
-            try
-            {
-                // Top-level only: staging and Goldberg load_dlls are flat.
-                return Directory.GetFiles(dir, "*.dll", SearchOption.TopDirectoryOnly)
-                    .Select(path => Path.GetFileName(path))
-                    .Where(name => !GoldbergInstallLayout.IsShippedSteamClientExtraDll(name))
-                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
-            catch
-            {
-                return Array.Empty<string>();
-            }
-        }
-
-        public SaveResult CopyDllFilesToSteamClientExtraDlls(IEnumerable<string> sourceFiles)
-        {
-            try
-            {
-                if (sourceFiles == null)
-                    return SaveResult.Success(0);
-
-                string destDir = EnsureSteamClientExtraDllsDirectory();
-                int copied = 0;
-                foreach (string src in sourceFiles)
-                {
-                    if (string.IsNullOrWhiteSpace(src) || !File.Exists(src))
-                        continue;
-
-                    if (!string.Equals(Path.GetExtension(src), ".dll", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string name = Path.GetFileName(src);
-                    if (string.IsNullOrEmpty(name))
-                        continue;
-                    if (GoldbergInstallLayout.IsShippedSteamClientExtraDll(name))
-                        continue;
-
-                    File.Copy(src, Path.Combine(destDir, name), true);
-                    copied++;
-                }
-
-                if (copied == 0)
-                    return SaveResult.Failure("No .dll files were copied. Select one or more DLL files.");
-
-                return SaveResult.Success(copied);
-            }
-            catch (Exception ex)
-            {
-                return SaveResult.Failure("Failed to copy DLLs: " + ex.Message);
-            }
         }
 
         #endregion

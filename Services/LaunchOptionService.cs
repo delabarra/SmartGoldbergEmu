@@ -105,70 +105,11 @@ namespace SmartGoldbergEmu.Services
             if (appId == 0)
                 return results;
 
-            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
             try
             {
-                void TryLoadFrom(string iniPath)
-                {
-                    if (string.IsNullOrEmpty(iniPath) || !File.Exists(iniPath))
-                        return;
-
-                    var iniFile = ServiceLocator.IniFileService.ParseFile(iniPath);
-                    var byIndex = new Dictionary<int, UserLaunchOptionParts>();
-
-                    for (int i = 0; i < iniFile.Lines.Count; i++)
-                    {
-                        var line = iniFile.Lines[i];
-                        if (line == null)
-                            continue;
-
-                        if (line.Type != IniLineType.KeyValue)
-                            continue;
-
-                        if (!string.Equals(line.Section, UserLaunchOptionsSection, StringComparison.OrdinalIgnoreCase))
-                            continue;
-
-                        if (string.IsNullOrEmpty(line.Key))
-                            continue;
-
-                        if (TryParseUserLaunchOptionKey(line.Key, out int idx, out UserLaunchOptionField field))
-                        {
-                            ApplyUserLaunchOptionField(GetOrCreateUserLaunchOptionParts(byIndex, idx), field, line.Value);
-                            continue;
-                        }
-                    }
-
-                    foreach (var kvp in byIndex)
-                    {
-                        var parts = kvp.Value;
-                        if (parts == null)
-                            continue;
-
-                        var name = parts.Name != null ? parts.Name.Trim() : string.Empty;
-                        if (string.IsNullOrWhiteSpace(name))
-                            continue;
-
-                        if (!seenNames.Add(name))
-                            continue;
-
-                        results.Add(new LaunchOption
-                        {
-                            Type = "user",
-                            Description = name,
-                            Executable = parts.Executable ?? string.Empty,
-                            Parameters = parts.Parameters ?? string.Empty,
-                            WorkingDir = parts.WorkingDir ?? string.Empty
-                        });
-                    }
-                }
-
-                TryLoadFrom(GetUserLaunchOptionsIniPath(appId));
-
-                // Legacy fallback: steam_settings\configs.user.ini.
-                var steamSettingsPath = ServiceLocator.EmulatorConfigService.GetGameSteamSettingsPath(appId);
-                var legacyIniPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergUserIniFileName);
-                TryLoadFrom(legacyIniPath);
+                var iniPath = GetUserLaunchOptionsIniPath(appId);
+                if (File.Exists(iniPath))
+                    results.AddRange(ReadUserLaunchOptions(ServiceLocator.IniFileService.ParseFile(iniPath)));
             }
             catch (Exception ex)
             {
@@ -176,6 +117,95 @@ namespace SmartGoldbergEmu.Services
             }
 
             return results;
+        }
+
+        // Named entries in file order; the first entry wins when a name repeats.
+        private static List<LaunchOption> ReadUserLaunchOptions(IniFile iniFile)
+        {
+            var byIndex = new Dictionary<int, UserLaunchOptionParts>();
+            foreach (var line in iniFile.Lines)
+            {
+                if (line == null || line.Type != IniLineType.KeyValue || string.IsNullOrEmpty(line.Key))
+                    continue;
+                if (!string.Equals(line.Section, UserLaunchOptionsSection, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (TryParseUserLaunchOptionKey(line.Key, out int idx, out UserLaunchOptionField field))
+                    ApplyUserLaunchOptionField(GetOrCreateUserLaunchOptionParts(byIndex, idx), field, line.Value);
+            }
+
+            var results = new List<LaunchOption>();
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var parts in byIndex.Values)
+            {
+                var name = parts.Name != null ? parts.Name.Trim() : string.Empty;
+                if (string.IsNullOrWhiteSpace(name) || !seenNames.Add(name))
+                    continue;
+
+                results.Add(new LaunchOption
+                {
+                    Type = "user",
+                    Description = name,
+                    Executable = parts.Executable ?? string.Empty,
+                    Parameters = parts.Parameters ?? string.Empty,
+                    WorkingDir = parts.WorkingDir ?? string.Empty
+                });
+            }
+
+            return results;
+        }
+
+        // Moves [user::launch_options] out of a legacy per-game configs.user.ini; names already in the target win.
+        // The target is written before the source is rewritten, so a failure never loses entries.
+        internal static int MoveLegacyUserLaunchOptions(string legacyIniPath, string targetIniPath)
+        {
+            if (!File.Exists(legacyIniPath))
+                return 0;
+
+            var iniService = ServiceLocator.IniFileService;
+            var legacyIni = iniService.ParseFile(legacyIniPath);
+            if (!legacyIni.Lines.Any(l => l.Type == IniLineType.Section &&
+                                          string.Equals(l.Section, UserLaunchOptionsSection, StringComparison.OrdinalIgnoreCase)))
+                return 0;
+
+            var targetIni = iniService.ParseFile(targetIniPath);
+            int moved = 0;
+            foreach (var option in ReadUserLaunchOptions(legacyIni))
+            {
+                if (FindUserLaunchOptionIndicesByName(targetIni, option.Description).Count > 0)
+                    continue;
+
+                SetUserLaunchOptionFields(targetIni, FindNextUserLaunchOptionIndex(targetIni),
+                    option.Description, option.Executable, option.Parameters, option.WorkingDir);
+                moved++;
+            }
+
+            if (moved > 0)
+            {
+                var targetDir = Path.GetDirectoryName(targetIniPath);
+                if (!string.IsNullOrEmpty(targetDir))
+                    Directory.CreateDirectory(targetDir);
+                iniService.WriteFile(targetIni, targetIniPath);
+            }
+
+            RemoveUserLaunchOptionsSections(legacyIni);
+            if (legacyIni.Lines.Any(l => l.Type == IniLineType.KeyValue))
+                iniService.WriteFile(legacyIni, legacyIniPath);
+            else
+                File.Delete(legacyIniPath);
+
+            return moved;
+        }
+
+        private static void RemoveUserLaunchOptionsSections(IniFile iniFile)
+        {
+            bool inSection = false;
+            iniFile.Lines.RemoveAll(line =>
+            {
+                if (line.Type == IniLineType.Section)
+                    inSection = string.Equals(line.Section, UserLaunchOptionsSection, StringComparison.OrdinalIgnoreCase);
+                return inSection;
+            });
         }
 
         public void SaveUserLaunchOption(ulong appId, string customName, string executable, string parameters, string workingDir)
@@ -233,14 +263,7 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                bool removed = TryRemoveFromIni(GetUserLaunchOptionsIniPath(appId), customName);
-                if (removed)
-                    return true;
-
-                // Legacy fallback
-                var steamSettingsPath = ServiceLocator.EmulatorConfigService.GetGameSteamSettingsPath(appId);
-                var legacyIniPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergUserIniFileName);
-                return TryRemoveFromIni(legacyIniPath, customName);
+                return TryRemoveFromIni(GetUserLaunchOptionsIniPath(appId), customName);
             }
             catch (Exception ex)
             {
@@ -354,37 +377,6 @@ namespace SmartGoldbergEmu.Services
 
             index = parsed;
             return true;
-        }
-
-        private static int? FindUserLaunchOptionIndexByName(IniFile iniFile, string customName)
-        {
-            int? foundIndex = null;
-            var nameToFind = customName.Trim();
-
-            for (int i = 0; i < iniFile.Lines.Count; i++)
-            {
-                var line = iniFile.Lines[i];
-                if (line == null)
-                    continue;
-
-                if (line.Type != IniLineType.KeyValue)
-                    continue;
-                if (!string.Equals(line.Section, UserLaunchOptionsSection, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                int idx;
-                if (!TryParseUserLaunchOptionIndex(line.Key, UserLaunchOptionNameSuffix, out idx))
-                    continue;
-
-                if (!string.IsNullOrEmpty(line.Value) &&
-                    string.Equals(line.Value.Trim(), nameToFind, StringComparison.OrdinalIgnoreCase))
-                {
-                    foundIndex = idx;
-                    break;
-                }
-            }
-
-            return foundIndex;
         }
 
         private static int FindNextUserLaunchOptionIndex(IniFile iniFile)

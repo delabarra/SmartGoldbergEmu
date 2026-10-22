@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -95,6 +94,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
+            InitializeLaunchModeDropdown();
             WireAchievementsPreviewListEvents();
             WireModsSummaryListEvents();
             WireInventoryListEvents();
@@ -330,6 +330,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 SetSubscribedGroupLines(lstSubscribedGroups, sidecars.SubscribedGroups);
                 SetSubscribedGroupLines(lstSubscribedGroupsClans, sidecars.SubscribedGroupsClans);
+                SetTextBoxText(txtCustomBroadcasts, sidecars.CustomBroadcasts);
 
                 ReloadAchievementsPreviewFromDisk();
 
@@ -444,7 +445,6 @@ namespace SmartGoldbergEmu.Forms
             BindCheck(chkShareLeaderboardsOverNetwork, v => main.ShareLeaderboardsOverNetwork = v);
             BindCheck(chkDisableLobbyCreation, v => main.DisableLobbyCreation = v);
             BindCheck(chkDownloadSteamhttpRequests, v => main.DownloadSteamhttpRequests = v);
-            BindNum(numOldP2PPacketSharingMode, v => main.OldP2PPacketSharingMode = v);
         }
 
         private void LoadNetworkMainToForm(MainSettings main)
@@ -465,7 +465,6 @@ namespace SmartGoldbergEmu.Forms
             LoadCheck(chkShareLeaderboardsOverNetwork, main.ShareLeaderboardsOverNetwork);
             LoadCheck(chkDisableLobbyCreation, main.DisableLobbyCreation);
             LoadCheck(chkDownloadSteamhttpRequests, main.DownloadSteamhttpRequests);
-            LoadNum(numOldP2PPacketSharingMode, main.OldP2PPacketSharingMode);
         }
 
         private void ApplyStatsAchievementsMainFromForm(MainSettings main)
@@ -612,31 +611,6 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private void SaveDlcListAndAppPaths()
-        {
-            if (!HasCurrentGameWithValidAppId())
-                return;
-
-            try
-            {
-                Dictionary<long, string> dlcData = txtDLCList != null
-                    ? DlcService.ParseDlcListText(txtDLCList.Text, _gameConfig.PreFetchedDlcData)
-                    : null;
-                if (dlcData == null && _gameConfig.PreFetchedDlcData != null && _gameConfig.PreFetchedDlcData.Count > 0)
-                    dlcData = _gameConfig.PreFetchedDlcData;
-
-                var saveResult = ServiceLocator.GoldbergFilesService.SaveAppConfigDlcAndPaths(_gameConfig.AppId, dlcData, null);
-                if (!saveResult.IsSuccess)
-                {
-                    LogSaveResultWarning(saveResult);
-                }
-            }
-            catch (Exception ex)
-            {
-                LogFailedSave("DLC list", ex);
-            }
-        }
-
         private void OnLookupAppID_Click(object sender, EventArgs e)
         {
             using (var searchForm = new GameSearchForm())
@@ -712,15 +686,36 @@ namespace SmartGoldbergEmu.Forms
             if (IsDisposed || Disposing || snapshot == null)
                 return;
 
+            // A slower lookup for an App ID that is no longer in the box must not overwrite the newer one.
+            if (snapshot.AppId != 0 && snapshot.AppId != GetEnteredAppId())
+                return;
+
             if (_gameConfig != null && snapshot.Failure == AppMetadataFetchFailure.None && snapshot.IsUsable)
             {
                 // Catalog and AppInfo move together so GetRuntimeAppDataAppId stays accurate.
                 _gameConfig.Catalog = snapshot;
                 _gameConfig.AppInfo = snapshot.AppInfo;
                 _gameConfig.PreFetchedDlcData = snapshot.ToDlcDictionary();
+
+                // Save reads the DLC box; in add mode (or after switching apps) it must show the looked-up app's DLCs.
+                if (txtDLCList != null && (!_isEditMode || snapshot.AppId != _gameConfig.AppId))
+                {
+                    if (_gameConfig.PreFetchedDlcData.Count > 0)
+                        SetTextBoxText(txtDLCList, DlcService.BuildDlcListText(_gameConfig.PreFetchedDlcData));
+                    else
+                        ClearTextBox(txtDLCList);
+                }
             }
 
             ApplyFetchedAppMetadata(snapshot.Online);
+        }
+
+        // Save commits the App ID box, so lookups and DLC searches follow it rather than the App ID the dialog opened with.
+        private ulong GetEnteredAppId()
+        {
+            if (txtAppID != null && ulong.TryParse(txtAppID.Text.Trim(), out ulong entered) && entered != 0)
+                return entered;
+            return _gameConfig?.AppId ?? 0;
         }
 
         // Lookups attach Catalog/AppInfo for the looked-up app before Save commits that App ID to _gameConfig.AppId.
@@ -1083,7 +1078,8 @@ namespace SmartGoldbergEmu.Forms
 
         private async void OnFindDLCs_Click(object sender, EventArgs e)
         {
-            if (!HasCurrentGameWithValidAppId())
+            ulong appId = GetEnteredAppId();
+            if (_gameConfig == null || appId == 0)
             {
                 AppTaskDialogHelper.ShowOk(this, "App ID is required to find DLCs.", MessageBoxIcon.Warning);
                 return;
@@ -1100,31 +1096,37 @@ namespace SmartGoldbergEmu.Forms
                 }
 
                 var dlcData = await ServiceLocator.AppDataKitBridgeService
-                    .FetchDlcAsync(_gameConfig.AppId)
+                    .FetchDlcAsync(appId)
                     .ConfigureAwait(true);
 
                 if (IsDisposed || Disposing)
                     return;
 
-                _gameConfig.DlcCheckPerformed = true;
+                // Runtime DLC/catalog state belongs to one app; a search for another App ID only fills the box.
+                bool runtimeDataIsForThisApp = GetRuntimeAppDataAppId() == appId;
+                if (runtimeDataIsForThisApp)
+                    _gameConfig.DlcCheckPerformed = true;
 
                 if (dlcData != null && dlcData.Count > 0)
                 {
-                    if (_gameConfig.PreFetchedDlcData == null)
+                    if (runtimeDataIsForThisApp)
                     {
-                        _gameConfig.PreFetchedDlcData = new Dictionary<long, string>();
-                    }
-                    foreach (var kvp in dlcData)
-                    {
-                        _gameConfig.PreFetchedDlcData[kvp.Key] = kvp.Value;
-                    }
+                        if (_gameConfig.PreFetchedDlcData == null)
+                        {
+                            _gameConfig.PreFetchedDlcData = new Dictionary<long, string>();
+                        }
+                        foreach (var kvp in dlcData)
+                        {
+                            _gameConfig.PreFetchedDlcData[kvp.Key] = kvp.Value;
+                        }
 
-                    _gameConfig.Catalog?.ApplyDlcDictionary(_gameConfig.PreFetchedDlcData);
+                        _gameConfig.Catalog?.ApplyDlcDictionary(_gameConfig.PreFetchedDlcData);
 
-                    if (_gameConfig.Catalog != null && _isEditMode
-                        && Directory.Exists(PathConstants.CombineGameFolder(PathConstants.GamesDirectory, _gameConfig.AppId.ToString())))
-                    {
-                        AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
+                        if (_gameConfig.Catalog != null && _isEditMode && appId == _gameConfig.AppId
+                            && Directory.Exists(PathConstants.CombineGameFolder(PathConstants.GamesDirectory, _gameConfig.AppId.ToString())))
+                        {
+                            AppCatalogSnapshotStore.TrySave(_gameConfig.Catalog);
+                        }
                     }
 
                     if (txtDLCList != null)
@@ -1166,9 +1168,10 @@ namespace SmartGoldbergEmu.Forms
 
             try
             {
-                ReloadAchievementsPreviewFromDisk();
+                // Clear first: the reload rebuilds unfiltered and cancels the debounce the clear just started.
                 if (txtAchievementsFilter != null)
                     ClearTextBox(txtAchievementsFilter);
+                ReloadAchievementsPreviewFromDisk();
             }
             catch (Exception ex)
             {
@@ -1217,6 +1220,7 @@ namespace SmartGoldbergEmu.Forms
         {
             CancelModsListResolve();
             StopAndDisposeRestoreMessageHideTimer();
+            StopAndDisposeAchievementsFilterDebounceTimer();
             ClearSteamApiFindingLabels();
             // Designer ImageList.Dispose owns remaining Depth32Bit originals.
             _achievementPreviewOwnedImages.ReleaseOwnership();
@@ -1381,7 +1385,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 txtAppID, txtGameName, txtGameFolder, txtGameExecutable, txtLaunchParameters, txtWorkingDirectory, txtCustomIcon,
                 txtForceAccountName, txtForceSteamId, txtUserTicket, txtAltSteamId, txtForceIpCountry,
-                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw
+                txtClanTag, txtBetaBranchName, txtDLCList, txtInventoryRaw, txtCustomBroadcasts
             })
                 WireTextChanged(tb);
 
@@ -1398,15 +1402,16 @@ namespace SmartGoldbergEmu.Forms
             })
                 WireChecked(chk);
 
-            foreach (var nud in new[] { numForcePort, numOldP2PPacketSharingMode, numAltSteamIdCount, numIconsPerIteration })
+            foreach (var nud in new[] { numForcePort, numAltSteamIdCount, numIconsPerIteration })
                 WireValueChanged(nud);
 
             WireCheckedWithSecondary(chkUnlockAllDLC, ChkUnlockAllDLC_CheckedChanged);
             WireCheckedWithSecondary(chkBetaBranch, ChkBetaBranch_CheckedChanged);
-            WireLaunchModeRadio(rdoLaunchSteamClient);
-            WireLaunchModeRadio(rdoLaunchExperimentalMode);
-            WireLaunchModeRadio(rdoLaunchSteamDll);
-            WireLaunchModeRadio(rdoLaunchNoEmulation);
+            if (cmbLaunchMode != null)
+            {
+                cmbLaunchMode.SelectedIndexChanged += Control_Changed;
+                cmbLaunchMode.SelectedIndexChanged += CmbLaunchMode_SelectedIndexChanged;
+            }
 
             if (tabMods != null)
                 tabMods.Enter += TabMods_Enter;
@@ -1462,6 +1467,12 @@ namespace SmartGoldbergEmu.Forms
         private int _achievementsPreviewSortColumn;
         private bool _achievementsPreviewSortAscending = true;
         private readonly ImageListOwnedImages _achievementPreviewOwnedImages = new ImageListOwnedImages();
+        // Preview icons are keyed by icon path and reused across filter/sort rebuilds until the data reloads.
+        private bool _achievementPreviewIconsStale = true;
+        private string _achievementPreviewIconsSteamSettingsPath;
+        private System.Windows.Forms.Timer _achievementsFilterDebounceTimer;
+        private const int AchievementsFilterDebounceMs = 150;
+        private const string AchievementPreviewPlaceholderIconKey = "<placeholder>";
         private const string AchievementsPreviewColumnAchievement = "Achievement";
         private const string AchievementsPreviewColumnDescription = "Description";
         private bool _balancingAchievementsColumns;
@@ -1483,6 +1494,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             _achievementsPreviewListCache = null;
+            _achievementPreviewIconsStale = true;
             if (_achievementsPreviewRevealedSecrets != null)
                 _achievementsPreviewRevealedSecrets.Clear();
             else
@@ -1526,7 +1538,32 @@ namespace SmartGoldbergEmu.Forms
 
         private void TxtAchievementsFilter_TextChanged(object sender, EventArgs e)
         {
+            if (_achievementsFilterDebounceTimer == null)
+            {
+                _achievementsFilterDebounceTimer = new System.Windows.Forms.Timer { Interval = AchievementsFilterDebounceMs };
+                _achievementsFilterDebounceTimer.Tick += AchievementsFilterDebounceTimer_Tick;
+            }
+
+            _achievementsFilterDebounceTimer.Stop();
+            _achievementsFilterDebounceTimer.Start();
+        }
+
+        private void AchievementsFilterDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            _achievementsFilterDebounceTimer?.Stop();
+            if (IsDisposed || Disposing)
+                return;
             RebuildAchievementsPreviewItems();
+        }
+
+        private void StopAndDisposeAchievementsFilterDebounceTimer()
+        {
+            if (_achievementsFilterDebounceTimer == null)
+                return;
+            _achievementsFilterDebounceTimer.Stop();
+            _achievementsFilterDebounceTimer.Tick -= AchievementsFilterDebounceTimer_Tick;
+            _achievementsFilterDebounceTimer.Dispose();
+            _achievementsFilterDebounceTimer = null;
         }
 
         private void LstAchievementsPreview_ColumnClick(object sender, ColumnClickEventArgs e)
@@ -1557,9 +1594,9 @@ namespace SmartGoldbergEmu.Forms
             if (_achievementsPreviewSortApplied)
             {
                 if (_achievementsPreviewSortColumn == 0)
-                    nameCol += _achievementsPreviewSortAscending ? " â–²" : " â–¼";
+                    nameCol += _achievementsPreviewSortAscending ? " \u25B2" : " \u25BC";
                 else
-                    descCol += _achievementsPreviewSortAscending ? " â–²" : " â–¼";
+                    descCol += _achievementsPreviewSortAscending ? " \u25B2" : " \u25BC";
             }
 
             lstAchievementsPreview.Columns[0].Text = nameCol;
@@ -1636,6 +1673,7 @@ namespace SmartGoldbergEmu.Forms
             if (lstAchievementsPreview == null || imgAchievementsPreview == null)
                 return;
 
+            _achievementsFilterDebounceTimer?.Stop();
             UpdateAchievementPreviewColumnHeaders();
 
             if (_achievementsPreviewListCache == null || _achievementsPreviewListCache.Count == 0)
@@ -1645,6 +1683,8 @@ namespace SmartGoldbergEmu.Forms
                 {
                     lstAchievementsPreview.Items.Clear();
                     _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
+                    _achievementPreviewIconsStale = false;
+                    _achievementPreviewIconsSteamSettingsPath = null;
                 }
                 finally
                 {
@@ -1668,9 +1708,16 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 lstAchievementsPreview.Items.Clear();
-                _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
+                // Cleared only together with Items: the native ListView caches image indices, and removals shift them.
+                if (_achievementPreviewIconsStale
+                    || !string.Equals(_achievementPreviewIconsSteamSettingsPath, steamSettingsPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _achievementPreviewOwnedImages.Clear(imgAchievementsPreview);
+                    _achievementPreviewIconsStale = false;
+                    _achievementPreviewIconsSteamSettingsPath = steamSettingsPath;
+                }
 
-                int imageIndex = 0;
+                var items = new List<ListViewItem>(indices.Count);
                 foreach (int srcIdx in indices)
                 {
                     var achievement = _achievementsPreviewListCache[srcIdx];
@@ -1678,9 +1725,12 @@ namespace SmartGoldbergEmu.Forms
                     if (string.IsNullOrWhiteSpace(iconPath))
                         iconPath = achievement.IconPath;
 
-                    Image previewIcon = _achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize);
-                    string imageKey = imageIndex.ToString(CultureInfo.InvariantCulture);
-                    _achievementPreviewOwnedImages.Set(imgAchievementsPreview, imageKey, previewIcon);
+                    string imageKey = string.IsNullOrWhiteSpace(iconPath) ? AchievementPreviewPlaceholderIconKey : iconPath;
+                    if (!_achievementPreviewOwnedImages.ContainsKey(imageKey))
+                    {
+                        Image previewIcon = _achievementService.LoadAchievementPreviewIcon(steamSettingsPath, iconPath, imgAchievementsPreview.ImageSize);
+                        _achievementPreviewOwnedImages.Set(imgAchievementsPreview, imageKey, previewIcon);
+                    }
 
                     var preview = _achievementService.BuildAchievementPreviewText(
                         ToAchievementPreviewData(achievement),
@@ -1689,14 +1739,14 @@ namespace SmartGoldbergEmu.Forms
                     string title = preview.Title;
                     string description = preview.Description;
 
-                    var item = new ListViewItem(title, imageIndex);
+                    var item = new ListViewItem(title, imageKey);
                     item.SubItems.Add(description);
                     item.Tag = srcIdx;
                     item.ToolTipText = preview.Tooltip;
-                    lstAchievementsPreview.Items.Add(item);
-                    imageIndex++;
+                    items.Add(item);
                 }
 
+                lstAchievementsPreview.Items.AddRange(items.ToArray());
                 AutoResizeAchievementsColumns();
             }
             catch (Exception ex)
@@ -2174,22 +2224,6 @@ namespace SmartGoldbergEmu.Forms
             HideAndClearLabel(lblSteamApiHint);
         }
 
-        private void SetSteamApiHint(string text, SteamApiDisplaySeverity severity)
-        {
-            if (lblSteamApiHint == null)
-                return;
-
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                ClearSteamApiHint();
-                return;
-            }
-
-            lblSteamApiHint.Text = text;
-            lblSteamApiHint.Visible = true;
-            ApplySteamApiStatusColor(lblSteamApiHint, severity);
-        }
-
         private static string BuildSteamApiDisplayLine(
             string architecture,
             string filePath,
@@ -2267,14 +2301,7 @@ namespace SmartGoldbergEmu.Forms
 
         private int GetLaunchModeBlockBottom()
         {
-            int bottom = 0;
-            foreach (Control control in new Control[] { rdoLaunchSteamClient, rdoLaunchExperimentalMode, rdoLaunchSteamDll, rdoLaunchNoEmulation })
-            {
-                if (control != null && control.Visible)
-                    bottom = Math.Max(bottom, control.Bottom);
-            }
-
-            return bottom;
+            return cmbLaunchMode != null && cmbLaunchMode.Visible ? cmbLaunchMode.Bottom : 0;
         }
 
         private void ReflowSteamApiPanels()
@@ -3536,30 +3563,67 @@ namespace SmartGoldbergEmu.Forms
             }, token).ForgetFaults(Program.LogService, nameof(RefreshModsSummaryList));
         }
 
-        private void SelectLaunchModeUi(GoldbergLaunchMode mode)
+        private sealed class LaunchModeOption
         {
-            if (rdoLaunchSteamClient == null || rdoLaunchExperimentalMode == null || rdoLaunchSteamDll == null || rdoLaunchNoEmulation == null)
+            public LaunchModeOption(GoldbergLaunchMode mode, string label, string description)
+            {
+                Mode = mode;
+                Label = label;
+                Description = description;
+            }
+
+            public GoldbergLaunchMode Mode { get; }
+            public string Label { get; }
+            public string Description { get; }
+
+            public override string ToString() => Label;
+        }
+
+        private static readonly LaunchModeOption[] LaunchModeOptions =
+        {
+            new LaunchModeOption(GoldbergLaunchMode.SteamClient, "Steam Client Mode",
+                "Use Goldberg Steam client mode.\r\n\r\nCopies steamclient DLLs and sets registry so the game uses the emulator."),
+            new LaunchModeOption(GoldbergLaunchMode.StandardSteamApi, "Experimental Mode",
+                "Use experimental steam_api beside the game.\r\n\r\nReplaces steam_api.dll in the game folder and links steam_settings."),
+            new LaunchModeOption(GoldbergLaunchMode.SteamDllBesideExe, "Steam.dll Mode",
+                "Copy Steam.dll next to the game .exe.\r\n\r\nFor older games that load a local Steam.dll without the overlay."),
+            new LaunchModeOption(GoldbergLaunchMode.NoEmulation, "No emulation",
+                "Start the game .exe directly.\r\n\r\nNo Goldberg DLLs or registry setup."),
+        };
+
+        private void InitializeLaunchModeDropdown()
+        {
+            if (cmbLaunchMode == null)
                 return;
 
-            if (mode == GoldbergLaunchMode.NoEmulation)
-                rdoLaunchNoEmulation.Checked = true;
-            else if (mode == GoldbergLaunchMode.SteamDllBesideExe)
-                rdoLaunchSteamDll.Checked = true;
-            else if (mode == GoldbergLaunchMode.StandardSteamApi)
-                rdoLaunchExperimentalMode.Checked = true;
-            else
-                rdoLaunchSteamClient.Checked = true;
+            cmbLaunchMode.Items.Clear();
+            cmbLaunchMode.Items.AddRange(LaunchModeOptions);
+            SelectLaunchModeUi(GoldbergLaunchMode.SteamClient);
+        }
+
+        private void SelectLaunchModeUi(GoldbergLaunchMode mode)
+        {
+            if (cmbLaunchMode == null)
+                return;
+
+            int index = Array.FindIndex(LaunchModeOptions, option => option.Mode == mode);
+            cmbLaunchMode.SelectedIndex = index >= 0 ? index : 0;
+            UpdateLaunchModeToolTip();
         }
 
         private GoldbergLaunchMode GetSelectedLaunchModeFromUi()
         {
-            if (rdoLaunchNoEmulation != null && rdoLaunchNoEmulation.Checked)
-                return GoldbergLaunchMode.NoEmulation;
-            if (rdoLaunchSteamDll != null && rdoLaunchSteamDll.Checked)
-                return GoldbergLaunchMode.SteamDllBesideExe;
-            if (rdoLaunchExperimentalMode != null && rdoLaunchExperimentalMode.Checked)
-                return GoldbergLaunchMode.StandardSteamApi;
-            return GoldbergLaunchMode.SteamClient;
+            var option = cmbLaunchMode?.SelectedItem as LaunchModeOption;
+            return option != null ? option.Mode : GoldbergLaunchMode.SteamClient;
+        }
+
+        private void UpdateLaunchModeToolTip()
+        {
+            if (cmbLaunchMode == null || toolTip == null)
+                return;
+
+            var option = cmbLaunchMode.SelectedItem as LaunchModeOption;
+            toolTip.SetToolTip(cmbLaunchMode, option?.Description ?? string.Empty);
         }
 
         private void ApplyLaunchModeFromUiToGameConfig()
@@ -3570,24 +3634,13 @@ namespace SmartGoldbergEmu.Forms
             _gameConfig.LaunchMode = GetSelectedLaunchModeFromUi();
         }
 
-        private void RdoLaunchMode_CheckedChanged(object sender, EventArgs e)
+        private void CmbLaunchMode_SelectedIndexChanged(object sender, EventArgs e)
         {
+            UpdateLaunchModeToolTip();
             if (_isLoading)
                 return;
 
-            var radio = sender as RadioButton;
-            if (radio == null || !radio.Checked)
-                return;
-
             ApplyLaunchModeFromUiToGameConfig();
-        }
-
-        private void WireLaunchModeRadio(RadioButton radio)
-        {
-            if (radio == null)
-                return;
-            radio.CheckedChanged += Control_Changed;
-            radio.CheckedChanged += RdoLaunchMode_CheckedChanged;
         }
 
         private string _initialCustomStats = string.Empty;
@@ -3873,6 +3926,8 @@ namespace SmartGoldbergEmu.Forms
 
                 LoadGoldbergTextIntoListBox(lstSubscribedGroupsClans, service.LoadSubscribedGroupsClans);
 
+                LoadGoldbergTextIntoTextBox(txtCustomBroadcasts, service.LoadCustomBroadcasts);
+
                 ReloadAchievementsPreviewFromDisk();
 
                 LoadInventoryEditorFromDisk();
@@ -3898,14 +3953,6 @@ namespace SmartGoldbergEmu.Forms
             textBox.Text = loader(_gameConfig.AppId);
         }
 
-        private void LoadSteamSettingsTextFileIntoTextBox(TextBox textBox, string fileName)
-        {
-            if (textBox == null || _gameConfig == null || string.IsNullOrWhiteSpace(fileName))
-                return;
-
-            textBox.Text = ServiceLocator.GoldbergFilesService.LoadSteamSettingsTextFile(_gameConfig.AppId, fileName);
-        }
-
         private GoldbergFilesService.AdditionalFilesSaveRequest BuildAdditionalFilesSaveRequest()
         {
             return new GoldbergFilesService.AdditionalFilesSaveRequest
@@ -3916,6 +3963,8 @@ namespace SmartGoldbergEmu.Forms
                 SubscribedGroups = GetSubscribedGroupLinesText(lstSubscribedGroups),
                 HasSubscribedGroupsClans = lstSubscribedGroupsClans != null,
                 SubscribedGroupsClans = GetSubscribedGroupLinesText(lstSubscribedGroupsClans),
+                HasCustomBroadcasts = txtCustomBroadcasts != null,
+                CustomBroadcasts = txtCustomBroadcasts?.Text ?? string.Empty,
                 HasAchievements = _isEditMode && !string.IsNullOrWhiteSpace(_achievementsRawJson),
                 AchievementsJson = _achievementsRawJson ?? string.Empty,
                 ItemsJson = GetInventoryItemsJsonForSave(),
@@ -3972,6 +4021,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 GetSubscribedGroupLinesText(lstSubscribedGroups),
                 GetSubscribedGroupLinesText(lstSubscribedGroupsClans),
+                txtCustomBroadcasts?.Text ?? string.Empty,
                 _achievementsRawJson ?? string.Empty,
                 GetInventoryItemsStateFingerprint()
             };

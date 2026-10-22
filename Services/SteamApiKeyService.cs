@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -59,14 +58,6 @@ namespace SmartGoldbergEmu.Services
             return IsValidApiKeyFormat(apiKey);
         }
 
-        public ValidationResult ValidateStoredKey()
-        {
-            string apiKey = GetApiKey();
-            return string.IsNullOrEmpty(apiKey)
-                ? ValidationResult.Failure("No API key is configured.")
-                : ValidateApiKey(apiKey);
-        }
-
         public ValidationResult ValidateKey(string apiKey) => ValidateApiKey(apiKey);
 
         public bool IsValidFormat(string apiKey) => IsValidApiKeyFormat(apiKey);
@@ -80,12 +71,7 @@ namespace SmartGoldbergEmu.Services
                 if (!string.IsNullOrEmpty(apiKey) && !IsValidApiKeyFormat(apiKey))
                     return ValidationResult.Failure("API key must be exactly 32 alphanumeric uppercase characters (A-Z, 0-9).");
 
-                var result = _registryService.SetSteamApiKey(apiKey);
-                if (!result.IsValid)
-                    return result;
-
-                TryDeleteLegacyFile();
-                return ValidationResult.Success();
+                return _registryService.SetSteamApiKey(apiKey);
             }
             catch (Exception ex)
             {
@@ -188,20 +174,6 @@ namespace SmartGoldbergEmu.Services
                         return ValidationResult.Success();
                     return ValidationResult.Failure("API key validation failed: Unexpected response from Steam.");
                 }
-            }
-        }
-
-        private void TryDeleteLegacyFile()
-        {
-            try
-            {
-                string path = PathConstants.LegacyApiKeyFilePath;
-                if (File.Exists(path))
-                    File.Delete(path);
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug($"Failed to delete legacy {PathConstants.LegacyApiKeyFileName}: {ex.Message}");
             }
         }
     }

@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
 {
@@ -95,7 +96,8 @@ namespace SmartGoldbergEmu.Services
 
             using (var response = await _downloadClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
             {
-                response.EnsureSuccessStatusCode();
+                if (!response.IsSuccessStatusCode)
+                    throw new HttpStatusException(response.StatusCode, response.ReasonPhrase);
 
                 long contentLength = response.Content.Headers.ContentLength ?? -1;
                 long totalBytes = contentLength > 0 ? contentLength : -1;

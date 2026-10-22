@@ -5,13 +5,6 @@ namespace SmartGoldbergEmu.Models
         public string ExecutablePath { get; set; }
         public string Arguments { get; set; }
         public string WorkingDirectory { get; set; }
-
-        public string ToCommandLine()
-        {
-            var exe = string.IsNullOrEmpty(ExecutablePath) ? "" : (ExecutablePath.Contains(" ") ? "\"" + ExecutablePath + "\"" : ExecutablePath);
-            var args = Arguments ?? "";
-            return string.IsNullOrEmpty(exe) ? args : (string.IsNullOrEmpty(args) ? exe : exe + " " + args);
-        }
     }
 
     public class LaunchOptionResult

@@ -7,6 +7,8 @@ namespace SmartGoldbergEmu.Models
     {
         public ulong AppId { get; set; }
         public int GameProcessId { get; set; }
+        // UTC start time of GameProcessId (0 = unknown); a reused PID after a crash or reboot will not match.
+        public long GameProcessStartTimeUtcTicks { get; set; }
         // Bumped on each launch so a superseded cleanup watcher no-ops instead of cleaning a new session.
         public string SessionGeneration { get; set; }
         public bool RestoreActiveProcessRegistry { get; set; }

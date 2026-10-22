@@ -54,6 +54,9 @@ namespace SmartGoldbergEmu.Forms
         private bool _closeAfterDisposeReady;
         private CancellationTokenSource _formLifetimeCts = new CancellationTokenSource();
         private int _tileImageLoadGeneration;
+        private int _viewSwitchGeneration;
+        // Keys set by single-tile updates while a full tile load decodes; the batch keeps those newer images.
+        private readonly HashSet<string> _mosaicKeysWrittenDuringTileLoad = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private string _pendingAddMosaicImageKey;
         // After games.ini commit, draft is cleared but assets may still be downloading — keep waiting art on these rows.
         private readonly HashSet<Guid> _addSaveWaitingForAssetsGuids = new HashSet<Guid>();
@@ -134,9 +137,6 @@ namespace SmartGoldbergEmu.Forms
             SetupContextMenus();
             InitializeTheme();
             SetupListViewOwnerDraw();
-
-            _uriFileWatcherHelper = new UriFileWatcherHelper(this, LaunchGameByAppId);
-            _uriFileWatcherHelper.Setup();
         }
 
         private void InitializeApiKeyStatusIndicator()
@@ -458,75 +458,32 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested)
                     return;
 
-                var gameImageService = ServiceLocator.GameImageService;
-                var imageNormalizationService = ServiceLocator.ImageNormalizationService;
-                var targetImageList = GetTileImageListForViewMode(viewMode);
-                if (targetImageList == null)
+                if (GetTileImageListForViewMode(viewMode) == null)
                     return;
 
-                var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
-                if (ownedImages == null)
-                    return;
-
-                ownedImages.Clear(targetImageList);
                 StopWaitingMosaicTimer();
                 _waitingMosaicAnimatedKeys.Clear();
+                _mosaicKeysWrittenDuringTileLoad.Clear();
 
-                var effectiveTheme = _themeService.EffectiveTheme;
-                _themeService.GetFallbackMosaicArtColors(effectiveTheme, out var mosaicBackground, out var mosaicForeground);
-                await gameImageService.EnsureMosaicFallbackForViewAsync(viewMode, effectiveTheme, mosaicBackground, mosaicForeground).ConfigureAwait(true);
-
-                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
-                    return;
-
-                var addedAppIds = new HashSet<string>();
-                bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
-                    && _appDataService.GetLogosViewDropShadow();
-                bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
-
+                var games = new List<GameConfig>(lstGames.Items.Count);
                 foreach (ListViewItem item in lstGames.Items)
                 {
-                    if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
-                        return;
-
-                    var game = item.Tag as GameConfig;
-                    if (game == null)
-                        continue;
-
-                    string imageKey = GameDisplayService.GetMosaicImageKey(
-                        game,
-                        GetAddPendingPredicate(),
-                        GetUpdatePendingPredicate());
-
-                    if (addedAppIds.Contains(imageKey))
-                        continue;
-
-                    Bitmap imageCopy = await LoadMosaicDisplayBitmapForGameAsync(
-                        game,
-                        viewMode,
-                        gameImageService,
-                        imageNormalizationService,
-                        logosDropShadow,
-                        waitingDropShadow).ConfigureAwait(true);
-
-                    if (imageCopy == null)
-                        continue;
-
-                    if (cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
-                    {
-                        imageCopy.Dispose();
-                        continue;
-                    }
-
-                    ownedImages.Set(targetImageList, imageKey, imageCopy);
-                    addedAppIds.Add(imageKey);
-                    if (ShouldUseWaitingMosaicPlaceholder(game))
-                        RegisterWaitingMosaicAnimation(imageKey, viewMode);
+                    if (item.Tag is GameConfig game)
+                        games.Add(game);
                 }
 
-                if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || generation != _tileImageLoadGeneration)
+                // Current tiles stay on screen while the new set decodes; the swap below repaints once.
+                List<DecodedMosaicTile> tiles = await DecodeMosaicTilesAsync(
+                    viewMode,
+                    games,
+                    () => generation != _tileImageLoadGeneration,
+                    cancellationToken).ConfigureAwait(true);
+                if (tiles == null)
                     return;
 
+                ReplaceMosaicTileImages(viewMode, tiles, _mosaicKeysWrittenDuringTileLoad);
+                _mosaicKeysWrittenDuringTileLoad.Clear();
+                RegisterWaitingMosaicAnimations(tiles, viewMode);
                 lstGames.Invalidate();
             }
             catch (OperationCanceledException)
@@ -535,6 +492,182 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("Failed to load tile images", ex);
+            }
+        }
+
+        private sealed class DecodedMosaicTile
+        {
+            public string ImageKey;
+            public GameConfig Game;
+            public ulong AppId;
+            public bool UseWaitingPlaceholder;
+            public Bitmap Bitmap;
+        }
+
+        // Null when cancelled or superseded (isStale); bitmaps are then already disposed.
+        private async Task<List<DecodedMosaicTile>> DecodeMosaicTilesAsync(
+            string viewMode,
+            IEnumerable<GameConfig> games,
+            Func<bool> isStale,
+            CancellationToken cancellationToken)
+        {
+            var gameImageService = ServiceLocator.GameImageService;
+            var imageNormalizationService = ServiceLocator.ImageNormalizationService;
+
+            var effectiveTheme = _themeService.EffectiveTheme;
+            _themeService.GetFallbackMosaicArtColors(effectiveTheme, out var mosaicBackground, out var mosaicForeground);
+            await gameImageService.EnsureMosaicFallbackForViewAsync(viewMode, effectiveTheme, mosaicBackground, mosaicForeground).ConfigureAwait(true);
+
+            if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || isStale())
+                return null;
+
+            bool logosDropShadow = viewMode == ApplicationConstants.ViewModeLogos
+                && _appDataService.GetLogosViewDropShadow();
+            bool waitingDropShadow = ShouldApplyWaitingMosaicDropShadow();
+            var isAddPending = GetAddPendingPredicate();
+            var isUpdatePending = GetUpdatePendingPredicate();
+
+            var tiles = new List<DecodedMosaicTile>();
+            var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var game in games)
+            {
+                if (game == null)
+                    continue;
+
+                string imageKey = GameDisplayService.GetMosaicImageKey(game, isAddPending, isUpdatePending);
+                if (string.IsNullOrEmpty(imageKey) || !seenKeys.Add(imageKey))
+                    continue;
+
+                tiles.Add(new DecodedMosaicTile
+                {
+                    ImageKey = imageKey,
+                    Game = game,
+                    AppId = game.AppId,
+                    UseWaitingPlaceholder = ShouldUseWaitingMosaicPlaceholder(game)
+                });
+            }
+
+            try
+            {
+                await Task.Run(() =>
+                {
+                    foreach (var tile in tiles)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        tile.Bitmap = CreateMosaicDisplayBitmapForGame(
+                            tile.AppId,
+                            tile.UseWaitingPlaceholder,
+                            viewMode,
+                            gameImageService,
+                            imageNormalizationService,
+                            logosDropShadow,
+                            waitingDropShadow);
+                    }
+                }, cancellationToken).ConfigureAwait(true);
+            }
+            catch
+            {
+                DisposeDecodedMosaicTiles(tiles);
+                throw;
+            }
+
+            if (IsDisposed || Disposing || cancellationToken.IsCancellationRequested || isStale())
+            {
+                DisposeDecodedMosaicTiles(tiles);
+                return null;
+            }
+
+            // Add/save state can flip during the decode; ApplyAddSaveListUpdate reloads those tiles for the new state.
+            tiles.RemoveAll(tile =>
+            {
+                if (tile.Bitmap != null && tile.UseWaitingPlaceholder == ShouldUseWaitingMosaicPlaceholder(tile.Game))
+                    return false;
+                tile.Bitmap?.Dispose();
+                return true;
+            });
+            return tiles;
+        }
+
+        private static void DisposeDecodedMosaicTiles(List<DecodedMosaicTile> tiles)
+        {
+            foreach (var tile in tiles)
+            {
+                tile.Bitmap?.Dispose();
+                tile.Bitmap = null;
+            }
+        }
+
+        // Every Add/Remove on the attached LargeImageList makes the ListView re-set the image of every item
+        // (ListView.LargeImageListChangedHandle), so bulk edits run with the list detached and re-resolve keys once.
+        private void ReplaceMosaicTileImages(string viewMode, List<DecodedMosaicTile> tiles, ICollection<string> keysToKeep)
+        {
+            var imageList = GetTileImageListForViewMode(viewMode);
+            var ownedImages = GetTileOwnedImagesForViewMode(viewMode);
+            if (imageList == null || ownedImages == null)
+            {
+                DisposeDecodedMosaicTiles(tiles);
+                return;
+            }
+
+            var newKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var tile in tiles)
+                newKeys.Add(tile.ImageKey);
+
+            bool attached = ReferenceEquals(lstGames.LargeImageList, imageList);
+            if (attached)
+                lstGames.BeginUpdate();
+            try
+            {
+                if (attached)
+                    lstGames.LargeImageList = null;
+
+                foreach (string key in ownedImages.GetKeys())
+                {
+                    if (!newKeys.Contains(key) && (keysToKeep == null || !keysToKeep.Contains(key)))
+                        ownedImages.Remove(imageList, key);
+                }
+
+                foreach (var tile in tiles)
+                {
+                    Bitmap bitmap = tile.Bitmap;
+                    tile.Bitmap = null;
+                    // Single-tile updates that landed during the decode are newer than this batch.
+                    if (keysToKeep != null && keysToKeep.Contains(tile.ImageKey))
+                        bitmap.Dispose();
+                    else
+                        ownedImages.Set(imageList, tile.ImageKey, bitmap);
+                }
+
+                if (attached)
+                {
+                    lstGames.LargeImageList = imageList;
+                    RefreshListItemImageKeys();
+                }
+            }
+            finally
+            {
+                if (attached)
+                    lstGames.EndUpdate();
+            }
+        }
+
+        // Native ListView items cache image indices; re-assigning ImageKey re-resolves them against the current list.
+        private void RefreshListItemImageKeys()
+        {
+            foreach (ListViewItem item in lstGames.Items)
+            {
+                string imageKey = item.ImageKey;
+                if (!string.IsNullOrEmpty(imageKey))
+                    item.ImageKey = imageKey;
+            }
+        }
+
+        private void RegisterWaitingMosaicAnimations(List<DecodedMosaicTile> tiles, string viewMode)
+        {
+            foreach (var tile in tiles)
+            {
+                if (tile.UseWaitingPlaceholder)
+                    RegisterWaitingMosaicAnimation(tile.ImageKey, viewMode);
             }
         }
 
@@ -599,6 +732,7 @@ namespace SmartGoldbergEmu.Forms
                 }
 
                 ownedImages.Set(targetImageList, imageKey, imageCopy);
+                _mosaicKeysWrittenDuringTileLoad.Add(imageKey);
 
                 var item = GameDisplayService.FindListItemByGameGuid(lstGames, game.GameGuid);
                 if (item != null)
@@ -625,7 +759,40 @@ namespace SmartGoldbergEmu.Forms
             bool logosDropShadow,
             bool waitingDropShadow)
         {
-            if (ShouldUseWaitingMosaicPlaceholder(game))
+            bool useWaitingPlaceholder = ShouldUseWaitingMosaicPlaceholder(game);
+            ulong appId = game.AppId;
+
+            Bitmap display = await Task.Run(
+                () => CreateMosaicDisplayBitmapForGame(
+                    appId,
+                    useWaitingPlaceholder,
+                    viewMode,
+                    gameImageService,
+                    imageNormalizationService,
+                    logosDropShadow,
+                    waitingDropShadow)).ConfigureAwait(true);
+
+            // Add/save state can flip during the decode; ApplyAddSaveListUpdate reloads the tile for the new state.
+            if (display != null && useWaitingPlaceholder != ShouldUseWaitingMosaicPlaceholder(game))
+            {
+                display.Dispose();
+                return null;
+            }
+
+            return display;
+        }
+
+        // Runs on a pool thread: only touches lock-guarded GameImageService clones and stateless normalization.
+        private static Bitmap CreateMosaicDisplayBitmapForGame(
+            ulong appId,
+            bool useWaitingPlaceholder,
+            string viewMode,
+            GameImageService gameImageService,
+            ImageNormalizationService imageNormalizationService,
+            bool logosDropShadow,
+            bool waitingDropShadow)
+        {
+            if (useWaitingPlaceholder)
             {
                 Bitmap waitingDisplay = TryCreateWaitingMosaicDisplayBitmap(
                     viewMode,
@@ -637,7 +804,7 @@ namespace SmartGoldbergEmu.Forms
                     return waitingDisplay;
             }
 
-            string imagePath = gameImageService.ResolveArtworkPathForViewMode(game.AppId, viewMode);
+            string imagePath = gameImageService.ResolveArtworkPathForViewMode(appId, viewMode);
 
             if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
             {
@@ -763,6 +930,7 @@ namespace SmartGoldbergEmu.Forms
                 return false;
 
             ownedImages.Set(targetImageList, imageKey, waitingDisplay);
+            _mosaicKeysWrittenDuringTileLoad.Add(imageKey);
             RegisterWaitingMosaicAnimation(imageKey, viewMode);
             return true;
         }
@@ -1315,24 +1483,84 @@ namespace SmartGoldbergEmu.Forms
             string detailsColumnOrder = null,
             string detailsColumnWidths = null)
         {
+            int switchGeneration = ++_viewSwitchGeneration;
+            if (!loadTileImages)
+            {
+                ApplyViewModeSwitch(viewMode, largeList, smallList, ownerDraw, null, extraSetup, detailsColumnOrder, detailsColumnWidths);
+                return;
+            }
+
+            _ = SwitchToMosaicViewModeAsync(switchGeneration, viewMode, largeList, smallList, ownerDraw, extraSetup, FormLifetimeToken)
+                .ForgetFaults(Program.LogService, nameof(SwitchToMosaicViewModeAsync));
+        }
+
+        // The current view stays on screen while the target tiles decode, then the switch repaints once with art in place.
+        private async Task SwitchToMosaicViewModeAsync(
+            int switchGeneration,
+            string viewMode,
+            ImageList largeList,
+            ImageList smallList,
+            bool ownerDraw,
+            Action extraSetup,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                List<DecodedMosaicTile> tiles = await DecodeMosaicTilesAsync(
+                    viewMode,
+                    GetGamesForListDisplay(),
+                    () => switchGeneration != _viewSwitchGeneration,
+                    cancellationToken).ConfigureAwait(true);
+                if (tiles == null)
+                    return;
+
+                ApplyViewModeSwitch(viewMode, largeList, smallList, ownerDraw, tiles, extraSetup, null, null);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private void ApplyViewModeSwitch(
+            string viewMode,
+            ImageList largeList,
+            ImageList smallList,
+            bool ownerDraw,
+            List<DecodedMosaicTile> preparedTiles,
+            Action extraSetup,
+            string detailsColumnOrder,
+            string detailsColumnWidths)
+        {
             _appDataService.SetViewMode(viewMode);
-            ClearInactiveMosaicImageLists(viewMode);
+            // Drops a tile load still running for the previous view.
+            _tileImageLoadGeneration++;
+
+            if (preparedTiles != null)
+            {
+                StopWaitingMosaicTimer();
+                _waitingMosaicAnimatedKeys.Clear();
+                ReplaceMosaicTileImages(viewMode, preparedTiles, null);
+            }
+
+            string detailsOrderArg = null;
+            string detailsWidthsArg = null;
+            if (viewMode == ApplicationConstants.ViewModeDetails)
+            {
+                detailsOrderArg = detailsColumnOrder ?? _appDataService.GetDetailsColumnOrder();
+                detailsWidthsArg = detailsColumnWidths ?? _appDataService.GetDetailsColumnWidths();
+            }
+
+            // Not inside BeginUpdate: the ListView forwards WM_SETREDRAW to its header, so leaving Details while
+            // redraw is off re-shows the header on EndUpdate and leaves its pixels over the new view.
+            _gameDisplayService.SetViewMode(lstGames, viewMode, largeList, smallList, detailsOrderArg, detailsWidthsArg);
+            lstGames.OwnerDraw = ownerDraw;
+
             lstGames.BeginUpdate();
             try
             {
                 LoadGames(viewMode);
-                string detailsOrderArg = null;
-                string detailsWidthsArg = null;
-                if (viewMode == ApplicationConstants.ViewModeDetails)
-                {
-                    detailsOrderArg = detailsColumnOrder ?? _appDataService.GetDetailsColumnOrder();
-                    detailsWidthsArg = detailsColumnWidths ?? _appDataService.GetDetailsColumnWidths();
-                }
-
-                _gameDisplayService.SetViewMode(lstGames, viewMode, largeList, smallList, detailsOrderArg, detailsWidthsArg);
-                lstGames.OwnerDraw = ownerDraw;
-                if (loadTileImages)
-                    StartLoadTileImages(viewMode);
+                // After SetViewMode so clearing never touches the list attached to lstGames.
+                ClearInactiveMosaicImageLists(viewMode);
                 extraSetup?.Invoke();
                 if (viewMode == ApplicationConstants.ViewModeDetails)
                 {
@@ -1340,13 +1568,38 @@ namespace SmartGoldbergEmu.Forms
                     _persistedDetailsColumnWidths = detailsWidthsArg;
                 }
 
-                ApplySort(_appDataService.GetSortBy(), _appDataService.GetSortDirection());
+                // LoadGames already produced the unsorted order, so "None" needs no extra refresh here.
+                _gameDisplayService.ApplySort(lstGames, _appDataService.GetSortBy(), _appDataService.GetSortDirection());
+                UpdateSortMenuCheckMarks();
                 UpdateViewMenuCheckMarks();
             }
             finally
             {
                 lstGames.EndUpdate();
             }
+
+            if (preparedTiles == null)
+                return;
+
+            RegisterWaitingMosaicAnimations(preparedTiles, viewMode);
+            // Games added or whose add/save state flipped during the decode still need art.
+            if (HasListItemsWithoutMosaicImage(viewMode))
+                StartLoadTileImages(viewMode);
+        }
+
+        private bool HasListItemsWithoutMosaicImage(string viewMode)
+        {
+            var imageList = GetTileImageListForViewMode(viewMode);
+            if (imageList == null)
+                return false;
+
+            foreach (ListViewItem item in lstGames.Items)
+            {
+                if (!string.IsNullOrEmpty(item.ImageKey) && !imageList.Images.ContainsKey(item.ImageKey))
+                    return true;
+            }
+
+            return false;
         }
 
         private void SortByNameAsc() => ApplySort(ApplicationConstants.SortByName, ApplicationConstants.SortDirectionAsc);
@@ -3920,6 +4173,13 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogError("Failed to load form state", ex);
+            }
+
+            // Needs a window handle for BeginInvoke; handoff files written during startup are picked up by Setup's initial scan.
+            if (!IsDisposed && !Disposing && !FormLifetimeToken.IsCancellationRequested && _uriFileWatcherHelper == null)
+            {
+                _uriFileWatcherHelper = new UriFileWatcherHelper(this, LaunchGameByAppId);
+                _uriFileWatcherHelper.Setup();
             }
         }
 

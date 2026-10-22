@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
@@ -11,6 +12,12 @@ namespace SmartGoldbergEmu.Services
 {
     public class GameDataService
     {
+        // games.ini is read-modify-written from the UI thread and from background add/import tasks.
+        private static readonly object LibraryFileLock = new object();
+        private const int LibraryReadAttempts = 3;
+        private const int LibraryReadRetryDelayMs = 100;
+        private const string LibraryTempFileSuffix = ".tmp";
+
         private readonly string _gamesDirectory;
         private readonly string _gamesIniPath;
 
@@ -28,80 +35,109 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                if (!File.Exists(_gamesIniPath))
-                    return new List<GameConfig>();
-
-                var games = new List<GameConfig>();
-                GameConfig current = null;
-
-                foreach (var line in File.ReadAllLines(_gamesIniPath))
-                {
-                    var t = line.Trim();
-                    if (t.Length == 0 || t[0] == ';' || t[0] == '#')
-                        continue;
-
-                    if (t.StartsWith("[") && t.EndsWith("]"))
-                    {
-                        if (current != null)
-                            games.Add(current);
-                        current = new GameConfig();
-                        continue;
-                    }
-
-                    if (current == null || !t.Contains("="))
-                        continue;
-
-                    var parts = t.Split(new[] { '=' }, 2);
-                    if (parts.Length != 2)
-                        continue;
-
-                    var key = parts[0].Trim().ToLowerInvariant();
-                    var value = parts[1].Trim();
-
-                    switch (key)
-                    {
-                        case GamesIniKeyNames.AppName:
-                            current.AppName = value;
-                            break;
-                        case GamesIniKeyNames.AppId:
-                            if (ulong.TryParse(value, out ulong appId))
-                                current.AppId = appId;
-                            break;
-                        case GamesIniKeyNames.StartFolder:
-                            current.StartFolder = value;
-                            break;
-                        case GamesIniKeyNames.Path:
-                            current.Path = value;
-                            break;
-                        case GamesIniKeyNames.Parameters:
-                            current.Parameters = value;
-                            break;
-                        case GamesIniKeyNames.WorkingDirectory:
-                            current.WorkingDirectory = value;
-                            break;
-                        case GamesIniKeyNames.CustomIcon:
-                            current.CustomIcon = value;
-                            break;
-                        case GamesIniKeyNames.GameGuid:
-                            if (Guid.TryParse(value, out Guid guid))
-                                current.GameGuid = guid;
-                            break;
-                        case GamesIniKeyNames.GoldbergLaunchMode:
-                            current.LaunchMode = ParseGoldbergLaunchModeFromIni(value);
-                            break;
-                    }
-                }
-
-                if (current != null)
-                    games.Add(current);
-
-                return games;
+                return ReadGameLibrary();
             }
             catch (Exception ex)
             {
                 LogRedactionHelper.WriteDebug($"Failed to load game library: {ex.Message}");
                 return new List<GameConfig>();
             }
+        }
+
+        // Throws when games.ini exists but cannot be read, so read-modify-write callers never save a partial list over it.
+        private List<GameConfig> ReadGameLibrary()
+        {
+            lock (LibraryFileLock)
+            {
+                if (!File.Exists(_gamesIniPath))
+                    return new List<GameConfig>();
+
+                return ParseGameLibrary(ReadAllLinesWithRetry(_gamesIniPath));
+            }
+        }
+
+        private static string[] ReadAllLinesWithRetry(string path)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return File.ReadAllLines(path);
+                }
+                catch (IOException) when (attempt < LibraryReadAttempts)
+                {
+                    Thread.Sleep(LibraryReadRetryDelayMs);
+                }
+            }
+        }
+
+        private static List<GameConfig> ParseGameLibrary(string[] lines)
+        {
+            var games = new List<GameConfig>();
+            GameConfig current = null;
+
+            foreach (var line in lines)
+            {
+                var t = line.Trim();
+                if (t.Length == 0 || t[0] == ';' || t[0] == '#')
+                    continue;
+
+                if (t.StartsWith("[") && t.EndsWith("]"))
+                {
+                    if (current != null)
+                        games.Add(current);
+                    current = new GameConfig();
+                    continue;
+                }
+
+                if (current == null || !t.Contains("="))
+                    continue;
+
+                var parts = t.Split(new[] { '=' }, 2);
+                if (parts.Length != 2)
+                    continue;
+
+                var key = parts[0].Trim().ToLowerInvariant();
+                var value = parts[1].Trim();
+
+                switch (key)
+                {
+                    case GamesIniKeyNames.AppName:
+                        current.AppName = value;
+                        break;
+                    case GamesIniKeyNames.AppId:
+                        if (ulong.TryParse(value, out ulong appId))
+                            current.AppId = appId;
+                        break;
+                    case GamesIniKeyNames.StartFolder:
+                        current.StartFolder = value;
+                        break;
+                    case GamesIniKeyNames.Path:
+                        current.Path = value;
+                        break;
+                    case GamesIniKeyNames.Parameters:
+                        current.Parameters = value;
+                        break;
+                    case GamesIniKeyNames.WorkingDirectory:
+                        current.WorkingDirectory = value;
+                        break;
+                    case GamesIniKeyNames.CustomIcon:
+                        current.CustomIcon = value;
+                        break;
+                    case GamesIniKeyNames.GameGuid:
+                        if (Guid.TryParse(value, out Guid guid))
+                            current.GameGuid = guid;
+                        break;
+                    case GamesIniKeyNames.GoldbergLaunchMode:
+                        current.LaunchMode = ParseGoldbergLaunchModeFromIni(value);
+                        break;
+                }
+            }
+
+            if (current != null)
+                games.Add(current);
+
+            return games;
         }
 
         public ValidationResult SaveGameLibrary(List<GameConfig> games)
@@ -149,7 +185,8 @@ namespace SmartGoldbergEmu.Services
                     lines.Add("");
                 }
 
-                File.WriteAllLines(_gamesIniPath, lines);
+                lock (LibraryFileLock)
+                    WriteLibraryFileAtomic(lines);
                 return ValidationResult.Success();
             }
             catch (Exception ex)
@@ -157,6 +194,17 @@ namespace SmartGoldbergEmu.Services
                 ServiceLocator.LogService?.LogError("Failed to save game library", ex);
                 return ValidationResult.Failure($"Failed to save game library: {ex.Message}");
             }
+        }
+
+        // A crash or full disk mid-write leaves the previous games.ini intact.
+        private void WriteLibraryFileAtomic(List<string> lines)
+        {
+            string tempPath = _gamesIniPath + LibraryTempFileSuffix;
+            File.WriteAllLines(tempPath, lines);
+            if (File.Exists(_gamesIniPath))
+                File.Replace(tempPath, _gamesIniPath, null);
+            else
+                File.Move(tempPath, _gamesIniPath);
         }
 
         public ValidationResult AddGame(GameConfig game)
@@ -176,23 +224,26 @@ namespace SmartGoldbergEmu.Services
                     return validation;
                 }
 
-                var games = LoadGameLibrary();
-
-                if (games.Any(g => g.AppId == game.AppId && !string.IsNullOrWhiteSpace(g.Path) &&
-                    GameFolderPathHelper.ExecutablesReferToSameGame(g, game)))
+                lock (LibraryFileLock)
                 {
-                    ServiceLocator.LogService?.LogWarning("Add game rejected: same AppId, path, and executable as an existing entry");
-                    return ValidationResult.Failure($"Game with same AppId, path and file already exists");
-                }
+                    var games = ReadGameLibrary();
 
-                if (games.Any(g => g.GameGuid == game.GameGuid))
-                {
-                    ServiceLocator.LogService?.LogWarning($"Add game rejected: GUID {game.GameGuid} already exists");
-                    return ValidationResult.Failure($"Game with GUID {game.GameGuid} already exists");
-                }
+                    if (games.Any(g => g.AppId == game.AppId && !string.IsNullOrWhiteSpace(g.Path) &&
+                        GameFolderPathHelper.ExecutablesReferToSameGame(g, game)))
+                    {
+                        ServiceLocator.LogService?.LogWarning("Add game rejected: same AppId, path, and executable as an existing entry");
+                        return ValidationResult.Failure($"Game with same AppId, path and file already exists");
+                    }
 
-                games.Add(game);
-                return SaveGameLibrary(games);
+                    if (games.Any(g => g.GameGuid == game.GameGuid))
+                    {
+                        ServiceLocator.LogService?.LogWarning($"Add game rejected: GUID {game.GameGuid} already exists");
+                        return ValidationResult.Failure($"Game with GUID {game.GameGuid} already exists");
+                    }
+
+                    games.Add(game);
+                    return SaveGameLibrary(games);
+                }
             }
             catch (Exception ex)
             {
@@ -205,30 +256,40 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                var games = LoadGameLibrary();
-                var gameToRemove = games.FirstOrDefault(g => g.GameGuid == gameGuid);
-
-                if (gameToRemove == null)
-                    return ValidationResult.Failure($"Game with GUID {gameGuid} not found");
-
-                if (deleteFiles)
+                lock (LibraryFileLock)
                 {
-                    var gameDirectory = PathConstants.CombineGameFolder(_gamesDirectory, gameToRemove.AppId.ToString());
-                    if (Directory.Exists(gameDirectory))
+                    var games = ReadGameLibrary();
+                    var gameToRemove = games.FirstOrDefault(g => g.GameGuid == gameGuid);
+
+                    if (gameToRemove == null)
+                        return ValidationResult.Failure($"Game with GUID {gameGuid} not found");
+
+                    // games/{appId} is shared by every library entry with that App ID.
+                    bool folderSharedWithOtherEntry = games.Any(g => g.GameGuid != gameGuid && g.AppId == gameToRemove.AppId);
+                    if (deleteFiles && folderSharedWithOtherEntry)
                     {
-                        try
+                        ServiceLocator.LogService?.LogMessage(
+                            $"Kept game folder for AppId {gameToRemove.AppId}: another library entry still uses it.");
+                    }
+                    else if (deleteFiles)
+                    {
+                        var gameDirectory = PathConstants.CombineGameFolder(_gamesDirectory, gameToRemove.AppId.ToString());
+                        if (Directory.Exists(gameDirectory))
                         {
-                            Directory.Delete(gameDirectory, true);
-                        }
-                        catch (Exception dirEx)
-                        {
-                            return ValidationResult.Failure($"Failed to delete game directory: {dirEx.Message}");
+                            try
+                            {
+                                Directory.Delete(gameDirectory, true);
+                            }
+                            catch (Exception dirEx)
+                            {
+                                return ValidationResult.Failure($"Failed to delete game directory: {dirEx.Message}");
+                            }
                         }
                     }
-                }
 
-                games.Remove(gameToRemove);
-                return SaveGameLibrary(games);
+                    games.Remove(gameToRemove);
+                    return SaveGameLibrary(games);
+                }
             }
             catch (Exception ex)
             {
@@ -247,14 +308,17 @@ namespace SmartGoldbergEmu.Services
                 if (!validation.IsValid)
                     return validation;
 
-                var games = LoadGameLibrary();
-                var index = games.FindIndex(g => g.GameGuid == game.GameGuid);
+                lock (LibraryFileLock)
+                {
+                    var games = ReadGameLibrary();
+                    var index = games.FindIndex(g => g.GameGuid == game.GameGuid);
 
-                if (index == -1)
-                    return ValidationResult.Failure($"Game with GUID {game.GameGuid} not found");
+                    if (index == -1)
+                        return ValidationResult.Failure($"Game with GUID {game.GameGuid} not found");
 
-                games[index] = game;
-                return SaveGameLibrary(games);
+                    games[index] = game;
+                    return SaveGameLibrary(games);
+                }
             }
             catch (Exception ex)
             {
@@ -323,16 +387,6 @@ namespace SmartGoldbergEmu.Services
             return newGuid;
         }
 
-        public bool GameExists(ulong appId)
-        {
-            return GetGameByAppId(appId) != null;
-        }
-
-        public int GetGameCount()
-        {
-            return LoadGameLibrary().Count;
-        }
-
         public GameConfig FindDuplicateByExecutable(GameConfig candidate)
         {
             if (candidate == null || string.IsNullOrWhiteSpace(candidate.Path))
@@ -380,49 +434,11 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        public bool SearchAppIdInFolders(ulong appId)
-        {
-            try
-            {
-                if (!Directory.Exists(_gamesDirectory))
-                    return false;
-
-                foreach (var folder in Directory.GetDirectories(_gamesDirectory))
-                {
-                    if (GameFolderMatchesAppId(folder, appId))
-                        return true;
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug($"Failed to search appid in folders: {ex.Message}");
-                return false;
-            }
-        }
-
         private static bool ParseIniBool(string value)
         {
             return value == "1"
                 || value.Equals("true", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("yes", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool SteamAppIdFileMatches(string path, ulong appId)
-        {
-            if (!File.Exists(path))
-                return false;
-            var content = File.ReadAllText(path).Trim();
-            return ulong.TryParse(content, out ulong found) && found == appId;
-        }
-
-        private static bool GameFolderMatchesAppId(string gameFolder, ulong appId)
-        {
-            var name = Path.GetFileName(gameFolder);
-            if (ulong.TryParse(name, out ulong folderAppId) && folderAppId == appId)
-                return true;
-            return SteamAppIdFileMatches(Path.Combine(gameFolder, PathConstants.SteamAppIdFileName), appId)
-                || SteamAppIdFileMatches(Path.Combine(gameFolder, PathConstants.SteamSettingsFolderName, PathConstants.SteamAppIdFileName), appId);
         }
 
         private GameConfig TryQuery(Func<GameConfig> query, string debugPrefix)

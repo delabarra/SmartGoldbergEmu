@@ -83,27 +83,6 @@ namespace SmartGoldbergEmu.Services
                 return false;
             }
         }
-
-        public static bool UnregisterProtocol()
-        {
-            try
-            {
-                Registry.CurrentUser.DeleteSubKeyTree(ProtocolProgIdKeyPath, false);
-                return true;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                throw;
-            }
-            catch (SecurityException)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
     }
 }
 

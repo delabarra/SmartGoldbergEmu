@@ -176,5 +176,80 @@ namespace SmartGoldbergEmu.Tests.Services
                 try { Directory.Delete(gamesRoot, recursive: true); } catch { }
             }
         }
+
+        [Fact]
+        public void SaveCustomBroadcasts_trims_lines_and_deletes_when_empty()
+        {
+            string gamesRoot = TestFileHelper.CreateTempDirectory("sge-custom-broadcasts-");
+            try
+            {
+                var service = new GoldbergFilesService(gamesRoot);
+                string path = Path.Combine(
+                    gamesRoot,
+                    TestAppId.ToString(),
+                    PathConstants.SteamSettingsFolderName,
+                    PathConstants.GoldbergCustomBroadcastsFileName);
+
+                var writeFailures = service.SaveAdditionalFiles(new GoldbergFilesService.AdditionalFilesSaveRequest
+                {
+                    AppId = TestAppId,
+                    IsEditMode = true,
+                    HasCustomBroadcasts = true,
+                    CustomBroadcasts = " 26.10.0.5 \r\n\r\nfriend.example.net\t"
+                });
+
+                Assert.Empty(writeFailures);
+                Assert.True(File.Exists(path));
+                Assert.Equal(new[] { "26.10.0.5", "friend.example.net" }, File.ReadAllLines(path));
+                Assert.Equal("26.10.0.5\r\nfriend.example.net", service.LoadCustomBroadcasts(TestAppId));
+
+                var deleteFailures = service.SaveAdditionalFiles(new GoldbergFilesService.AdditionalFilesSaveRequest
+                {
+                    AppId = TestAppId,
+                    IsEditMode = true,
+                    HasCustomBroadcasts = true,
+                    CustomBroadcasts = "  \r\n "
+                });
+
+                Assert.Empty(deleteFailures);
+                Assert.False(File.Exists(path));
+            }
+            finally
+            {
+                try { Directory.Delete(gamesRoot, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
+        public void SaveAutoAcceptInvite_empty_writes_empty_file_and_null_deletes()
+        {
+            string gamesRoot = TestFileHelper.CreateTempDirectory("sge-auto-accept-");
+            try
+            {
+                var service = new GoldbergFilesService(gamesRoot);
+                string path = Path.Combine(
+                    gamesRoot,
+                    TestAppId.ToString(),
+                    PathConstants.SteamSettingsFolderName,
+                    PathConstants.GoldbergAutoAcceptInviteFileName);
+
+                Assert.Null(service.LoadAutoAcceptInvite(TestAppId));
+
+                Assert.True(service.SaveAutoAcceptInvite(TestAppId, string.Empty).IsSuccess);
+                Assert.True(File.Exists(path));
+                Assert.Equal(0, new FileInfo(path).Length);
+                Assert.Equal(string.Empty, service.LoadAutoAcceptInvite(TestAppId));
+
+                Assert.True(service.SaveAutoAcceptInvite(TestAppId, " 76561198000000001 \r\n").IsSuccess);
+                Assert.Equal(new[] { "76561198000000001" }, File.ReadAllLines(path));
+
+                Assert.True(service.SaveAutoAcceptInvite(TestAppId, null).IsSuccess);
+                Assert.False(File.Exists(path));
+            }
+            finally
+            {
+                try { Directory.Delete(gamesRoot, recursive: true); } catch { }
+            }
+        }
     }
 }

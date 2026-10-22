@@ -425,27 +425,7 @@ namespace SmartGoldbergEmu.Services
         private static bool AreGoldbergBinariesMissing() =>
             GoldbergInstallLayout.AreReleaseInstallFilesMissing(PathConstants.GoldbergDirectory);
 
-        public static Task<bool> GoldbergFilesCheck() => Task.Run(() => AreGoldbergBinariesMissing());
-
         public static bool GoldbergFilesCheckSync() => AreGoldbergBinariesMissing();
-
-        private static List<string> CollectMissingAssetFileNames()
-        {
-            var missing = new List<string>();
-            if (!File.Exists(PathConstants.GlobalAccountAvatarPath))
-                missing.Add(PathConstants.GlobalAccountAvatarFileName);
-            if (!File.Exists(Path.Combine(PathConstants.GlobalFontsPath, PathConstants.GoldbergGlobalDefaultOverlayFontFileName)))
-                missing.Add(PathConstants.GoldbergGlobalDefaultOverlayFontFileName);
-            if (!File.Exists(Path.Combine(PathConstants.GlobalSoundsPath, PathConstants.SteamClientUiFriendNotificationWav)))
-                missing.Add(PathConstants.SteamClientUiFriendNotificationWav);
-            if (!File.Exists(Path.Combine(PathConstants.GlobalSoundsPath, PathConstants.SteamClientUiAchievementNotificationWav)))
-                missing.Add(PathConstants.SteamClientUiAchievementNotificationWav);
-            return missing;
-        }
-
-        public static Task<List<string>> AssetsFilesCheck() => Task.Run(() => CollectMissingAssetFileNames());
-
-        public static List<string> AssetsFilesCheckSync() => CollectMissingAssetFileNames();
 
         public static async Task<UpdateCheckResult> CheckForUpdatesAsync(bool isStartup = false)
         {
@@ -641,7 +621,6 @@ namespace SmartGoldbergEmu.Services
 
                     progressCallback?.Invoke("Cleaning up...", ProgressCleanup);
                     DeleteTempFolder(tempFolder);
-                    DeleteGoldbergGenerateInterfacesInstallFolder();
                     if (exclusionAdded && !string.IsNullOrEmpty(archivePath))
                     {
                         progressCallback?.Invoke("Removing Windows Defender exclusion...", ProgressCleanupDefender);
@@ -661,7 +640,6 @@ namespace SmartGoldbergEmu.Services
                 await Task.Run(() =>
                 {
                     DeleteTempFolder(tempFolder);
-                    DeleteGoldbergGenerateInterfacesInstallFolder();
                     if (exclusionAdded && !string.IsNullOrEmpty(archivePath))
                     {
                         RemoveDefenderExclusionSync(archivePath);
@@ -1255,24 +1233,6 @@ namespace SmartGoldbergEmu.Services
 
             throw new UpdateException(
                 "Required Goldberg file was not found in the archive: " + file.FileName);
-        }
-
-        private static void DeleteGoldbergGenerateInterfacesInstallFolder()
-        {
-            string toolsDir = PathConstants.LauncherDevToolsDirectory;
-            string generateInterfacesDir = PathConstants.GoldbergGenerateInterfacesInstallDirectory;
-            try
-            {
-                if (Directory.Exists(generateInterfacesDir))
-                    Directory.Delete(generateInterfacesDir, recursive: true);
-
-                if (Directory.Exists(toolsDir) && Directory.GetFileSystemEntries(toolsDir).Length == 0)
-                    Directory.Delete(toolsDir);
-            }
-            catch (Exception ex)
-            {
-                ServiceLocator.LogService?.LogWarning($"Could not remove generate_interfaces install folder: {ex.Message}");
-            }
         }
 
         private static void CopyFilesFromTempSync(string tempGoldbergFolder, string tempUserAssetsFolder, Func<bool> cancellationCheck, Action<string, int> progressCallback)

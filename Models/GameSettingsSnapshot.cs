@@ -46,6 +46,16 @@ namespace SmartGoldbergEmu.Models
         public bool OverlayAlwaysShowFrametime { get; set; } = false;
         public bool OverlayAlwaysShowPlaytime { get; set; } = false;
         public bool EnableScreenshot { get; set; } = true;
+        public bool ShowButtonUserInfo { get; set; } = true;
+        public bool ShowButtonAchievements { get; set; } = true;
+        public bool ShowButtonTestAchievement { get; set; } = true;
+        public bool ShowButtonCopyId { get; set; } = true;
+        public bool ShowButtonScreenshots { get; set; } = true;
+        public bool ShowButtonHistory { get; set; } = true;
+        public bool ShowButtonSettings { get; set; } = true;
+        public bool ShowCheckboxFps { get; set; } = true;
+        public bool ShowCheckboxFrametime { get; set; } = true;
+        public bool ShowCheckboxPlaytime { get; set; } = true;
         public string ScreenshotCombo { get; set; } = "f12";
         public string OverlayKeyCombo { get; set; } = "shift + tab";
 
@@ -133,6 +143,20 @@ namespace SmartGoldbergEmu.Models
         // Stats position (percentage)
         public float StatsPosX { get; set; } = 0.0f;
         public float StatsPosY { get; set; } = 0.0f;
+
+        public static bool ButtonTogglesEqual(OverlaySettings a, OverlaySettings b)
+        {
+            return a.ShowButtonUserInfo == b.ShowButtonUserInfo &&
+                   a.ShowButtonAchievements == b.ShowButtonAchievements &&
+                   a.ShowButtonTestAchievement == b.ShowButtonTestAchievement &&
+                   a.ShowButtonCopyId == b.ShowButtonCopyId &&
+                   a.ShowButtonScreenshots == b.ShowButtonScreenshots &&
+                   a.ShowButtonHistory == b.ShowButtonHistory &&
+                   a.ShowButtonSettings == b.ShowButtonSettings &&
+                   a.ShowCheckboxFps == b.ShowCheckboxFps &&
+                   a.ShowCheckboxFrametime == b.ShowCheckboxFrametime &&
+                   a.ShowCheckboxPlaytime == b.ShowCheckboxPlaytime;
+        }
     }
 
     public class MainSettings
@@ -170,7 +194,6 @@ namespace SmartGoldbergEmu.Models
         public bool ShareLeaderboardsOverNetwork { get; set; } = false;
         public bool DisableLobbyCreation { get; set; } = false;
         public bool DownloadSteamhttpRequests { get; set; } = false;
-        public int OldP2PPacketSharingMode { get; set; } = 0;
 
         // [main::misc]
         public bool AchievementsBypass { get; set; } = false;
@@ -199,7 +222,8 @@ namespace SmartGoldbergEmu.Models
         public string AccountSteamId { get; set; } = string.Empty;
         public string Ticket { get; set; } = string.Empty;
         public string AltSteamId { get; set; } = string.Empty;
-        public int AltSteamIdCount { get; set; } = 1;
+        // Goldberg's default for alt_steamid_count; writers omit the key at this value.
+        public int AltSteamIdCount { get; set; } = 5;
         public string Language { get; set; } = ApplicationConstants.DefaultLanguage;
         public string IpCountry { get; set; } = ApplicationConstants.DefaultIpCountry;
 

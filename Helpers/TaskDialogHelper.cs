@@ -32,8 +32,6 @@ namespace SmartGoldbergEmu.Helpers
         private const int TdcbfNoButton = 0x0004;
         private const int TdcbfCancelButton = 0x0008;
         private const int TdcbfRetryButton = 0x0010;
-        private const int TdcbfCloseButton = 0x0020;
-
         private const int TdfEnableHyperlinks = 0x0001;
         private const int TdfAllowDialogCancellation = 0x0008;
         private const int TdfPositionRelativeToWindow = 0x1000;
@@ -45,8 +43,6 @@ namespace SmartGoldbergEmu.Helpers
         private static readonly IntPtr TdWarningIcon = new IntPtr(-1);
         private static readonly IntPtr TdErrorIcon = new IntPtr(-2);
         private static readonly IntPtr TdInformationIcon = new IntPtr(-3);
-        private static readonly IntPtr TdShieldIcon = new IntPtr(-4);
-
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int TaskDialogCallback(
             IntPtr hwnd,

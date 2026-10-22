@@ -1,10 +1,37 @@
 using SmartGoldbergEmu.Models;
+using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
     // Splits configs.main.ini fields: global emulator vs per-game network/multiplayer.
     public static class MainSettingsScopes
     {
+        private static readonly string[] NetworkGeneralKeys =
+        {
+            "block_unknown_clients", "immediate_gameserver_stats", "matchmaking_server_list_actual_type",
+            "matchmaking_server_details_via_source_query"
+        };
+
+        private static readonly string[] NetworkConnectivityKeys =
+        {
+            "disable_lan_only", "disable_networking", "listen_port", "offline",
+            "disable_sharing_stats_with_gameserver", "disable_source_query",
+            "share_leaderboards_over_network", "disable_lobby_creation",
+            "download_steamhttp_requests"
+        };
+
+        // Network-slice keys: kept out of the global configs.main.ini, cleared before rewriting a per-game slice.
+        public static void RemoveNetworkKeys(IniFileService iniService, IniFile iniFile)
+        {
+            if (iniFile == null)
+                return;
+
+            foreach (var key in NetworkGeneralKeys)
+                iniService.RemoveValue(iniFile, "main::general", key);
+            foreach (var key in NetworkConnectivityKeys)
+                iniService.RemoveValue(iniFile, "main::connectivity", key);
+        }
+
         public static MainSettings ExtractNetworkSlice(MainSettings source)
         {
             var s = source ?? new MainSettings();
@@ -22,30 +49,8 @@ namespace SmartGoldbergEmu.Helpers
                 DisableSourceQuery = s.DisableSourceQuery,
                 ShareLeaderboardsOverNetwork = s.ShareLeaderboardsOverNetwork,
                 DisableLobbyCreation = s.DisableLobbyCreation,
-                DownloadSteamhttpRequests = s.DownloadSteamhttpRequests,
-                OldP2PPacketSharingMode = s.OldP2PPacketSharingMode
+                DownloadSteamhttpRequests = s.DownloadSteamhttpRequests
             };
-        }
-
-        public static void ApplyNetworkSlice(MainSettings target, MainSettings network)
-        {
-            if (target == null || network == null)
-                return;
-
-            target.BlockUnknownClients = network.BlockUnknownClients;
-            target.ImmediateGameserverStats = network.ImmediateGameserverStats;
-            target.MatchmakingServerListActualType = network.MatchmakingServerListActualType;
-            target.MatchmakingServerDetailsViaSourceQuery = network.MatchmakingServerDetailsViaSourceQuery;
-            target.DisableLanOnly = network.DisableLanOnly;
-            target.DisableNetworking = network.DisableNetworking;
-            target.ListenPort = network.ListenPort;
-            target.Offline = network.Offline;
-            target.DisableSharingStatsWithGameserver = network.DisableSharingStatsWithGameserver;
-            target.DisableSourceQuery = network.DisableSourceQuery;
-            target.ShareLeaderboardsOverNetwork = network.ShareLeaderboardsOverNetwork;
-            target.DisableLobbyCreation = network.DisableLobbyCreation;
-            target.DownloadSteamhttpRequests = network.DownloadSteamhttpRequests;
-            target.OldP2PPacketSharingMode = network.OldP2PPacketSharingMode;
         }
 
         public static bool NetworkSlicesEqual(MainSettings a, MainSettings b)
@@ -67,8 +72,7 @@ namespace SmartGoldbergEmu.Helpers
                    a.DisableSourceQuery == b.DisableSourceQuery &&
                    a.ShareLeaderboardsOverNetwork == b.ShareLeaderboardsOverNetwork &&
                    a.DisableLobbyCreation == b.DisableLobbyCreation &&
-                   a.DownloadSteamhttpRequests == b.DownloadSteamhttpRequests &&
-                   a.OldP2PPacketSharingMode == b.OldP2PPacketSharingMode;
+                   a.DownloadSteamhttpRequests == b.DownloadSteamhttpRequests;
         }
 
         public static MainSettings ExtractStatsAchievementsSlice(MainSettings source)

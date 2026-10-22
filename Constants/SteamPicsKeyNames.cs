@@ -44,9 +44,7 @@ namespace SmartGoldbergEmu.Constants
         public const string LibraryCapsule = "library_capsule";
         public const string LibraryHeader = "library_header";
         public const string LibraryHero = "library_hero";
-        public const string LibraryHeroBlur = "library_hero_blur";
         public const string LibraryLogo = "library_logo";
-        public const string SmallCapsule = "small_capsule";
         public const string Image = "image";
         public const string Image2x = "image2x";
         public const string English = "english";
@@ -58,8 +56,6 @@ namespace SmartGoldbergEmu.Constants
         public const string LinuxClientIcon = "linuxclienticon";
         public const string Logo = "logo";
         public const string LogoSmall = "logo_small";
-        public const string StoreScreenshot = "store_screenshot";
-
         // Launch entry -> config child names (PICS)
         public const string BetaKey = "BetaKey";
         public const string OsArch = "osarch";

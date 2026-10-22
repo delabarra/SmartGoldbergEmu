@@ -103,7 +103,7 @@ namespace SmartGoldbergEmu.Services
         public IReadOnlyList<string> CollectSteamApiDllPathsForGame(GameConfig gameConfig)
         {
             var scanPaths = new List<string>();
-            if (!TryResolvePreferredSteamApiSource(gameConfig, preferredExePath: null, out string sourcePath))
+            if (!TryResolvePreferredSteamApiSource(gameConfig, out string sourcePath))
                 return scanPaths;
 
             scanPaths.Add(sourcePath);
@@ -174,28 +174,6 @@ namespace SmartGoldbergEmu.Services
             {
                 if (seen.Add(value))
                     results.Add(value);
-            }
-        }
-
-        public bool TryWriteSteamInterfacesFile(string steamSettingsPath, IReadOnlyList<string> entries, bool overwriteExisting)
-        {
-            if (string.IsNullOrWhiteSpace(steamSettingsPath) || entries == null || entries.Count == 0)
-                return false;
-
-            string targetPath = GetSteamSettingsFilePath(steamSettingsPath);
-            if (!overwriteExisting && File.Exists(targetPath))
-                return false;
-
-            try
-            {
-                Directory.CreateDirectory(steamSettingsPath);
-                File.WriteAllLines(targetPath, entries);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError($"Failed to write {PathConstants.GoldbergSteamInterfacesFileName} to {targetPath}", ex);
-                return false;
             }
         }
 
@@ -274,7 +252,7 @@ namespace SmartGoldbergEmu.Services
             if (File.Exists(targetPath))
                 return true;
 
-            return TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, preferredExePath: null, overwrite: false, ref anyFileGenerated);
+            return TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, overwrite: false, ref anyFileGenerated);
         }
 
         public bool TryRegenerateSteamInterfacesFile(GameConfig gameConfig)
@@ -303,32 +281,13 @@ namespace SmartGoldbergEmu.Services
             }
 
             bool anyFileGenerated = false;
-            TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, preferredExePath: null, overwrite: true, ref anyFileGenerated);
+            TryWriteFromSteamApiScan(steamSettingsPath, gameConfig, overwrite: true, ref anyFileGenerated);
             return anyFileGenerated && File.Exists(targetPath);
-        }
-
-        // Overwrites steam_interfaces.txt from the Valve steam_api resolved for launchExePath (or the stored Path).
-        public bool TryRefreshSteamInterfacesForLaunch(
-            string steamSettingsPath,
-            GameConfig gameConfig,
-            string launchExePath)
-        {
-            if (gameConfig == null || gameConfig.AppId == 0 || string.IsNullOrWhiteSpace(steamSettingsPath))
-                return false;
-
-            bool anyFileGenerated = false;
-            return TryWriteFromSteamApiScan(
-                steamSettingsPath,
-                gameConfig,
-                preferredExePath: launchExePath,
-                overwrite: true,
-                ref anyFileGenerated);
         }
 
         private bool TryWriteFromSteamApiScan(
             string steamSettingsPath,
             GameConfig gameConfig,
-            string preferredExePath,
             bool overwrite,
             ref bool anyFileGenerated)
         {
@@ -338,7 +297,7 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
-                if (!TryResolvePreferredSteamApiSource(gameConfig, preferredExePath, out string sourceDllPath))
+                if (!TryResolvePreferredSteamApiSource(gameConfig, out string sourceDllPath))
                 {
                     _logger?.LogDebug(
                         $"Skipped {PathConstants.GoldbergSteamInterfacesFileName} for app {gameConfig.AppId}: no valid steam_api DLL beside the game executable.");
@@ -358,24 +317,16 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private bool TryResolvePreferredSteamApiSource(
-            GameConfig gameConfig,
-            string preferredExePath,
-            out string sourcePath)
+        private bool TryResolvePreferredSteamApiSource(GameConfig gameConfig, out string sourcePath)
         {
             sourcePath = null;
             if (gameConfig == null)
                 return false;
 
             string startFolder = gameConfig.StartFolder ?? string.Empty;
-            string exePath = preferredExePath;
-            if (string.IsNullOrWhiteSpace(exePath))
-            {
-                if (GameFolderPathHelper.TryResolveStoredExecutable(gameConfig, out string storedExe))
-                    exePath = storedExe;
-                else
-                    exePath = gameConfig.Path;
-            }
+            string exePath = GameFolderPathHelper.TryResolveStoredExecutable(gameConfig, out string storedExe)
+                ? storedExe
+                : gameConfig.Path;
 
             bool useX64 = true;
             if (!string.IsNullOrWhiteSpace(exePath) &&

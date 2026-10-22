@@ -161,6 +161,16 @@ namespace SmartGoldbergEmu.Services
             m.OverlayAlwaysShowFrametime = MergeFlag(gameSpecific.OverlayAlwaysShowFrametime, global.OverlayAlwaysShowFrametime, d.OverlayAlwaysShowFrametime);
             m.OverlayAlwaysShowPlaytime = MergeFlag(gameSpecific.OverlayAlwaysShowPlaytime, global.OverlayAlwaysShowPlaytime, d.OverlayAlwaysShowPlaytime);
             m.EnableScreenshot = MergeFlag(gameSpecific.EnableScreenshot, global.EnableScreenshot, d.EnableScreenshot);
+            m.ShowButtonUserInfo = MergeFlag(gameSpecific.ShowButtonUserInfo, global.ShowButtonUserInfo, d.ShowButtonUserInfo);
+            m.ShowButtonAchievements = MergeFlag(gameSpecific.ShowButtonAchievements, global.ShowButtonAchievements, d.ShowButtonAchievements);
+            m.ShowButtonTestAchievement = MergeFlag(gameSpecific.ShowButtonTestAchievement, global.ShowButtonTestAchievement, d.ShowButtonTestAchievement);
+            m.ShowButtonCopyId = MergeFlag(gameSpecific.ShowButtonCopyId, global.ShowButtonCopyId, d.ShowButtonCopyId);
+            m.ShowButtonScreenshots = MergeFlag(gameSpecific.ShowButtonScreenshots, global.ShowButtonScreenshots, d.ShowButtonScreenshots);
+            m.ShowButtonHistory = MergeFlag(gameSpecific.ShowButtonHistory, global.ShowButtonHistory, d.ShowButtonHistory);
+            m.ShowButtonSettings = MergeFlag(gameSpecific.ShowButtonSettings, global.ShowButtonSettings, d.ShowButtonSettings);
+            m.ShowCheckboxFps = MergeFlag(gameSpecific.ShowCheckboxFps, global.ShowCheckboxFps, d.ShowCheckboxFps);
+            m.ShowCheckboxFrametime = MergeFlag(gameSpecific.ShowCheckboxFrametime, global.ShowCheckboxFrametime, d.ShowCheckboxFrametime);
+            m.ShowCheckboxPlaytime = MergeFlag(gameSpecific.ShowCheckboxPlaytime, global.ShowCheckboxPlaytime, d.ShowCheckboxPlaytime);
             m.ScreenshotCombo = MergeStringOrGlobal(gameSpecific.ScreenshotCombo, global.ScreenshotCombo, d.ScreenshotCombo);
             m.OverlayKeyCombo = MergeStringOrGlobal(gameSpecific.OverlayKeyCombo, global.OverlayKeyCombo, d.OverlayKeyCombo);
 
@@ -271,7 +281,6 @@ namespace SmartGoldbergEmu.Services
             m.ShareLeaderboardsOverNetwork = PerGameOnlyBool(gameSpecific.ShareLeaderboardsOverNetwork, d.ShareLeaderboardsOverNetwork);
             m.DisableLobbyCreation = PerGameOnlyBool(gameSpecific.DisableLobbyCreation, d.DisableLobbyCreation);
             m.DownloadSteamhttpRequests = PerGameOnlyBool(gameSpecific.DownloadSteamhttpRequests, d.DownloadSteamhttpRequests);
-            m.OldP2PPacketSharingMode = PerGameOnlyInt(gameSpecific.OldP2PPacketSharingMode, d.OldP2PPacketSharingMode);
 
             m.AchievementsBypass = MergeFlag(gameSpecific.AchievementsBypass, global.AchievementsBypass, d.AchievementsBypass);
             m.ForceSteamhttpSuccess = MergeFlag(gameSpecific.ForceSteamhttpSuccess, global.ForceSteamhttpSuccess, d.ForceSteamhttpSuccess);
@@ -459,12 +468,7 @@ namespace SmartGoldbergEmu.Services
                 Directory.CreateDirectory(steamSettingsPath);
                 Directory.CreateDirectory(Path.Combine(steamSettingsPath, PathConstants.GoldbergSteamSettingsModsFolderName));
 
-                var overlayPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergOverlayIniFileName);
-                if (!File.Exists(overlayPath))
-                {
-                    SaveOverlaySettings(overlayPath, new OverlaySettings());
-                }
-
+                // No per-game configs.overlay.ini: Goldberg lets local keys override global ones, so a default copy would mask Settings changes.
                 var mainPath = Path.Combine(steamSettingsPath, PathConstants.GoldbergMainIniFileName);
                 if (!File.Exists(mainPath))
                 {
@@ -1360,76 +1364,6 @@ namespace SmartGoldbergEmu.Services
             return null;
         }
 
-        public ValidationResult ValidateConfigFile(string filePath)
-        {
-            try
-            {
-                if (!File.Exists(filePath))
-                    return ValidationResult.Failure("Config file does not exist");
-
-                var lines = File.ReadAllLines(filePath);
-                foreach (var line in lines)
-                {
-                    var trimmedLine = line.Trim();
-                    if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith(";") || trimmedLine.StartsWith("#"))
-                        continue;
-
-                    if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]"))
-                        continue;
-
-                    if (!trimmedLine.Contains("="))
-                        return ValidationResult.Failure($"Invalid line format: {trimmedLine}");
-                }
-
-                return ValidationResult.Success();
-            }
-            catch (Exception ex)
-            {
-                return ValidationResult.Failure($"Failed to validate config file: {ex.Message}");
-            }
-        }
-
-        public string BackupGameSettings(ulong appId)
-        {
-            try
-            {
-                var steamSettingsPath = GetGameSteamSettingsPath(appId);
-                var backupPath = Path.Combine(PathConstants.LauncherBackupTempRootDirectory, appId.ToString(), DateTime.Now.ToString("yyyyMMdd_HHmmss"));
-
-                if (Directory.Exists(steamSettingsPath))
-                {
-                    CopyDirectory(steamSettingsPath, backupPath);
-                }
-
-                return backupPath;
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug($"Failed to backup game settings: {ex.Message}");
-                return string.Empty;
-            }
-        }
-
-        public bool RestoreGameSettings(ulong appId, string backupPath)
-        {
-            try
-            {
-                if (!Directory.Exists(backupPath))
-                    return false;
-
-                var steamSettingsPath = GetGameSteamSettingsPath(appId);
-                Directory.CreateDirectory(steamSettingsPath);
-
-                CopyDirectory(backupPath, steamSettingsPath);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug($"Failed to restore game settings: {ex.Message}");
-                return false;
-            }
-        }
-
         public string GetGameSteamSettingsPath(ulong appId)
         {
             return PathConstants.CombineGameSteamSettingsDirectory(_gamesDirectory, appId.ToString());
@@ -1485,6 +1419,46 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 return SaveResult.Failure($"Failed to strip per-game save location for app {appId}: {ex.Message}");
+            }
+        }
+
+        // Earlier builds wrote an app-default configs.overlay.ini into every game, which overrides the global overlay file.
+        // Delete it only while it is still byte-identical to that default and the global file exists to supply the same defaults.
+        public void RemoveUntouchedDefaultPerGameOverlayIni(ulong appId)
+        {
+            if (appId == 0)
+                return;
+
+            string globalPath = Path.Combine(_globalSettingsPath, PathConstants.GoldbergOverlayIniFileName);
+            string perGamePath = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergOverlayIniFileName);
+            if (!File.Exists(globalPath) || !File.Exists(perGamePath))
+                return;
+
+            string defaultPath = Path.Combine(Path.GetTempPath(), "sge_overlay_default_" + Guid.NewGuid().ToString("N") + ".ini");
+            try
+            {
+                if (!SaveOverlaySettings(defaultPath, new OverlaySettings()).IsSuccess)
+                    return;
+
+                if (string.Equals(File.ReadAllText(defaultPath), File.ReadAllText(perGamePath), StringComparison.Ordinal))
+                {
+                    File.Delete(perGamePath);
+                    LogRedactionHelper.WriteDebug($"Removed default per-game overlay settings for app {appId}; global overlay settings apply.");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogRedactionHelper.WriteDebug($"Per-game overlay cleanup failed for app {appId}: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(defaultPath))
+                        File.Delete(defaultPath);
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
         }
 
@@ -1662,10 +1636,6 @@ namespace SmartGoldbergEmu.Services
                             case "download_steamhttp_requests":
                                 if (currentSection == "main::connectivity")
                                     settings.DownloadSteamhttpRequests = isEnabled;
-                                break;
-                            case "old_p2p_packet_sharing_mode":
-                                if (currentSection == "main::connectivity" && int.TryParse(value, out int p2pMode))
-                                    settings.OldP2PPacketSharingMode = p2pMode;
                                 break;
                             // main::misc
                             case "achievements_bypass":
@@ -1870,7 +1840,7 @@ namespace SmartGoldbergEmu.Services
                     ? ServiceLocator.IniFileService.ParseFile(filePath)
                     : new IniFile();
                 StripGlobalSessionMainKeysFromPerGameIni(iniFile);
-                StripNetworkMainKeysFromPerGameIni(iniFile);
+                MainSettingsScopes.RemoveNetworkKeys(ServiceLocator.IniFileService, iniFile);
                 _goldbergCfgService.ApplyNetworkMainToIni(iniFile, network);
                 GoldbergIniDocumentationHelper.WriteIniFile(filePath, iniFile.Lines);
                 return SaveResult.Success(1);
@@ -1928,29 +1898,6 @@ namespace SmartGoldbergEmu.Services
                 "enable_steam_preowned_ids", "free_weekend", "use_32bit_inventory_item_ids"
             })
                 iniService.RemoveValue(iniFile, "main::misc", key);
-        }
-
-        private static void StripNetworkMainKeysFromPerGameIni(IniFile iniFile)
-        {
-            if (iniFile == null)
-                return;
-
-            var iniService = ServiceLocator.IniFileService;
-            foreach (var key in new[]
-            {
-                "block_unknown_clients", "immediate_gameserver_stats", "matchmaking_server_list_actual_type",
-                "matchmaking_server_details_via_source_query"
-            })
-                iniService.RemoveValue(iniFile, "main::general", key);
-
-            foreach (var key in new[]
-            {
-                "disable_lan_only", "disable_networking", "listen_port", "offline",
-                "disable_sharing_stats_with_gameserver", "disable_source_query",
-                "share_leaderboards_over_network", "disable_lobby_creation",
-                "download_steamhttp_requests", "old_p2p_packet_sharing_mode"
-            })
-                iniService.RemoveValue(iniFile, "main::connectivity", key);
         }
 
         private static void StripStatsAchievementsMainKeysFromPerGameIni(IniFile iniFile)
@@ -2043,8 +1990,6 @@ namespace SmartGoldbergEmu.Services
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::connectivity", "disable_lobby_creation", BoolToInt(settings.DisableLobbyCreation), cache, "1=prevent lobby creation in steam matchmaking interface", "default=0");
                 if (settings.DownloadSteamhttpRequests != d.DownloadSteamhttpRequests)
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::connectivity", "download_steamhttp_requests", BoolToInt(settings.DownloadSteamhttpRequests), cache, $"1=attempt to download external HTTP(S) requests made via Steam_HTTP::SendHTTPRequest() inside \"{PathConstants.SteamSettingsFolderName}/{PathConstants.GoldbergSteamSettingsHttpFolderName}/\"", "default=0");
-                if (settings.OldP2PPacketSharingMode != d.OldP2PPacketSharingMode)
-                    GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "main::connectivity", "old_p2p_packet_sharing_mode", settings.OldP2PPacketSharingMode.ToString(), cache, "legacy p2p packet sharing mode", "default=0");
 
                 GoldbergIniDocumentationHelper.AppendSection(content, "main::misc");
                 if (settings.AchievementsBypass != d.AchievementsBypass)
@@ -2167,28 +2112,6 @@ namespace SmartGoldbergEmu.Services
                                          !string.IsNullOrEmpty(settings.Language) ||
                                          (!string.IsNullOrEmpty(settings.IpCountry) && settings.IpCountry != ApplicationConstants.DefaultIpCountry);
 
-                // If user launch options exist, never delete this file.
-                bool hasExistingUserLaunchOptions = false;
-                if (File.Exists(filePath))
-                {
-                    try
-                    {
-                        foreach (var line in File.ReadAllLines(filePath))
-                        {
-                            var trimmed = line.Trim();
-                            if (trimmed.Equals("[user::launch_options]", StringComparison.OrdinalIgnoreCase))
-                            {
-                                hasExistingUserLaunchOptions = true;
-                                break;
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Best-effort only; ignore read/parse errors.
-                    }
-                }
-
                 // Delete the file (falling back to global settings) only when every field is empty/default.
                 if (!hasForceOverride)
                 {
@@ -2198,11 +2121,9 @@ namespace SmartGoldbergEmu.Services
 
                     if (!hasOtherSettings)
                     {
-                        if (!hasExistingUserLaunchOptions && File.Exists(filePath))
-                        {
+                        if (File.Exists(filePath))
                             File.Delete(filePath);
-                        }
-                        return SaveResult.Success(0); // Nothing written; the file is deleted unless user launch options keep it
+                        return SaveResult.Success(0);
                     }
                 }
 
@@ -2211,41 +2132,6 @@ namespace SmartGoldbergEmu.Services
                 var content = new StringBuilder();
                 GoldbergIniDocumentationHelper.AppendIniHeader(content);
 
-                // Preserve any existing user launch options section.
-                string existingUserLaunchOptionsSection = string.Empty;
-                if (File.Exists(filePath))
-                {
-                    try
-                    {
-                        var lines = File.ReadAllLines(filePath);
-                        bool inSection = false;
-                        var sectionBuilder = new StringBuilder();
-                        for (int i = 0; i < lines.Length; i++)
-                        {
-                            var trimmed = lines[i].Trim();
-                            if (!inSection)
-                            {
-                                if (trimmed.Equals("[user::launch_options]", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    inSection = true;
-                                    sectionBuilder.AppendLine(lines[i]);
-                                }
-                            }
-                            else
-                            {
-                                if (trimmed.StartsWith("[") && trimmed.EndsWith("]") && !trimmed.Equals("[user::launch_options]", StringComparison.OrdinalIgnoreCase))
-                                    break;
-                                sectionBuilder.AppendLine(lines[i]);
-                            }
-                        }
-                        existingUserLaunchOptionsSection = sectionBuilder.ToString().TrimEnd();
-                    }
-                    catch
-                    {
-                        existingUserLaunchOptionsSection = string.Empty;
-                    }
-                }
-                
                 GoldbergIniDocumentationHelper.AppendSection(content, "user::general");
                 if (!string.IsNullOrEmpty(settings.AccountName))
                     GoldbergIniDocumentationHelper.AppendOptionWithExampleOrFallback(content, examplePath, "user::general", "account_name", settings.AccountName, cache, "user account name", "default=gse orca");
@@ -2269,9 +2155,6 @@ namespace SmartGoldbergEmu.Services
                 // local_save_path and saves_folder_name are global-only (see SaveGlobalUserSettings).
 
                 content.AppendLine();
-                if (!string.IsNullOrWhiteSpace(existingUserLaunchOptionsSection))
-                    content.AppendLine(existingUserLaunchOptionsSection);
-
                 File.WriteAllText(filePath, content.ToString());
                 _goldbergCfgService.StripPerGameSaveLocationKeys(filePath);
                 return SaveResult.Success(1);
@@ -2313,6 +2196,7 @@ namespace SmartGoldbergEmu.Services
                    a.OverlayAlwaysShowFrametime == b.OverlayAlwaysShowFrametime &&
                    a.OverlayAlwaysShowPlaytime == b.OverlayAlwaysShowPlaytime &&
                    a.EnableScreenshot == b.EnableScreenshot &&
+                   OverlaySettings.ButtonTogglesEqual(a, b) &&
                    string.Equals(a.ScreenshotCombo ?? string.Empty, b.ScreenshotCombo ?? string.Empty, StringComparison.Ordinal) &&
                    string.Equals(a.OverlayKeyCombo ?? string.Empty, b.OverlayKeyCombo ?? string.Empty, StringComparison.Ordinal) &&
                    string.Equals(a.FontOverride ?? string.Empty, b.FontOverride ?? string.Empty, StringComparison.Ordinal) &&
@@ -2442,49 +2326,6 @@ namespace SmartGoldbergEmu.Services
                    snapshot.User.ClanTag != original.User.ClanTag;
         }
 
-        private Dictionary<string, string> LoadAppPathsFromAppIni(string filePath)
-        {
-            var appPaths = new Dictionary<string, string>();
-            if (!File.Exists(filePath))
-                return appPaths;
-
-            try
-            {
-                var lines = File.ReadAllLines(filePath);
-                string currentSection = null;
-
-                foreach (var line in lines)
-                {
-                    var trimmedLine = line.Trim();
-                    if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith(";") || trimmedLine.StartsWith("#"))
-                        continue;
-
-                    if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]"))
-                    {
-                        currentSection = trimmedLine.Substring(1, trimmedLine.Length - 2);
-                        continue;
-                    }
-
-                    if (currentSection == "app::paths" && trimmedLine.Contains("="))
-                    {
-                        var parts = trimmedLine.Split(new[] { '=' }, 2);
-                        if (parts.Length == 2)
-                        {
-                            var key = parts[0].Trim();
-                            var value = parts[1].Trim();
-                            appPaths[key] = value;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LogRedactionHelper.WriteDebug($"Failed to load app paths: {ex.Message}");
-            }
-
-            return appPaths;
-        }
-
         private static readonly HashSet<string> ManagedAppIniSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "app::general",
@@ -2600,24 +2441,5 @@ namespace SmartGoldbergEmu.Services
         }
 
         private static string BoolToInt(bool value) => value ? "1" : "0";
-
-        private void CopyDirectory(string sourceDir, string destDir)
-        {
-            Directory.CreateDirectory(destDir);
-
-            foreach (var file in Directory.GetFiles(sourceDir))
-            {
-                var fileName = Path.GetFileName(file);
-                var destFile = Path.Combine(destDir, fileName);
-                File.Copy(file, destFile, true);
-            }
-
-            foreach (var subDir in Directory.GetDirectories(sourceDir))
-            {
-                var dirName = Path.GetFileName(subDir);
-                var destSubDir = Path.Combine(destDir, dirName);
-                CopyDirectory(subDir, destSubDir);
-            }
-        }
     }
 }

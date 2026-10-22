@@ -4,7 +4,6 @@ namespace SmartGoldbergEmu.Constants
     public static class SteamClientRegistryKeyPaths
     {
         public const string CurrentUserSteamClient = @"Software\Valve\Steam";
-        public const string CurrentUserSteamClientWow6432Node = @"Software\WOW6432Node\Valve\Steam";
         public const string CurrentUserSteamActiveProcess = @"Software\Valve\Steam\ActiveProcess";
 
         public const string LocalMachineSteamClientWow64 = @"SOFTWARE\WOW6432Node\Valve\Steam";

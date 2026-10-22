@@ -16,6 +16,13 @@ namespace SmartGoldbergEmu.Helpers
             return !string.IsNullOrEmpty(key) && _owned.ContainsKey(key);
         }
 
+        public string[] GetKeys()
+        {
+            var keys = new string[_owned.Count];
+            _owned.Keys.CopyTo(keys, 0);
+            return keys;
+        }
+
         public void Set(ImageList imageList, string key, Image image)
         {
             if (imageList == null || string.IsNullOrEmpty(key) || image == null)

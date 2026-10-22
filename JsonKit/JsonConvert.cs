@@ -96,7 +96,8 @@ namespace SmartGoldbergEmu.JsonKit
                 hidden = GetIntProperty(obj, "hidden"),
                 icon = GetStringProperty(obj, "icon"),
                 icongray = GetStringProperty(obj, "icongray"),
-                icon_gray = GetStringProperty(obj, "icon_gray")
+                icon_gray = GetStringProperty(obj, "icon_gray"),
+                unlock_percentage = GetOptionalDoubleProperty(obj, "unlock_percentage")
             };
         }
 
@@ -253,6 +254,14 @@ namespace SmartGoldbergEmu.JsonKit
         {
             var token = obj[name];
             return token != null && token.TryGetInt64(out long v) ? (int)v : 0;
+        }
+
+        private static double? GetOptionalDoubleProperty(JsonObject obj, string name)
+        {
+            var number = obj[name] as JsonNumber;
+            if (number == null)
+                return null;
+            return number.IsInteger ? number.IntegerValue : number.FloatValue;
         }
     }
 }
