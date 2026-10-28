@@ -289,6 +289,34 @@ namespace SmartGoldbergEmu.Helpers
             return null;
         }
 
+        // True when Steam installdir is known and Game root folder is not that install root (or paths cannot be resolved under it).
+        public static bool ShouldShowGameFolderInstallDirHint(string startFolder, string executablePathOrName, string installDirFolderName)
+        {
+            if (string.IsNullOrWhiteSpace(installDirFolderName))
+                return false;
+            if (string.IsNullOrWhiteSpace(startFolder) || string.IsNullOrWhiteSpace(executablePathOrName))
+                return false;
+
+            if (!TryResolveExecutableFromGameFolderFields(startFolder, executablePathOrName, out string fullExe))
+                return true;
+
+            if (!TrySplitExecutableAtSteamInstallDir(fullExe, installDirFolderName, out string gameRootFromInstall, out _))
+                return true;
+
+            try
+            {
+                string folderFull = Path.GetFullPath(startFolder.Trim())
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string rootFull = Path.GetFullPath(gameRootFromInstall)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return !string.Equals(folderFull, rootFull, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
         // Prefers a ...\steamapps\common\{installdir}\ segment; otherwise the first segment matching installdir wins.
         public static bool TrySplitExecutableAtSteamInstallDir(string fullExecutablePath, string installDirFolderName, out string gameRootFullPath, out string relativeExecutablePath)
         {

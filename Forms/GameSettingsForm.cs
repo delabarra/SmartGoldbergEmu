@@ -778,6 +778,11 @@ namespace SmartGoldbergEmu.Forms
                 return _metadata.InstallDir.Trim();
             if (_gameConfig?.AppInfo != null && AppInfoKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.AppInfo, out string fromPics))
                 return fromPics;
+            if (_gameConfig?.Catalog != null && !string.IsNullOrWhiteSpace(_gameConfig.Catalog.InstallDir))
+                return _gameConfig.Catalog.InstallDir.Trim();
+            if (_gameConfig?.Catalog?.AppInfo != null &&
+                AppInfoKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.Catalog.AppInfo, out string fromCatalog))
+                return fromCatalog;
             return null;
         }
 
@@ -786,30 +791,12 @@ namespace SmartGoldbergEmu.Forms
             if (lblHintGameFolder == null)
                 return;
 
-            string installDirFolder = GetSteamInstallDirFolderNameForForm();
-            if (string.IsNullOrEmpty(installDirFolder))
-            {
-                lblHintGameFolder.Visible = true;
-                return;
-            }
-
-            string exeText = txtGameExecutable?.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrEmpty(exeText))
-            {
-                lblHintGameFolder.Visible = true;
-                return;
-            }
-
-            string folderText = txtGameFolder?.Text?.Trim() ?? string.Empty;
-            if (!GameFolderPathHelper.TryResolveExecutableFromGameFolderFields(folderText, exeText, out string fullExe))
-            {
-                lblHintGameFolder.Visible = true;
-                return;
-            }
-
-            bool installdirFound = GameFolderPathHelper.TrySplitExecutableAtSteamInstallDir(fullExe, installDirFolder, out _, out _);
-            lblHintGameFolder.Visible = !installdirFound;
-            if (lblHintGameFolder.Visible)
+            bool show = GameFolderPathHelper.ShouldShowGameFolderInstallDirHint(
+                txtGameFolder?.Text,
+                txtGameExecutable?.Text,
+                GetSteamInstallDirFolderNameForForm());
+            lblHintGameFolder.Visible = show;
+            if (show)
                 lblHintGameFolder.BringToFront();
         }
 

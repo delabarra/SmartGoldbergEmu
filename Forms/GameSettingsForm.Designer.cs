@@ -295,6 +295,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblHintGameFolder.Size = new System.Drawing.Size(24, 17);
             this.lblHintGameFolder.TabIndex = 20;
             this.lblHintGameFolder.Text = "⚠️";
+            this.lblHintGameFolder.Visible = false;
             this.toolTip.SetToolTip(this.lblHintGameFolder, "Pick the folder that contains the whole game, not only the .exe.\r\n\r\nExample:\r\nGam" +
         "e folder: ...\\steamapps\\common\\Duke Nukem 3D\r\nExecutable: bin\\duke3d.exe");
             // 
