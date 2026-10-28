@@ -343,7 +343,7 @@ namespace SmartGoldbergEmu.Services
             {
                 SteamWebApiKey = apiKey,
                 ProbeAssetUrls = false,
-                Language = string.IsNullOrWhiteSpace(language) ? "english" : language.Trim(),
+                Language = SteamConfiguredLanguageHelper.Resolve(language),
                 HttpTimeout = httpTimeout ?? TimeSpan.FromSeconds(30)
             });
         }
@@ -377,9 +377,10 @@ namespace SmartGoldbergEmu.Services
                 ProbeAssetUrls = false
             }, cancellationToken).ConfigureAwait(false);
 
-            AchievementsSection achievements = await FetchAchievementsAsync(appId, language: null, cancellationToken)
+            string language = SteamConfiguredLanguageHelper.Resolve();
+            AchievementsSection achievements = await FetchAchievementsAsync(appId, language, cancellationToken)
                 .ConfigureAwait(false);
-            StatsSection stats = await FetchStatsAsync(appId, language: null, cancellationToken).ConfigureAwait(false);
+            StatsSection stats = await FetchStatsAsync(appId, language, cancellationToken).ConfigureAwait(false);
             ItemsSection items = await FetchItemsAsync(appId, cancellationToken).ConfigureAwait(false);
 
             return AppCatalogSnapshotStore.FinalizeSnapshot(
@@ -407,7 +408,7 @@ namespace SmartGoldbergEmu.Services
             if (!IsUsableSchemaSection(sections.Achievements))
             {
                 AchievementsSection fallback = await GamesInfosDatasHelper
-                    .TryFetchAchievementsSectionAsync(appId, language: null, cancellationToken)
+                    .TryFetchAchievementsSectionAsync(appId, SteamConfiguredLanguageHelper.Resolve(), cancellationToken)
                     .ConfigureAwait(false);
                 if (fallback != null)
                     sections.Achievements = fallback;

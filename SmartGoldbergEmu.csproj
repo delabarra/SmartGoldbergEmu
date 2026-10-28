@@ -239,6 +239,7 @@
     <Compile Include="Helpers\SteamInstallationPathHelper.cs" />
     <Compile Include="Helpers\SteamClientManifestHelper.cs" />
     <Compile Include="Helpers\SteamLanguageDisplayHelper.cs" />
+    <Compile Include="Helpers\SteamConfiguredLanguageHelper.cs" />
     <Compile Include="Helpers\AppInfoKeyValueHelper.cs" />
     <Compile Include="Helpers\SteamPicsKeyValueHelper.cs" />
     <Compile Include="Helpers\ListViewColumnHelper.cs" />

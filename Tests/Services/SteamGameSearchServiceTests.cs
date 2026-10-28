@@ -24,14 +24,21 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void BuildStoreSearchCatalogUrl_omits_country_code_and_uses_language()
+        {
+            string url = SteamGameSearchService.BuildStoreSearchCatalogUrl("portal");
+            Assert.Contains("l=", url, StringComparison.Ordinal);
+            Assert.DoesNotContain("cc=", url, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("term=portal", url, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task SearchByNameAsync_returns_store_results_when_vercel_hangs()
         {
             SteamGameSearchService.SetCatalogEnrichTimeoutForTests(TimeSpan.FromMilliseconds(200));
 
             string term = "portal";
-            string storeUrl = string.Format(
-                ApplicationConstants.SteamStoreSearchCatalogUrlFormat,
-                Uri.EscapeDataString(term));
+            string storeUrl = SteamGameSearchService.BuildStoreSearchCatalogUrl(term);
             string catalogUrl = string.Format(
                 ApplicationConstants.SteamSearchGamesApiUrlFormat,
                 Uri.EscapeDataString(term));
@@ -71,9 +78,7 @@ namespace SmartGoldbergEmu.Tests.Services
             SteamGameSearchService.SetCatalogEnrichTimeoutForTests(TimeSpan.FromSeconds(2));
 
             string term = "portal";
-            string storeUrl = string.Format(
-                ApplicationConstants.SteamStoreSearchCatalogUrlFormat,
-                Uri.EscapeDataString(term));
+            string storeUrl = SteamGameSearchService.BuildStoreSearchCatalogUrl(term);
             string catalogUrl = string.Format(
                 ApplicationConstants.SteamSearchGamesApiUrlFormat,
                 Uri.EscapeDataString(term));

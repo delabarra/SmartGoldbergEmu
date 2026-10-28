@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using AppDataKit;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Services;
 using Xunit;
@@ -219,6 +220,108 @@ namespace SmartGoldbergEmu.Tests.Services
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             Assert.Equal("header.jpg", GameImageService.AllocateUniqueResourceFileName("header.jpg", seen));
             Assert.Null(GameImageService.AllocateUniqueResourceFileName("header.jpg", seen));
+        }
+
+        [Fact]
+        public void TryExtractLocalizedRelativePath_prefers_settings_language_then_english()
+        {
+            var node = new AppInfoKeyValue("image");
+            node.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.English, "en/library_capsule.jpg"));
+            node.Children.Add(new AppInfoKeyValue("japanese", "ja/library_capsule.jpg"));
+            node.Children.Add(new AppInfoKeyValue("schinese", "zh/library_capsule.jpg"));
+
+            Assert.Equal(
+                "ja/library_capsule.jpg",
+                GameImageService.TryExtractLocalizedRelativePath(node, "japanese"));
+            Assert.Equal(
+                "en/library_capsule.jpg",
+                GameImageService.TryExtractLocalizedRelativePath(node, "koreana"));
+            Assert.Equal(
+                "en/library_capsule.jpg",
+                GameImageService.TryExtractLocalizedRelativePath(node, SteamPicsKeyNames.English));
+        }
+
+        [Fact]
+        public void ListView_cover_candidates_prefer_hash_prefixed_localized_file_before_bare_name()
+        {
+            const string japaneseHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+            const string englishHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            var pics = CreateLibraryCapsulePics(
+                japaneseRelative: japaneseHash + "/library_capsule_2x.jpg",
+                englishRelative: englishHash + "/library_capsule_2x.jpg");
+
+            string[] japanese = GameImageService.BuildListViewLibraryCoverPreferredFileNames(pics, "japanese");
+            Assert.Equal(japaneseHash + "_library_capsule_2x.jpg", japanese[0]);
+            Assert.Equal("library_capsule_2x.jpg", japanese[1]);
+
+            string[] english = GameImageService.BuildListViewLibraryCoverPreferredFileNames(
+                pics, SteamPicsKeyNames.English);
+            Assert.Equal(englishHash + "_library_capsule_2x.jpg", english[0]);
+            Assert.Equal("library_capsule_2x.jpg", english[1]);
+        }
+
+        [Fact]
+        public void ListView_cover_resolves_hash_prefixed_file_when_bare_name_is_another_language()
+        {
+            const string japaneseHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+            const string englishHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            string resources = CreateResourcesDirectory();
+            // Canonical slot still holds the previously preferred Japanese download.
+            File.WriteAllText(Path.Combine(resources, "library_capsule_2x.jpg"), "ja");
+            File.WriteAllText(Path.Combine(resources, englishHash + "_library_capsule_2x.jpg"), "en");
+
+            var pics = CreateLibraryCapsulePics(
+                japaneseRelative: japaneseHash + "/library_capsule_2x.jpg",
+                englishRelative: englishHash + "/library_capsule_2x.jpg");
+            string[] preferred = GameImageService.BuildListViewLibraryCoverPreferredFileNames(
+                pics, SteamPicsKeyNames.English);
+
+            var path = GameImageService.ResolveStrictListViewImagePath(resources, preferred);
+
+            Assert.EndsWith(englishHash + "_library_capsule_2x.jpg", path, StringComparison.OrdinalIgnoreCase);
+            Cleanup(resources);
+        }
+
+        [Fact]
+        public void ListView_cover_resolves_bare_name_when_preferred_language_owns_canonical_slot()
+        {
+            const string japaneseHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+            string resources = CreateResourcesDirectory();
+            File.WriteAllText(Path.Combine(resources, "library_capsule_2x.jpg"), "ja");
+            File.WriteAllText(
+                Path.Combine(resources, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_library_capsule_2x.jpg"),
+                "en");
+
+            var pics = CreateLibraryCapsulePics(
+                japaneseRelative: japaneseHash + "/library_capsule_2x.jpg",
+                englishRelative: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/library_capsule_2x.jpg");
+            string[] preferred = GameImageService.BuildListViewLibraryCoverPreferredFileNames(pics, "japanese");
+
+            var path = GameImageService.ResolveStrictListViewImagePath(resources, preferred);
+
+            Assert.EndsWith("library_capsule_2x.jpg", path, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("_library_capsule_2x.jpg", Path.GetFileName(path), StringComparison.OrdinalIgnoreCase);
+            Cleanup(resources);
+        }
+
+        private static AppInfoKeyValue CreateLibraryCapsulePics(string japaneseRelative, string englishRelative)
+        {
+            var image2x = new AppInfoKeyValue(SteamPicsKeyNames.Image2x);
+            image2x.Children.Add(new AppInfoKeyValue("japanese", japaneseRelative));
+            image2x.Children.Add(new AppInfoKeyValue(SteamPicsKeyNames.English, englishRelative));
+
+            var capsule = new AppInfoKeyValue(SteamPicsKeyNames.LibraryCapsule);
+            capsule.Children.Add(image2x);
+
+            var libraryAssetsFull = new AppInfoKeyValue(SteamPicsKeyNames.LibraryAssetsFull);
+            libraryAssetsFull.Children.Add(capsule);
+
+            var common = new AppInfoKeyValue(PathConstants.SteamAppsCommonDirectoryName);
+            common.Children.Add(libraryAssetsFull);
+
+            var root = new AppInfoKeyValue("app");
+            root.Children.Add(common);
+            return root;
         }
 
         private static string CreateResourcesDirectory()

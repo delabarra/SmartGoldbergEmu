@@ -158,6 +158,16 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // Public for tests that stub the store URL; language comes from global app settings.
+        internal static string BuildStoreSearchCatalogUrl(string searchTerm)
+        {
+            string language = SteamConfiguredLanguageHelper.Resolve();
+            return string.Format(
+                ApplicationConstants.SteamStoreSearchCatalogUrlFormat,
+                Uri.EscapeDataString(searchTerm ?? string.Empty),
+                Uri.EscapeDataString(language));
+        }
+
         private static async Task<StoreSearchPass> TrySearchStoreAsync(
             IHttpService httpService,
             string searchTerm,
@@ -165,9 +175,7 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                string searchUrl = string.Format(
-                    ApplicationConstants.SteamStoreSearchCatalogUrlFormat,
-                    Uri.EscapeDataString(searchTerm));
+                string searchUrl = BuildStoreSearchCatalogUrl(searchTerm);
 
                 string responseContent;
                 using (var response = await httpService.GetAsync(searchUrl, cancellationToken).ConfigureAwait(false))

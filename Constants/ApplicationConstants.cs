@@ -181,9 +181,12 @@ namespace SmartGoldbergEmu.Constants
             "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=200";
         public const string SteamDirectoryGetCmListUrl =
             "https://api.steampowered.com/ISteamDirectory/GetCMList/v1/?cellid=0";
-        // Store catalog search (games / Windows). Packages/bundles are skipped when parsing; delisted apps use SteamSearchGamesApiUrlFormat.
+        // Store catalog search (games / Windows). No cc= — Steam picks country from the client IP.
+        // {1} = Steam API language code from app settings. Packages/bundles are skipped when parsing;
+        // delisted apps use SteamSearchGamesApiUrlFormat.
         public const string SteamStoreSearchCatalogUrlFormat =
-            "https://store.steampowered.com/search/results/?term={0}&category1=998&os=win&cc=US&l=english&start=0&count=50";
+            "https://store.steampowered.com/search/results/?term={0}&category1=998&os=win&l={1}&start=0&count=50";
+        public const string SteamStoreOriginUrl = "https://store.steampowered.com/";
         public const string SteamSearchGamesApiUrlFormat = "https://sgel-app-index.vercel.app/api/games?search={0}";
         public const string SteamStoreAppUrlFormat = "https://store.steampowered.com/app/{0}";
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";
