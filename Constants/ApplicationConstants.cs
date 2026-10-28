@@ -168,8 +168,11 @@ namespace SmartGoldbergEmu.Constants
 
         public const string SteamWebApiKeyRegistrationUrl = "https://steamcommunity.com/dev/apikey";
         public const string SteamUserStatsSchemaApiUrlFormat = "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?l={0}&key={1}&appid={2}";
-        // Nemirtingas/games-infos-datas: steam/{appId}/{fileName} (achievements_db, stats_db, inventory_db, …).
+        // Nemirtingas games-infos-datas: steam/{appId}/{fileName} (achievements_db, stats_db, inventory_db, …).
+        // Live host (README since 2026-05); GitHub raw mirror is stale and kept as fallback only.
         public const string GamesInfosDatasSteamFileUrlFormat =
+            "https://emulator.servegame.com/games-infos-data/steam/{0}/{1}";
+        public const string GamesInfosDatasSteamFileUrlFallbackFormat =
             "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/{1}";
         public const string SteamCommunityLeaderboardsXmlUrlFormat = "https://steamcommunity.com/stats/{0}/leaderboards/?xml=1";
         public const string SteamPublishedFileDetailsApiUrlPrefix = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=";

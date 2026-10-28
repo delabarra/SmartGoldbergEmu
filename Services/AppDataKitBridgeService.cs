@@ -395,7 +395,7 @@ namespace SmartGoldbergEmu.Services
                 AppMetadataFetchFailure.None);
         }
 
-        // When no Web API key, fill schema sections from Nemirtingas/games-infos-datas.
+        // When no Web API key, fill schema sections from Nemirtingas games-infos-datas (live host, GitHub fallback).
         private async Task ApplyGamesInfosFallbacksWhenNoApiKeyAsync(
             uint appId,
             AppDataSectionsResult sections,
