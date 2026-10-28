@@ -72,6 +72,17 @@ namespace SmartGoldbergEmu.Helpers
             }
 
             manifest["skipDirectoryNames"] = skipArray;
+
+            // Fail closed before spawning the updater if paths would be rejected at apply time.
+            string updaterDirectory = Path.GetDirectoryName(Path.GetFullPath(manifestPath));
+            LauncherUpdateManifestTrustHelper.ValidateOrThrow(
+                manifestPath,
+                installRoot,
+                stageRoot,
+                exePath,
+                workRoot,
+                updaterDirectory);
+
             File.WriteAllText(manifestPath, manifest.ToJsonString());
         }
 

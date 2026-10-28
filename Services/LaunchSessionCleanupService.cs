@@ -56,6 +56,9 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrEmpty(session.SessionGeneration))
                 session.SessionGeneration = Guid.NewGuid().ToString("D");
 
+            session.GameLibraryFolder = PathConstants.GetGameFolder(session.AppId);
+            session.LoadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(session.AppId);
+
             string directory = PathConstants.LaunchSessionManifestDirectory;
             Directory.CreateDirectory(directory);
             string path = PathConstants.CombineLaunchSessionManifestPath(session.AppId);
@@ -82,6 +85,13 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrWhiteSpace(manifestPath) || !File.Exists(manifestPath))
                 return false;
 
+            if (!LaunchSessionCleanupTrustHelper.IsAllowedManifestPath(manifestPath))
+            {
+                _logger.LogWarning(
+                    $"Refusing launch-session manifest outside {PathConstants.LaunchSessionManifestFolderName}: {manifestPath}");
+                return false;
+            }
+
             try
             {
                 string json = File.ReadAllText(manifestPath);
@@ -89,10 +99,22 @@ namespace SmartGoldbergEmu.Services
                 if (session == null || session.AppId == 0)
                     return false;
 
+                if (!LaunchSessionCleanupTrustHelper.SessionMatchesManifestPath(session, manifestPath))
+                {
+                    _logger.LogWarning(
+                        $"Refusing launch-session manifest with AppId mismatch (file vs JSON): {manifestPath}");
+                    session = null;
+                    return false;
+                }
+
+                // Never trust library / load_dlls paths from disk JSON — always resolve from AppId.
+                session.GameLibraryFolder = PathConstants.GetGameFolder(session.AppId);
+                session.LoadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(session.AppId);
                 return true;
             }
             catch
             {
+                session = null;
                 return false;
             }
         }
@@ -347,6 +369,13 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrEmpty(manifestPath))
                 return false;
 
+            if (!LaunchSessionCleanupTrustHelper.IsAllowedManifestPath(manifestPath))
+            {
+                _logger.LogWarning(
+                    $"Launch cleanup watcher refused manifest path outside {PathConstants.LaunchSessionManifestFolderName}: {manifestPath}");
+                return true;
+            }
+
             RunWatcher(manifestPath);
             return true;
         }
@@ -435,11 +464,24 @@ namespace SmartGoldbergEmu.Services
         {
             try
             {
-                string path = manifestPath ?? GetManifestPathForAppId(appId);
-                PersistedLaunchSession retry;
-                if (manifestPath == null && TryLoad(path, out PersistedLaunchSession existing))
+                string path = GetManifestPathForAppId(appId);
+                if (string.IsNullOrEmpty(path))
+                    return;
+
+                // Prefer the canonical per-appId path; ignore caller paths outside the launch_sessions folder.
+                if (!string.IsNullOrEmpty(manifestPath)
+                    && LaunchSessionCleanupTrustHelper.IsAllowedManifestPath(manifestPath)
+                    && string.Equals(
+                        Path.GetFullPath(manifestPath),
+                        Path.GetFullPath(path),
+                        StringComparison.OrdinalIgnoreCase))
                 {
-                    // Another session owns this manifest; append so its cleanup also retries these entries.
+                    path = Path.GetFullPath(manifestPath);
+                }
+
+                PersistedLaunchSession retry;
+                if (TryLoad(path, out PersistedLaunchSession existing) && existing.GameProcessId == 0)
+                {
                     retry = existing;
                     if (retry.DeploySites == null)
                         retry.DeploySites = new List<PersistedDeploySite>();
@@ -452,12 +494,13 @@ namespace SmartGoldbergEmu.Services
                         AppId = appId,
                         GameProcessId = 0,
                         SessionGeneration = Guid.NewGuid().ToString("D"),
+                        GameLibraryFolder = PathConstants.GetGameFolder(appId),
+                        LoadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId),
                         DeploySites = pendingSites,
                     };
                 }
 
-                Directory.CreateDirectory(PathConstants.LaunchSessionManifestDirectory);
-                File.WriteAllText(path, JsonConvert.SerializeObject(retry, JsonFormatting.Indented));
+                WriteSession(retry);
                 _logger.LogWarning(
                     $"Launch session cleanup for AppId {appId} could not restore every file; kept {path} to retry at next startup or launch.");
             }
@@ -500,6 +543,15 @@ namespace SmartGoldbergEmu.Services
         {
             if (session.SourceModRestore == null)
                 return;
+
+            if (session.SourceModRestore.HadPreviousValue
+                && !LaunchSessionCleanupTrustHelper.IsAllowedSourceModPreviousValue(
+                    session.SourceModRestore.PreviousValue))
+            {
+                _logger.LogWarning(
+                    "Skipping SourceModInstallPath restore: previous value is not under a known Steam install path.");
+                return;
+            }
 
             SteamSourceModRegistryHelper.RestoreSourceModInstallPath(
                 session.SourceModRestore.HadPreviousValue,
@@ -624,13 +676,25 @@ namespace SmartGoldbergEmu.Services
             var pending = new PersistedDeploySite();
             bool hasPending = false;
 
-            if (!TryRemoveSteamSettingsJunction(site.MirroredSteamSettingsPath))
+            if (!string.IsNullOrEmpty(site.MirroredSteamSettingsPath)
+                && !LaunchSessionCleanupTrustHelper.IsAllowedSteamSettingsJunctionPath(site.MirroredSteamSettingsPath))
+            {
+                _logger.LogWarning(
+                    $"Skipping steam_settings junction cleanup; path is not a steam_settings folder: {site.MirroredSteamSettingsPath}");
+            }
+            else if (!TryRemoveSteamSettingsJunction(site.MirroredSteamSettingsPath))
             {
                 pending.MirroredSteamSettingsPath = site.MirroredSteamSettingsPath;
                 hasPending = true;
             }
 
-            if (!TryRestoreSteamSettingsBackup(site.SteamSettingsBackupPath))
+            if (!string.IsNullOrEmpty(site.SteamSettingsBackupPath)
+                && !LaunchSessionCleanupTrustHelper.IsAllowedSteamSettingsBackupPath(site.SteamSettingsBackupPath))
+            {
+                _logger.LogWarning(
+                    $"Skipping steam_settings backup restore; path is not a steam_settings.sge folder: {site.SteamSettingsBackupPath}");
+            }
+            else if (!TryRestoreSteamSettingsBackup(site.SteamSettingsBackupPath))
             {
                 pending.SteamSettingsBackupPath = site.SteamSettingsBackupPath;
                 hasPending = true;
@@ -640,7 +704,16 @@ namespace SmartGoldbergEmu.Services
             {
                 foreach (PersistedFileDeployment file in site.Files)
                 {
-                    if (file == null || TryCleanupDeployedFile(file))
+                    if (file == null)
+                        continue;
+                    if (!LaunchSessionCleanupTrustHelper.IsAllowedDeployedFile(file))
+                    {
+                        _logger.LogWarning(
+                            $"Skipping deploy cleanup for untrusted target/backup pair: {file.TargetPath}");
+                        continue;
+                    }
+
+                    if (TryCleanupDeployedFile(file))
                         continue;
                     if (pending.Files == null)
                         pending.Files = new List<PersistedFileDeployment>();
@@ -748,12 +821,9 @@ namespace SmartGoldbergEmu.Services
             if (session == null || session.AppId == 0)
                 return;
 
-            string gameDirectory = !string.IsNullOrWhiteSpace(session.GameLibraryFolder)
-                ? session.GameLibraryFolder
-                : PathConstants.GetGameFolder(session.AppId);
-            string loadDllsFolder = !string.IsNullOrWhiteSpace(session.LoadDllsFolder)
-                ? session.LoadDllsFolder
-                : PathConstants.CombineGameSteamSettingsLoadDllsDirectory(session.AppId);
+            // Always resolve from AppId so poisoned session JSON cannot point cleanup at arbitrary folders.
+            string gameDirectory = PathConstants.GetGameFolder(session.AppId);
+            string loadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(session.AppId);
 
             try
             {

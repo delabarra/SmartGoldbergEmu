@@ -13,6 +13,7 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Helpers\LauncherUpdateManifestTrustHelper.cs" Link="Helpers\LauncherUpdateManifestTrustHelper.cs" />
     <Compile Include="..\JsonKit\JsonArray.cs" Link="JsonKit\JsonArray.cs" />
     <Compile Include="..\JsonKit\JsonFormatting.cs" Link="JsonKit\JsonFormatting.cs" />
     <Compile Include="..\JsonKit\JsonKitException.cs" Link="JsonKit\JsonKitException.cs" />

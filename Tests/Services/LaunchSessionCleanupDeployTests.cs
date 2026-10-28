@@ -161,9 +161,11 @@ namespace SmartGoldbergEmu.Tests.Services
         [Fact]
         public void TryExecuteCleanup_removes_load_dlls_folder()
         {
-            string loadDlls = TestFileHelper.CreateTempDirectory("sge-cleanup-loaddlls-");
+            string loadDlls = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(
+                LaunchDeployTestHarness.DefaultTestAppId);
             try
             {
+                Directory.CreateDirectory(loadDlls);
                 File.WriteAllBytes(Path.Combine(loadDlls, "extra_x64.dll"), new[] { LaunchDeployTestHarness.StagedExtraDllMarker });
 
                 var session = new PersistedLaunchSession
@@ -171,7 +173,8 @@ namespace SmartGoldbergEmu.Tests.Services
                     AppId = LaunchDeployTestHarness.DefaultTestAppId,
                     GameProcessId = 0,
                     RestoreActiveProcessRegistry = false,
-                    LoadDllsFolder = loadDlls,
+                    // Poisoned path must be ignored; cleanup always uses PathConstants for the AppId.
+                    LoadDllsFolder = TestFileHelper.CreateTempDirectory("sge-cleanup-loaddlls-poison-"),
                 };
 
                 var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
@@ -181,16 +184,23 @@ namespace SmartGoldbergEmu.Tests.Services
             }
             finally
             {
-                try { Directory.Delete(loadDlls, recursive: true); } catch { }
+                try
+                {
+                    string gameFolder = PathConstants.GetGameFolder(LaunchDeployTestHarness.DefaultTestAppId);
+                    if (Directory.Exists(gameFolder))
+                        Directory.Delete(gameFolder, recursive: true);
+                }
+                catch { }
             }
         }
 
         [Fact]
         public void TryExecuteCleanup_removes_steamclient_dlls_from_game_library_folder()
         {
-            string libraryFolder = TestFileHelper.CreateTempDirectory("sge-cleanup-library-");
+            string libraryFolder = PathConstants.GetGameFolder(LaunchDeployTestHarness.DefaultTestAppId);
             try
             {
+                Directory.CreateDirectory(libraryFolder);
                 File.WriteAllBytes(Path.Combine(libraryFolder, PathConstants.GoldbergSteamClientDll64), new byte[] { 1 });
                 File.WriteAllBytes(Path.Combine(libraryFolder, PathConstants.GoldbergGameOverlayRendererDll64), new byte[] { 2 });
 
@@ -199,7 +209,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     AppId = LaunchDeployTestHarness.DefaultTestAppId,
                     GameProcessId = 0,
                     RestoreActiveProcessRegistry = false,
-                    GameLibraryFolder = libraryFolder,
+                    GameLibraryFolder = TestFileHelper.CreateTempDirectory("sge-cleanup-library-poison-"),
                 };
 
                 var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
@@ -210,7 +220,12 @@ namespace SmartGoldbergEmu.Tests.Services
             }
             finally
             {
-                try { Directory.Delete(libraryFolder, recursive: true); } catch { }
+                try
+                {
+                    if (Directory.Exists(libraryFolder))
+                        Directory.Delete(libraryFolder, recursive: true);
+                }
+                catch { }
             }
         }
 

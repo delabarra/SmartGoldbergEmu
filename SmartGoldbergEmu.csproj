@@ -231,7 +231,9 @@
     <Compile Include="Helpers\MainSettingsScopes.cs" />
     <Compile Include="Helpers\UserIniSaveLocationHelper.cs" />
     <Compile Include="Helpers\LauncherEmbeddedUpdaterHelper.cs" />
+    <Compile Include="Helpers\LauncherUpdateManifestTrustHelper.cs" />
     <Compile Include="Helpers\LauncherUpdatePayloadHelper.cs" />
+    <Compile Include="Helpers\LaunchSessionCleanupTrustHelper.cs" />
     <Compile Include="Helpers\OverlayColorHelper.cs" />
     <Compile Include="Helpers\SteamIdHelper.cs" />
     <Compile Include="Helpers\SteamInstallationPathHelper.cs" />
