@@ -81,6 +81,28 @@ namespace SmartGoldbergEmu.Tests.Helpers
             Assert.Equal(expected, PathValidationHelper.IsSafeUrl(url));
         }
 
+        [Theory]
+        [InlineData("https://example.com", true)]
+        [InlineData("http://example.com", false)]
+        [InlineData("file:///C:/temp/x", false)]
+        [InlineData("", false)]
+        public void IsSafeHttpsUrl_rejects_non_https(string url, bool expected)
+        {
+            Assert.Equal(expected, PathValidationHelper.IsSafeHttpsUrl(url));
+        }
+
+        [Theory]
+        [InlineData("https://github.com/owner/repo/releases/download/v1/a.zip", true)]
+        [InlineData("https://objects.githubusercontent.com/github-production-release-asset-2e65be/1/a", true)]
+        [InlineData("https://release-assets.githubusercontent.com/a.zip", true)]
+        [InlineData("http://github.com/owner/repo/releases/download/v1/a.zip", false)]
+        [InlineData("https://evil.example/a.zip", false)]
+        [InlineData("https://github.com.evil.example/a.zip", false)]
+        public void IsTrustedGitHubReleaseDownloadUrl_allows_github_asset_hosts_only(string url, bool expected)
+        {
+            Assert.Equal(expected, PathValidationHelper.IsTrustedGitHubReleaseDownloadUrl(url));
+        }
+
         [Fact]
         public void SanitizeFileName_replaces_invalid_characters()
         {

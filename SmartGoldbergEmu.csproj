@@ -249,6 +249,7 @@
     <Compile Include="Helpers\ImageListOwnedImages.cs" />
     <Compile Include="Helpers\GameFolderPathHelper.cs" />
     <Compile Include="Helpers\PathValidationHelper.cs" />
+    <Compile Include="Helpers\ReleaseAssetIntegrityHelper.cs" />
     <Compile Include="Helpers\ShellFolderHelper.cs" />
     <Compile Include="Helpers\HttpHelpers.cs" />
     <Compile Include="Helpers\LargeObjectHeapHelper.cs" />

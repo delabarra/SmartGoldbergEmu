@@ -49,7 +49,7 @@ namespace SmartGoldbergEmu.Constants
             try
             {
                 string overrideUrl = ServiceLocator.AppDataService.GetLauncherUpdateReleasesApiUrlOverride();
-                if (!string.IsNullOrWhiteSpace(overrideUrl) && PathValidationHelper.IsSafeUrl(overrideUrl))
+                if (!string.IsNullOrWhiteSpace(overrideUrl) && PathValidationHelper.IsSafeHttpsUrl(overrideUrl))
                 {
                     apiUrl = overrideUrl.Trim();
                     return true;

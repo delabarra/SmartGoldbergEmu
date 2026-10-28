@@ -43,6 +43,7 @@ namespace SmartGoldbergEmu.Services
         private const int ProgressComplete = 100;
 
         private static string _downloadUrl;
+        private static string _expectedSha256Hex;
         private static string _latestVersion;
         private static bool _resolvedFromRepack;
         private static GoldbergForkSource _resolvedFork;
@@ -145,6 +146,7 @@ namespace SmartGoldbergEmu.Services
         private static void ApplyResolvedRelease(GoldbergResolvedRelease resolved, UpdateCheckResult result)
         {
             _downloadUrl = resolved.DownloadUrl;
+            _expectedSha256Hex = resolved.ExpectedSha256Hex;
             _latestVersion = resolved.LatestVersion;
             _resolvedFromRepack = resolved.FromRepack;
             _localDownloadArchiveFileName = GoldbergForkConstants.GetLocalDownloadArchiveFileName(
@@ -154,9 +156,42 @@ namespace SmartGoldbergEmu.Services
             if (result != null)
             {
                 result.DownloadUrl = resolved.DownloadUrl;
+                result.ExpectedSha256Hex = resolved.ExpectedSha256Hex;
                 result.LatestVersion = resolved.LatestVersion;
                 result.ReleaseNotes = resolved.ReleaseNotes;
                 result.FromRepack = resolved.FromRepack;
+            }
+        }
+
+        private static void EnsureGoldbergDownloadUrlTrusted(string url)
+        {
+            try
+            {
+                ReleaseAssetIntegrityHelper.EnsureTrustedGitHubHttpsDownloadUrl(url);
+            }
+            catch (Exception ex)
+            {
+                throw new UpdateException(ex.Message, ex);
+            }
+        }
+
+        private static void VerifyGoldbergArchiveIntegrityOrThrow(string archivePath)
+        {
+            if (string.IsNullOrEmpty(_expectedSha256Hex))
+            {
+                ServiceLocator.LogService?.LogWarning(
+                    "Goldberg release asset has no GitHub SHA-256 digest; skipping hash verification.");
+                return;
+            }
+
+            try
+            {
+                ReleaseAssetIntegrityHelper.VerifyFileSha256OrThrow(archivePath, _expectedSha256Hex);
+            }
+            catch (Exception ex)
+            {
+                TryDeletePartialDownloadQuiet(archivePath);
+                throw new UpdateException(ex.Message, ex);
             }
         }
 
@@ -439,6 +474,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 _downloadUrl = null;
+                _expectedSha256Hex = null;
                 _resolvedFromRepack = false;
                 _localDownloadArchiveFileName = null;
                 GoldbergForkSource configuredFork = GetConfiguredGoldbergForkSource();
@@ -494,6 +530,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 _downloadUrl = null;
+                _expectedSha256Hex = null;
 
                 ThrowIfUpdateCancelled(cancellationCheck);
 
@@ -681,6 +718,7 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
+                    EnsureGoldbergDownloadUrlTrusted(_downloadUrl);
                     await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
                     {
                         ReportGoldbergDownloadProgress(
@@ -691,6 +729,7 @@ namespace SmartGoldbergEmu.Services
                             received,
                             total);
                     }, cancellationCheck).ConfigureAwait(false);
+                    VerifyGoldbergArchiveIntegrityOrThrow(archivePath);
                     return false;
                 }
                 catch (UpdateException)
@@ -754,6 +793,7 @@ namespace SmartGoldbergEmu.Services
                     throw new UpdateException("Windows Defender exclusion was denied. Installation aborted.");
             }
 
+            EnsureGoldbergDownloadUrlTrusted(_downloadUrl);
             await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
             {
                 ReportGoldbergDownloadProgress(
@@ -764,6 +804,7 @@ namespace SmartGoldbergEmu.Services
                     received,
                     total);
             }, cancellationCheck).ConfigureAwait(false);
+            VerifyGoldbergArchiveIntegrityOrThrow(archivePath);
 
             return exclusionAddedDuringFallback;
         }

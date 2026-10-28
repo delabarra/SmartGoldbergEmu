@@ -21,6 +21,9 @@ namespace SmartGoldbergEmu.Models
 
         public string DownloadUrl { get; set; }
 
+        // Lowercase hex from GitHub asset digest (sha256:…), when the release API provides it.
+        public string ExpectedSha256Hex { get; set; }
+
         // Release comes from the Goldberg repack rather than upstream fork releases.
         public bool FromRepack { get; set; }
     }

@@ -109,6 +109,47 @@ namespace SmartGoldbergEmu.Helpers
                    lowerUrl.StartsWith(ApplicationConstants.HttpsUriSchemePrefix, StringComparison.Ordinal);
         }
 
+        // Update API overrides and release downloads must not use cleartext HTTP.
+        public static bool IsSafeHttpsUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return false;
+
+            return url.Trim().StartsWith(ApplicationConstants.HttpsUriSchemePrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // GitHub release asset CDNs only (browser_download_url hosts).
+        public static bool IsTrustedGitHubReleaseDownloadUrl(string url)
+        {
+            if (!IsSafeHttpsUrl(url))
+                return false;
+
+            try
+            {
+                var uri = new Uri(url.Trim(), UriKind.Absolute);
+                if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                string host = uri.Host;
+                if (string.IsNullOrEmpty(host))
+                    return false;
+
+                if (string.Equals(host, "github.com", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(host, "www.github.com", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(host, "codeload.github.com", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                // objects.githubusercontent.com, release-assets.githubusercontent.com, etc.
+                return host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static string SanitizeFileName(string fileName)
         {
             if (string.IsNullOrWhiteSpace(fileName))

@@ -11,6 +11,7 @@ namespace SmartGoldbergEmu.Helpers
         public string LatestVersion { get; set; }
         public string ReleaseNotes { get; set; }
         public string ArchiveFileName { get; set; }
+        public string ExpectedSha256Hex { get; set; }
         public bool FromRepack { get; set; }
     }
 
@@ -26,6 +27,7 @@ namespace SmartGoldbergEmu.Helpers
 
             string downloadUrl = null;
             string archiveFileName = null;
+            string expectedSha256Hex = null;
             string matchedSuffix = null;
             foreach (JsonObject asset in (JsonArray)releaseData["assets"])
             {
@@ -48,6 +50,7 @@ namespace SmartGoldbergEmu.Helpers
 
                 downloadUrl = asset["browser_download_url"]?.ToString();
                 archiveFileName = name;
+                expectedSha256Hex = ReleaseAssetIntegrityHelper.TryReadAssetSha256Hex(asset);
                 matchedSuffix = suffix;
                 if (suffix == GoldbergForkConstants.RepackWinAssetSuffix7z)
                     break;
@@ -63,6 +66,7 @@ namespace SmartGoldbergEmu.Helpers
             result.LatestVersion = forkVersion;
             result.ReleaseNotes = releaseData["body"]?.ToString();
             result.ArchiveFileName = archiveFileName;
+            result.ExpectedSha256Hex = expectedSha256Hex;
             result.FromRepack = true;
             return true;
         }
@@ -76,6 +80,7 @@ namespace SmartGoldbergEmu.Helpers
             string tagName = releaseData["tag_name"]?.ToString();
             string downloadUrl = null;
             string archiveFileName = null;
+            string expectedSha256Hex = null;
             int bestPreference = int.MaxValue;
 
             foreach (JsonObject asset in (JsonArray)releaseData["assets"])
@@ -92,6 +97,7 @@ namespace SmartGoldbergEmu.Helpers
                 bestPreference = preference;
                 downloadUrl = url;
                 archiveFileName = name;
+                expectedSha256Hex = ReleaseAssetIntegrityHelper.TryReadAssetSha256Hex(asset);
                 if (preference == 0)
                     break;
             }
@@ -107,6 +113,7 @@ namespace SmartGoldbergEmu.Helpers
             result.LatestVersion = latestVersion;
             result.ReleaseNotes = releaseData["body"]?.ToString();
             result.ArchiveFileName = archiveFileName;
+            result.ExpectedSha256Hex = expectedSha256Hex;
             result.FromRepack = false;
             return true;
         }

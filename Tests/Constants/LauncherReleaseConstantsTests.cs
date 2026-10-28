@@ -39,6 +39,7 @@ namespace SmartGoldbergEmu.Tests.Constants
         [Theory]
         [InlineData("file:///C:/mock/releases/latest")]
         [InlineData("javascript:alert(1)")]
+        [InlineData("http://example.test/releases/latest")]
         [InlineData("")]
         [InlineData("   ")]
         public void TryGetReleasesApiUrl_ignores_unsafe_or_empty_override_and_falls_back(string overrideUrl)
