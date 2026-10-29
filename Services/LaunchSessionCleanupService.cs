@@ -107,9 +107,22 @@ namespace SmartGoldbergEmu.Services
                     return false;
                 }
 
-                // Never trust library / load_dlls paths from disk JSON — always resolve from AppId.
-                session.GameLibraryFolder = PathConstants.GetGameFolder(session.AppId);
-                session.LoadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(session.AppId);
+                // Prefer launcher-written absolute games/{appId} paths when shape-valid; otherwise resolve from this process.
+                // A detached watcher can have a different AppBaseDirectory (shadow-copy, alternate exe) than the launcher.
+                string jsonLibrary = session.GameLibraryFolder;
+                string jsonLoadDlls = session.LoadDllsFolder;
+                if (LaunchSessionCleanupTrustHelper.IsAllowedGameLibraryFolder(session.AppId, jsonLibrary))
+                    session.GameLibraryFolder = Path.GetFullPath(jsonLibrary.Trim());
+                else
+                    session.GameLibraryFolder = PathConstants.GetGameFolder(session.AppId);
+
+                if (LaunchSessionCleanupTrustHelper.IsAllowedLoadDllsFolder(session.AppId, jsonLoadDlls))
+                    session.LoadDllsFolder = Path.GetFullPath(jsonLoadDlls.Trim());
+                else
+                    session.LoadDllsFolder = Path.Combine(
+                        session.GameLibraryFolder,
+                        PathConstants.SteamSettingsFolderName,
+                        PathConstants.GoldbergLoadDllsFolderName);
                 return true;
             }
             catch
@@ -821,37 +834,46 @@ namespace SmartGoldbergEmu.Services
             if (session == null || session.AppId == 0)
                 return;
 
-            // Always resolve from AppId so poisoned session JSON cannot point cleanup at arbitrary folders.
+            // Shape-validated session paths (or PathConstants fallback) so poisoned JSON cannot delete arbitrary folders.
             string gameDirectory = PathConstants.GetGameFolder(session.AppId);
-            string loadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(session.AppId);
+            if (LaunchSessionCleanupTrustHelper.IsAllowedGameLibraryFolder(session.AppId, session.GameLibraryFolder))
+                gameDirectory = Path.GetFullPath(session.GameLibraryFolder.Trim());
+
+            string loadDllsFolder = Path.Combine(
+                gameDirectory,
+                PathConstants.SteamSettingsFolderName,
+                PathConstants.GoldbergLoadDllsFolderName);
+            if (LaunchSessionCleanupTrustHelper.IsAllowedLoadDllsFolder(session.AppId, session.LoadDllsFolder))
+                loadDllsFolder = Path.GetFullPath(session.LoadDllsFolder.Trim());
 
             try
             {
-                if (!Directory.Exists(gameDirectory))
-                    return;
-
-                foreach (string dllFile in new[]
+                if (Directory.Exists(gameDirectory))
                 {
-                    PathConstants.GoldbergSteamClientDll32,
-                    PathConstants.GoldbergSteamClientDll64,
-                    PathConstants.GoldbergGameOverlayRendererDll32,
-                    PathConstants.GoldbergGameOverlayRendererDll64,
-                })
-                {
-                    string dllPath = Path.Combine(gameDirectory, dllFile);
-                    if (!File.Exists(dllPath))
-                        continue;
-                    try
+                    foreach (string dllFile in new[]
                     {
-                        File.Delete(dllPath);
-                        _logger.LogDebug($"Cleaned up DLL: {dllPath}");
-                    }
-                    catch (Exception ex)
+                        PathConstants.GoldbergSteamClientDll32,
+                        PathConstants.GoldbergSteamClientDll64,
+                        PathConstants.GoldbergGameOverlayRendererDll32,
+                        PathConstants.GoldbergGameOverlayRendererDll64,
+                    })
                     {
-                        _logger.LogWarning($"Failed to delete DLL {dllPath}: {ex.Message}");
+                        string dllPath = Path.Combine(gameDirectory, dllFile);
+                        if (!File.Exists(dllPath))
+                            continue;
+                        try
+                        {
+                            File.Delete(dllPath);
+                            _logger.LogDebug($"Cleaned up DLL: {dllPath}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning($"Failed to delete DLL {dllPath}: {ex.Message}");
+                        }
                     }
                 }
 
+                // load_dlls may live under a launcher BaseDirectory the watcher does not share; do not require gameDirectory.
                 CleanupLoadDllsFolder(loadDllsFolder);
             }
             catch (Exception ex)
@@ -898,13 +920,31 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // Prefer the launcher beside AppBaseDirectory. Assembly.Location can be a shadow-copy path
+        // (e.g. under testhost); starting that exe makes the watcher's BaseDirectory miss games/ staging.
         private static string ResolveHostExecutablePath()
         {
             try
             {
+                string besideBase = Path.Combine(
+                    PathConstants.AppBaseDirectory,
+                    PathConstants.LauncherMainExecutableFileName);
+                if (File.Exists(besideBase))
+                    return Path.GetFullPath(besideBase);
+            }
+            catch
+            {
+            }
+
+            try
+            {
                 string location = Assembly.GetExecutingAssembly().Location;
-                if (!string.IsNullOrEmpty(location) && File.Exists(location))
+                if (!string.IsNullOrEmpty(location)
+                    && location.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                    && File.Exists(location))
+                {
                     return location;
+                }
             }
             catch
             {
@@ -915,8 +955,14 @@ namespace SmartGoldbergEmu.Services
                 using (Process current = Process.GetCurrentProcess())
                 {
                     string mainModulePath = current.MainModule?.FileName;
-                    if (!string.IsNullOrEmpty(mainModulePath) && File.Exists(mainModulePath))
+                    if (!string.IsNullOrEmpty(mainModulePath)
+                        && mainModulePath.EndsWith(
+                            PathConstants.LauncherMainExecutableFileName,
+                            StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(mainModulePath))
+                    {
                         return mainModulePath;
+                    }
                 }
             }
             catch

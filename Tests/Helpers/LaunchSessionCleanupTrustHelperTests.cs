@@ -77,5 +77,35 @@ namespace SmartGoldbergEmu.Tests.Helpers
                 try { Directory.Delete(dir, recursive: true); } catch { }
             }
         }
+
+        [Fact]
+        public void IsAllowedGameLibraryFolder_requires_games_appId_layout()
+        {
+            const ulong appId = 424242;
+            string allowed = Path.Combine(Path.GetTempPath(), PathConstants.GamesDirectoryFolderName, appId.ToString());
+            Assert.True(LaunchSessionCleanupTrustHelper.IsAllowedGameLibraryFolder(appId, allowed));
+            Assert.False(LaunchSessionCleanupTrustHelper.IsAllowedGameLibraryFolder(appId, Path.Combine(Path.GetTempPath(), appId.ToString())));
+            Assert.False(LaunchSessionCleanupTrustHelper.IsAllowedGameLibraryFolder(appId, Path.Combine(Path.GetTempPath(), PathConstants.GamesDirectoryFolderName, "999")));
+            Assert.False(LaunchSessionCleanupTrustHelper.IsAllowedGameLibraryFolder(appId, Path.GetTempPath()));
+        }
+
+        [Fact]
+        public void IsAllowedLoadDllsFolder_requires_steam_settings_load_dlls_under_game_library()
+        {
+            const ulong appId = 424242;
+            string allowed = Path.Combine(
+                Path.GetTempPath(),
+                PathConstants.GamesDirectoryFolderName,
+                appId.ToString(),
+                PathConstants.SteamSettingsFolderName,
+                PathConstants.GoldbergLoadDllsFolderName);
+            Assert.True(LaunchSessionCleanupTrustHelper.IsAllowedLoadDllsFolder(appId, allowed));
+            Assert.False(LaunchSessionCleanupTrustHelper.IsAllowedLoadDllsFolder(
+                appId,
+                Path.Combine(Path.GetTempPath(), PathConstants.GoldbergLoadDllsFolderName)));
+            Assert.False(LaunchSessionCleanupTrustHelper.IsAllowedLoadDllsFolder(
+                appId,
+                Path.Combine(Path.GetTempPath(), PathConstants.GamesDirectoryFolderName, appId.ToString(), "other", PathConstants.GoldbergLoadDllsFolderName)));
+        }
     }
 }
