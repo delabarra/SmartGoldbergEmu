@@ -297,6 +297,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblHintGameFolder.Text = "⚠️";
             this.toolTip.SetToolTip(this.lblHintGameFolder, "Pick the folder that contains the whole game, not only the .exe.\r\n\r\nExample:\r\nGam" +
         "e folder: ...\\steamapps\\common\\Duke Nukem 3D\r\nExecutable: bin\\duke3d.exe");
+            this.lblHintGameFolder.Visible = false;
             // 
             // btnBrowseWorkingDirectory
             // 
@@ -1290,9 +1291,9 @@ namespace SmartGoldbergEmu.Forms
             | System.Windows.Forms.AnchorStyles.Right)));
             this.grpCustomStats.Controls.Add(this.pnlStatsDisplayScroll);
             this.grpCustomStats.Controls.Add(this.btnRefreshStats);
-            this.grpCustomStats.Location = new System.Drawing.Point(8, 257);
+            this.grpCustomStats.Location = new System.Drawing.Point(8, 297);
             this.grpCustomStats.Name = "grpCustomStats";
-            this.grpCustomStats.Size = new System.Drawing.Size(272, 319);
+            this.grpCustomStats.Size = new System.Drawing.Size(272, 279);
             this.grpCustomStats.TabIndex = 2;
             this.grpCustomStats.TabStop = false;
             this.grpCustomStats.Text = "Stats definitions (JSON)";
@@ -1307,7 +1308,7 @@ namespace SmartGoldbergEmu.Forms
             this.pnlStatsDisplayScroll.Controls.Add(this.lblCustomStatsDisplay);
             this.pnlStatsDisplayScroll.Location = new System.Drawing.Point(6, 19);
             this.pnlStatsDisplayScroll.Name = "pnlStatsDisplayScroll";
-            this.pnlStatsDisplayScroll.Size = new System.Drawing.Size(260, 264);
+            this.pnlStatsDisplayScroll.Size = new System.Drawing.Size(260, 224);
             this.pnlStatsDisplayScroll.TabIndex = 0;
             // 
             // lblCustomStatsDisplay
@@ -1324,7 +1325,7 @@ namespace SmartGoldbergEmu.Forms
             // btnRefreshStats
             // 
             this.btnRefreshStats.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnRefreshStats.Location = new System.Drawing.Point(191, 290);
+            this.btnRefreshStats.Location = new System.Drawing.Point(191, 250);
             this.btnRefreshStats.Margin = new System.Windows.Forms.Padding(3, 4, 3, 3);
             this.btnRefreshStats.Name = "btnRefreshStats";
             this.btnRefreshStats.Size = new System.Drawing.Size(75, 23);
@@ -1350,6 +1351,29 @@ namespace SmartGoldbergEmu.Forms
             this.grpStatsSettings.TabStop = false;
             this.grpStatsSettings.Text = "Stats options";
             // 
+            // chkPauseSessionWhenUnfocused
+            // 
+            this.chkPauseSessionWhenUnfocused.AutoSize = true;
+            this.chkPauseSessionWhenUnfocused.Location = new System.Drawing.Point(18, 69);
+            this.chkPauseSessionWhenUnfocused.Name = "chkPauseSessionWhenUnfocused";
+            this.chkPauseSessionWhenUnfocused.Size = new System.Drawing.Size(217, 17);
+            this.chkPauseSessionWhenUnfocused.TabIndex = 2;
+            this.chkPauseSessionWhenUnfocused.Text = "Pause session playtime when unfocused";
+            this.toolTip.SetToolTip(this.chkPauseSessionWhenUnfocused, "Pause session playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: of" +
+        "f");
+            this.chkPauseSessionWhenUnfocused.UseVisualStyleBackColor = true;
+            // 
+            // chkPauseTotalWhenUnfocused
+            // 
+            this.chkPauseTotalWhenUnfocused.AutoSize = true;
+            this.chkPauseTotalWhenUnfocused.Location = new System.Drawing.Point(18, 46);
+            this.chkPauseTotalWhenUnfocused.Name = "chkPauseTotalWhenUnfocused";
+            this.chkPauseTotalWhenUnfocused.Size = new System.Drawing.Size(202, 17);
+            this.chkPauseTotalWhenUnfocused.TabIndex = 1;
+            this.chkPauseTotalWhenUnfocused.Text = "Pause total playtime when unfocused";
+            this.toolTip.SetToolTip(this.chkPauseTotalWhenUnfocused, "Pause total playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: off");
+            this.chkPauseTotalWhenUnfocused.UseVisualStyleBackColor = true;
+            // 
             // chkRecordPlaytime
             // 
             this.chkRecordPlaytime.AutoSize = true;
@@ -1360,28 +1384,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkRecordPlaytime.Text = "Record Playtime";
             this.toolTip.SetToolTip(this.chkRecordPlaytime, "Record play time to a playtime.txt file under GSE Saves.\r\n\r\nDefault: off");
             this.chkRecordPlaytime.UseVisualStyleBackColor = true;
-            // 
-            // chkPauseTotalWhenUnfocused
-            // 
-            this.chkPauseTotalWhenUnfocused.AutoSize = true;
-            this.chkPauseTotalWhenUnfocused.Location = new System.Drawing.Point(18, 46);
-            this.chkPauseTotalWhenUnfocused.Name = "chkPauseTotalWhenUnfocused";
-            this.chkPauseTotalWhenUnfocused.Size = new System.Drawing.Size(210, 17);
-            this.chkPauseTotalWhenUnfocused.TabIndex = 1;
-            this.chkPauseTotalWhenUnfocused.Text = "Pause total playtime when unfocused";
-            this.toolTip.SetToolTip(this.chkPauseTotalWhenUnfocused, "Pause total playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: off");
-            this.chkPauseTotalWhenUnfocused.UseVisualStyleBackColor = true;
-            // 
-            // chkPauseSessionWhenUnfocused
-            // 
-            this.chkPauseSessionWhenUnfocused.AutoSize = true;
-            this.chkPauseSessionWhenUnfocused.Location = new System.Drawing.Point(18, 69);
-            this.chkPauseSessionWhenUnfocused.Name = "chkPauseSessionWhenUnfocused";
-            this.chkPauseSessionWhenUnfocused.Size = new System.Drawing.Size(222, 17);
-            this.chkPauseSessionWhenUnfocused.TabIndex = 2;
-            this.chkPauseSessionWhenUnfocused.Text = "Pause session playtime when unfocused";
-            this.toolTip.SetToolTip(this.chkPauseSessionWhenUnfocused, "Pause session playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: off");
-            this.chkPauseSessionWhenUnfocused.UseVisualStyleBackColor = true;
             // 
             // chkAllowUnknownStats
             // 
@@ -1526,12 +1528,12 @@ namespace SmartGoldbergEmu.Forms
             this.chkOffline.AutoSize = true;
             this.chkOffline.Location = new System.Drawing.Point(20, 118);
             this.chkOffline.Name = "chkOffline";
-            this.chkOffline.Size = new System.Drawing.Size(142, 17);
+            this.chkOffline.Size = new System.Drawing.Size(138, 17);
             this.chkOffline.TabIndex = 4;
             this.chkOffline.Text = "Report Steam as Offline";
             this.toolTip.SetToolTip(this.chkOffline, "Tell the game that Steam is in offline mode (not logged on).\r\n\r\nSome games that c" +
-        "onnect to their own online servers only work with this on.\r\n\r\nLAN play still wo" +
-        "rks.\r\n\r\nDefault: off");
+        "onnect to their own online servers only work with this on.\r\n\r\nLAN play still wor" +
+        "ks.\r\n\r\nDefault: off");
             this.chkOffline.UseVisualStyleBackColor = true;
             // 
             // chkDisableNetworking
@@ -1744,7 +1746,8 @@ namespace SmartGoldbergEmu.Forms
             this.lblCustomBroadcastsHint.Size = new System.Drawing.Size(606, 30);
             this.lblCustomBroadcastsHint.TabIndex = 0;
             this.lblCustomBroadcastsHint.Text = "Playing over a VPN (Radmin, ZeroTier, Tailscale, Hamachi) or another network? Ent" +
-    "er each friend\'s IP address or hostname, one per line. Leave empty for normal LAN play.";
+    "er each friend\'s IP address or hostname, one per line. Leave empty for normal LA" +
+    "N play.";
             // 
             // txtCustomBroadcasts
             // 

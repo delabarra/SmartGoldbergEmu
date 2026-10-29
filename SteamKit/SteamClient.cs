@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using SmartGoldbergEmu;
+using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Extensions;
 
 namespace SteamKit
@@ -112,7 +113,7 @@ public class SteamClient
         return "Could not connect to Steam. Check your internet connection.";
     }
 
-    public void LogOnAnonymous()
+    public void LogOnAnonymous(string clientLanguage = null)
     {
         if (!_isConnected)
         {
@@ -128,7 +129,9 @@ public class SteamClient
 
             logon.Body.protocol_version = 65581; // MsgClientLogon.CurrentProtocol
             logon.Body.client_os_type = (uint)GetOSType();
-            logon.Body.client_language = "english";
+            logon.Body.client_language = string.IsNullOrWhiteSpace(clientLanguage)
+                ? ApplicationConstants.DefaultLanguage
+                : clientLanguage.Trim();
             logon.Body.cell_id = 0;
             logon.Body.machine_id = GetMachineID();
 

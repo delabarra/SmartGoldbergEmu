@@ -16,8 +16,10 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <LangVersion>7.3</LangVersion>
   </PropertyGroup>
+  <!-- AnyCPU + Prefer32Bit=false: 64-bit process on 64-bit Windows; WinForms designer can still load the assembly. -->
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
-    <PlatformTarget>x64</PlatformTarget>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -27,7 +29,8 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
-    <PlatformTarget>x64</PlatformTarget>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
     <DebugSymbols>false</DebugSymbols>
     <DebugType>none</DebugType>
     <!-- Empty resets to .xml;.pdb; use a non-matching extension so Release skips reference doc/symbol sidecars. -->
@@ -231,12 +234,15 @@
     <Compile Include="Helpers\MainSettingsScopes.cs" />
     <Compile Include="Helpers\UserIniSaveLocationHelper.cs" />
     <Compile Include="Helpers\LauncherEmbeddedUpdaterHelper.cs" />
+    <Compile Include="Helpers\LauncherUpdateManifestTrustHelper.cs" />
     <Compile Include="Helpers\LauncherUpdatePayloadHelper.cs" />
+    <Compile Include="Helpers\LaunchSessionCleanupTrustHelper.cs" />
     <Compile Include="Helpers\OverlayColorHelper.cs" />
     <Compile Include="Helpers\SteamIdHelper.cs" />
     <Compile Include="Helpers\SteamInstallationPathHelper.cs" />
     <Compile Include="Helpers\SteamClientManifestHelper.cs" />
     <Compile Include="Helpers\SteamLanguageDisplayHelper.cs" />
+    <Compile Include="Helpers\SteamConfiguredLanguageHelper.cs" />
     <Compile Include="Helpers\AppInfoKeyValueHelper.cs" />
     <Compile Include="Helpers\SteamPicsKeyValueHelper.cs" />
     <Compile Include="Helpers\ListViewColumnHelper.cs" />
@@ -249,6 +255,7 @@
     <Compile Include="Helpers\ImageListOwnedImages.cs" />
     <Compile Include="Helpers\GameFolderPathHelper.cs" />
     <Compile Include="Helpers\PathValidationHelper.cs" />
+    <Compile Include="Helpers\ReleaseAssetIntegrityHelper.cs" />
     <Compile Include="Helpers\ShellFolderHelper.cs" />
     <Compile Include="Helpers\HttpHelpers.cs" />
     <Compile Include="Helpers\LargeObjectHeapHelper.cs" />

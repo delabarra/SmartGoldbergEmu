@@ -544,8 +544,9 @@ namespace SmartGoldbergEmu.Services
         {
             var logonTcs = new TaskCompletionSource<uint>(TaskCreationOptions.RunContinuationsAsynchronously);
             var client = new SteamClient();
+            string clientLanguage = SteamConfiguredLanguageHelper.Resolve();
 
-            client.OnConnected += () => client.LogOnAnonymous();
+            client.OnConnected += () => client.LogOnAnonymous(clientLanguage);
             client.OnLoggedOn += code => logonTcs.TrySetResult(code);
             client.OnConnectionFailed += _ => logonTcs.TrySetResult(SteamLogonWaitResult.ConnectionFailed);
             client.OnDisconnected += () =>

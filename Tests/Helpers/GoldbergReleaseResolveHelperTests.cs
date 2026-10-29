@@ -6,9 +6,12 @@ namespace SmartGoldbergEmu.Tests.Helpers
 {
     public sealed class GoldbergReleaseResolveHelperTests
     {
+        private const string SampleDigest =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
         private const string SampleRepackJson =
             "{\"tag_name\":\"repack-2026_05_30-2026_02_16-420\",\"body\":\"notes\",\"assets\":[" +
-            "{\"name\":\"Detanup01-2026_05_30-win.7z\",\"browser_download_url\":\"https://example/detanup.7z\"}," +
+            "{\"name\":\"Detanup01-2026_05_30-win.7z\",\"browser_download_url\":\"https://example/detanup.7z\",\"digest\":\"" + SampleDigest + "\"}," +
             "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://example/alex.7z\"}" +
             "]}";
 
@@ -55,6 +58,9 @@ namespace SmartGoldbergEmu.Tests.Helpers
             Assert.Equal("2026_05_30", result.LatestVersion);
             Assert.Equal("https://example/detanup.7z", result.DownloadUrl);
             Assert.Equal("Detanup01-2026_05_30-win.7z", result.ArchiveFileName);
+            Assert.Equal(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                result.ExpectedSha256Hex);
         }
 
         [Fact]

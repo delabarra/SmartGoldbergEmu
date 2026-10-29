@@ -49,7 +49,7 @@ namespace SmartGoldbergEmu.Services
             PathConstants.SteamGameResourcesLibraryLogoImageFileName
         };
 
-        // Main list mosaic views: strict filenames per view. No catalog JSON / PICS reload on the binder path.
+        // Main list mosaic views: strict filename fallbacks when catalog/PICS has no preferred-language path.
         private static readonly string[] ListViewLibraryCoverFileNames =
         {
             PathConstants.SteamGameResourcesLibraryCapsule2xImageFileName,
@@ -110,7 +110,8 @@ namespace SmartGoldbergEmu.Services
         private sealed class PicsStoreAssetRef
         {
             public string RelativePath { get; set; }
-            public bool IsEnglish { get; set; }
+            // Higher first: preferred settings language, then english, then other.
+            public int LanguagePreferenceRank { get; set; }
         }
 
         private sealed class AssetDownloadRequest
@@ -148,11 +149,22 @@ namespace SmartGoldbergEmu.Services
         private static readonly TimeSpan SlowAssetAttemptThreshold = TimeSpan.FromSeconds(10);
         private const int MaxAssetFilesListedInLog = 25;
 
+        private sealed class CachedListViewArtworkFileNames
+        {
+            public string[] Banner { get; set; }
+            public string[] Cover { get; set; }
+            public string[] Logo { get; set; }
+        }
+
         private readonly IHttpService _httpService;
         private readonly string _gamesDirectory;
         private readonly ITaskReportService _taskReportService;
         private readonly FallbackMosaicArtCache _fallbackMosaicArtCache = new FallbackMosaicArtCache();
         private readonly object _waitingPlaceholderSync = new object();
+        private readonly object _listViewArtworkPreferenceCacheSync = new object();
+        private string _listViewArtworkPreferenceCacheLanguage;
+        private readonly Dictionary<ulong, CachedListViewArtworkFileNames> _listViewArtworkPreferenceCache =
+            new Dictionary<ulong, CachedListViewArtworkFileNames>();
         private Bitmap _waitingMosaicPlaceholderBitmap;
         private ApngAnimationDecoder.FrameBitmap[] _waitingMosaicAnimationFrames;
         private bool _waitingMosaicPlaceholderLoadAttempted;
@@ -183,7 +195,9 @@ namespace SmartGoldbergEmu.Services
             AppInfoKeyValue appPicsData = null,
             string gameDisplayName = null,
             GameAssetsSection catalogAssets = null,
-            Action<int, int> onProgress = null)
+            Action<int, int> onProgress = null,
+            string listViewMode = null,
+            Action onPrimaryListArtworkReady = null)
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(GameImageService));
@@ -213,8 +227,11 @@ namespace SmartGoldbergEmu.Services
                         catalogAssets = catalogSnapshot?.Assets;
                 }
 
-                var downloadRequests = BuildAssetDownloadRequests(picsData, catalogAssets, remoteAppId);
+                string preferredLanguage = SteamConfiguredLanguageHelper.Resolve(appId);
+                var downloadRequests = BuildAssetDownloadRequests(
+                    picsData, catalogAssets, remoteAppId, preferredLanguage);
                 catalogAssets = null;
+                InvalidateListViewArtworkPreferenceCache(appId);
                 var totalDownloads = downloadRequests.Count;
 
                 if (reportFeedback)
@@ -227,12 +244,27 @@ namespace SmartGoldbergEmu.Services
                 if (_disposed)
                     return ApplyDownloadOutcomeFeedback(gamePath, displayName, appId, reportFeedback: false, picsData: picsData);
 
+                PartitionListViewPriorityDownloads(
+                    downloadRequests,
+                    listViewMode,
+                    picsData,
+                    preferredLanguage,
+                    appId,
+                    out List<AssetDownloadRequest> priorityRequests,
+                    out List<AssetDownloadRequest> remainingRequests);
+
                 var completed = 0;
                 var results = new List<AssetDownloadResult>(totalDownloads);
                 var lockObj = new object();
                 var stopwatch = Stopwatch.StartNew();
+                bool viewArtworkNotified = false;
 
-                await Task.WhenAll(downloadRequests.Select(async request =>
+                async Task DownloadBatchAsync(List<AssetDownloadRequest> batch)
+                {
+                    if (batch == null || batch.Count == 0)
+                        return;
+
+                    await Task.WhenAll(batch.Select(async request =>
                     {
                         AssetDownloadResult result = await DownloadImageAsync(
                             remoteAppId,
@@ -254,6 +286,22 @@ namespace SmartGoldbergEmu.Services
                             onProgress?.Invoke(completed, totalDownloads);
                         }
                     })).ConfigureAwait(false);
+                }
+
+                // Start both waves together (no throughput cap); priority is only for the early mosaic callback.
+                Task priorityTask = DownloadBatchAsync(priorityRequests);
+                Task remainingTask = DownloadBatchAsync(remainingRequests);
+                await priorityTask.ConfigureAwait(false);
+                if (!_disposed
+                    && onPrimaryListArtworkReady != null
+                    && !viewArtworkNotified
+                    && !string.IsNullOrEmpty(ResolveArtworkPathForViewMode(appId, listViewMode)))
+                {
+                    viewArtworkNotified = true;
+                    TryInvokePrimaryListArtworkReady(onPrimaryListArtworkReady);
+                }
+
+                await remainingTask.ConfigureAwait(false);
 
                 stopwatch.Stop();
                 if (results.Any(result => result.Outcome == AssetDownloadOutcome.Downloaded))
@@ -286,6 +334,121 @@ namespace SmartGoldbergEmu.Services
                 if (compactLoh)
                     LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
             }
+        }
+
+        private static void TryInvokePrimaryListArtworkReady(Action onPrimaryListArtworkReady)
+        {
+            if (onPrimaryListArtworkReady == null)
+                return;
+
+            try
+            {
+                onPrimaryListArtworkReady();
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("Primary list artwork ready callback failed: " + ex.Message);
+            }
+        }
+
+        // Pull the current mosaic/icon artwork ahead of the remaining CDN set so the list can refresh early.
+        private static void PartitionListViewPriorityDownloads(
+            List<AssetDownloadRequest> downloadRequests,
+            string listViewMode,
+            AppInfoKeyValue picsData,
+            string preferredLanguage,
+            ulong appId,
+            out List<AssetDownloadRequest> priorityRequests,
+            out List<AssetDownloadRequest> remainingRequests)
+        {
+            priorityRequests = new List<AssetDownloadRequest>();
+            remainingRequests = new List<AssetDownloadRequest>();
+            if (downloadRequests == null || downloadRequests.Count == 0)
+                return;
+
+            if (string.IsNullOrWhiteSpace(listViewMode)
+                || string.Equals(listViewMode, ApplicationConstants.ViewModeDetails, StringComparison.OrdinalIgnoreCase))
+            {
+                remainingRequests.AddRange(downloadRequests);
+                return;
+            }
+
+            string[] preferredFileNames = BuildPreferredFileNamesForListViewMode(
+                listViewMode, picsData, preferredLanguage, appId);
+            if (preferredFileNames == null || preferredFileNames.Length == 0)
+            {
+                remainingRequests.AddRange(downloadRequests);
+                return;
+            }
+
+            bool prioritizeClientIcons = string.Equals(
+                listViewMode, ApplicationConstants.ViewModeIcons, StringComparison.OrdinalIgnoreCase);
+
+            foreach (var request in downloadRequests)
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.FileName))
+                {
+                    remainingRequests.Add(request);
+                    continue;
+                }
+
+                if (IsListViewPriorityFileName(request.FileName, preferredFileNames, prioritizeClientIcons))
+                    priorityRequests.Add(request);
+                else
+                    remainingRequests.Add(request);
+            }
+        }
+
+        private static string[] BuildPreferredFileNamesForListViewMode(
+            string listViewMode,
+            AppInfoKeyValue picsData,
+            string preferredLanguage,
+            ulong appId)
+        {
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeTile, StringComparison.OrdinalIgnoreCase))
+                return BuildStoreBannerPreferredFileNames(picsData, preferredLanguage);
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeCompactTiles, StringComparison.OrdinalIgnoreCase))
+                return BuildListViewLibraryCoverPreferredFileNames(picsData, preferredLanguage);
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeLogos, StringComparison.OrdinalIgnoreCase))
+                return BuildListViewLogoPreferredFileNames(picsData, preferredLanguage);
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeIcons, StringComparison.OrdinalIgnoreCase))
+            {
+                return new[]
+                {
+                    PathConstants.GetSteamGameResourcesClientIconFileName(appId)
+                };
+            }
+
+            return Array.Empty<string>();
+        }
+
+        private static bool IsListViewPriorityFileName(
+            string fileName,
+            string[] preferredFileNames,
+            bool prioritizeClientIcons)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                return false;
+
+            if (prioritizeClientIcons
+                && fileName.EndsWith(
+                    PathConstants.SteamGameResourcesClientIconFileExtension,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            foreach (var preferred in preferredFileNames ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(preferred))
+                    continue;
+                if (string.Equals(fileName, preferred, StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (fileName.EndsWith("_" + preferred, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
         public Task EnsureMosaicFallbackForViewAsync(string viewMode, ThemeMode effectiveTheme, Color background, Color foreground)
@@ -376,22 +539,22 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        // Store Banner: header.jpg on disk. Missing → mosaic placeholder.
+        // Store Banner: preferred-language header when catalog knows it; else header.jpg. Missing → mosaic placeholder.
         public string GetHeaderImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, StoreBannerPreferredFileNames);
+            return ResolveListViewArtworkPath(appId, ListViewArtworkRole.Banner);
         }
 
-        // Library Cover: 2x capsule then 1x. Missing → mosaic placeholder.
+        // Library Cover: preferred-language capsule when catalog knows it; else 2x/1x. Missing → mosaic placeholder.
         public string GetCapsuleImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, ListViewLibraryCoverFileNames);
+            return ResolveListViewArtworkPath(appId, ListViewArtworkRole.Cover);
         }
 
-        // Logos: library_logo 2x/1x then logo.png. Missing → mosaic placeholder.
+        // Logos: preferred-language library_logo when catalog knows it; else library_logo/logo. Missing → mosaic placeholder.
         public string GetLogoImagePathOrFallback(ulong appId)
         {
-            return ResolvePreferredImagePath(appId, ListViewLogoFileNames);
+            return ResolveListViewArtworkPath(appId, ListViewArtworkRole.Logo);
         }
 
         // Steam client icon under games/{appId}/resources/ ({appId}.ico or any .ico from the libcache download).
@@ -554,11 +717,14 @@ namespace SmartGoldbergEmu.Services
         {
             UpdateMissingAssetsNote(resourcesDirectory, gameDisplayName, appId, picsData);
 
+            string preferredLanguage = SteamConfiguredLanguageHelper.Resolve(appId);
             bool hasHeader = !string.IsNullOrEmpty(
-                ResolvePreferredImagePath(resourcesDirectory, BuildStoreBannerPreferredFileNames(picsData)));
+                ResolvePreferredImagePath(
+                    resourcesDirectory, BuildStoreBannerPreferredFileNames(picsData, preferredLanguage)));
             bool hasIcon = HasClientIconResource(resourcesDirectory, appId);
             bool hasCapsule = !string.IsNullOrEmpty(
-                ResolvePreferredImagePath(resourcesDirectory, BuildLibraryCoverPreferredFileNames(picsData)));
+                ResolvePreferredImagePath(
+                    resourcesDirectory, BuildLibraryCoverPreferredFileNames(picsData, preferredLanguage)));
             bool essentialsOk = hasHeader && hasIcon && hasCapsule;
 
             if (!essentialsOk)
@@ -600,23 +766,27 @@ namespace SmartGoldbergEmu.Services
 
         private static List<string> CollectMissingLibraryArtworkFileNames(
             string resourcesDirectory,
-            AppInfoKeyValue picsData)
+            AppInfoKeyValue picsData,
+            string preferredLanguage)
         {
             var missing = new List<string>(3);
             if (string.IsNullOrEmpty(
-                ResolvePreferredImagePath(resourcesDirectory, BuildStoreBannerPreferredFileNames(picsData))))
+                ResolvePreferredImagePath(
+                    resourcesDirectory, BuildStoreBannerPreferredFileNames(picsData, preferredLanguage))))
             {
                 missing.Add("store banner");
             }
 
             if (string.IsNullOrEmpty(
-                ResolvePreferredImagePath(resourcesDirectory, BuildLibraryCoverPreferredFileNames(picsData))))
+                ResolvePreferredImagePath(
+                    resourcesDirectory, BuildLibraryCoverPreferredFileNames(picsData, preferredLanguage))))
             {
                 missing.Add("library cover");
             }
 
             if (string.IsNullOrEmpty(
-                ResolvePreferredImagePath(resourcesDirectory, BuildLibraryLogoPreferredFileNames(picsData))))
+                ResolvePreferredImagePath(
+                    resourcesDirectory, BuildLibraryLogoPreferredFileNames(picsData, preferredLanguage))))
             {
                 missing.Add("logo image");
             }
@@ -657,7 +827,8 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             var notePath = Path.Combine(resourcesDirectory, PathConstants.SteamGameResourcesMissingAssetsNoteFileName);
-            var missingArtwork = CollectMissingLibraryArtworkFileNames(resourcesDirectory, picsData);
+            var missingArtwork = CollectMissingLibraryArtworkFileNames(
+                resourcesDirectory, picsData, SteamConfiguredLanguageHelper.Resolve(appId));
             if (missingArtwork.Count == 0)
             {
                 TryDeleteFileIfExists(notePath);
@@ -864,8 +1035,10 @@ namespace SmartGoldbergEmu.Services
         private static List<AssetDownloadRequest> BuildAssetDownloadRequests(
             AppInfoKeyValue picsData,
             GameAssetsSection catalogAssets,
-            ulong remoteAppId)
+            ulong remoteAppId,
+            string preferredLanguage)
         {
+            preferredLanguage = SteamConfiguredLanguageHelper.Normalize(preferredLanguage);
             var requests = new List<AssetDownloadRequest>();
             var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var seenFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -874,10 +1047,10 @@ namespace SmartGoldbergEmu.Services
             {
                 var appInfoTarget = AppInfoKeyValueHelper.ResolveAppInfoTarget(picsData);
                 var storeAssets = new List<PicsStoreAssetRef>();
-                CollectDownloadableAssetReferences(appInfoTarget, storeAssets);
+                CollectDownloadableAssetReferences(appInfoTarget, storeAssets, preferredLanguage);
 
                 foreach (var storeAsset in storeAssets
-                    .OrderByDescending(asset => asset.IsEnglish)
+                    .OrderByDescending(asset => asset.LanguagePreferenceRank)
                     .ThenBy(asset => asset.RelativePath, StringComparer.OrdinalIgnoreCase))
                 {
                     TryAddStorePathDownloadRequest(
@@ -891,8 +1064,10 @@ namespace SmartGoldbergEmu.Services
                 CollectCommunityHashDownloadRequests(requests, picsData, remoteAppId, seenUrls, seenFileNames);
             }
 
-            CollectCatalogAssetDownloadRequests(requests, catalogAssets, remoteAppId, seenUrls, seenFileNames);
-            AppendFallbackAssetDownloadRequests(requests, picsData, remoteAppId, seenUrls, seenFileNames);
+            CollectCatalogAssetDownloadRequests(
+                requests, catalogAssets, remoteAppId, seenUrls, seenFileNames, preferredLanguage);
+            AppendFallbackAssetDownloadRequests(
+                requests, picsData, remoteAppId, seenUrls, seenFileNames, preferredLanguage);
 
             return requests;
         }
@@ -902,7 +1077,8 @@ namespace SmartGoldbergEmu.Services
             AppInfoKeyValue picsData,
             ulong remoteAppId,
             HashSet<string> seenUrls,
-            HashSet<string> seenFileNames)
+            HashSet<string> seenFileNames,
+            string preferredLanguage)
         {
             AppendPreferredFilenameDownloads(
                 requests,
@@ -911,7 +1087,7 @@ namespace SmartGoldbergEmu.Services
                 seenUrls,
                 seenFileNames,
                 LibraryHeaderPreferredFileNames,
-                TryExtractLibraryHeaderImageRelativePath);
+                data => TryExtractLibraryHeaderImageRelativePath(data, preferredLanguage));
 
             AppendPreferredFilenameDownloads(
                 requests,
@@ -920,7 +1096,7 @@ namespace SmartGoldbergEmu.Services
                 seenUrls,
                 seenFileNames,
                 HeaderImagePreferredFileNames,
-                TryExtractHeaderImageRelativePath);
+                data => TryExtractHeaderImageRelativePath(data, preferredLanguage));
 
             AppendPreferredFilenameDownloads(
                 requests,
@@ -929,7 +1105,7 @@ namespace SmartGoldbergEmu.Services
                 seenUrls,
                 seenFileNames,
                 LibraryCoverPreferredFileNames,
-                TryExtractLibraryCapsuleImageRelativePath);
+                data => TryExtractLibraryCapsuleImageRelativePath(data, preferredLanguage));
 
             AppendPreferredFilenameDownloads(
                 requests,
@@ -938,7 +1114,7 @@ namespace SmartGoldbergEmu.Services
                 seenUrls,
                 seenFileNames,
                 LibraryLogoPreferredFileNames,
-                TryExtractLibraryLogoImageRelativePath);
+                data => TryExtractLibraryLogoImageRelativePath(data, preferredLanguage));
 
             AppendPreferredFilenameDownloads(
                 requests,
@@ -947,7 +1123,7 @@ namespace SmartGoldbergEmu.Services
                 seenUrls,
                 seenFileNames,
                 LibraryHeroPreferredFileNames,
-                TryExtractLibraryHeroImageRelativePath);
+                data => TryExtractLibraryHeroImageRelativePath(data, preferredLanguage));
 
             AppendPreferredFilenameDownloads(
                 requests,
@@ -956,7 +1132,7 @@ namespace SmartGoldbergEmu.Services
                 seenUrls,
                 seenFileNames,
                 LibraryLogoPicsPreferredFileNames,
-                TryExtractLibraryLogoImageRelativePath);
+                data => TryExtractLibraryLogoImageRelativePath(data, preferredLanguage));
 
             foreach (var fileName in AdditionalStoreAssetFileNames)
             {
@@ -1038,7 +1214,7 @@ namespace SmartGoldbergEmu.Services
             });
         }
 
-        // English/first copy keeps the Steam filename; extra language/hash variants keep `{hash}_{file}`.
+        // Preferred-language (then English) copy keeps the Steam filename; extra language/hash variants keep `{hash}_{file}`.
         internal static string AllocateUniqueResourceFileName(string relativePathOrFileName, HashSet<string> seenFileNames)
         {
             if (string.IsNullOrWhiteSpace(relativePathOrFileName) || seenFileNames == null)
@@ -1064,19 +1240,33 @@ namespace SmartGoldbergEmu.Services
             return catalogAssets?.Items != null && catalogAssets.Items.Count > 0;
         }
 
-        private static bool IsEnglishCatalogAsset(string keyPath)
+        private static int GetCatalogAssetLanguageRank(string keyPath, string preferredLanguage)
         {
             if (string.IsNullOrWhiteSpace(keyPath))
-                return false;
+                return 0;
 
+            preferredLanguage = SteamConfiguredLanguageHelper.Normalize(preferredLanguage);
             var parts = keyPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            int best = 0;
             for (int i = 0; i < parts.Length; i++)
             {
-                if (parts[i].Equals(SteamPicsKeyNames.English, StringComparison.OrdinalIgnoreCase))
-                    return true;
+                best = Math.Max(best, GetLanguagePreferenceRank(parts[i], preferredLanguage));
             }
 
-            return false;
+            return best;
+        }
+
+        private static int GetLanguagePreferenceRank(string languageKey, string preferredLanguage)
+        {
+            if (string.IsNullOrWhiteSpace(languageKey))
+                return 0;
+
+            preferredLanguage = SteamConfiguredLanguageHelper.Normalize(preferredLanguage);
+            if (languageKey.Equals(preferredLanguage, StringComparison.OrdinalIgnoreCase))
+                return 2;
+            if (languageKey.Equals(SteamPicsKeyNames.English, StringComparison.OrdinalIgnoreCase))
+                return 1;
+            return 0;
         }
 
         private static void AddFallbackRequest(
@@ -1106,14 +1296,18 @@ namespace SmartGoldbergEmu.Services
             });
         }
 
-        private static void CollectDownloadableAssetReferences(AppInfoKeyValue node, List<PicsStoreAssetRef> output)
+        private static void CollectDownloadableAssetReferences(
+            AppInfoKeyValue node,
+            List<PicsStoreAssetRef> output,
+            string preferredLanguage)
         {
-            CollectDownloadableAssetReferences(node, output, parentName: null);
+            CollectDownloadableAssetReferences(node, output, preferredLanguage, parentName: null);
         }
 
         private static void CollectDownloadableAssetReferences(
             AppInfoKeyValue node,
             List<PicsStoreAssetRef> output,
+            string preferredLanguage,
             string parentName)
         {
             if (node == null || output == null)
@@ -1124,12 +1318,13 @@ namespace SmartGoldbergEmu.Services
 
             if (!string.IsNullOrWhiteSpace(node.Value) && IsDownloadableAssetReference(node.Value))
             {
-                bool isEnglish = string.Equals(node.Name, SteamPicsKeyNames.English, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(parentName, SteamPicsKeyNames.English, StringComparison.OrdinalIgnoreCase);
+                int rank = Math.Max(
+                    GetLanguagePreferenceRank(node.Name, preferredLanguage),
+                    GetLanguagePreferenceRank(parentName, preferredLanguage));
                 output.Add(new PicsStoreAssetRef
                 {
                     RelativePath = node.Value.Trim(),
-                    IsEnglish = isEnglish
+                    LanguagePreferenceRank = rank
                 });
             }
 
@@ -1137,7 +1332,7 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             foreach (var child in node.Children)
-                CollectDownloadableAssetReferences(child, output, node.Name);
+                CollectDownloadableAssetReferences(child, output, preferredLanguage, node.Name);
         }
 
         private static bool IsDownloadableAssetReference(string value)
@@ -1187,12 +1382,14 @@ namespace SmartGoldbergEmu.Services
             GameAssetsSection catalogAssets,
             ulong remoteAppId,
             HashSet<string> seenUrls,
-            HashSet<string> seenFileNames)
+            HashSet<string> seenFileNames,
+            string preferredLanguage)
         {
             if (catalogAssets?.Items == null || catalogAssets.Items.Count == 0)
                 return;
 
-            foreach (var entry in catalogAssets.Items.OrderByDescending(item => IsEnglishCatalogAsset(item != null ? item.KeyPath : null)))
+            foreach (var entry in catalogAssets.Items.OrderByDescending(
+                item => GetCatalogAssetLanguageRank(item != null ? item.KeyPath : null, preferredLanguage)))
             {
                 if (entry == null || string.IsNullOrWhiteSpace(entry.Value))
                     continue;
@@ -1365,32 +1562,177 @@ namespace SmartGoldbergEmu.Services
             return ResolvePreferredImagePath(resourcesDirectory, preferredFileNames);
         }
 
-        private static string[] BuildStoreBannerPreferredFileNames(AppInfoKeyValue picsData)
+        private enum ListViewArtworkRole
+        {
+            Banner,
+            Cover,
+            Logo
+        }
+
+        private string ResolveListViewArtworkPath(ulong appId, ListViewArtworkRole role)
+        {
+            string[] preferredFileNames = GetOrBuildListViewArtworkFileNames(appId, role);
+            return ResolvePreferredImagePath(appId, preferredFileNames);
+        }
+
+        private string[] GetOrBuildListViewArtworkFileNames(ulong appId, ListViewArtworkRole role)
+        {
+            string preferredLanguage = SteamConfiguredLanguageHelper.Resolve(appId);
+            CachedListViewArtworkFileNames cached;
+            lock (_listViewArtworkPreferenceCacheSync)
+            {
+                if (!string.Equals(
+                        _listViewArtworkPreferenceCacheLanguage,
+                        preferredLanguage,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    _listViewArtworkPreferenceCache.Clear();
+                    _listViewArtworkPreferenceCacheLanguage = preferredLanguage;
+                }
+
+                if (_listViewArtworkPreferenceCache.TryGetValue(appId, out cached) && cached != null)
+                    return SelectListViewArtworkFileNames(cached, role);
+            }
+
+            AppInfoKeyValue picsData = TryLoadCatalogSnapshot(appId)?.AppInfo;
+            cached = new CachedListViewArtworkFileNames
+            {
+                Banner = BuildStoreBannerPreferredFileNames(picsData, preferredLanguage),
+                Cover = BuildListViewLibraryCoverPreferredFileNames(picsData, preferredLanguage),
+                Logo = BuildListViewLogoPreferredFileNames(picsData, preferredLanguage)
+            };
+
+            lock (_listViewArtworkPreferenceCacheSync)
+            {
+                if (!string.Equals(
+                        _listViewArtworkPreferenceCacheLanguage,
+                        preferredLanguage,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    // Language changed while loading; do not poison the new language's cache.
+                    return SelectListViewArtworkFileNames(cached, role);
+                }
+
+                CachedListViewArtworkFileNames existing;
+                if (_listViewArtworkPreferenceCache.TryGetValue(appId, out existing) && existing != null)
+                    return SelectListViewArtworkFileNames(existing, role);
+
+                _listViewArtworkPreferenceCache[appId] = cached;
+                return SelectListViewArtworkFileNames(cached, role);
+            }
+        }
+
+        private static string[] SelectListViewArtworkFileNames(
+            CachedListViewArtworkFileNames cached,
+            ListViewArtworkRole role)
+        {
+            switch (role)
+            {
+                case ListViewArtworkRole.Banner:
+                    return cached?.Banner ?? StoreBannerPreferredFileNames;
+                case ListViewArtworkRole.Logo:
+                    return cached?.Logo ?? ListViewLogoFileNames;
+                default:
+                    return cached?.Cover ?? ListViewLibraryCoverFileNames;
+            }
+        }
+
+        private void InvalidateListViewArtworkPreferenceCache(ulong appId)
+        {
+            lock (_listViewArtworkPreferenceCacheSync)
+            {
+                if (appId == 0)
+                    _listViewArtworkPreferenceCache.Clear();
+                else
+                    _listViewArtworkPreferenceCache.Remove(appId);
+            }
+        }
+
+        private static string[] BuildStoreBannerPreferredFileNames(
+            AppInfoKeyValue picsData,
+            string preferredLanguage)
         {
             var sources = new List<string>();
-            TryAddEnglishHeaderImageFileName(sources, picsData);
+            TryAddPreferredHeaderImageFileName(sources, picsData, preferredLanguage);
             sources.AddRange(StoreBannerPreferredFileNames);
             return DeduplicateFileNames(sources);
         }
 
-        private static string[] BuildLibraryCoverPreferredFileNames(AppInfoKeyValue picsData)
+        private static string[] BuildLibraryCoverPreferredFileNames(
+            AppInfoKeyValue picsData,
+            string preferredLanguage)
+        {
+            return BuildLibraryCoverPreferredFileNames(
+                picsData, preferredLanguage, LibraryCoverPreferredFileNames);
+        }
+
+        // List mosaic cover: preferred-language PICS capsule names, then strict list-view fallbacks (no small_capsule).
+        internal static string[] BuildListViewLibraryCoverPreferredFileNames(
+            AppInfoKeyValue picsData,
+            string preferredLanguage)
+        {
+            return BuildLibraryCoverPreferredFileNames(
+                picsData, preferredLanguage, ListViewLibraryCoverFileNames);
+        }
+
+        private static string[] BuildLibraryCoverPreferredFileNames(
+            AppInfoKeyValue picsData,
+            string preferredLanguage,
+            string[] fallbackFileNames)
         {
             var sources = new List<string>();
-            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: true);
-            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false);
-            sources.AddRange(LibraryCoverPreferredFileNames);
+            TryAddPreferredLibraryAssetFileName(
+                sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: true, preferredLanguage);
+            TryAddPreferredLibraryAssetFileName(
+                sources, picsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false, preferredLanguage);
+            if (fallbackFileNames != null)
+                sources.AddRange(fallbackFileNames);
             return DeduplicateFileNames(sources);
         }
 
-        private static string[] BuildLibraryLogoPreferredFileNames(AppInfoKeyValue picsData)
+        private static string[] BuildLibraryLogoPreferredFileNames(
+            AppInfoKeyValue picsData,
+            string preferredLanguage)
+        {
+            return BuildLibraryLogoPreferredFileNames(
+                picsData,
+                preferredLanguage,
+                LibraryLogoPreferredFileNames,
+                includeCommunityLogoHash: true);
+        }
+
+        // List mosaic logos: preferred-language PICS library_logo, then strict list-view logo fallbacks.
+        internal static string[] BuildListViewLogoPreferredFileNames(
+            AppInfoKeyValue picsData,
+            string preferredLanguage)
+        {
+            return BuildLibraryLogoPreferredFileNames(
+                picsData,
+                preferredLanguage,
+                ListViewLogoFileNames,
+                includeCommunityLogoHash: false);
+        }
+
+        private static string[] BuildLibraryLogoPreferredFileNames(
+            AppInfoKeyValue picsData,
+            string preferredLanguage,
+            string[] fallbackFileNames,
+            bool includeCommunityLogoHash)
         {
             var sources = new List<string>();
-            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: true);
-            TryAddEnglishLibraryAssetFileName(sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: false);
-            var logoHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Logo);
-            if (!string.IsNullOrWhiteSpace(logoHash))
-                sources.Add(logoHash + ".jpg");
-            sources.AddRange(LibraryLogoPreferredFileNames);
+            TryAddPreferredLibraryAssetFileName(
+                sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: true, preferredLanguage);
+            TryAddPreferredLibraryAssetFileName(
+                sources, picsData, SteamPicsKeyNames.LibraryLogo, prefer2x: false, preferredLanguage);
+            if (includeCommunityLogoHash)
+            {
+                var logoHash = TryExtractPicsSha1Hash(picsData, SteamPicsKeyNames.Logo);
+                if (!string.IsNullOrWhiteSpace(logoHash))
+                    sources.Add(logoHash + ".jpg");
+            }
+
+            if (fallbackFileNames != null)
+                sources.AddRange(fallbackFileNames);
             return DeduplicateFileNames(sources);
         }
 
@@ -1401,19 +1743,25 @@ namespace SmartGoldbergEmu.Services
             return AppCatalogSnapshotStore.TryLoad(appId, out AppCatalogSnapshot snapshot) ? snapshot : null;
         }
 
-        private static void TryAddEnglishLibraryAssetFileName(
+        private static void TryAddPreferredLibraryAssetFileName(
             List<string> fileNames,
             AppInfoKeyValue picsData,
             string libraryAssetKey,
-            bool prefer2x)
+            bool prefer2x,
+            string preferredLanguage)
         {
-            var relativePath = TryExtractEnglishLibraryAssetRelativePath(picsData, libraryAssetKey, prefer2x);
+            var relativePath = TryExtractPreferredLibraryAssetRelativePath(
+                picsData, libraryAssetKey, prefer2x, preferredLanguage);
             TryAddFileNameFromRelativePath(fileNames, relativePath);
         }
 
-        private static void TryAddEnglishHeaderImageFileName(List<string> fileNames, AppInfoKeyValue picsData)
+        private static void TryAddPreferredHeaderImageFileName(
+            List<string> fileNames,
+            AppInfoKeyValue picsData,
+            string preferredLanguage)
         {
-            TryAddFileNameFromRelativePath(fileNames, TryExtractHeaderImageRelativePath(picsData));
+            TryAddFileNameFromRelativePath(
+                fileNames, TryExtractHeaderImageRelativePath(picsData, preferredLanguage));
         }
 
         private static void TryAddFileNameFromRelativePath(List<string> fileNames, string relativePath)
@@ -1421,9 +1769,17 @@ namespace SmartGoldbergEmu.Services
             if (fileNames == null || string.IsNullOrWhiteSpace(relativePath))
                 return;
 
-            var fileName = Path.GetFileName(relativePath);
-            if (!string.IsNullOrWhiteSpace(fileName))
-                fileNames.Add(fileName);
+            var normalized = relativePath.Replace('\\', '/').Trim().TrimStart('/');
+            var fileName = Path.GetFileName(normalized);
+            if (string.IsNullOrWhiteSpace(fileName))
+                return;
+
+            // Prefer `{hash}_{file}` so a later language change can select the exact localization on disk.
+            var hashFolder = TryExtractRelativeDirectoryName(normalized);
+            if (!string.IsNullOrWhiteSpace(hashFolder))
+                fileNames.Add(hashFolder + "_" + fileName);
+
+            fileNames.Add(fileName);
         }
 
         private static string[] DeduplicateFileNames(IEnumerable<string> fileNames)
@@ -1440,10 +1796,11 @@ namespace SmartGoldbergEmu.Services
             return unique.ToArray();
         }
 
-        private static string TryExtractEnglishLibraryAssetRelativePath(
+        private static string TryExtractPreferredLibraryAssetRelativePath(
             AppInfoKeyValue picsData,
             string libraryAssetKey,
-            bool prefer2x)
+            bool prefer2x,
+            string preferredLanguage)
         {
             if (picsData == null || string.IsNullOrWhiteSpace(libraryAssetKey))
                 return null;
@@ -1455,19 +1812,28 @@ namespace SmartGoldbergEmu.Services
             var imageNode = AppInfoKeyValueHelper.FindChild(
                 assetNode,
                 prefer2x ? SteamPicsKeyNames.Image2x : SteamPicsKeyNames.Image);
-            return TryExtractLocalizedRelativePath(imageNode, SteamPicsKeyNames.English);
+            return TryExtractLocalizedRelativePath(imageNode, preferredLanguage);
         }
 
-        private static string TryExtractLocalizedRelativePath(AppInfoKeyValue localizedNode, string preferredLanguageKey)
+        // Preferred settings language, then english, then any available localization.
+        internal static string TryExtractLocalizedRelativePath(
+            AppInfoKeyValue localizedNode,
+            string preferredLanguageKey)
         {
             if (localizedNode == null)
                 return null;
 
-            if (!string.IsNullOrWhiteSpace(preferredLanguageKey))
+            preferredLanguageKey = SteamConfiguredLanguageHelper.Normalize(preferredLanguageKey);
+
+            string preferred = TryGetLanguageChildValue(localizedNode, preferredLanguageKey);
+            if (preferred != null)
+                return preferred;
+
+            if (!preferredLanguageKey.Equals(SteamPicsKeyNames.English, StringComparison.OrdinalIgnoreCase))
             {
-                var preferred = AppInfoKeyValueHelper.FindChild(localizedNode, preferredLanguageKey);
-                if (!string.IsNullOrWhiteSpace(preferred?.Value))
-                    return preferred.Value.Trim();
+                string english = TryGetLanguageChildValue(localizedNode, SteamPicsKeyNames.English);
+                if (english != null)
+                    return english;
             }
 
             if (localizedNode.Children == null || localizedNode.Children.Count == 0)
@@ -1480,6 +1846,15 @@ namespace SmartGoldbergEmu.Services
             }
 
             return null;
+        }
+
+        private static string TryGetLanguageChildValue(AppInfoKeyValue localizedNode, string languageKey)
+        {
+            if (localizedNode == null || string.IsNullOrWhiteSpace(languageKey))
+                return null;
+
+            var child = AppInfoKeyValueHelper.FindChild(localizedNode, languageKey);
+            return string.IsNullOrWhiteSpace(child?.Value) ? null : child.Value.Trim();
         }
 
         private static string TryExtractPicsSha1Hash(AppInfoKeyValue appPicsData, string picsKeyName)
@@ -1511,28 +1886,43 @@ namespace SmartGoldbergEmu.Services
             return true;
         }
 
-        private static string TryExtractLibraryHeaderImageRelativePath(AppInfoKeyValue appPicsData)
+        private static string TryExtractLibraryHeaderImageRelativePath(
+            AppInfoKeyValue appPicsData,
+            string preferredLanguage)
         {
-            return TryExtractEnglishLibraryAssetRelativePath(appPicsData, SteamPicsKeyNames.LibraryHeader, prefer2x: false);
+            return TryExtractPreferredLibraryAssetRelativePath(
+                appPicsData, SteamPicsKeyNames.LibraryHeader, prefer2x: false, preferredLanguage);
         }
 
-        private static string TryExtractLibraryHeroImageRelativePath(AppInfoKeyValue appPicsData)
+        private static string TryExtractLibraryHeroImageRelativePath(
+            AppInfoKeyValue appPicsData,
+            string preferredLanguage)
         {
-            return TryExtractEnglishLibraryAssetRelativePath(appPicsData, SteamPicsKeyNames.LibraryHero, prefer2x: false)
-                ?? TryExtractEnglishLibraryAssetRelativePath(appPicsData, SteamPicsKeyNames.LibraryHero, prefer2x: true);
+            return TryExtractPreferredLibraryAssetRelativePath(
+                    appPicsData, SteamPicsKeyNames.LibraryHero, prefer2x: false, preferredLanguage)
+                ?? TryExtractPreferredLibraryAssetRelativePath(
+                    appPicsData, SteamPicsKeyNames.LibraryHero, prefer2x: true, preferredLanguage);
         }
 
-        private static string TryExtractLibraryLogoImageRelativePath(AppInfoKeyValue appPicsData)
+        private static string TryExtractLibraryLogoImageRelativePath(
+            AppInfoKeyValue appPicsData,
+            string preferredLanguage)
         {
-            return TryExtractEnglishLibraryAssetRelativePath(appPicsData, SteamPicsKeyNames.LibraryLogo, prefer2x: false);
+            return TryExtractPreferredLibraryAssetRelativePath(
+                appPicsData, SteamPicsKeyNames.LibraryLogo, prefer2x: false, preferredLanguage);
         }
 
-        private static string TryExtractLibraryCapsuleImageRelativePath(AppInfoKeyValue appPicsData)
+        private static string TryExtractLibraryCapsuleImageRelativePath(
+            AppInfoKeyValue appPicsData,
+            string preferredLanguage)
         {
-            return TryExtractEnglishLibraryAssetRelativePath(appPicsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false);
+            return TryExtractPreferredLibraryAssetRelativePath(
+                appPicsData, SteamPicsKeyNames.LibraryCapsule, prefer2x: false, preferredLanguage);
         }
 
-        private static string TryExtractHeaderImageRelativePath(AppInfoKeyValue appPicsData)
+        private static string TryExtractHeaderImageRelativePath(
+            AppInfoKeyValue appPicsData,
+            string preferredLanguage)
         {
             if (appPicsData == null)
                 return null;
@@ -1540,7 +1930,7 @@ namespace SmartGoldbergEmu.Services
             var appInfoTarget = AppInfoKeyValueHelper.ResolveAppInfoTarget(appPicsData);
             var common = AppInfoKeyValueHelper.FindChild(appInfoTarget, PathConstants.SteamAppsCommonDirectoryName);
             var headerImage = AppInfoKeyValueHelper.FindChild(common, SteamPicsKeyNames.HeaderImage);
-            return TryExtractLocalizedRelativePath(headerImage, SteamPicsKeyNames.English);
+            return TryExtractLocalizedRelativePath(headerImage, preferredLanguage);
         }
 
         private static string TryExtractRelativeDirectoryName(string relativePath)

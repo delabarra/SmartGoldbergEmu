@@ -132,7 +132,7 @@ namespace SmartGoldbergEmu.Forms
         private int _contentLeft = LayoutMargin;
 
         private AppTaskDialogForm(AppTaskDialogRequest request, ThemeService themeService)
-            : base(themeService ?? ServiceLocator.ThemeService)
+            : base(ResolveThemeService(themeService))
         {
             _request = request ?? throw new ArgumentNullException(nameof(request));
 

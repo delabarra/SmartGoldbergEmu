@@ -457,7 +457,9 @@ namespace SmartGoldbergEmu.Services
             }
 
             var global = LoadGlobalSettings();
-            return !string.IsNullOrEmpty(global?.Language) ? global.Language : "english";
+            return !string.IsNullOrEmpty(global?.Language)
+                ? global.Language
+                : ApplicationConstants.DefaultLanguage;
         }
 
         public bool CreateDefaultConfigFiles(ulong appId)

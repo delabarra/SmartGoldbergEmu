@@ -40,9 +40,15 @@ namespace SmartGoldbergEmu.Services
         private const int ProgressComplete = 100;
 
         private static string _downloadUrl;
+        private static string _expectedSha256Hex;
         private static string _latestVersion;
         private static string _lastCancelledUpdateVersion;
         private static volatile bool _exitRequestedForStagedUpdate;
+
+        private const string MissingReleaseDigestMessage =
+            "Latest GitHub release zip is missing a SHA-256 digest; refusing to download.";
+        private const string UntrustedDownloadUrlMessage =
+            "Latest GitHub release zip URL is not a trusted HTTPS GitHub download URL.";
 
         // Application.Exit() before Application.Run does not stop startup; Program checks this and exits so the updater can apply.
         public static bool ExitRequestedForStagedUpdate => _exitRequestedForStagedUpdate;
@@ -81,6 +87,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 _downloadUrl = null;
+                _expectedSha256Hex = null;
                 using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))
                 {
                     using (HttpResponseMessage response = await httpService
@@ -180,7 +187,9 @@ namespace SmartGoldbergEmu.Services
             }
 
             _downloadUrl = null;
+            _expectedSha256Hex = null;
             result.DownloadUrl = null;
+            result.ExpectedSha256Hex = null;
             JsonArray assets = releaseData["assets"] as JsonArray;
             if (assets != null)
             {
@@ -195,7 +204,9 @@ namespace SmartGoldbergEmu.Services
                         continue;
 
                     _downloadUrl = asset["browser_download_url"]?.ToString();
+                    _expectedSha256Hex = ReleaseAssetIntegrityHelper.TryReadAssetSha256Hex(asset);
                     result.DownloadUrl = _downloadUrl;
+                    result.ExpectedSha256Hex = _expectedSha256Hex;
                     break;
                 }
             }
@@ -210,6 +221,27 @@ namespace SmartGoldbergEmu.Services
 
                 // Changelog view only needs tag + notes.
                 return true;
+            }
+
+            if (requireDownloadAsset)
+            {
+                if (!PathValidationHelper.IsTrustedGitHubReleaseDownloadUrl(_downloadUrl))
+                {
+                    result.ErrorMessage = UntrustedDownloadUrlMessage;
+                    _downloadUrl = null;
+                    _expectedSha256Hex = null;
+                    result.DownloadUrl = null;
+                    result.ExpectedSha256Hex = null;
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(_expectedSha256Hex))
+                {
+                    result.ErrorMessage = MissingReleaseDigestMessage;
+                    _downloadUrl = null;
+                    result.DownloadUrl = null;
+                    return false;
+                }
             }
 
             return true;
@@ -229,13 +261,18 @@ namespace SmartGoldbergEmu.Services
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
 
-                if (string.IsNullOrEmpty(_downloadUrl))
+                if (string.IsNullOrEmpty(_downloadUrl) || string.IsNullOrEmpty(_expectedSha256Hex))
                 {
                     progressCallback?.Invoke("Fetching latest release information...", ProgressFetch);
                     var checkResult = await CheckForUpdatesAsync(isStartup: false).ConfigureAwait(false);
-                    if (!checkResult.Success || string.IsNullOrEmpty(_downloadUrl))
-                        throw new UpdateException("Could not get download URL");
+                    if (!checkResult.Success || string.IsNullOrEmpty(_downloadUrl) || string.IsNullOrEmpty(_expectedSha256Hex))
+                        throw new UpdateException(
+                            string.IsNullOrEmpty(checkResult.ErrorMessage)
+                                ? "Could not get a verified download URL"
+                                : checkResult.ErrorMessage);
                 }
+
+                ReleaseAssetIntegrityHelper.EnsureTrustedGitHubHttpsDownloadUrl(_downloadUrl);
 
                 if (Directory.Exists(workRoot))
                     Directory.Delete(workRoot, true);
@@ -269,6 +306,17 @@ namespace SmartGoldbergEmu.Services
 
                 if (cancellationCheck?.Invoke() == true)
                     throw new UpdateException("Download cancelled by user");
+
+                progressCallback?.Invoke("Verifying launcher update...", ProgressDownloadEnd);
+                try
+                {
+                    ReleaseAssetIntegrityHelper.VerifyFileSha256OrThrow(archivePath, _expectedSha256Hex);
+                }
+                catch (Exception ex)
+                {
+                    TryDeleteFileQuiet(archivePath);
+                    throw new UpdateException(ex.Message, ex);
+                }
 
                 const string extractStatus = "Extracting launcher files...";
                 progressCallback?.Invoke(extractStatus, ProgressExtractStart);
@@ -341,6 +389,18 @@ namespace SmartGoldbergEmu.Services
             catch (Exception ex)
             {
                 throw new UpdateException($"Launcher update failed: {ex.Message}", ex);
+            }
+        }
+
+        private static void TryDeleteFileQuiet(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
             }
         }
 

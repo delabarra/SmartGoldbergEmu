@@ -43,10 +43,16 @@ namespace SmartGoldbergEmu.Services
         private const int ProgressComplete = 100;
 
         private static string _downloadUrl;
+        private static string _expectedSha256Hex;
         private static string _latestVersion;
         private static bool _resolvedFromRepack;
         private static GoldbergForkSource _resolvedFork;
         private static string _localDownloadArchiveFileName;
+
+        private const string MissingReleaseDigestMessage =
+            "Goldberg release asset is missing a SHA-256 digest; refusing to download.";
+        private const string UntrustedDownloadUrlMessage =
+            "Goldberg release asset URL is not a trusted HTTPS GitHub download URL.";
         private static bool _wasCancelledForMissingFiles = false;
         private static bool _forkSelectionCancelledForDownload = false;
         private static string _lastCancelledUpdateVersion = null;
@@ -145,6 +151,7 @@ namespace SmartGoldbergEmu.Services
         private static void ApplyResolvedRelease(GoldbergResolvedRelease resolved, UpdateCheckResult result)
         {
             _downloadUrl = resolved.DownloadUrl;
+            _expectedSha256Hex = resolved.ExpectedSha256Hex;
             _latestVersion = resolved.LatestVersion;
             _resolvedFromRepack = resolved.FromRepack;
             _localDownloadArchiveFileName = GoldbergForkConstants.GetLocalDownloadArchiveFileName(
@@ -154,9 +161,81 @@ namespace SmartGoldbergEmu.Services
             if (result != null)
             {
                 result.DownloadUrl = resolved.DownloadUrl;
+                result.ExpectedSha256Hex = resolved.ExpectedSha256Hex;
                 result.LatestVersion = resolved.LatestVersion;
                 result.ReleaseNotes = resolved.ReleaseNotes;
                 result.FromRepack = resolved.FromRepack;
+            }
+        }
+
+        private static void ClearResolvedRelease(UpdateCheckResult result)
+        {
+            _downloadUrl = null;
+            _expectedSha256Hex = null;
+            _latestVersion = null;
+            _resolvedFromRepack = false;
+            _localDownloadArchiveFileName = null;
+            if (result == null)
+                return;
+
+            result.DownloadUrl = null;
+            result.ExpectedSha256Hex = null;
+            result.LatestVersion = null;
+            result.ReleaseNotes = null;
+            result.FromRepack = false;
+        }
+
+        // Same bar as launcher updates: GitHub HTTPS CDN + release asset digest required.
+        private static bool TryAcceptResolvedRelease(
+            GoldbergResolvedRelease resolved,
+            UpdateCheckResult result,
+            out string rejectReason)
+        {
+            rejectReason = null;
+            if (resolved == null || string.IsNullOrWhiteSpace(resolved.DownloadUrl))
+            {
+                rejectReason = "Goldberg release asset download URL is missing.";
+                return false;
+            }
+
+            if (!PathValidationHelper.IsTrustedGitHubReleaseDownloadUrl(resolved.DownloadUrl))
+            {
+                rejectReason = UntrustedDownloadUrlMessage;
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(resolved.ExpectedSha256Hex))
+            {
+                rejectReason = MissingReleaseDigestMessage;
+                return false;
+            }
+
+            ApplyResolvedRelease(resolved, result);
+            return true;
+        }
+
+        private static void EnsureGoldbergDownloadUrlTrusted(string url)
+        {
+            try
+            {
+                ReleaseAssetIntegrityHelper.EnsureTrustedGitHubHttpsDownloadUrl(url);
+            }
+            catch (Exception ex)
+            {
+                throw new UpdateException(ex.Message, ex);
+            }
+        }
+
+        private static void VerifyGoldbergArchiveIntegrityOrThrow(string archivePath)
+        {
+            try
+            {
+                ReleaseAssetIntegrityHelper.VerifyFileSha256OrThrow(archivePath, _expectedSha256Hex);
+            }
+            catch (Exception ex)
+            {
+                TryDeletePartialDownloadQuiet(archivePath);
+                throw new UpdateException(ex.Message, ex);
             }
         }
 
@@ -280,7 +359,12 @@ namespace SmartGoldbergEmu.Services
             if (!GoldbergReleaseResolveHelper.TryParseUpstreamRelease(upstreamJson, resolved))
                 return false;
 
-            ApplyResolvedRelease(resolved, result);
+            if (!TryAcceptResolvedRelease(resolved, result, out string rejectReason))
+            {
+                ClearResolvedRelease(result);
+                throw new InvalidOperationException(rejectReason);
+            }
+
             ServiceLocator.LogService?.LogDebug(
                 $"Using upstream Goldberg fork release as download source ({GoldbergForkConstants.GetForkDisplayName(fork)}).");
             return true;
@@ -308,11 +392,19 @@ namespace SmartGoldbergEmu.Services
                     if (!string.IsNullOrEmpty(repackJson)
                         && GoldbergReleaseResolveHelper.TryParseRepackRelease(repackJson, configuredFork, repackResolved))
                     {
-                        ApplyResolvedRelease(repackResolved, result);
-                        ServiceLocator.LogService?.LogDebug("Using Goldberg repack release as download source.");
-                        return true;
+                        if (TryAcceptResolvedRelease(repackResolved, result, out string rejectReason))
+                        {
+                            ServiceLocator.LogService?.LogDebug("Using Goldberg repack release as download source.");
+                            return true;
+                        }
+
+                        ClearResolvedRelease(result);
+                        errors.Add("Repack: " + rejectReason);
                     }
-                    errors.Add("Repack: no asset for " + forkName);
+                    else
+                    {
+                        errors.Add("Repack: no asset for " + forkName);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -439,6 +531,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 _downloadUrl = null;
+                _expectedSha256Hex = null;
                 _resolvedFromRepack = false;
                 _localDownloadArchiveFileName = null;
                 GoldbergForkSource configuredFork = GetConfiguredGoldbergForkSource();
@@ -494,6 +587,7 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 _downloadUrl = null;
+                _expectedSha256Hex = null;
 
                 ThrowIfUpdateCancelled(cancellationCheck);
 
@@ -501,10 +595,12 @@ namespace SmartGoldbergEmu.Services
                 {
                     progressCallback?.Invoke("Fetching latest release information...", ProgressFetch);
                     var checkResult = await CheckForUpdatesAsync(isStartup: false).ConfigureAwait(false);
-                    if (!checkResult.Success || string.IsNullOrEmpty(_downloadUrl))
+                    if (!checkResult.Success
+                        || string.IsNullOrEmpty(_downloadUrl)
+                        || string.IsNullOrEmpty(_expectedSha256Hex))
                     {
                         throw new UpdateException(string.IsNullOrEmpty(checkResult.ErrorMessage)
-                            ? "Could not get download URL"
+                            ? "Could not get a verified download URL"
                             : checkResult.ErrorMessage);
                     }
 
@@ -681,6 +777,7 @@ namespace SmartGoldbergEmu.Services
             {
                 try
                 {
+                    EnsureGoldbergDownloadUrlTrusted(_downloadUrl);
                     await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
                     {
                         ReportGoldbergDownloadProgress(
@@ -691,6 +788,7 @@ namespace SmartGoldbergEmu.Services
                             received,
                             total);
                     }, cancellationCheck).ConfigureAwait(false);
+                    VerifyGoldbergArchiveIntegrityOrThrow(archivePath);
                     return false;
                 }
                 catch (UpdateException)
@@ -754,6 +852,7 @@ namespace SmartGoldbergEmu.Services
                     throw new UpdateException("Windows Defender exclusion was denied. Installation aborted.");
             }
 
+            EnsureGoldbergDownloadUrlTrusted(_downloadUrl);
             await DownloadFileAsync(_downloadUrl, archivePath, (received, total) =>
             {
                 ReportGoldbergDownloadProgress(
@@ -764,6 +863,7 @@ namespace SmartGoldbergEmu.Services
                     received,
                     total);
             }, cancellationCheck).ConfigureAwait(false);
+            VerifyGoldbergArchiveIntegrityOrThrow(archivePath);
 
             return exclusionAddedDuringFallback;
         }
@@ -891,9 +991,14 @@ namespace SmartGoldbergEmu.Services
 
         private static ProcessStartInfo CreateDefenderMpPreferenceStartInfo(string path, bool add, ProcessWindowStyle? windowStyle = null)
         {
+            // PowerShell single-quoted string: double embedded quotes; reject other injection metacharacters.
+            string safePath = (path ?? string.Empty).Replace("'", "''");
+            if (safePath.IndexOfAny(new[] { '\r', '\n', '`', ';', '|', '&' }) >= 0)
+                throw new InvalidOperationException("Defender exclusion path contains invalid characters.");
+
             string inner = add
-                ? $"Add-MpPreference -ExclusionPath '{path}'"
-                : $"Remove-MpPreference -ExclusionPath '{path}'";
+                ? $"Add-MpPreference -ExclusionPath '{safePath}'"
+                : $"Remove-MpPreference -ExclusionPath '{safePath}'";
             var psi = new ProcessStartInfo
             {
                 FileName = "powershell",

@@ -11,12 +11,12 @@ namespace SmartGoldbergEmu.Forms
         private Timer _autoCloseTimer;
 
         public ProgressForm()
-            : this(ServiceLocator.ThemeService)
+            : this(ResolveThemeService())
         {
         }
 
         public ProgressForm(ThemeService themeService)
-            : base(themeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
             btnCancel.Click += OnCancel_Click;

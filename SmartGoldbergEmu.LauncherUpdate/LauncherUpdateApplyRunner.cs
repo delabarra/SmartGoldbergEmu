@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.JsonKit;
 
 namespace SmartGoldbergEmu.LauncherUpdate
@@ -32,13 +33,17 @@ namespace SmartGoldbergEmu.LauncherUpdate
                 string workRoot = manifest["workRoot"]?.ToString();
                 int waitProcessId = manifest["waitProcessId"]?.ToInt32() ?? 0;
 
-                if (string.IsNullOrWhiteSpace(installRoot)
-                    || string.IsNullOrWhiteSpace(stageRoot)
-                    || string.IsNullOrWhiteSpace(exePath)
-                    || string.IsNullOrWhiteSpace(workRoot))
-                {
-                    throw new InvalidOperationException("Launcher update manifest is missing required paths.");
-                }
+                LauncherUpdateManifestTrustHelper.ValidateOrThrow(
+                    manifestPath,
+                    installRoot,
+                    stageRoot,
+                    exePath,
+                    workRoot);
+
+                installRoot = Path.GetFullPath(installRoot);
+                stageRoot = Path.GetFullPath(stageRoot);
+                exePath = Path.GetFullPath(exePath);
+                workRoot = Path.GetFullPath(workRoot);
 
                 Log(logPath, "Waiting for launcher process " + waitProcessId + " to exit.");
                 WaitForProcessExit(waitProcessId);
@@ -60,14 +65,9 @@ namespace SmartGoldbergEmu.LauncherUpdate
                 RemoveLegacySideBySideDirectories(installRoot, logPath);
 
                 Log(logPath, "Starting " + exePath + ".");
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = exePath,
-                    WorkingDirectory = installRoot,
-                    UseShellExecute = true
-                });
+                TryStartLauncher(exePath, installRoot, logPath);
 
-                ScheduleTempCleanup(workRoot, logPath);
+                ScheduleTempCleanup(workRoot, installRoot, logPath);
             }
             catch (Exception ex)
             {
@@ -217,6 +217,15 @@ namespace SmartGoldbergEmu.LauncherUpdate
 
         private static void TryStartLauncher(string exePath, string installRoot, string logPath)
         {
+            string expectedExe = Path.Combine(
+                Path.GetFullPath(installRoot),
+                LauncherUpdateManifestTrustHelper.LauncherMainExecutableFileName);
+            if (!string.Equals(Path.GetFullPath(exePath), expectedExe, StringComparison.OrdinalIgnoreCase))
+            {
+                Log(logPath, "Refusing to start launcher; exePath is not SmartGoldbergEmu.exe under installRoot.");
+                return;
+            }
+
             if (!File.Exists(exePath))
                 return;
 
@@ -295,11 +304,18 @@ namespace SmartGoldbergEmu.LauncherUpdate
             }
         }
 
-        private static void ScheduleTempCleanup(string workRoot, string logPath)
+        private static void ScheduleTempCleanup(string workRoot, string installRoot, string logPath)
         {
             string tempRoot = Path.GetDirectoryName(workRoot);
             if (string.IsNullOrEmpty(tempRoot) || !Directory.Exists(tempRoot))
                 return;
+
+            // Only delete the install temp folder (parent of workRoot), never an unrelated path from a crafted manifest.
+            if (!LauncherUpdateManifestTrustHelper.IsPathWithinBase(installRoot, tempRoot))
+            {
+                Log(logPath, "Skipping temp cleanup; folder is not under installRoot: " + tempRoot);
+                return;
+            }
 
             Log(logPath, "Scheduling cleanup of " + tempRoot + ".");
             string cleanupArguments =

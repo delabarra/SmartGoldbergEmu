@@ -95,13 +95,9 @@ namespace SmartGoldbergEmu.Services
 
         private static async Task WarmHostsAsync(HttpClient http, CancellationToken cancellationToken)
         {
-            string storeOrigin = new Uri(
-                string.Format(ApplicationConstants.SteamStoreSearchCatalogUrlFormat, "x"))
-                .GetLeftPart(UriPartial.Authority) + "/";
-
             await Task.WhenAll(
                 WarmUrlAsync(http, AppSnapshotOptions.DefaultSteamCmdInfoUrl, cancellationToken),
-                WarmUrlAsync(http, storeOrigin, cancellationToken)).ConfigureAwait(false);
+                WarmUrlAsync(http, ApplicationConstants.SteamStoreOriginUrl, cancellationToken)).ConfigureAwait(false);
         }
 
         private static async Task WarmUrlAsync(HttpClient http, string url, CancellationToken cancellationToken)

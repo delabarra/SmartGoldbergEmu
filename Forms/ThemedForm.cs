@@ -17,17 +17,29 @@ namespace SmartGoldbergEmu.Forms
 
         protected ThemeService ThemeService => _themeService;
 
+        // Avoid ServiceLocator (and ThemeService timers/registry) while the WinForms designer constructs the form.
+        protected static ThemeService ResolveThemeService(ThemeService themeService = null)
+        {
+            if (DesignTimeHelper.IsDesignTime)
+                return themeService;
+            return themeService ?? ServiceLocator.ThemeService;
+        }
+
         protected ThemedForm()
-            : this(ServiceLocator.ThemeService)
+            : this(ResolveThemeService())
         {
         }
 
         protected ThemedForm(ThemeService themeService)
         {
-            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             ApplyApplicationIcon();
             if (DesignTimeHelper.IsDesignTime)
+            {
+                _themeService = themeService;
                 return;
+            }
+
+            _themeService = themeService ?? throw new ArgumentNullException(nameof(themeService));
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             WinFormsThemePaintHelper.EnableDoubleBuffer(this);
             ThemeColors colors = _themeService.GetThemeColors(_themeService.EffectiveTheme);
@@ -59,7 +71,7 @@ namespace SmartGoldbergEmu.Forms
 
         protected void ApplyTheme()
         {
-            if (DesignTimeHelper.IsDesignTime || IsDisposed || Disposing)
+            if (DesignTimeHelper.IsDesignTime || IsDisposed || Disposing || _themeService == null)
                 return;
             _themeService.ApplyTheme(this);
             OnThemeApplied();
@@ -84,7 +96,7 @@ namespace SmartGoldbergEmu.Forms
 
         private void EnsureThemeBound()
         {
-            if (_themeBound)
+            if (_themeBound || _themeService == null)
                 return;
             _themeBound = true;
             _themeService.ThemeChanged += ThemeService_ThemeChanged;
@@ -110,7 +122,7 @@ namespace SmartGoldbergEmu.Forms
 
         private void UnbindTheme()
         {
-            if (!_themeBound)
+            if (!_themeBound || _themeService == null)
                 return;
             _themeService.ThemeChanged -= ThemeService_ThemeChanged;
             _themeBound = false;

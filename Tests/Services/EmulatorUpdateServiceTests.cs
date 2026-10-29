@@ -12,26 +12,36 @@ namespace SmartGoldbergEmu.Tests.Services
     [Collection("StaticServiceHooks")]
     public sealed class EmulatorUpdateServiceTests
     {
+        private const string SampleDigest =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        private const string SampleDigestHex =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
         private const string SampleRepackJson =
             "{\"tag_name\":\"repack-2026_05_30-2026_02_16-420\",\"body\":\"repack notes\",\"assets\":[" +
-            "{\"name\":\"Detanup01-2026_05_30-win.7z\",\"browser_download_url\":\"https://example/detanup.7z\"}," +
-            "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://example/alex.7z\"}" +
+            "{\"name\":\"Detanup01-2026_05_30-win.7z\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/detanup.7z\",\"digest\":\"" + SampleDigest + "\"}," +
+            "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/alex.7z\",\"digest\":\"" + SampleDigest + "\"}" +
             "]}";
 
         private const string SampleRepackJsonLegacyZip =
             "{\"tag_name\":\"repack-2026_05_19-2026_02_16-1\",\"body\":\"repack notes\",\"assets\":[" +
-            "{\"name\":\"Detanup01-2026_05_19-win.zip\",\"browser_download_url\":\"https://example/detanup.zip\"}," +
-            "{\"name\":\"alex47exe-2026_02_16-win.zip\",\"browser_download_url\":\"https://example/alex.zip\"}" +
+            "{\"name\":\"Detanup01-2026_05_19-win.zip\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/detanup.zip\",\"digest\":\"" + SampleDigest + "\"}," +
+            "{\"name\":\"alex47exe-2026_02_16-win.zip\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/alex.zip\",\"digest\":\"" + SampleDigest + "\"}" +
             "]}";
 
         private const string SampleRepackJsonAlexOnly =
             "{\"tag_name\":\"repack-2026_05_30-2026_02_16-420\",\"body\":\"repack notes\",\"assets\":[" +
-            "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://example/alex.7z\"}" +
+            "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/alex.7z\",\"digest\":\"" + SampleDigest + "\"}" +
+            "]}";
+
+        private const string SampleRepackJsonMissingDigest =
+            "{\"tag_name\":\"repack-2026_05_30-2026_02_16-420\",\"body\":\"repack notes\",\"assets\":[" +
+            "{\"name\":\"Detanup01-2026_05_30-win.7z\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/detanup.7z\"}" +
             "]}";
 
         private const string SampleUpstreamJson =
             "{\"tag_name\":\"release-2026_05_19\",\"body\":\"upstream notes\",\"assets\":[" +
-            "{\"name\":\"emu-win-release.7z\",\"browser_download_url\":\"https://example/upstream.7z\"}" +
+            "{\"name\":\"emu-win-release.7z\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/upstream.7z\",\"digest\":\"" + SampleDigest + "\"}" +
             "]}";
 
         [Fact]
@@ -49,7 +59,8 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.True(result.UpdateAvailable);
                 Assert.Equal("2026_02_16", result.CurrentVersion);
                 Assert.Equal("2026_05_30", result.LatestVersion);
-                Assert.Equal("https://example/detanup.7z", result.DownloadUrl);
+                Assert.Equal("https://github.com/owner/repo/releases/download/v1/detanup.7z", result.DownloadUrl);
+                Assert.Equal(SampleDigestHex, result.ExpectedSha256Hex);
                 Assert.True(result.FromRepack);
                 Assert.Equal("repack notes", result.ReleaseNotes);
             }
@@ -110,7 +121,7 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.True(result.Success);
                 Assert.True(result.UpdateAvailable);
                 Assert.Equal("2026_05_19", result.LatestVersion);
-                Assert.Equal("https://example/detanup.zip", result.DownloadUrl);
+                Assert.Equal("https://github.com/owner/repo/releases/download/v1/detanup.zip", result.DownloadUrl);
                 Assert.True(result.FromRepack);
             }
         }
@@ -132,8 +143,51 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.True(result.Success);
                 Assert.True(result.UpdateAvailable);
                 Assert.Equal("2026_05_19", result.LatestVersion);
-                Assert.Equal("https://example/upstream.7z", result.DownloadUrl);
+                Assert.Equal("https://github.com/owner/repo/releases/download/v1/upstream.7z", result.DownloadUrl);
                 Assert.False(result.FromRepack);
+            }
+        }
+
+        [Fact]
+        public async Task CheckForUpdatesAsync_falls_back_to_upstream_when_repack_asset_missing_digest()
+        {
+            using (var appScope = new ServiceLocatorTestScope("sge-emu-update-missing-digest-"))
+            using (var httpScope = new HttpServiceTestScope())
+            {
+                appScope.WriteEmulatorConfig(GoldbergForkSource.Detanup, "2026_02_16");
+                httpScope.HttpService.SetJsonResponse(GoldbergForkConstants.RepackReleasesApiUrl, SampleRepackJsonMissingDigest);
+                httpScope.HttpService.SetJsonResponse(
+                    GoldbergForkConstants.GetUpstreamReleasesApiUrl(GoldbergForkSource.Detanup),
+                    SampleUpstreamJson);
+
+                UpdateCheckResult result = await EmulatorUpdateService.CheckForUpdatesAsync();
+
+                Assert.True(result.Success);
+                Assert.True(result.UpdateAvailable);
+                Assert.Equal("https://github.com/owner/repo/releases/download/v1/upstream.7z", result.DownloadUrl);
+                Assert.Equal(SampleDigestHex, result.ExpectedSha256Hex);
+                Assert.False(result.FromRepack);
+            }
+        }
+
+        [Fact]
+        public async Task CheckForUpdatesAsync_fails_when_release_assets_missing_digest()
+        {
+            using (var appScope = new ServiceLocatorTestScope("sge-emu-update-no-digest-"))
+            using (var httpScope = new HttpServiceTestScope())
+            {
+                appScope.WriteEmulatorConfig(GoldbergForkSource.Detanup, "2026_02_16");
+                httpScope.HttpService.SetJsonResponse(GoldbergForkConstants.RepackReleasesApiUrl, SampleRepackJsonMissingDigest);
+                httpScope.HttpService.SetJsonResponse(
+                    GoldbergForkConstants.GetUpstreamReleasesApiUrl(GoldbergForkSource.Detanup),
+                    "{\"tag_name\":\"release-2026_05_19\",\"body\":\"notes\",\"assets\":[" +
+                    "{\"name\":\"emu-win-release.7z\",\"browser_download_url\":\"https://github.com/owner/repo/releases/download/v1/upstream.7z\"}" +
+                    "]}");
+
+                UpdateCheckResult result = await EmulatorUpdateService.CheckForUpdatesAsync();
+
+                Assert.False(result.Success);
+                Assert.Contains("SHA-256", result.ErrorMessage, System.StringComparison.OrdinalIgnoreCase);
             }
         }
 
@@ -158,7 +212,7 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.True(result.Success);
                 Assert.True(result.UpdateAvailable);
                 Assert.Equal("2026_05_19", result.LatestVersion);
-                Assert.Equal("https://example/upstream.7z", result.DownloadUrl);
+                Assert.Equal("https://github.com/owner/repo/releases/download/v1/upstream.7z", result.DownloadUrl);
                 Assert.False(result.FromRepack);
             }
         }

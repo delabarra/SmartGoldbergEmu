@@ -1,4 +1,5 @@
 using AppDataKit;
+using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Tests.TestSupport;
 using Xunit;
@@ -7,6 +8,17 @@ namespace SmartGoldbergEmu.Tests.Helpers
 {
     public sealed class GamesInfosDatasHelperTests
     {
+        [Fact]
+        public void BuildSteamFileUrl_uses_live_host_with_github_fallback()
+        {
+            Assert.Equal(
+                "https://emulator.servegame.com/games-infos-data/steam/4358690/achievements_db.json",
+                GamesInfosDatasHelper.BuildSteamFileUrl("4358690", PathConstants.GoldbergAchievementsDbJsonFileName));
+            Assert.Equal(
+                "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/4358690/achievements_db.json",
+                GamesInfosDatasHelper.BuildSteamFileFallbackUrl("4358690", PathConstants.GoldbergAchievementsDbJsonFileName));
+        }
+
         [Fact]
         public void ParseAchievementsDb_resolves_language_and_hidden()
         {

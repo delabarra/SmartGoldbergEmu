@@ -9,12 +9,12 @@ namespace SmartGoldbergEmu.Forms
 {
     public partial class AboutForm : ThemedForm
     {
-        public AboutForm() : this(ServiceLocator.ThemeService)
+        public AboutForm() : this(ResolveThemeService())
         {
         }
 
         public AboutForm(ThemeService themeService)
-            : base(themeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
             lblVersion.Text = "Version " + ApplicationVersionHelper.GetDisplayVersion();

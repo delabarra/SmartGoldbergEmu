@@ -28,15 +28,17 @@ namespace SmartGoldbergEmu.Forms
         private bool HasValidSelection =>
             lstResults.SelectedIndex >= 0 && lstResults.SelectedIndex < _searchResults.Count;
 
-        public GameSearchForm() : this(ServiceLocator.ThemeService)
+        public GameSearchForm() : this(ResolveThemeService())
         {
         }
 
         public GameSearchForm(ThemeService themeService)
-            : base(themeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
             btnOK.Enabled = false;
+            if (DesignTimeHelper.IsDesignTime)
+                return;
             _filterConnection = SteamGameSearchService.CreateFilterConnection();
         }
 

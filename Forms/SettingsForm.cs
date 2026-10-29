@@ -72,13 +72,16 @@ namespace SmartGoldbergEmu.Forms
 
         public event EventHandler ApiKeyValidationStatusChanged;
 
-        public SettingsForm() 
-            : this(ServiceLocator.AppDataService, ServiceLocator.GoldbergCfgService, ServiceLocator.ThemeService)
+        public SettingsForm()
+            : this(
+                DesignTimeHelper.IsDesignTime ? null : ServiceLocator.AppDataService,
+                DesignTimeHelper.IsDesignTime ? null : ServiceLocator.GoldbergCfgService,
+                ResolveThemeService())
         {
         }
 
         public SettingsForm(AppDataService appDataService, GoldbergCfgService goldbergCfgService)
-            : this(appDataService, goldbergCfgService, ServiceLocator.ThemeService)
+            : this(appDataService, goldbergCfgService, ResolveThemeService())
         {
         }
 
@@ -88,10 +91,22 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public SettingsForm(AppDataService appDataService, GoldbergCfgService goldbergCfgService, ThemeService themeService, SteamApiKeyService apiKeyService)
-            : base(themeService ?? ServiceLocator.ThemeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
             InitializeSaveLocationComboItems();
+
+            if (DesignTimeHelper.IsDesignTime)
+            {
+                _appDataService = appDataService;
+                _goldbergCfgService = goldbergCfgService;
+                _themeService = themeService;
+                _apiKeyService = apiKeyService;
+                _avatarPath = PathConstants.GlobalAccountAvatarPath;
+                _apiKeyValidationClearTimer = new Timer { Interval = ApiKeyValidationMessageDisplayMs };
+                _apiKeyValidationClearTimer.Tick += OnApiKeyValidationClearTimer_Tick;
+                return;
+            }
 
             _appDataService = appDataService ?? throw new ArgumentNullException(nameof(appDataService));
             _goldbergCfgService = goldbergCfgService ?? throw new ArgumentNullException(nameof(goldbergCfgService));
@@ -100,9 +115,6 @@ namespace SmartGoldbergEmu.Forms
             _avatarPath = PathConstants.GlobalAccountAvatarPath;
             _apiKeyValidationClearTimer = new Timer { Interval = ApiKeyValidationMessageDisplayMs };
             _apiKeyValidationClearTimer.Tick += OnApiKeyValidationClearTimer_Tick;
-
-            if (DesignTimeHelper.IsDesignTime)
-                return;
 
             WireEmulatorTab();
 

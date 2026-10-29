@@ -58,6 +58,7 @@ userassets/
 SmartGoldbergEmu.cfg
 SmartGoldbergEmu.cfg.imported
 settings.ini
+steam_apikey.txt
 uri_*.txt
 
 # --- Private maintainer / IDE (keep local; CI fails if tracked — .github/compliance/policy.json) ---

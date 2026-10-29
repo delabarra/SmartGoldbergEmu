@@ -69,7 +69,7 @@ namespace SmartGoldbergEmu.Forms
             GameSaveWriter gameSaveWriter = null,
             GameEditBundle editBundle = null,
             SteamApiKeyService steamApiKeyService = null)
-            : base(themeService ?? ServiceLocator.ThemeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
 
@@ -79,19 +79,30 @@ namespace SmartGoldbergEmu.Forms
             _editBundle = editBundle;
             _isUpdateOfExisting = !isEditMode && addBundle != null && addBundle.IsUpdateOfExisting;
             _metadata = metadata;
+            _taskReportService = feedbackService;
+            _onSaveCompleted = onSaveCompleted;
+
+            if (DesignTimeHelper.IsDesignTime)
+            {
+                _gameDataService = gameDataService;
+                _emulatorConfigService = emulatorConfigService;
+                _themeService = themeService;
+                _gameSettingsSaveService = gameSettingsSaveService;
+                _gameSaveWriter = gameSaveWriter;
+                _achievementService = achievementService;
+                _gameLaunchService = null;
+                _steamApiKeyService = steamApiKeyService;
+                return;
+            }
+
             _gameDataService = gameDataService ?? ServiceLocator.GameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
             _emulatorConfigService = emulatorConfigService ?? ServiceLocator.EmulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
             _themeService = themeService ?? ServiceLocator.ThemeService ?? throw new ArgumentNullException(nameof(themeService));
-            _taskReportService = feedbackService;
             _gameSettingsSaveService = gameSettingsSaveService ?? ServiceLocator.GameSettingsSaveService ?? throw new ArgumentNullException(nameof(gameSettingsSaveService));
             _gameSaveWriter = gameSaveWriter ?? ServiceLocator.GameSaveWriter ?? throw new ArgumentNullException(nameof(gameSaveWriter));
-            _onSaveCompleted = onSaveCompleted;
             _achievementService = achievementService ?? ServiceLocator.AchievementService;
             _gameLaunchService = ServiceLocator.GameLaunchService;
             _steamApiKeyService = steamApiKeyService ?? ServiceLocator.SteamApiKeyService;
-
-            if (DesignTimeHelper.IsDesignTime)
-                return;
 
             _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
             InitializeLaunchModeDropdown();
@@ -778,6 +789,11 @@ namespace SmartGoldbergEmu.Forms
                 return _metadata.InstallDir.Trim();
             if (_gameConfig?.AppInfo != null && AppInfoKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.AppInfo, out string fromPics))
                 return fromPics;
+            if (_gameConfig?.Catalog != null && !string.IsNullOrWhiteSpace(_gameConfig.Catalog.InstallDir))
+                return _gameConfig.Catalog.InstallDir.Trim();
+            if (_gameConfig?.Catalog?.AppInfo != null &&
+                AppInfoKeyValueHelper.TryGetSteamInstallDirFolderName(_gameConfig.Catalog.AppInfo, out string fromCatalog))
+                return fromCatalog;
             return null;
         }
 
@@ -786,30 +802,12 @@ namespace SmartGoldbergEmu.Forms
             if (lblHintGameFolder == null)
                 return;
 
-            string installDirFolder = GetSteamInstallDirFolderNameForForm();
-            if (string.IsNullOrEmpty(installDirFolder))
-            {
-                lblHintGameFolder.Visible = true;
-                return;
-            }
-
-            string exeText = txtGameExecutable?.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrEmpty(exeText))
-            {
-                lblHintGameFolder.Visible = true;
-                return;
-            }
-
-            string folderText = txtGameFolder?.Text?.Trim() ?? string.Empty;
-            if (!GameFolderPathHelper.TryResolveExecutableFromGameFolderFields(folderText, exeText, out string fullExe))
-            {
-                lblHintGameFolder.Visible = true;
-                return;
-            }
-
-            bool installdirFound = GameFolderPathHelper.TrySplitExecutableAtSteamInstallDir(fullExe, installDirFolder, out _, out _);
-            lblHintGameFolder.Visible = !installdirFound;
-            if (lblHintGameFolder.Visible)
+            bool show = GameFolderPathHelper.ShouldShowGameFolderInstallDirHint(
+                txtGameFolder?.Text,
+                txtGameExecutable?.Text,
+                GetSteamInstallDirFolderNameForForm());
+            lblHintGameFolder.Visible = show;
+            if (show)
                 lblHintGameFolder.BringToFront();
         }
 

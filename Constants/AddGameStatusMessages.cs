@@ -65,12 +65,21 @@ namespace SmartGoldbergEmu.Constants
         public static string WritingAchievementsFile(string gameName) =>
             $"Writing {gameName} achievements file…";
 
-        public static string WaitingForLibraryImages(string gameName) =>
-            $"Waiting for {gameName} library images…";
-
         // Background library image download; shown only while no pipeline step owns the strip text.
-        public static string DownloadingLibraryImages(int completed, int total) =>
-            $"Downloading library images {completed}/{total}";
+        public static string DownloadingLibraryImages(string gameName, int completed, int total)
+        {
+            string name = string.IsNullOrWhiteSpace(gameName) ? null : gameName.Trim();
+            if (total <= 0)
+            {
+                if (name != null)
+                    return $"Downloading {name} library images…";
+                return "Downloading library images…";
+            }
+
+            if (name != null)
+                return $"Downloading {name} library images {completed}/{total}";
+            return $"Downloading library images {completed}/{total}";
+        }
 
         public static string SavingCredentials(string gameName) =>
             $"Saving {gameName} ticket and alternate SteamID…";

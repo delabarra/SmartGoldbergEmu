@@ -168,8 +168,11 @@ namespace SmartGoldbergEmu.Constants
 
         public const string SteamWebApiKeyRegistrationUrl = "https://steamcommunity.com/dev/apikey";
         public const string SteamUserStatsSchemaApiUrlFormat = "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?l={0}&key={1}&appid={2}";
-        // Nemirtingas/games-infos-datas: steam/{appId}/{fileName} (achievements_db, stats_db, inventory_db, …).
+        // Nemirtingas games-infos-datas: steam/{appId}/{fileName} (achievements_db, stats_db, inventory_db, …).
+        // Live host (README since 2026-05); GitHub raw mirror is stale and kept as fallback only.
         public const string GamesInfosDatasSteamFileUrlFormat =
+            "https://emulator.servegame.com/games-infos-data/steam/{0}/{1}";
+        public const string GamesInfosDatasSteamFileUrlFallbackFormat =
             "https://raw.githubusercontent.com/Nemirtingas/games-infos-datas/main/steam/{0}/{1}";
         public const string SteamCommunityLeaderboardsXmlUrlFormat = "https://steamcommunity.com/stats/{0}/leaderboards/?xml=1";
         public const string SteamPublishedFileDetailsApiUrlPrefix = "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?key=";
@@ -178,9 +181,12 @@ namespace SmartGoldbergEmu.Constants
             "https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=0&maxcount=200";
         public const string SteamDirectoryGetCmListUrl =
             "https://api.steampowered.com/ISteamDirectory/GetCMList/v1/?cellid=0";
-        // Store catalog search (games / Windows). Packages/bundles are skipped when parsing; delisted apps use SteamSearchGamesApiUrlFormat.
+        // Store catalog search (games / Windows). No cc= — Steam picks country from the client IP.
+        // {1} = Steam API language code from app settings. Packages/bundles are skipped when parsing;
+        // delisted apps use SteamSearchGamesApiUrlFormat.
         public const string SteamStoreSearchCatalogUrlFormat =
-            "https://store.steampowered.com/search/results/?term={0}&category1=998&os=win&cc=US&l=english&start=0&count=50";
+            "https://store.steampowered.com/search/results/?term={0}&category1=998&os=win&l={1}&start=0&count=50";
+        public const string SteamStoreOriginUrl = "https://store.steampowered.com/";
         public const string SteamSearchGamesApiUrlFormat = "https://sgel-app-index.vercel.app/api/games?search={0}";
         public const string SteamStoreAppUrlFormat = "https://store.steampowered.com/app/{0}";
         public const string SteamCommunityAppUrlFormat = "https://steamcommunity.com/app/{0}";

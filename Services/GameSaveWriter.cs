@@ -10,14 +10,12 @@ namespace SmartGoldbergEmu.Services
     {
         private readonly GameDataService _gameDataService;
         private readonly GameSettingsSaveService _gameSettingsSaveService;
-        private readonly GameImageService _gameImageService;
         private readonly EmulatorConfigService _emulatorConfigService;
 
         public GameSaveWriter()
             : this(
                 ServiceLocator.GameDataService,
                 ServiceLocator.GameSettingsSaveService,
-                ServiceLocator.GameImageService,
                 ServiceLocator.EmulatorConfigService)
         {
         }
@@ -25,12 +23,10 @@ namespace SmartGoldbergEmu.Services
         public GameSaveWriter(
             GameDataService gameDataService,
             GameSettingsSaveService gameSettingsSaveService,
-            GameImageService gameImageService,
             EmulatorConfigService emulatorConfigService)
         {
             _gameDataService = gameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
             _gameSettingsSaveService = gameSettingsSaveService ?? throw new ArgumentNullException(nameof(gameSettingsSaveService));
-            _gameImageService = gameImageService ?? throw new ArgumentNullException(nameof(gameImageService));
             _emulatorConfigService = emulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
         }
 
@@ -47,10 +43,12 @@ namespace SmartGoldbergEmu.Services
             formRequest.IsEditMode = false;
             formRequest.Metadata = request.Metadata;
 
-            ITaskReportService stripReport = request.TaskReportService ?? ServiceLocator.TaskReportService;
-            AddSaveTaskReport taskReport = stripReport != null ? new AddSaveTaskReport(stripReport) : null;
-            formRequest.TaskReportService = taskReport;
             string displayName = GetLibraryGameDisplayName(gameConfig);
+            ITaskReportService stripReport = request.TaskReportService ?? ServiceLocator.TaskReportService;
+            AddSaveTaskReport taskReport = stripReport != null
+                ? new AddSaveTaskReport(stripReport, displayName)
+                : null;
+            formRequest.TaskReportService = taskReport;
 
             // Immediate strip feedback before the library write.
             taskReport?.SetMessage(
@@ -72,8 +70,9 @@ namespace SmartGoldbergEmu.Services
 
             _gameSettingsSaveService.SaveAddModeCatalogSnapshot(formRequest);
 
-            // Library images only feed the list/mosaic; Goldberg files do not wait for them.
-            Task<bool> imagesTask = Task.Run(() => DownloadLibraryImagesAsync(request, formRequest, taskReport));
+            // Assets (CDN) and achievement icons (community CDN) are independent — run both beside Goldberg file work.
+            Task<bool> imagesTask = DownloadLibraryImagesAsync(request, formRequest, taskReport);
+            Task achievementsTask = RunAddAchievementSaveAsync(gameConfig, request.AchievementPreview, formRequest);
             bool assetsDownloaded;
             GameSettingsSaveResult filesResult;
             try
@@ -82,9 +81,11 @@ namespace SmartGoldbergEmu.Services
             }
             finally
             {
-                // Never return with the download still running: callers release the draft graphs it reads.
+                // Never return while either download still runs: callers release the draft graphs they read.
+                await achievementsTask.ConfigureAwait(false);
+                taskReport?.SetProgress(0, 0);
                 if (!imagesTask.IsCompleted)
-                    taskReport?.SetMessage(AddGameStatusMessages.WaitingForLibraryImages(displayName));
+                    taskReport?.ClearStepMessage();
                 assetsDownloaded = await imagesTask.ConfigureAwait(false);
             }
 
@@ -130,16 +131,6 @@ namespace SmartGoldbergEmu.Services
             if (!settingsResult.IsSuccess)
                 return settingsResult;
 
-            taskReport?.SetMessage(AddGameStatusMessages.GeneratingAchievements(displayName));
-            try
-            {
-                await RunAddAchievementSaveAsync(gameConfig, request.AchievementPreview, formRequest).ConfigureAwait(false);
-            }
-            finally
-            {
-                taskReport?.SetProgress(0, 0);
-            }
-
             if (request.CredentialsTouched)
             {
                 taskReport?.SetMessage(AddGameStatusMessages.SavingCredentials(displayName));
@@ -159,8 +150,11 @@ namespace SmartGoldbergEmu.Services
             if (taskReport != null)
                 onImageProgress = taskReport.ReportImageProgress;
 
+            // Refresh the mosaic as soon as the current list-view artwork lands; final essentials pass still notifies below.
+            Action onViewArtworkReady = () => TryRunCallback(request.OnAssetsDownloaded);
+
             bool downloaded = await _gameSettingsSaveService
-                .DownloadAddModeLibraryImagesAsync(formRequest, onImageProgress)
+                .DownloadAddModeLibraryImagesAsync(formRequest, onImageProgress, onViewArtworkReady)
                 .ConfigureAwait(false);
             taskReport?.EndImageProgress();
             if (downloaded)

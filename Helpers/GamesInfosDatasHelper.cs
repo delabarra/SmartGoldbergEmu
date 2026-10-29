@@ -22,6 +22,11 @@ namespace SmartGoldbergEmu.Helpers
             return string.Format(ApplicationConstants.GamesInfosDatasSteamFileUrlFormat, appId, fileName);
         }
 
+        public static string BuildSteamFileFallbackUrl(string appId, string fileName)
+        {
+            return string.Format(ApplicationConstants.GamesInfosDatasSteamFileUrlFallbackFormat, appId, fileName);
+        }
+
         public static async Task<string> TryGetSteamFileBodyAsync(
             string appId,
             string fileName,
@@ -30,7 +35,21 @@ namespace SmartGoldbergEmu.Helpers
             if (string.IsNullOrWhiteSpace(appId) || string.IsNullOrWhiteSpace(fileName))
                 return null;
 
-            string url = BuildSteamFileUrl(appId.Trim(), fileName.Trim());
+            string trimmedAppId = appId.Trim();
+            string trimmedFileName = fileName.Trim();
+            string body = await TryGetUrlBodyAsync(
+                BuildSteamFileUrl(trimmedAppId, trimmedFileName),
+                cancellationToken).ConfigureAwait(false);
+            if (body != null)
+                return body;
+
+            return await TryGetUrlBodyAsync(
+                BuildSteamFileFallbackUrl(trimmedAppId, trimmedFileName),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private static async Task<string> TryGetUrlBodyAsync(string url, CancellationToken cancellationToken)
+        {
             try
             {
                 using (var httpService = HttpServiceFactory.Create(TimeSpan.FromSeconds(HttpTimeoutSeconds)))

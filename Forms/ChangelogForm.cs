@@ -26,12 +26,12 @@ namespace SmartGoldbergEmu.Forms
         }
 
         public ChangelogForm(ChangelogDialogContent content)
-            : this(content, ServiceLocator.ThemeService)
+            : this(content, ResolveThemeService())
         {
         }
 
         public ChangelogForm(ChangelogDialogContent content, ThemeService themeService)
-            : base(themeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
             ConfigureReleaseNotesView();

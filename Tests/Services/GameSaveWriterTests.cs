@@ -98,7 +98,6 @@ namespace SmartGoldbergEmu.Tests.Services
             return new GameSaveWriter(
                 ctx.GameData,
                 ctx.SaveService,
-                new GameImageService(),
                 ctx.EmulatorConfig);
         }
 

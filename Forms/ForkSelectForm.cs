@@ -19,15 +19,22 @@ namespace SmartGoldbergEmu.Forms
 
         // forceExplicitChoice: no fork pre-selected; OK stays disabled until the user picks one (first-time download).
         public ForkSelectForm(bool forceExplicitChoice)
-            : this(forceExplicitChoice, ServiceLocator.ThemeService)
+            : this(forceExplicitChoice, ResolveThemeService())
         {
         }
 
         public ForkSelectForm(bool forceExplicitChoice, ThemeService themeService)
-            : base(themeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
             _forceExplicitChoice = forceExplicitChoice;
+            if (DesignTimeHelper.IsDesignTime)
+            {
+                _forkWhenOpened = default(GoldbergForkSource);
+                _channelWhenOpened = default(GoldbergReleaseChannel);
+                return;
+            }
+
             _forkWhenOpened = ServiceLocator.AppDataService.GetGoldbergForkSource();
             _channelWhenOpened = ServiceLocator.AppDataService.GetGoldbergReleaseChannel();
 
