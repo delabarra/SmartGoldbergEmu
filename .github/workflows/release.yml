@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: patch=2.4.4, hotfix=2.4.4.1, minor=2.5.0, major=3.0.0
+        description: patch=2.4.4, hotfix=2.4.3.5, minor=2.5.0, major=3.0.0 (from latest of Version.props or git tag)
         type: choice
         options: [patch, hotfix, minor, major]
         default: patch
@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Configure Git
         shell: pwsh
@@ -158,15 +159,20 @@ jobs:
       - name: Push tag
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           git config user.name "delabarra"
           git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           $tag = '${{ needs.prepare.outputs.tag }}'
           if ('${{ needs.prepare.outputs.skip_bump }}' -eq 'true') {
             git tag -fa $tag -m "Release $tag (re-run)"
+            if ($LASTEXITCODE -ne 0) { throw "git tag -fa $tag failed with exit code $LASTEXITCODE." }
             git push origin $tag --force
+            if ($LASTEXITCODE -ne 0) { throw "git push --force $tag failed with exit code $LASTEXITCODE." }
           } else {
             git tag -a $tag -m "Release $tag"
+            if ($LASTEXITCODE -ne 0) { throw "git tag -a $tag failed with exit code $LASTEXITCODE." }
             git push origin $tag
+            if ($LASTEXITCODE -ne 0) { throw "git push $tag failed with exit code $LASTEXITCODE." }
           }
 
       - name: Format release notes
