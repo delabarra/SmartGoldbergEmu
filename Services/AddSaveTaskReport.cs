@@ -9,19 +9,37 @@ namespace SmartGoldbergEmu.Services
     public sealed class AddSaveTaskReport : ITaskReportService
     {
         private readonly ITaskReportService _inner;
+        private readonly string _gameDisplayName;
         private readonly object _sync = new object();
         private string _stepMessage = string.Empty;
         private TaskReportKind _stepKind = TaskReportKind.Info;
         private bool _stepProgressActive;
+        // After Goldberg/achievements finish, keep showing library-image status even before the first N/M report.
+        private bool _yieldStripToImages;
         private int _imagesCompleted;
         private int _imagesTotal;
 
-        public AddSaveTaskReport(ITaskReportService inner)
+        public AddSaveTaskReport(ITaskReportService inner, string gameDisplayName = null)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+            _gameDisplayName = string.IsNullOrWhiteSpace(gameDisplayName) ? null : gameDisplayName.Trim();
         }
 
         private bool ImagesActive => _imagesTotal > 0 && _imagesCompleted < _imagesTotal;
+
+        // Drop pipeline step text so the library image counter can own the strip (e.g. after Goldberg/achievements finish).
+        public void ClearStepMessage()
+        {
+            lock (_sync)
+            {
+                _stepMessage = string.Empty;
+                _stepKind = TaskReportKind.Info;
+                _stepProgressActive = false;
+                _yieldStripToImages = true;
+                ForwardMessage_NoLock();
+                ForwardImageBar_NoLock();
+            }
+        }
 
         public void SetMessage(string message)
         {
@@ -34,6 +52,7 @@ namespace SmartGoldbergEmu.Services
             {
                 _stepMessage = message ?? string.Empty;
                 _stepKind = kind;
+                _yieldStripToImages = false;
                 ForwardMessage_NoLock();
             }
         }
@@ -45,6 +64,7 @@ namespace SmartGoldbergEmu.Services
                 _stepMessage = message ?? string.Empty;
                 _stepKind = kind;
                 _stepProgressActive = false;
+                _yieldStripToImages = false;
                 if (!ImagesActive)
                 {
                     _inner.SetMessageWithAutoClear(message, kind, delayMs);
@@ -89,13 +109,23 @@ namespace SmartGoldbergEmu.Services
         // Download ended (also on failure or early exit, where the counter never reaches its total).
         public void EndImageProgress()
         {
-            ReportImageProgress(0, 0);
+            lock (_sync)
+            {
+                _imagesCompleted = 0;
+                _imagesTotal = 0;
+                _yieldStripToImages = false;
+                if (string.IsNullOrEmpty(_stepMessage))
+                    ForwardMessage_NoLock();
+                if (!_stepProgressActive)
+                    ForwardImageBar_NoLock();
+            }
         }
 
         private void ForwardMessage_NoLock()
         {
-            string text = ImagesActive && string.IsNullOrEmpty(_stepMessage)
-                ? AddGameStatusMessages.DownloadingLibraryImages(_imagesCompleted, _imagesTotal)
+            bool showImageStatus = string.IsNullOrEmpty(_stepMessage) && (ImagesActive || _yieldStripToImages);
+            string text = showImageStatus
+                ? AddGameStatusMessages.DownloadingLibraryImages(_gameDisplayName, _imagesCompleted, _imagesTotal)
                 : _stepMessage;
             _inner.SetMessage(text, _stepKind);
         }

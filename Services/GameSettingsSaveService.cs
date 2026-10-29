@@ -95,13 +95,16 @@ namespace SmartGoldbergEmu.Services
                 taskReport?.SetProgress(0, 0);
 
                 SaveAddModeCatalogSnapshot(request);
-                assetsDownloaded = await DownloadAddModeLibraryImagesAsync(request).ConfigureAwait(false);
+
+                // CDN library art and achievement icons are independent of each other and of local Goldberg writes.
+                Action onViewArtworkReady = () => TryRunSuccessfulSaveCallback(request.OnAssetsDownloaded);
+                Task<bool> imagesTask = DownloadAddModeLibraryImagesAsync(request, onViewArtworkReady: onViewArtworkReady);
+                Task achievementsTask = RunAddGameAchievementsGenerationAsync(request.GameConfig, taskReport);
+                await RunAddModeGoldbergWorkAsync(request).ConfigureAwait(false);
+                await achievementsTask.ConfigureAwait(false);
+                assetsDownloaded = await imagesTask.ConfigureAwait(false);
                 if (assetsDownloaded)
                     TryRunSuccessfulSaveCallback(request.OnAssetsDownloaded);
-
-                await RunAddModeGoldbergWorkAsync(request).ConfigureAwait(false);
-
-                await RunAddGameAchievementsGenerationAsync(request.GameConfig, taskReport).ConfigureAwait(false);
 
                 taskReport?.SetProgress(0, 0);
                 taskReport?.SetMessageWithAutoClear(AddGameStatusMessages.AddedToLibrary(displayName));
@@ -158,9 +161,11 @@ namespace SmartGoldbergEmu.Services
         }
 
         // onImageProgress (completed, total) replaces the image service's own strip messages; never throws.
+        // onViewArtworkReady fires once the artwork for the current list view is on disk (mosaic can refresh early).
         public async Task<bool> DownloadAddModeLibraryImagesAsync(
             GameSettingsSaveRequest request,
-            Action<int, int> onImageProgress = null)
+            Action<int, int> onImageProgress = null,
+            Action onViewArtworkReady = null)
         {
             GameConfig gameConfig = request?.GameConfig;
             if (gameConfig == null || gameConfig.AppId == 0)
@@ -168,6 +173,16 @@ namespace SmartGoldbergEmu.Services
 
             try
             {
+                string listViewMode = null;
+                try
+                {
+                    listViewMode = ServiceLocator.AppDataService?.GetViewMode();
+                }
+                catch (Exception ex)
+                {
+                    LogWarningWithExceptionMessage("Could not read list view mode for image priority", ex);
+                }
+
                 return await _gameImageService.DownloadGameImagesAsync(
                     gameConfig.AppId,
                     request.Metadata,
@@ -176,7 +191,9 @@ namespace SmartGoldbergEmu.Services
                     appPicsData: gameConfig.AppInfo,
                     gameDisplayName: GetLibraryGameDisplayName(gameConfig),
                     catalogAssets: gameConfig.Catalog?.Assets,
-                    onProgress: onImageProgress).ConfigureAwait(false);
+                    onProgress: onImageProgress,
+                    listViewMode: listViewMode,
+                    onPrimaryListArtworkReady: onViewArtworkReady).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

@@ -35,15 +35,50 @@ namespace SmartGoldbergEmu.Tests.Services
         public void Image_counter_is_shown_as_text_only_without_a_step_message()
         {
             var strip = new RecordingTaskReport();
-            var report = new AddSaveTaskReport(strip);
+            var report = new AddSaveTaskReport(strip, "Portal");
 
             report.ReportImageProgress(3, 10);
 
-            Assert.Equal("Downloading library images 3/10", strip.Text);
+            Assert.Equal("Downloading Portal library images 3/10", strip.Text);
 
             report.EndImageProgress();
 
             Assert.Equal(string.Empty, strip.Text);
+        }
+
+        [Fact]
+        public void Clear_step_message_reveals_image_counter_after_pipeline_steps()
+        {
+            var strip = new RecordingTaskReport();
+            var report = new AddSaveTaskReport(strip, "Portal");
+
+            report.SetMessage("Generating Portal files for Goldberg");
+            report.ReportImageProgress(4, 10);
+            Assert.Equal("Generating Portal files for Goldberg", strip.Text);
+
+            report.ClearStepMessage();
+
+            Assert.Equal("Downloading Portal library images 4/10", strip.Text);
+            Assert.Equal(4, strip.ProgressCurrent);
+            Assert.Equal(10, strip.ProgressTotal);
+        }
+
+        [Fact]
+        public void Clear_step_message_shows_pending_image_text_before_first_progress()
+        {
+            var strip = new RecordingTaskReport();
+            var report = new AddSaveTaskReport(strip, "Portal");
+
+            report.SetMessage("Generating Portal files for Goldberg");
+            report.ClearStepMessage();
+
+            Assert.Equal("Downloading Portal library images…", strip.Text);
+
+            report.ReportImageProgress(1, 8);
+
+            Assert.Equal("Downloading Portal library images 1/8", strip.Text);
+            Assert.Equal(1, strip.ProgressCurrent);
+            Assert.Equal(8, strip.ProgressTotal);
         }
 
         [Fact]
@@ -86,11 +121,11 @@ namespace SmartGoldbergEmu.Tests.Services
             var strip = new RecordingTaskReport();
             var report = new AddSaveTaskReport(strip);
 
-            report.SetMessage("Waiting for images…");
+            report.SetMessage("Finishing save…");
             report.ReportImageProgress(4, 10);
             report.EndImageProgress();
 
-            Assert.Equal("Waiting for images…", strip.Text);
+            Assert.Equal("Finishing save…", strip.Text);
             Assert.Equal(0, strip.ProgressTotal);
         }
 

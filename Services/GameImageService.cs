@@ -195,7 +195,9 @@ namespace SmartGoldbergEmu.Services
             AppInfoKeyValue appPicsData = null,
             string gameDisplayName = null,
             GameAssetsSection catalogAssets = null,
-            Action<int, int> onProgress = null)
+            Action<int, int> onProgress = null,
+            string listViewMode = null,
+            Action onPrimaryListArtworkReady = null)
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(GameImageService));
@@ -242,12 +244,27 @@ namespace SmartGoldbergEmu.Services
                 if (_disposed)
                     return ApplyDownloadOutcomeFeedback(gamePath, displayName, appId, reportFeedback: false, picsData: picsData);
 
+                PartitionListViewPriorityDownloads(
+                    downloadRequests,
+                    listViewMode,
+                    picsData,
+                    preferredLanguage,
+                    appId,
+                    out List<AssetDownloadRequest> priorityRequests,
+                    out List<AssetDownloadRequest> remainingRequests);
+
                 var completed = 0;
                 var results = new List<AssetDownloadResult>(totalDownloads);
                 var lockObj = new object();
                 var stopwatch = Stopwatch.StartNew();
+                bool viewArtworkNotified = false;
 
-                await Task.WhenAll(downloadRequests.Select(async request =>
+                async Task DownloadBatchAsync(List<AssetDownloadRequest> batch)
+                {
+                    if (batch == null || batch.Count == 0)
+                        return;
+
+                    await Task.WhenAll(batch.Select(async request =>
                     {
                         AssetDownloadResult result = await DownloadImageAsync(
                             remoteAppId,
@@ -269,6 +286,22 @@ namespace SmartGoldbergEmu.Services
                             onProgress?.Invoke(completed, totalDownloads);
                         }
                     })).ConfigureAwait(false);
+                }
+
+                // Start both waves together (no throughput cap); priority is only for the early mosaic callback.
+                Task priorityTask = DownloadBatchAsync(priorityRequests);
+                Task remainingTask = DownloadBatchAsync(remainingRequests);
+                await priorityTask.ConfigureAwait(false);
+                if (!_disposed
+                    && onPrimaryListArtworkReady != null
+                    && !viewArtworkNotified
+                    && !string.IsNullOrEmpty(ResolveArtworkPathForViewMode(appId, listViewMode)))
+                {
+                    viewArtworkNotified = true;
+                    TryInvokePrimaryListArtworkReady(onPrimaryListArtworkReady);
+                }
+
+                await remainingTask.ConfigureAwait(false);
 
                 stopwatch.Stop();
                 if (results.Any(result => result.Outcome == AssetDownloadOutcome.Downloaded))
@@ -301,6 +334,121 @@ namespace SmartGoldbergEmu.Services
                 if (compactLoh)
                     LargeObjectHeapHelper.CompactAfterLargeTransientAllocation();
             }
+        }
+
+        private static void TryInvokePrimaryListArtworkReady(Action onPrimaryListArtworkReady)
+        {
+            if (onPrimaryListArtworkReady == null)
+                return;
+
+            try
+            {
+                onPrimaryListArtworkReady();
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("Primary list artwork ready callback failed: " + ex.Message);
+            }
+        }
+
+        // Pull the current mosaic/icon artwork ahead of the remaining CDN set so the list can refresh early.
+        private static void PartitionListViewPriorityDownloads(
+            List<AssetDownloadRequest> downloadRequests,
+            string listViewMode,
+            AppInfoKeyValue picsData,
+            string preferredLanguage,
+            ulong appId,
+            out List<AssetDownloadRequest> priorityRequests,
+            out List<AssetDownloadRequest> remainingRequests)
+        {
+            priorityRequests = new List<AssetDownloadRequest>();
+            remainingRequests = new List<AssetDownloadRequest>();
+            if (downloadRequests == null || downloadRequests.Count == 0)
+                return;
+
+            if (string.IsNullOrWhiteSpace(listViewMode)
+                || string.Equals(listViewMode, ApplicationConstants.ViewModeDetails, StringComparison.OrdinalIgnoreCase))
+            {
+                remainingRequests.AddRange(downloadRequests);
+                return;
+            }
+
+            string[] preferredFileNames = BuildPreferredFileNamesForListViewMode(
+                listViewMode, picsData, preferredLanguage, appId);
+            if (preferredFileNames == null || preferredFileNames.Length == 0)
+            {
+                remainingRequests.AddRange(downloadRequests);
+                return;
+            }
+
+            bool prioritizeClientIcons = string.Equals(
+                listViewMode, ApplicationConstants.ViewModeIcons, StringComparison.OrdinalIgnoreCase);
+
+            foreach (var request in downloadRequests)
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.FileName))
+                {
+                    remainingRequests.Add(request);
+                    continue;
+                }
+
+                if (IsListViewPriorityFileName(request.FileName, preferredFileNames, prioritizeClientIcons))
+                    priorityRequests.Add(request);
+                else
+                    remainingRequests.Add(request);
+            }
+        }
+
+        private static string[] BuildPreferredFileNamesForListViewMode(
+            string listViewMode,
+            AppInfoKeyValue picsData,
+            string preferredLanguage,
+            ulong appId)
+        {
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeTile, StringComparison.OrdinalIgnoreCase))
+                return BuildStoreBannerPreferredFileNames(picsData, preferredLanguage);
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeCompactTiles, StringComparison.OrdinalIgnoreCase))
+                return BuildListViewLibraryCoverPreferredFileNames(picsData, preferredLanguage);
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeLogos, StringComparison.OrdinalIgnoreCase))
+                return BuildListViewLogoPreferredFileNames(picsData, preferredLanguage);
+            if (string.Equals(listViewMode, ApplicationConstants.ViewModeIcons, StringComparison.OrdinalIgnoreCase))
+            {
+                return new[]
+                {
+                    PathConstants.GetSteamGameResourcesClientIconFileName(appId)
+                };
+            }
+
+            return Array.Empty<string>();
+        }
+
+        private static bool IsListViewPriorityFileName(
+            string fileName,
+            string[] preferredFileNames,
+            bool prioritizeClientIcons)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                return false;
+
+            if (prioritizeClientIcons
+                && fileName.EndsWith(
+                    PathConstants.SteamGameResourcesClientIconFileExtension,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            foreach (var preferred in preferredFileNames ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(preferred))
+                    continue;
+                if (string.Equals(fileName, preferred, StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (fileName.EndsWith("_" + preferred, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
         public Task EnsureMosaicFallbackForViewAsync(string viewMode, ThemeMode effectiveTheme, Color background, Color foreground)
