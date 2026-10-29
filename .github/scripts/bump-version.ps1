@@ -27,6 +27,7 @@ $fileState = Get-VersionPropsState -PropsPath $propsPath
 
 if ($ReadOnly) {
     Write-VersionReleaseOutputs -State $fileState
+    # Explicit exit so Actions' trailing `exit $LASTEXITCODE` does not reuse a prior git status.
     exit 0
 }
 
@@ -61,3 +62,5 @@ if ($written.Full -ne $newState.Full) {
 }
 
 Write-VersionReleaseOutputs -State $written -PreviousVersion $baseline.Full
+# Explicit exit so Actions' trailing `exit $LASTEXITCODE` does not reuse git's "tag missing" status.
+exit 0
