@@ -184,9 +184,9 @@ function Compare-StableReleaseVersion {
 function Get-LatestStableReleaseTagState {
     param([string]$RepoRoot)
 
-    $tags = @(
-        & git -C $RepoRoot tag -l 'v*' 2>$null
-    )
+    # Local preference so non-zero git exits are not terminating under strict runners.
+    $PSNativeCommandUseErrorActionPreference = $false
+    $tags = @(& git -C $RepoRoot tag -l 'v*')
     if ($LASTEXITCODE -ne 0) {
         throw 'Could not list git tags (git tag -l v*).'
     }
@@ -242,6 +242,8 @@ function Test-GitRefExists {
         [string]$Ref
     )
 
+    # Local preference: missing refs return exit 1; that must not terminate the script.
+    $PSNativeCommandUseErrorActionPreference = $false
     & git -C $RepoRoot rev-parse -q --verify $Ref 2>$null | Out-Null
     return ($LASTEXITCODE -eq 0)
 }
