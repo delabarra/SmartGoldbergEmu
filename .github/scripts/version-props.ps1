@@ -5,6 +5,31 @@ function Get-VersionPropsPath {
     return Join-Path $RepoRoot 'Version.props'
 }
 
+function New-StableReleaseVersionState {
+    param(
+        [int]$Major,
+        [int]$Minor,
+        [int]$Patch,
+        [int]$Revision = 0
+    )
+
+    $prefix = "$Major.$Minor.$Patch"
+    $full = if ($Revision -gt 0) { "$prefix.$Revision" } else { $prefix }
+
+    return @{
+        Prefix          = $prefix
+        Major           = $Major
+        Minor           = $Minor
+        Patch           = $Patch
+        Revision        = $Revision
+        Suffix          = ''
+        Full            = $full
+        Tag             = "v$full"
+        IsPreview       = $false
+        PackageBaseName = "SmartGoldbergEmu-$full"
+    }
+}
+
 function Get-VersionPropsState {
     param([string]$PropsPath)
 
@@ -41,20 +66,20 @@ function Get-VersionPropsState {
         }
     }
 
-    $numeric = if ($revision -gt 0) { "$prefix.$revision" } else { $prefix }
-    $full = if ([string]::IsNullOrWhiteSpace($suffix)) { $numeric } else { "$numeric$suffix" }
+    $stable = New-StableReleaseVersionState -Major $major -Minor $minor -Patch $patch -Revision $revision
+    $full = if ([string]::IsNullOrWhiteSpace($suffix)) { $stable.Full } else { "$($stable.Full)$suffix" }
 
     return @{
-        Text     = $text
-        Prefix   = $prefix
-        Major    = $major
-        Minor    = $minor
-        Patch    = $patch
-        Revision = $revision
-        Suffix   = $suffix
-        Full     = $full
-        Tag      = "v$full"
-        IsPreview = -not [string]::IsNullOrWhiteSpace($suffix)
+        Text            = $text
+        Prefix          = $stable.Prefix
+        Major           = $stable.Major
+        Minor           = $stable.Minor
+        Patch           = $stable.Patch
+        Revision        = $stable.Revision
+        Suffix          = $suffix
+        Full            = $full
+        Tag             = "v$full"
+        IsPreview       = -not [string]::IsNullOrWhiteSpace($suffix)
         PackageBaseName = "SmartGoldbergEmu-$full"
     }
 }
@@ -109,6 +134,116 @@ function New-PreviewReleaseState {
         IsPreview       = $true
         PackageBaseName = "SmartGoldbergEmu-$full"
     }
+}
+
+function ConvertFrom-StableReleaseVersionText {
+    param([string]$VersionText)
+
+    if ([string]::IsNullOrWhiteSpace($VersionText)) {
+        throw 'Release version text is empty.'
+    }
+
+    $text = $VersionText.Trim()
+    if ($text.StartsWith('v', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $text = $text.Substring(1)
+    }
+
+    # Ignore preview / build metadata — stable release tags are numeric only.
+    if ($text -match '[-+]') {
+        return $null
+    }
+
+    if ($text -notmatch '^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:\.(?<revision>\d+))?$') {
+        return $null
+    }
+
+    return New-StableReleaseVersionState `
+        -Major ([int]$Matches['major']) `
+        -Minor ([int]$Matches['minor']) `
+        -Patch ([int]$Matches['patch']) `
+        -Revision $(if ($Matches['revision']) { [int]$Matches['revision'] } else { 0 })
+}
+
+function Compare-StableReleaseVersion {
+    param(
+        [hashtable]$Left,
+        [hashtable]$Right
+    )
+
+    foreach ($part in @('Major', 'Minor', 'Patch', 'Revision')) {
+        $delta = [int]$Left[$part] - [int]$Right[$part]
+        if ($delta -ne 0) {
+            return [Math]::Sign($delta)
+        }
+    }
+
+    return 0
+}
+
+# Highest stable vMAJOR.MINOR.PATCH(.HOTFIX) tag in this clone (fetch-tags required in CI).
+function Get-LatestStableReleaseTagState {
+    param([string]$RepoRoot)
+
+    $tags = @(
+        & git -C $RepoRoot tag -l 'v*' 2>$null
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not list git tags (git tag -l v*).'
+    }
+
+    $latest = $null
+    foreach ($tag in $tags) {
+        $parsed = ConvertFrom-StableReleaseVersionText -VersionText $tag
+        if ($null -eq $parsed) {
+            continue
+        }
+
+        if ($null -eq $latest -or (Compare-StableReleaseVersion -Left $parsed -Right $latest) -gt 0) {
+            $latest = $parsed
+        }
+    }
+
+    return $latest
+}
+
+# max(Version.props, latest stable tag) across MAJOR.MINOR.PATCH.HOTFIX.
+function Resolve-StableReleaseBumpBaseline {
+    param(
+        [hashtable]$FileState,
+        [string]$RepoRoot
+    )
+
+    $tagState = Get-LatestStableReleaseTagState -RepoRoot $RepoRoot
+    if ($null -eq $tagState) {
+        Write-Host 'No stable release tags found; bumping from Version.props.'
+        return $FileState
+    }
+
+    Write-Host "Latest stable tag: $($tagState.Tag)"
+    $cmp = Compare-StableReleaseVersion -Left $tagState -Right $FileState
+    if ($cmp -gt 0) {
+        Write-Host "Version.props ($($FileState.Full)) is behind $($tagState.Tag); bumping from the tag."
+        return $tagState
+    }
+
+    if ($cmp -lt 0) {
+        Write-Host "Version.props ($($FileState.Full)) is ahead of $($tagState.Tag); bumping from the file."
+    }
+    else {
+        Write-Host "Version.props matches latest tag $($tagState.Tag)."
+    }
+
+    return $FileState
+}
+
+function Test-GitRefExists {
+    param(
+        [string]$RepoRoot,
+        [string]$Ref
+    )
+
+    & git -C $RepoRoot rev-parse -q --verify $Ref 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Write-VersionReleaseOutputs {
