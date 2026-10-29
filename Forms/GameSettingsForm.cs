@@ -69,7 +69,7 @@ namespace SmartGoldbergEmu.Forms
             GameSaveWriter gameSaveWriter = null,
             GameEditBundle editBundle = null,
             SteamApiKeyService steamApiKeyService = null)
-            : base(themeService ?? ServiceLocator.ThemeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
 
@@ -79,19 +79,30 @@ namespace SmartGoldbergEmu.Forms
             _editBundle = editBundle;
             _isUpdateOfExisting = !isEditMode && addBundle != null && addBundle.IsUpdateOfExisting;
             _metadata = metadata;
+            _taskReportService = feedbackService;
+            _onSaveCompleted = onSaveCompleted;
+
+            if (DesignTimeHelper.IsDesignTime)
+            {
+                _gameDataService = gameDataService;
+                _emulatorConfigService = emulatorConfigService;
+                _themeService = themeService;
+                _gameSettingsSaveService = gameSettingsSaveService;
+                _gameSaveWriter = gameSaveWriter;
+                _achievementService = achievementService;
+                _gameLaunchService = null;
+                _steamApiKeyService = steamApiKeyService;
+                return;
+            }
+
             _gameDataService = gameDataService ?? ServiceLocator.GameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
             _emulatorConfigService = emulatorConfigService ?? ServiceLocator.EmulatorConfigService ?? throw new ArgumentNullException(nameof(emulatorConfigService));
             _themeService = themeService ?? ServiceLocator.ThemeService ?? throw new ArgumentNullException(nameof(themeService));
-            _taskReportService = feedbackService;
             _gameSettingsSaveService = gameSettingsSaveService ?? ServiceLocator.GameSettingsSaveService ?? throw new ArgumentNullException(nameof(gameSettingsSaveService));
             _gameSaveWriter = gameSaveWriter ?? ServiceLocator.GameSaveWriter ?? throw new ArgumentNullException(nameof(gameSaveWriter));
-            _onSaveCompleted = onSaveCompleted;
             _achievementService = achievementService ?? ServiceLocator.AchievementService;
             _gameLaunchService = ServiceLocator.GameLaunchService;
             _steamApiKeyService = steamApiKeyService ?? ServiceLocator.SteamApiKeyService;
-
-            if (DesignTimeHelper.IsDesignTime)
-                return;
 
             _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
             InitializeLaunchModeDropdown();

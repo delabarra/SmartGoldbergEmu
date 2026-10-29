@@ -77,13 +77,13 @@ namespace SmartGoldbergEmu.Forms
         public TaskReportService TaskReportService => _taskReportService;
 
         public MainForm() : this(
-            ServiceLocator.GameDataService,
-            ServiceLocator.AppDataService,
-            ServiceLocator.GameDisplayService,
-            ServiceLocator.ThemeService,
-            ServiceLocator.GameLaunchService,
-            ServiceLocator.GameSetupService,
-            ServiceLocator.LaunchOptionService)
+            DesignTimeHelper.IsDesignTime ? null : ServiceLocator.GameDataService,
+            DesignTimeHelper.IsDesignTime ? null : ServiceLocator.AppDataService,
+            DesignTimeHelper.IsDesignTime ? null : ServiceLocator.GameDisplayService,
+            ResolveThemeService(),
+            DesignTimeHelper.IsDesignTime ? null : ServiceLocator.GameLaunchService,
+            DesignTimeHelper.IsDesignTime ? null : ServiceLocator.GameSetupService,
+            DesignTimeHelper.IsDesignTime ? null : ServiceLocator.LaunchOptionService)
         {
         }
 
@@ -105,9 +105,24 @@ namespace SmartGoldbergEmu.Forms
             GameLaunchService gameLaunchService,
             GameSetupService gameSetupService,
             LaunchOptionService launchOptionService)
-            : base(themeService)
+            : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
+
+            if (DesignTimeHelper.IsDesignTime)
+            {
+                _gameDataService = gameDataService;
+                _appDataService = appDataService;
+                _gameDisplayService = gameDisplayService;
+                _themeService = themeService;
+                _gameLaunchService = gameLaunchService;
+                _gameSetupService = gameSetupService;
+                _launchOptionService = launchOptionService;
+                _apiKeyService = null;
+                _pendingAddGameListService = null;
+                _taskReportService = new TaskReportService(prgFeedback, lblFeedback, this);
+                return;
+            }
 
             _gameDataService = gameDataService ?? throw new ArgumentNullException(nameof(gameDataService));
             _appDataService = appDataService ?? throw new ArgumentNullException(nameof(appDataService));
@@ -122,9 +137,6 @@ namespace SmartGoldbergEmu.Forms
                 prgFeedback,
                 lblFeedback,
                 this);
-
-            if (DesignTimeHelper.IsDesignTime)
-                return;
 
             Text = ApplicationVersionHelper.GetWindowTitle();
             ApplyViewModeMenuTexts();
