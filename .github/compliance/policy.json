@@ -33,12 +33,9 @@
   },
   "forbiddenInCs": [
     "CreateRemoteThread",
-    "WriteProcessMemory",
-    "ColdClientLoader",
-    "steamclient_loader",
-    "DllsToInjectFolder",
-    "ForceInject"
+    "WriteProcessMemory"
   ],
+  "forbiddenInCsNotes": "ColdClient opt-in may name steamclient_loader / ColdClientLoader.ini and shell installed loaders. In-process inject APIs remain forbidden.",
   "formsSyncOverAsync": {
     "scanDirectory": "Forms",
     "linePattern": "\\.GetAwaiter\\(\\)\\.GetResult\\(\\)|\\.Wait\\(\\)|\\.Wait\\(",

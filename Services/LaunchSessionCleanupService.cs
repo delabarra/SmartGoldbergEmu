@@ -873,8 +873,7 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                // load_dlls may live under a launcher BaseDirectory the watcher does not share; do not require gameDirectory.
-                CleanupLoadDllsFolder(loadDllsFolder);
+                // Per-game steam_settings/load_dlls is durable user content — do not delete on session cleanup.
             }
             catch (Exception ex)
             {
@@ -882,22 +881,6 @@ namespace SmartGoldbergEmu.Services
                     $"Failed to cleanup game library files for AppId {session.AppId} "
                     + $"(library={session.GameLibraryFolder}, load_dlls={session.LoadDllsFolder})",
                     ex);
-            }
-        }
-
-        private void CleanupLoadDllsFolder(string loadDllsFolder)
-        {
-            if (string.IsNullOrEmpty(loadDllsFolder) || !Directory.Exists(loadDllsFolder))
-                return;
-
-            try
-            {
-                Directory.Delete(loadDllsFolder, recursive: true);
-                _logger.LogDebug($"Cleaned up load_dlls folder: {loadDllsFolder}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Failed to delete load_dlls folder {loadDllsFolder}: {ex.Message}");
             }
         }
 

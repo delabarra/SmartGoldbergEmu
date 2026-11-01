@@ -225,6 +225,8 @@
     <Compile Include="Helpers\LoadDllsArchFilter.cs" />
     <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
+    <Compile Include="Helpers\ColdClientLoaderIniWriter.cs" />
+    <Compile Include="Helpers\WindowsDefenderExclusionHelper.cs" />
     <Compile Include="Helpers\SteamActiveProcessRegistryHelper.cs" />
     <Compile Include="Helpers\SteamSourceModRegistryHelper.cs" />
     <Compile Include="Helpers\GoldbergReleaseResolveHelper.cs" />
@@ -287,6 +289,7 @@
     <Compile Include="Services\DlcService.cs" />
     <Compile Include="Services\EmulatorConfigService.cs" />
     <Compile Include="Services\EmulatorUpdateService.cs" />
+    <Compile Include="Services\ColdClientInstallService.cs" />
     <Compile Include="Services\LauncherUpdateService.cs" />
     <Compile Include="Services\GameDataService.cs" />
     <Compile Include="Services\GameDisplayService.cs" />

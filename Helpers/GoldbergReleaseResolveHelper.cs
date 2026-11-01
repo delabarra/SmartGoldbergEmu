@@ -71,6 +71,59 @@ namespace SmartGoldbergEmu.Helpers
             return true;
         }
 
+        public static bool TryParseColdClientRepackRelease(string json, GoldbergResolvedRelease result)
+        {
+            if (string.IsNullOrWhiteSpace(json) || result == null)
+                return false;
+
+            JsonObject releaseData = JsonObject.Parse(json);
+            string prefix = GoldbergForkConstants.ColdClientRepackAssetPrefix;
+
+            string downloadUrl = null;
+            string archiveFileName = null;
+            string expectedSha256Hex = null;
+            string matchedSuffix = null;
+            foreach (JsonObject asset in (JsonArray)releaseData["assets"])
+            {
+                string name = asset["name"]?.ToString();
+                if (string.IsNullOrEmpty(name))
+                    continue;
+                if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string suffix = GoldbergForkConstants.TryGetRepackWinAssetSuffix(name);
+                if (suffix == null)
+                    continue;
+
+                if (matchedSuffix == GoldbergForkConstants.RepackWinAssetSuffix7z
+                    && suffix == GoldbergForkConstants.RepackWinAssetSuffixZip)
+                {
+                    continue;
+                }
+
+                downloadUrl = asset["browser_download_url"]?.ToString();
+                archiveFileName = name;
+                expectedSha256Hex = ReleaseAssetIntegrityHelper.TryReadAssetSha256Hex(asset);
+                matchedSuffix = suffix;
+                if (suffix == GoldbergForkConstants.RepackWinAssetSuffix7z)
+                    break;
+            }
+
+            if (string.IsNullOrEmpty(downloadUrl) || string.IsNullOrEmpty(archiveFileName))
+                return false;
+
+            if (!TryExtractRepackForkVersion(archiveFileName, prefix, matchedSuffix, out string packVersion))
+                return false;
+
+            result.DownloadUrl = downloadUrl;
+            result.LatestVersion = packVersion;
+            result.ReleaseNotes = releaseData["body"]?.ToString();
+            result.ArchiveFileName = archiveFileName;
+            result.ExpectedSha256Hex = expectedSha256Hex;
+            result.FromRepack = true;
+            return true;
+        }
+
         public static bool TryParseUpstreamRelease(string json, GoldbergResolvedRelease result)
         {
             if (string.IsNullOrWhiteSpace(json) || result == null)

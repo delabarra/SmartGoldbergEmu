@@ -15,8 +15,9 @@ namespace SmartGoldbergEmu.Constants
         public const string ExperimentalX32ArchiveFolderName = "x32";
         public const string SteamClientExperimentalFolderName = "steamclient_experimental";
         public const string SteamOldFolderName = "steam_old";
-        // User drop folder under steamclient_experimental (staged into per-game steam_settings/load_dlls at launch).
+        // Legacy global drop folder under steamclient_experimental (per-game load_dlls is the durable path).
         public const string SteamClientExperimentalExtraDllsFolderName = "extra_dlls";
+        public const string ColdClientFolderName = "coldclient";
         // Former top-level drop folder; migrated into steamclient_experimental/extra_dlls.
         public const string LegacySteamClientExtraDllsFolderName = "steamclient_extra_dlls";
         public const string GoldbergReadmeFileName = "readme.txt";
@@ -61,6 +62,42 @@ namespace SmartGoldbergEmu.Constants
         };
 
         public static IReadOnlyList<GoldbergInstallFile> GetReleaseInstallFiles() => ReleaseFiles;
+
+        private static readonly GoldbergInstallFile[] ColdClientFiles =
+        {
+            new GoldbergInstallFile(
+                "steamclient_experimental/steamclient_loader_x86.exe",
+                PathConstants.GoldbergColdClientLoaderExe32,
+                ColdClientFolderName),
+            new GoldbergInstallFile(
+                "steamclient_experimental/steamclient_loader_x64.exe",
+                PathConstants.GoldbergColdClientLoaderExe64,
+                ColdClientFolderName),
+            new GoldbergInstallFile(
+                "steamclient_experimental/extra_dlls/" + ShippedSteamClientExtraDll32FileName,
+                ShippedSteamClientExtraDll32FileName,
+                ColdClientFolderName + "/" + SteamClientExperimentalExtraDllsFolderName),
+            new GoldbergInstallFile(
+                "steamclient_experimental/extra_dlls/" + ShippedSteamClientExtraDll64FileName,
+                ShippedSteamClientExtraDll64FileName,
+                ColdClientFolderName + "/" + SteamClientExperimentalExtraDllsFolderName),
+        };
+
+        public static IReadOnlyList<GoldbergInstallFile> GetColdClientInstallFiles() => ColdClientFiles;
+
+        public static bool AreColdClientInstallFilesMissing(string goldbergRootDirectory)
+        {
+            if (string.IsNullOrEmpty(goldbergRootDirectory) || !Directory.Exists(goldbergRootDirectory))
+                return true;
+
+            foreach (GoldbergInstallFile file in ColdClientFiles)
+            {
+                if (!File.Exists(GetInstalledFilePath(goldbergRootDirectory, file)))
+                    return true;
+            }
+
+            return false;
+        }
 
         public static string GetInstalledFilePath(string goldbergRootDirectory, GoldbergInstallFile file)
         {
@@ -138,13 +175,11 @@ namespace SmartGoldbergEmu.Constants
 
         public static string BuildGoldbergReadmeText()
         {
-            return "Optional extra DLLs for Goldberg steam_settings/load_dlls."
+            return "Legacy optional extra DLLs folder."
                 + "\r\n\r\n"
-                + "Experimental Goldberg builds load every .dll in steam_settings/load_dlls with LoadLibraryW when the emulator DLL attaches. At launch this folder is copied into each game's steam_settings/load_dlls (matching architecture only). That per-game folder is removed when the game exits."
+                + "Place per-game DLLs in games/{appId}/steam_settings/load_dlls/ (top-level .dll only; Goldberg load_dlls is not recursive). That folder is kept across launches."
                 + "\r\n\r\n"
-                + "Place .dll files here (goldberg/steamclient_experimental/extra_dlls), in this folder only (not in subfolders). Goldberg's load_dlls scan is not recursive."
-                + "\r\n\r\n"
-                + "This launcher does not inject. Do not put steamclient_extra_x86.dll or steamclient_extra_x64.dll here. Those Goldberg samples belong to an upstream startup-inject workflow; putting them in load_dlls can cause a large FPS drop."
+                + "Do not put steamclient_extra_x86.dll or steamclient_extra_x64.dll in load_dlls (large FPS drop). Those belong under goldberg/coldclient/extra_dlls for ColdClient mode."
                 + "\r\n\r\n"
                 + "Architecture in the file name:"
                 + "\r\n\r\n"
@@ -152,9 +187,7 @@ namespace SmartGoldbergEmu.Constants
                 + "\r\n"
                 + "64-bit only: name must contain x64 (example: plugin_x64.dll)"
                 + "\r\n"
-                + "Both 32-bit and 64-bit: name has neither x32, x86, nor x64 (example: plugin.dll)"
-                + "\r\n\r\n"
-                + "Do not put these DLLs directly in steam_settings/load_dlls inside a game; use this folder instead.";
+                + "Both 32-bit and 64-bit: name has neither x32, x86, nor x64 (example: plugin.dll)";
         }
 
         public static bool IsShippedSteamClientExtraDll(string fileName)

@@ -735,8 +735,8 @@ namespace SmartGoldbergEmu.Forms
             this.lblLaunchMode.Name = "lblLaunchMode";
             this.lblLaunchMode.Size = new System.Drawing.Size(75, 13);
             this.lblLaunchMode.TabIndex = 50;
-            this.lblLaunchMode.Text = "Launch mode:";
-            this.toolTip.SetToolTip(this.lblLaunchMode, "How the launcher starts this game with Goldberg.");
+            this.lblLaunchMode.Text = "Emulation mode:";
+            this.toolTip.SetToolTip(this.lblLaunchMode, "How Goldberg is wired when this game starts.");
             // 
             // cmbLaunchMode
             // 

@@ -159,28 +159,29 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public void TryExecuteCleanup_removes_load_dlls_folder()
+        public void TryExecuteCleanup_preserves_load_dlls_folder()
         {
             string loadDlls = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(
                 LaunchDeployTestHarness.DefaultTestAppId);
             try
             {
                 Directory.CreateDirectory(loadDlls);
-                File.WriteAllBytes(Path.Combine(loadDlls, "extra_x64.dll"), new[] { LaunchDeployTestHarness.StagedExtraDllMarker });
+                string dllPath = Path.Combine(loadDlls, "extra_x64.dll");
+                File.WriteAllBytes(dllPath, new[] { LaunchDeployTestHarness.StagedExtraDllMarker });
 
                 var session = new PersistedLaunchSession
                 {
                     AppId = LaunchDeployTestHarness.DefaultTestAppId,
                     GameProcessId = 0,
                     RestoreActiveProcessRegistry = false,
-                    // Poisoned path must be ignored; cleanup always uses PathConstants for the AppId.
-                    LoadDllsFolder = TestFileHelper.CreateTempDirectory("sge-cleanup-loaddlls-poison-"),
+                    LoadDllsFolder = loadDlls,
                 };
 
                 var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
                 cleanup.TryExecuteCleanup(null, session);
 
-                Assert.False(Directory.Exists(loadDlls));
+                Assert.True(Directory.Exists(loadDlls));
+                Assert.True(File.Exists(dllPath));
             }
             finally
             {

@@ -218,7 +218,8 @@ namespace SmartGoldbergEmu.Services
                     if (!string.IsNullOrEmpty(exeDirectory))
                         MoveAsideStraySteamDllsBesideExecutable(
                             exeDirectory,
-                            besideExeDeployActive: launchMode != GoldbergLaunchMode.SteamClient,
+                            besideExeDeployActive: launchMode != GoldbergLaunchMode.SteamClient
+                                && launchMode != GoldbergLaunchMode.ColdClient,
                             win32DeployState);
 
                     if (launchMode == GoldbergLaunchMode.StandardSteamApi)
@@ -281,6 +282,37 @@ namespace SmartGoldbergEmu.Services
 
                         _logger?.LogDebug("Steam.dll mode: deployed Steam.dll beside executable, skipped ActiveProcess registry");
                     }
+                    else if (launchMode == GoldbergLaunchMode.ColdClient)
+                    {
+                        if (ColdClientInstallService.ColdClientFilesCheckSync())
+                        {
+                            return ValidationResult.Failure(
+                                "ColdClient files are missing under goldberg\\coldclient. Select ColdClient mode in game settings or launch again to download them.");
+                        }
+
+                        GoldbergFilesService.TryEnsureColdClientDllFolders(game.AppId);
+
+                        // Ini requires both SteamClientDll and SteamClient64Dll paths.
+                        string dllTargetDirectory = PathConstants.GetGameFolder(game.AppId);
+                        var setup32 = DeployGoldbergClientDlls(false, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
+                        if (!setup32.IsValid)
+                        {
+                            _logger?.LogError(
+                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch=x86: {setup32.ErrorMessage}");
+                            return setup32;
+                        }
+
+                        var setup64 = DeployGoldbergClientDlls(true, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
+                        if (!setup64.IsValid)
+                        {
+                            _logger?.LogError(
+                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch=x64: {setup64.ErrorMessage}");
+                            return setup64;
+                        }
+
+                        // Loader owns ActiveProcess / SourceMod for the session.
+                        _logger?.LogDebug("ColdClient mode: deployed steamclient (x86+x64) to game library; skipped SGE ActiveProcess registry");
+                    }
                     else
                     {
                         string dllTargetDirectory = PathConstants.GetGameFolder(game.AppId);
@@ -338,18 +370,7 @@ namespace SmartGoldbergEmu.Services
 
                 if (effectiveUseEmulator && game.AppId != 0)
                 {
-                    string loadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(game.AppId);
-                    int copiedCount;
-                    if (SteamClientExtraDllsStaging.TryStageIntoLoadDllsFolder(
-                            PathConstants.GoldbergSteamClientExtraDllsDirectory,
-                            loadDllsFolder,
-                            useX64,
-                            out copiedCount)
-                        && copiedCount > 0)
-                    {
-                        _logger?.LogDebug(
-                            $"Staged {copiedCount} file(s) from steamclient_experimental/extra_dlls into load_dlls for AppId {game.AppId}.");
-                    }
+                    // games/{appId}/steam_settings/load_dlls is durable; users place DLLs there directly.
 
                     string gameSoundsFolder = PathConstants.CombineGameSteamSettingsSoundsDirectory(game.AppId);
                     if (OverlayNotificationSoundsStaging.TryStageIntoGameSoundsFolder(
@@ -495,6 +516,18 @@ namespace SmartGoldbergEmu.Services
                     "Steam.dll is not in goldberg\\steam_old. Run Goldberg Update or install Steam, then try again.");
             }
 
+            if (launchMode == GoldbergLaunchMode.ColdClient)
+            {
+                if (IsSteamClientModeAvailable() && ColdClientInstallService.AreInstalled())
+                    return ValidationResult.Success();
+
+                _logger?.LogError(
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, need steamclient_experimental + goldberg\\coldclient");
+                return ValidationResult.Failure(
+                    "ColdClient requires Goldberg steamclient files and ColdClient files under goldberg\\coldclient. "
+                    + "Launch again to download missing ColdClient files, and run Goldberg Update if steamclient DLLs are missing.");
+            }
+
             if (IsSteamClientModeAvailable())
                 return ValidationResult.Success();
 
@@ -510,6 +543,64 @@ namespace SmartGoldbergEmu.Services
         {
             SteamInstallationPathHelper.TryRefreshSteamDllInGoldbergFolder();
             return SteamInstallationPathHelper.IsSteamDllPresentInGoldbergFolder();
+        }
+
+        private bool TryPrepareColdClientLaunch(
+            GameConfig game,
+            bool useX64,
+            string gameExePath,
+            string gameExeRunDir,
+            string gameCommandLine,
+            out string loaderExePath,
+            out string loaderWorkingDirectory,
+            out string loaderArguments,
+            out string errorMessage)
+        {
+            loaderExePath = null;
+            loaderWorkingDirectory = null;
+            loaderArguments = gameCommandLine ?? string.Empty;
+            errorMessage = null;
+
+            loaderExePath = ColdClientLoaderIniWriter.GetLoaderPathForGameArch(useX64);
+            if (string.IsNullOrEmpty(loaderExePath) || !File.Exists(loaderExePath))
+            {
+                errorMessage = "ColdClient loader EXE is missing under goldberg\\coldclient.";
+                return false;
+            }
+
+            string gameLibrary = PathConstants.GetGameFolder(game.AppId);
+            string steamClient32 = Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll32);
+            string steamClient64 = Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64);
+            if (!File.Exists(steamClient32) || !File.Exists(steamClient64))
+            {
+                errorMessage = "ColdClient requires steamclient DLLs deployed under the game library folder.";
+                return false;
+            }
+
+            bool forceOverlay = File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergGameOverlayRendererDll32))
+                || File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergGameOverlayRendererDll64));
+
+            try
+            {
+                string iniPath = ColdClientLoaderIniWriter.WriteLoaderIni(
+                    loaderExePath,
+                    game.AppId,
+                    gameExePath,
+                    gameExeRunDir,
+                    gameCommandLine,
+                    steamClient32,
+                    steamClient64,
+                    forceOverlay);
+                _logger?.LogDebug($"ColdClient loader ini written: {iniPath}");
+            }
+            catch (Exception ex)
+            {
+                errorMessage = "Failed to write ColdClient loader ini: " + ex.Message;
+                return false;
+            }
+
+            loaderWorkingDirectory = Path.GetDirectoryName(loaderExePath);
+            return true;
         }
 
         private bool TryResolveLaunchUseX64(GameConfig game, out bool useX64)
@@ -1629,11 +1720,33 @@ namespace SmartGoldbergEmu.Services
                     return ValidationResult.Failure("Invalid working directory detected. Security validation failed.");
                 }
 
+                string processFileName = executablePath;
+                string processWorkingDirectory = workingDirectory;
+                string processArguments = launchArguments;
+                if (game.LaunchMode == GoldbergLaunchMode.ColdClient)
+                {
+                    bool coldUseX64 = true;
+                    TryResolveLaunchUseX64(game, executablePath, out coldUseX64);
+                    if (!TryPrepareColdClientLaunch(
+                            game,
+                            coldUseX64,
+                            executablePath,
+                            workingDirectory,
+                            launchArguments,
+                            out processFileName,
+                            out processWorkingDirectory,
+                            out processArguments,
+                            out string coldClientError))
+                    {
+                        return ValidationResult.Failure(coldClientError);
+                    }
+                }
+
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = executablePath,
-                    WorkingDirectory = workingDirectory,
-                    Arguments = launchArguments,
+                    FileName = processFileName,
+                    WorkingDirectory = processWorkingDirectory,
+                    Arguments = processArguments,
                     UseShellExecute = false,
                     CreateNoWindow = false
                 };

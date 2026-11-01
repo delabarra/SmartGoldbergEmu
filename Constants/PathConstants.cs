@@ -185,6 +185,26 @@ namespace SmartGoldbergEmu.Constants
                 GoldbergSteamClientExperimentalDirectory,
                 GoldbergInstallLayout.SteamClientExperimentalExtraDllsFolderName);
 
+        public static string GoldbergColdClientDirectory =>
+            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.ColdClientFolderName);
+
+        public static string GoldbergColdClientExtraDllsDirectory =>
+            Path.Combine(
+                GoldbergColdClientDirectory,
+                GoldbergInstallLayout.SteamClientExperimentalExtraDllsFolderName);
+
+        public const string GoldbergColdClientLoaderExe32 = "steamclient_loader_x86.exe";
+        public const string GoldbergColdClientLoaderExe64 = "steamclient_loader_x64.exe";
+
+        public static string CombineGoldbergColdClientLoaderPath(bool useX64) =>
+            Path.Combine(
+                GoldbergColdClientDirectory,
+                useX64 ? GoldbergColdClientLoaderExe64 : GoldbergColdClientLoaderExe32);
+
+        public static bool HasColdClientLoaderFiles() =>
+            File.Exists(CombineGoldbergColdClientLoaderPath(false))
+            && File.Exists(CombineGoldbergColdClientLoaderPath(true));
+
         public static string CombineGoldbergExperimentalSteamApiPath(bool useX64) =>
             Path.Combine(
                 GoldbergExperimentalDirectory,

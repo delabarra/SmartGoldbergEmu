@@ -1022,6 +1022,34 @@ namespace SmartGoldbergEmu.Services
             return dir;
         }
 
+        // Durable per-game drop folder for Goldberg LoadLibraryW (top-level .dll only).
+        public string EnsureGameLoadDllsDirectory(ulong appId)
+        {
+            if (appId == 0)
+                return null;
+
+            string dir = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId);
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        // Silent folder prep when a game uses ColdClient (load_dlls + coldclient/extra_dlls).
+        public static void TryEnsureColdClientDllFolders(ulong appId)
+        {
+            if (appId == 0)
+                return;
+
+            try
+            {
+                Directory.CreateDirectory(PathConstants.GoldbergColdClientExtraDllsDirectory);
+                Directory.CreateDirectory(PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId));
+            }
+            catch
+            {
+                // Must not block mode select, library save, or startup.
+            }
+        }
+
         #endregion
 
         #region App Config (configs.app.ini)

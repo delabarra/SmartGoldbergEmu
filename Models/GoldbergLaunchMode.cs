@@ -6,5 +6,6 @@ namespace SmartGoldbergEmu.Models
         StandardSteamApi = 1,
         SteamDllBesideExe = 2,
         NoEmulation = 3,
+        ColdClient = 4,
     }
 }

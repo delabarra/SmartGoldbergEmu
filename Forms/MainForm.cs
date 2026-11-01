@@ -3224,8 +3224,11 @@ namespace SmartGoldbergEmu.Forms
 
         private void OnOpenExtraDllsFolder_Click(object sender, EventArgs e)
         {
-            string extraDllsDir = ServiceLocator.GoldbergFilesService.EnsureSteamClientExtraDllsDirectory();
-            ShellFolderHelper.OpenFolderForOwner(this, extraDllsDir, createIfMissing: true, "Folder Not Found", "Could Not Open Extra DLLs Folder");
+            if (!TryGetSelectedGameWithAppId(out GameConfig game))
+                return;
+
+            string loadDllsDir = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(game.AppId);
+            ShellFolderHelper.OpenFolderForOwner(this, loadDllsDir, createIfMissing: true, "Folder Not Found", "Could Not Open Extra DLLs Folder");
         }
 
         private void OnOpenInventoryFile_Click(object sender, EventArgs e)
@@ -3591,15 +3594,23 @@ namespace SmartGoldbergEmu.Forms
 
         private async Task<bool> TryEnsureEmulatorPrerequisiteForLaunch(GameConfig game, bool useEmulator)
         {
-            bool requireLaunchModeBinaries = useEmulator;
-            ValidationResult prerequisite = _gameLaunchService.ValidateEmulatorFilesPrerequisite(game, requireLaunchModeBinaries);
-            if (prerequisite.IsValid)
-                return true;
+            // Repair missing binaries first; do not early-return on a stale/partial validate.
+            if (EmulatorUpdateService.GoldbergFilesCheckSync())
+            {
+                if (!await EmulatorUpdateService.TryEnsureGoldbergBinariesForLaunchAsync(Program.LogService, this).ConfigureAwait(true))
+                    return false;
+            }
 
-            if (!await EmulatorUpdateService.TryEnsureGoldbergBinariesForLaunchAsync(Program.LogService, this).ConfigureAwait(true))
-                return false;
+            if (useEmulator
+                && game != null
+                && game.LaunchMode == GoldbergLaunchMode.ColdClient
+                && ColdClientInstallService.ColdClientFilesCheckSync())
+            {
+                if (!await ColdClientInstallService.TryEnsureInstalledWithUiAsync(this, Program.LogService).ConfigureAwait(true))
+                    return false;
+            }
 
-            prerequisite = _gameLaunchService.ValidateEmulatorFilesPrerequisite(game, requireLaunchModeBinaries);
+            ValidationResult prerequisite = _gameLaunchService.ValidateEmulatorFilesPrerequisite(game, useEmulator);
             if (prerequisite.IsValid)
                 return true;
 

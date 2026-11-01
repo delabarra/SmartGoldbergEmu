@@ -987,6 +987,12 @@ namespace SmartGoldbergEmu.Services
             {
                 return GoldbergLaunchMode.NoEmulation;
             }
+            if (value.Equals("ColdClient", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("coldclient", StringComparison.OrdinalIgnoreCase)
+                || value == "4")
+            {
+                return GoldbergLaunchMode.ColdClient;
+            }
             if (Enum.TryParse(value, true, out GoldbergLaunchMode parsed))
                 return parsed;
             return GoldbergLaunchMode.SteamClient;

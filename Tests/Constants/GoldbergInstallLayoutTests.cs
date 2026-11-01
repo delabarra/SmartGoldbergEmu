@@ -8,6 +8,22 @@ namespace SmartGoldbergEmu.Tests.Constants
     public sealed class GoldbergInstallLayoutTests
     {
         [Fact]
+        public void GetColdClientInstallFiles_maps_loaders_and_extra_dlls_under_coldclient()
+        {
+            var files = GoldbergInstallLayout.GetColdClientInstallFiles();
+            Assert.Equal(4, files.Count);
+            Assert.Contains(files, f => f.FileName == PathConstants.GoldbergColdClientLoaderExe32
+                && f.InstallRelativeDirectory == GoldbergInstallLayout.ColdClientFolderName);
+            Assert.Contains(files, f => f.FileName == PathConstants.GoldbergColdClientLoaderExe64
+                && f.InstallRelativeDirectory == GoldbergInstallLayout.ColdClientFolderName);
+            Assert.Contains(files, f => f.FileName == GoldbergInstallLayout.ShippedSteamClientExtraDll32FileName
+                && f.InstallRelativeDirectory.Replace('\\', '/') == "coldclient/extra_dlls");
+            Assert.Contains(files, f => f.FileName == GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName
+                && f.InstallRelativeDirectory.Replace('\\', '/') == "coldclient/extra_dlls");
+            Assert.DoesNotContain(files, f => f.FileName == PathConstants.GoldbergSteamClientDll64);
+        }
+
+        [Fact]
         public void GetReleaseInstallFiles_maps_expected_archive_entries()
         {
             var files = GoldbergInstallLayout.GetReleaseInstallFiles();
@@ -99,9 +115,8 @@ namespace SmartGoldbergEmu.Tests.Constants
             Assert.Contains("x86", text);
             Assert.Contains("x64", text);
             Assert.Contains("load_dlls", text);
-            Assert.Contains("LoadLibraryW", text);
-            Assert.Contains("steamclient_experimental/extra_dlls", text);
-            Assert.Contains("not in subfolders", text);
+            Assert.Contains("games/{appId}/steam_settings/load_dlls", text);
+            Assert.Contains("coldclient/extra_dlls", text);
             Assert.Contains(GoldbergInstallLayout.ShippedSteamClientExtraDll32FileName, text);
             Assert.Contains(GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName, text);
             Assert.DoesNotContain("load_order", text);
