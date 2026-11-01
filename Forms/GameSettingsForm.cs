@@ -1774,7 +1774,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             var m = _achievementsPreviewListCache[idx];
-            if (!m.IsHidden || !m.IsUnlocked)
+            if (!m.IsHidden)
                 return;
 
             var currentPreview = _achievementService.BuildAchievementPreviewText(

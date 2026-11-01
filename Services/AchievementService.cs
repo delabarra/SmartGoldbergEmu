@@ -638,14 +638,18 @@ namespace SmartGoldbergEmu.Services
             string title = GetPreviewTitle(achievement);
             string description = achievement != null ? (achievement.Description ?? string.Empty) : string.Empty;
 
-            if (achievement != null && achievement.IsHidden && !achievement.IsUnlocked)
+            // Hidden until the user selects the row; unlocked secrets keep the real title and only mask the description.
+            if (achievement != null && achievement.IsHidden && !isRevealed)
             {
-                title = "Hidden achievement";
-                description = "This achievement stays secret until you unlock it.";
-            }
-            else if (achievement != null && achievement.IsHidden && achievement.IsUnlocked && !isRevealed)
-            {
-                description = new string('\u2588', 20);
+                if (!achievement.IsUnlocked)
+                {
+                    title = "Hidden achievement";
+                    description = "Click or select to reveal.";
+                }
+                else
+                {
+                    description = new string('\u2588', 20);
+                }
             }
 
             return new AchievementPreviewTextResult
@@ -740,21 +744,20 @@ namespace SmartGoldbergEmu.Services
                 return string.Empty;
 
             var tip = new List<string> { "Secret achievement" };
-            if (achievement.IsUnlocked)
+            if (isRevealed)
             {
-                if (isRevealed)
-                {
-                    if (!string.IsNullOrWhiteSpace(achievement.Name))
-                        tip.Add("API name: " + achievement.Name);
-                }
-                else
-                {
-                    tip.Add("Click or select the row to show the description.");
-                }
+                if (!string.IsNullOrWhiteSpace(achievement.Name))
+                    tip.Add("API name: " + achievement.Name);
+                if (!achievement.IsUnlocked)
+                    tip.Add("Locked — not unlocked in game yet.");
+            }
+            else if (achievement.IsUnlocked)
+            {
+                tip.Add("Click or select the row to show the description.");
             }
             else
             {
-                tip.Add("Locked — title and description are hidden like in Steam.");
+                tip.Add("Click or select the row to reveal title and description.");
             }
 
             return string.Join(Environment.NewLine, tip);
