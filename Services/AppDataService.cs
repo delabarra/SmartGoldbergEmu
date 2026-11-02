@@ -204,11 +204,27 @@ namespace SmartGoldbergEmu.Services
             else
                 settings.FullLaunchOptions = false;
 
-            var autoHandleSteamStubsStr = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_handle_steam_stubs");
+            var autoHandleSteamStubsStr = _iniService.GetValue(
+                iniFile,
+                ApplicationConstants.SettingSectionApplication,
+                ApplicationConstants.SettingKeyAutoHandleSteamStubs);
             if (bool.TryParse(autoHandleSteamStubsStr, out bool autoHandleSteamStubs))
                 settings.AutoHandleSteamStubs = autoHandleSteamStubs;
             else
                 settings.AutoHandleSteamStubs = false;
+
+            var suppressSteamStubPromptStr = _iniService.GetValue(
+                iniFile,
+                ApplicationConstants.SettingSectionApplication,
+                ApplicationConstants.SettingKeySuppressSteamStubPrompt);
+            if (bool.TryParse(suppressSteamStubPromptStr, out bool suppressSteamStubPrompt))
+                settings.SuppressSteamStubPrompt = suppressSteamStubPrompt;
+            else
+                settings.SuppressSteamStubPrompt = false;
+
+            // Auto-handle wins if both were somehow set.
+            if (settings.AutoHandleSteamStubs)
+                settings.SuppressSteamStubPrompt = false;
 
             var logosViewDropShadowStr = _iniService.GetValue(
                 iniFile,
@@ -381,7 +397,16 @@ namespace SmartGoldbergEmu.Services
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_update", settings.AutoUpdate.ToString().ToLower());
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "is_first_run", settings.IsFirstRun.ToString().ToLower());
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "full_launch_options", settings.FullLaunchOptions.ToString().ToLower());
-                _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_handle_steam_stubs", settings.AutoHandleSteamStubs.ToString().ToLower());
+                _iniService.SetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeyAutoHandleSteamStubs,
+                    settings.AutoHandleSteamStubs.ToString().ToLower());
+                _iniService.SetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeySuppressSteamStubPrompt,
+                    settings.SuppressSteamStubPrompt.ToString().ToLower());
                 _iniService.SetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
@@ -726,7 +751,27 @@ namespace SmartGoldbergEmu.Services
 
         public ValidationResult SetAutoHandleSteamStubs(bool autoHandleSteamStubs)
         {
-            return SetAppSetting(s => { s.AutoHandleSteamStubs = autoHandleSteamStubs; }, "Failed to set auto-handle SteamStubs");
+            return SetAppSetting(s =>
+            {
+                s.AutoHandleSteamStubs = autoHandleSteamStubs;
+                if (autoHandleSteamStubs)
+                    s.SuppressSteamStubPrompt = false;
+            }, "Failed to set auto-handle SteamStubs");
+        }
+
+        public bool GetSuppressSteamStubPrompt()
+        {
+            return GetAppSetting(s => s.SuppressSteamStubPrompt);
+        }
+
+        public ValidationResult SetSuppressSteamStubPrompt(bool suppressSteamStubPrompt)
+        {
+            return SetAppSetting(s =>
+            {
+                s.SuppressSteamStubPrompt = suppressSteamStubPrompt;
+                if (suppressSteamStubPrompt)
+                    s.AutoHandleSteamStubs = false;
+            }, "Failed to set suppress SteamStub prompt");
         }
 
         // Optional dev override for launcher update API (e.g. local mock server). Release builds use GitHub constants when unset.

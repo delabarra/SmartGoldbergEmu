@@ -64,7 +64,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     string steamApiPath = Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64);
                     string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
                     harness.WriteMarkerFile(steamApiPath, LaunchDeployTestHarness.OriginalFileMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -105,7 +105,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
                     harness.WriteMarkerFile(backupPath, LaunchDeployTestHarness.OriginalFileMarker);
                     harness.WriteMarkerFile(steamApiPath, staleGoldbergMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -188,7 +188,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     harness.WriteMarkerFile(
                         Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64),
                         LaunchDeployTestHarness.OriginalFileMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -225,7 +225,7 @@ namespace SmartGoldbergEmu.Tests.Services
                 try
                 {
                     harness.CreateGameInstall(gameFolder, out string executablePath);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -366,7 +366,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     string steamApiPath = Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64);
                     string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
                     harness.WriteMarkerFile(steamApiPath, LaunchDeployTestHarness.OriginalFileMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     string loadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(
                         LaunchDeployTestHarness.DefaultTestAppId);

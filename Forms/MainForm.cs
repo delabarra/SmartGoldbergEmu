@@ -2567,7 +2567,7 @@ namespace SmartGoldbergEmu.Forms
                 menuItems.Add(item);
             }
 
-            if (miCtxRowRemoveSteamStub.DropDownItems.Count <= 2)
+            if (menuItems.Count == 0)
             {
                 AddStubKitPlaceholderMenuItem("No executable found");
                 ReopenStubKitDropDownAt(dropLocation);
@@ -2739,31 +2739,44 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        // Checked toggle first, then a separator, then per-exe Patch/Restore items.
+        // Preference toggles first, then a separator, then per-exe Patch/Restore items.
         private void AddStubKitAutoHandleMenuHeader()
         {
             if (miCtxRowRemoveSteamStub == null)
                 return;
 
-            bool enabled = false;
+            bool autoHandle = false;
+            bool suppressPrompt = false;
             try
             {
-                enabled = _appDataService.GetAutoHandleSteamStubs();
+                autoHandle = _appDataService.GetAutoHandleSteamStubs();
+                suppressPrompt = _appDataService.GetSuppressSteamStubPrompt();
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogWarning("StubKit: could not read Auto handle SteamStubs setting: " + ex.Message);
+                Program.LogService?.LogWarning("StubKit: could not read SteamStub prompt settings: " + ex.Message);
             }
 
-            var autoItem = new ToolStripMenuItem("Auto handle SteamStubs - (Auto patch)")
+            var autoItem = new ToolStripMenuItem(StubKitFeedback.AutoHandleVerificationText)
             {
                 Name = "miCtxStubAutoHandle",
                 CheckOnClick = true,
-                Checked = enabled,
+                Checked = autoHandle,
                 ToolTipText = "When checked, removable SteamStub is unpacked automatically when adding or launching a game (no confirm dialog)."
             };
             autoItem.Click += OnStubKitAutoHandle_Click;
             miCtxRowRemoveSteamStub.DropDownItems.Add(autoItem);
+
+            var disableChecksItem = new ToolStripMenuItem(StubKitFeedback.DisableChecksMenuText)
+            {
+                Name = "miCtxStubDisableChecks",
+                CheckOnClick = true,
+                Checked = suppressPrompt,
+                ToolTipText = "When checked, SteamStub detection prompts are skipped when adding or launching a game (stub is left alone). Manual Remove SteamStub still works."
+            };
+            disableChecksItem.Click += OnStubKitDisableChecks_Click;
+            miCtxRowRemoveSteamStub.DropDownItems.Add(disableChecksItem);
+
             miCtxRowRemoveSteamStub.DropDownItems.Add(new ToolStripSeparator());
         }
 
@@ -2775,7 +2788,10 @@ namespace SmartGoldbergEmu.Forms
 
             var result = _appDataService.SetAutoHandleSteamStubs(item.Checked);
             if (result.IsValid)
+            {
+                SyncStubKitPromptPreferenceMenuChecks(autoHandle: item.Checked, suppressPrompt: false);
                 return;
+            }
 
             item.Checked = !item.Checked;
             FormMessageBoxHelper.ShowIfAlive(
@@ -2784,6 +2800,46 @@ namespace SmartGoldbergEmu.Forms
                 StubKitFeedback.DialogTitle,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
+        }
+
+        private void OnStubKitDisableChecks_Click(object sender, EventArgs e)
+        {
+            var item = sender as ToolStripMenuItem;
+            if (item == null)
+                return;
+
+            var result = _appDataService.SetSuppressSteamStubPrompt(item.Checked);
+            if (result.IsValid)
+            {
+                SyncStubKitPromptPreferenceMenuChecks(autoHandle: false, suppressPrompt: item.Checked);
+                return;
+            }
+
+            item.Checked = !item.Checked;
+            FormMessageBoxHelper.ShowIfAlive(
+                this,
+                result.ErrorMessage ?? "Could not save Disable checks.",
+                StubKitFeedback.DialogTitle,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        private void SyncStubKitPromptPreferenceMenuChecks(bool autoHandle, bool suppressPrompt)
+        {
+            if (miCtxRowRemoveSteamStub == null)
+                return;
+
+            foreach (ToolStripItem stripItem in miCtxRowRemoveSteamStub.DropDownItems)
+            {
+                var menuItem = stripItem as ToolStripMenuItem;
+                if (menuItem == null)
+                    continue;
+
+                if (menuItem.Name == "miCtxStubAutoHandle")
+                    menuItem.Checked = autoHandle && !suppressPrompt;
+                else if (menuItem.Name == "miCtxStubDisableChecks")
+                    menuItem.Checked = suppressPrompt && !autoHandle;
+            }
         }
 
         private void AddStubKitPlaceholderMenuItem(string text)
@@ -2837,13 +2893,18 @@ namespace SmartGoldbergEmu.Forms
                 return true;
 
             bool autoHandle = false;
+            bool suppressPrompt = false;
             try
             {
-                autoHandle = _appDataService != null && _appDataService.GetAutoHandleSteamStubs();
+                if (_appDataService != null)
+                {
+                    autoHandle = _appDataService.GetAutoHandleSteamStubs();
+                    suppressPrompt = _appDataService.GetSuppressSteamStubPrompt();
+                }
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogWarning("StubKit: could not read Auto handle SteamStubs setting: " + ex.Message);
+                Program.LogService?.LogWarning("StubKit: could not read SteamStub prompt settings: " + ex.Message);
             }
 
             if (autoHandle)
@@ -2853,8 +2914,15 @@ namespace SmartGoldbergEmu.Forms
                 return true;
             }
 
+            if (suppressPrompt)
+            {
+                Program.LogService?.LogDebug("StubKit: SteamStub prompt suppressed; skipping " + executablePath);
+                return true;
+            }
+
             const int idAccept = 100;
             const int idSkip = 101;
+            // Verification order: [0] Auto handle, [1] Do not show again.
             AppTaskDialogResult answer = AppTaskDialogForm.Show(
                 this,
                 new AppTaskDialogRequest
@@ -2863,8 +2931,12 @@ namespace SmartGoldbergEmu.Forms
                     // Wider than default so long Game: lines fit before wrapping.
                     MaxClientWidth = 640,
                     Icon = MessageBoxIcon.Question,
-                    VerificationText = "Auto handle SteamStubs - (Auto patch)",
+                    VerificationText = StubKitFeedback.AutoHandleVerificationText,
                     VerificationChecked = false,
+                    Verifications = new List<AppTaskDialogVerification>
+                    {
+                        new AppTaskDialogVerification(StubKitFeedback.DoNotShowAgainVerificationText)
+                    },
                     Buttons = new List<AppTaskDialogButton>
                     {
                         new AppTaskDialogButton(idAccept, "Accept") { IsDefault = true },
@@ -2874,12 +2946,38 @@ namespace SmartGoldbergEmu.Forms
                 });
             if (answer.ButtonId == TaskDialogHelper.IdCancel)
                 return false;
-            if (answer.ButtonId != idAccept)
-                return true;
 
-            if (answer.VerificationChecked)
+            bool autoHandleChecked = answer.VerificationStates.Count > 0 && answer.VerificationStates[0];
+            bool doNotShowChecked = answer.VerificationStates.Count > 1 && answer.VerificationStates[1];
+
+            if (answer.ButtonId == idAccept)
             {
-                var saveResult = _appDataService.SetAutoHandleSteamStubs(true);
+                // Auto handle wins over Do not show again (always patch vs suppress).
+                if (autoHandleChecked)
+                    TrySaveSteamStubPromptPreference(autoHandle: true, suppressPrompt: false);
+                else if (doNotShowChecked)
+                    TrySaveSteamStubPromptPreference(autoHandle: false, suppressPrompt: true);
+
+                await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
+                return true;
+            }
+
+            // Skip: Do not show again suppresses future prompts. Auto handle alone is ignored on Skip.
+            if (doNotShowChecked)
+                TrySaveSteamStubPromptPreference(autoHandle: false, suppressPrompt: true);
+
+            return true;
+        }
+
+        private void TrySaveSteamStubPromptPreference(bool autoHandle, bool suppressPrompt)
+        {
+            if (_appDataService == null)
+                return;
+
+            ValidationResult saveResult;
+            if (autoHandle)
+            {
+                saveResult = _appDataService.SetAutoHandleSteamStubs(true);
                 if (!saveResult.IsValid)
                 {
                     Program.LogService?.LogWarning(
@@ -2887,10 +2985,20 @@ namespace SmartGoldbergEmu.Forms
                 }
                 else
                     Program.LogService?.LogDebug("StubKit: Auto handle SteamStubs enabled from confirm dialog");
+                return;
             }
 
-            await ApplyStubKitToExecutableAsync(executablePath, gameName).ConfigureAwait(true);
-            return true;
+            if (!suppressPrompt)
+                return;
+
+            saveResult = _appDataService.SetSuppressSteamStubPrompt(true);
+            if (!saveResult.IsValid)
+            {
+                Program.LogService?.LogWarning(
+                    "StubKit: could not save Do not show again: " + (saveResult.ErrorMessage ?? "unknown error"));
+            }
+            else
+                Program.LogService?.LogDebug("StubKit: SteamStub prompt suppressed from confirm dialog");
         }
 
         private string TryResolveLaunchExecutableForStubCheck(GameConfig game, LaunchOption launchOption)

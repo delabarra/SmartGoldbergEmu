@@ -171,27 +171,27 @@ namespace SmartGoldbergEmu.Constants
         // Unmodified Steam client Steam.dll kept beside the Goldberg build for a manual swap if the patched copy fails.
         public const string GoldbergSteamOriginalDllFileName = "steam_o.dll";
 
-        public static string GoldbergExperimentalDirectory =>
-            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.ExperimentalFolderName);
+        public static string GoldbergStandardSteamApiDirectory =>
+            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamApiFolderName);
 
-        public static string GoldbergSteamClientExperimentalDirectory =>
-            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamClientExperimentalFolderName);
+        public static string GoldbergSteamClientDirectory =>
+            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamClientFolderName);
 
         public static string GoldbergSteamOldDirectory =>
             Path.Combine(GoldbergDirectory, GoldbergInstallLayout.SteamOldFolderName);
 
         public static string GoldbergSteamClientExtraDllsDirectory =>
             Path.Combine(
-                GoldbergSteamClientExperimentalDirectory,
-                GoldbergInstallLayout.SteamClientExperimentalExtraDllsFolderName);
+                GoldbergSteamClientDirectory,
+                GoldbergInstallLayout.ExtraDllsFolderName);
 
         public static string GoldbergColdClientDirectory =>
-            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.ColdClientFolderName);
+            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.ColdClientLoaderFolderName);
 
         public static string GoldbergColdClientExtraDllsDirectory =>
             Path.Combine(
                 GoldbergColdClientDirectory,
-                GoldbergInstallLayout.SteamClientExperimentalExtraDllsFolderName);
+                GoldbergInstallLayout.ExtraDllsFolderName);
 
         public const string GoldbergColdClientLoaderExe32 = "steamclient_loader_x86.exe";
         public const string GoldbergColdClientLoaderExe64 = "steamclient_loader_x64.exe";
@@ -205,19 +205,19 @@ namespace SmartGoldbergEmu.Constants
             File.Exists(CombineGoldbergColdClientLoaderPath(false))
             && File.Exists(CombineGoldbergColdClientLoaderPath(true));
 
-        public static string CombineGoldbergExperimentalSteamApiPath(bool useX64) =>
+        public static string CombineGoldbergStandardSteamApiPath(bool useX64) =>
             Path.Combine(
-                GoldbergExperimentalDirectory,
+                GoldbergStandardSteamApiDirectory,
                 useX64 ? GoldbergStandardSteamApiDll64 : GoldbergStandardSteamApiDll32);
 
-        public static string CombineGoldbergExperimentalSteamClientPath(bool useX64) =>
+        public static string CombineGoldbergStandardSteamApiSteamClientPath(bool useX64) =>
             Path.Combine(
-                GoldbergExperimentalDirectory,
+                GoldbergStandardSteamApiDirectory,
                 useX64 ? GoldbergSteamClientDll64 : GoldbergSteamClientDll32);
 
-        public static bool HasGoldbergExperimentalFiles(bool useX64) =>
-            File.Exists(CombineGoldbergExperimentalSteamApiPath(useX64))
-            && File.Exists(CombineGoldbergExperimentalSteamClientPath(useX64));
+        public static bool HasGoldbergStandardSteamApiFiles(bool useX64) =>
+            File.Exists(CombineGoldbergStandardSteamApiPath(useX64))
+            && File.Exists(CombineGoldbergStandardSteamApiSteamClientPath(useX64));
 
         public static bool HasSteamClientGoldbergFiles() =>
             File.Exists(CombineGoldbergSteamClientDllPath(false))
@@ -227,12 +227,12 @@ namespace SmartGoldbergEmu.Constants
 
         public static string CombineGoldbergSteamClientDllPath(bool useX64) =>
             Path.Combine(
-                GoldbergSteamClientExperimentalDirectory,
+                GoldbergSteamClientDirectory,
                 useX64 ? GoldbergSteamClientDll64 : GoldbergSteamClientDll32);
 
         public static string CombineGoldbergGameOverlayRendererPath(bool useX64) =>
             Path.Combine(
-                GoldbergSteamClientExperimentalDirectory,
+                GoldbergSteamClientDirectory,
                 useX64 ? GoldbergGameOverlayRendererDll64 : GoldbergGameOverlayRendererDll32);
 
         public static string CombineGoldbergSteamDllPath() =>
@@ -484,7 +484,7 @@ namespace SmartGoldbergEmu.Constants
         public static string LegacyLocalAppDataConfigFilePath =>
             Path.Combine(LocalAppDataPerUserDirectory, LegacyConfigFileName);
 
-        // Subfolders: experimental, steamclient_experimental (extra_dlls for load_dlls staging), steam_old.
+        // Subfolders: SteamApi, SteamClient (extra_dlls for load_dlls staging), SteamOld, ColdClientLoader.
         public static string GoldbergDirectory => Path.Combine(AppBaseDirectory, GoldbergDirectoryFolderName);
 
         public static string LaunchSessionManifestDirectory =>

@@ -10,6 +10,13 @@ namespace SmartGoldbergEmu.Services
     {
         public const string DialogTitle = "SteamStub";
 
+        public const string AutoHandleVerificationText = "Auto handle SteamStubs - (Auto patch)";
+
+        public const string DoNotShowAgainVerificationText = "Do not show again";
+
+        // Context-menu label for SuppressSteamStubPrompt (dialog still uses Do not show again).
+        public const string DisableChecksMenuText = "Disable checks";
+
         public static string OfferRemoveQuestion(ulong appId, string gameName, string executableFileName)
         {
             string name = FormatGameName(gameName);

@@ -74,10 +74,10 @@ namespace SmartGoldbergEmu.Tests.TestSupport
             TrackGoldbergPath(path);
         }
 
-        public void StageGoldbergExperimental(bool useX64, byte apiMarker = GoldbergFileMarker, byte clientMarker = GoldbergFileMarker)
+        public void StageGoldbergStandardSteamApi(bool useX64, byte apiMarker = GoldbergFileMarker, byte clientMarker = GoldbergFileMarker)
         {
-            string apiPath = PathConstants.CombineGoldbergExperimentalSteamApiPath(useX64);
-            string clientPath = PathConstants.CombineGoldbergExperimentalSteamClientPath(useX64);
+            string apiPath = PathConstants.CombineGoldbergStandardSteamApiPath(useX64);
+            string clientPath = PathConstants.CombineGoldbergStandardSteamApiSteamClientPath(useX64);
             WriteMarkerFile(apiPath, apiMarker);
             WriteMarkerFile(clientPath, clientMarker);
             TrackGoldbergPath(apiPath);

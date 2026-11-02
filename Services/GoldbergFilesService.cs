@@ -1033,7 +1033,7 @@ namespace SmartGoldbergEmu.Services
             return dir;
         }
 
-        // Silent folder prep when a game uses ColdClient (load_dlls + coldclient/extra_dlls).
+        // Silent folder prep when a game uses ColdClient (load_dlls + ColdClientLoader/extra_dlls).
         public static void TryEnsureColdClientDllFolders(ulong appId)
         {
             if (appId == 0)

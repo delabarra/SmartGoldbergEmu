@@ -1587,7 +1587,7 @@ namespace SmartGoldbergEmu.Services
                 {
                     logger?.LogError(
                         "Goldberg emulator files still missing after download attempt (game launch). "
-                        + "Check goldberg\\steamclient_experimental and retry Goldberg Update.");
+                        + "Check goldberg\\SteamClient and retry Goldberg Update.");
                     return false;
                 }
                 return true;

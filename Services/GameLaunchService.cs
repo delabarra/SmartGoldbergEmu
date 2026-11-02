@@ -287,7 +287,7 @@ namespace SmartGoldbergEmu.Services
                         if (ColdClientInstallService.ColdClientFilesCheckSync())
                         {
                             return ValidationResult.Failure(
-                                "ColdClient files are missing under goldberg\\coldclient. Select ColdClient mode in game settings or launch again to download them.");
+                                "ColdClient files are missing under goldberg\\ColdClientLoader. Select ColdClient mode in game settings or launch again to download them.");
                         }
 
                         GoldbergFilesService.TryEnsureColdClientDllFolders(game.AppId);
@@ -486,22 +486,22 @@ namespace SmartGoldbergEmu.Services
                     return ValidationResult.Success();
 
                 _logger?.LogError(
-                    $"Emulator binaries missing: AppId={game?.AppId}, mode={game?.LaunchMode}, arch={(useX64 ? "x64" : "x86")}, need steamclient_experimental");
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={game?.LaunchMode}, arch={(useX64 ? "x64" : "x86")}, need goldberg\\SteamClient");
                 return ValidationResult.Failure(
-                    "Goldberg emulator files are missing under goldberg\\steamclient_experimental. Install or update the emulator.");
+                    "Goldberg emulator files are missing under goldberg\\SteamClient. Install or update the emulator.");
             }
 
             GoldbergLaunchMode launchMode = game?.LaunchMode ?? GoldbergLaunchMode.SteamClient;
 
             if (launchMode == GoldbergLaunchMode.StandardSteamApi)
             {
-                if (PathConstants.HasGoldbergExperimentalFiles(useX64))
+                if (PathConstants.HasGoldbergStandardSteamApiFiles(useX64))
                     return ValidationResult.Success();
 
                 _logger?.LogError(
-                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, arch={(useX64 ? "x64" : "x86")}, need goldberg\\experimental");
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, arch={(useX64 ? "x64" : "x86")}, need goldberg\\SteamApi");
                 return ValidationResult.Failure(
-                    "Experimental Goldberg DLLs are missing under goldberg\\experimental. "
+                    "Standard steam_api Goldberg DLLs are missing under goldberg\\SteamApi. "
                     + "Run Goldberg Update or repair the emulator.");
             }
 
@@ -511,9 +511,9 @@ namespace SmartGoldbergEmu.Services
                     return ValidationResult.Success();
 
                 _logger?.LogError(
-                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, need Steam.dll under goldberg\\steam_old");
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, need Steam.dll under goldberg\\SteamOld");
                 return ValidationResult.Failure(
-                    "Steam.dll is not in goldberg\\steam_old. Run Goldberg Update or install Steam, then try again.");
+                    "Steam.dll is not in goldberg\\SteamOld. Run Goldberg Update or install Steam, then try again.");
             }
 
             if (launchMode == GoldbergLaunchMode.ColdClient)
@@ -522,9 +522,9 @@ namespace SmartGoldbergEmu.Services
                     return ValidationResult.Success();
 
                 _logger?.LogError(
-                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, need steamclient_experimental + goldberg\\coldclient");
+                    $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, need goldberg\\SteamClient + goldberg\\ColdClientLoader");
                 return ValidationResult.Failure(
-                    "ColdClient requires Goldberg steamclient files and ColdClient files under goldberg\\coldclient. "
+                    "ColdClient requires Goldberg steamclient files and ColdClient files under goldberg\\ColdClientLoader. "
                     + "Launch again to download missing ColdClient files, and run Goldberg Update if steamclient DLLs are missing.");
             }
 
@@ -532,9 +532,9 @@ namespace SmartGoldbergEmu.Services
                 return ValidationResult.Success();
 
             _logger?.LogError(
-                $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, arch={(useX64 ? "x64" : "x86")}, need steamclient_experimental");
+                $"Emulator binaries missing: AppId={game?.AppId}, mode={launchMode}, arch={(useX64 ? "x64" : "x86")}, need goldberg\\SteamClient");
             return ValidationResult.Failure(
-                "Goldberg Steam client files are missing under goldberg\\steamclient_experimental. Please download or update the emulator.");
+                "Goldberg Steam client files are missing under goldberg\\SteamClient. Please download or update the emulator.");
         }
 
         private static bool IsSteamClientModeAvailable() => PathConstants.HasSteamClientGoldbergFiles();
@@ -564,7 +564,7 @@ namespace SmartGoldbergEmu.Services
             loaderExePath = ColdClientLoaderIniWriter.GetLoaderPathForGameArch(useX64);
             if (string.IsNullOrEmpty(loaderExePath) || !File.Exists(loaderExePath))
             {
-                errorMessage = "ColdClient loader EXE is missing under goldberg\\coldclient.";
+                errorMessage = "ColdClient loader EXE is missing under goldberg\\ColdClientLoader.";
                 return false;
             }
 
@@ -738,9 +738,9 @@ namespace SmartGoldbergEmu.Services
             if (IsSteamDllModeAvailable())
                 return ValidationResult.Success();
 
-            _logger?.LogError("Steam.dll is missing from goldberg\\steam_old (Steam.dll launch mode)");
+            _logger?.LogError("Steam.dll is missing from goldberg\\SteamOld (Steam.dll launch mode)");
             return ValidationResult.Failure(
-                "Steam.dll is not in goldberg\\steam_old. Run Goldberg Update or install Steam, then try again.");
+                "Steam.dll is not in goldberg\\SteamOld. Run Goldberg Update or install Steam, then try again.");
         }
 
         private static List<string> CollectStandardGoldbergDeployTargetPaths(
@@ -904,15 +904,15 @@ namespace SmartGoldbergEmu.Services
             try
             {
                 string steamApiFileName = useX64 ? PathConstants.GoldbergStandardSteamApiDll64 : PathConstants.GoldbergStandardSteamApiDll32;
-                if (!PathConstants.HasGoldbergExperimentalFiles(useX64))
+                if (!PathConstants.HasGoldbergStandardSteamApiFiles(useX64))
                 {
                     return ValidationResult.Failure(
-                        "Experimental Goldberg DLLs are missing under goldberg\\experimental. "
+                        "Standard steam_api Goldberg DLLs are missing under goldberg\\SteamApi. "
                         + "Run Goldberg Update or repair the emulator.");
                 }
 
-                string steamApiSrc = PathConstants.CombineGoldbergExperimentalSteamApiPath(useX64);
-                string steamClientSrc = PathConstants.CombineGoldbergExperimentalSteamClientPath(useX64);
+                string steamApiSrc = PathConstants.CombineGoldbergStandardSteamApiPath(useX64);
+                string steamClientSrc = PathConstants.CombineGoldbergStandardSteamApiSteamClientPath(useX64);
 
                 string deployDirectory = Path.GetDirectoryName(steamApiDeployPath);
                 if (string.IsNullOrEmpty(deployDirectory))

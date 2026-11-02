@@ -54,7 +54,7 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             logger?.LogWarning(
-                "ColdClient files are missing under goldberg\\coldclient, but one or more games use ColdClient mode.");
+                "ColdClient files are missing under goldberg\\ColdClientLoader, but one or more games use ColdClient mode.");
             ColdClientInstallService.TryEnsureInstalledWithUiSync(null, logger);
         }
 

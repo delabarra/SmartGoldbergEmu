@@ -15,7 +15,7 @@ using SmartGoldbergEmu.Models;
 
 namespace SmartGoldbergEmu.Services
 {
-    // Downloads ColdClientLoader-*-win.7z from the repack and installs loaders under goldberg/coldclient/.
+    // Downloads ColdClientLoader-*-win.7z from the repack and installs loaders under goldberg/ColdClientLoader/.
     public static class ColdClientInstallService
     {
         private const int HttpTimeoutSeconds = 120;
@@ -39,8 +39,8 @@ namespace SmartGoldbergEmu.Services
                         "ColdClient mode uses upstream steamclient loader executables. Windows Defender often flags them as false positives.\n\n"
                         + "Continuing will add Windows Defender exclusions for:\n\n"
                         + "- " + GoldbergForkConstants.ColdClientDownloadArchiveFileName + " (temporary; removed after setup)\n"
-                        + "- goldberg/coldclient/" + PathConstants.GoldbergColdClientLoaderExe32 + " (permanent)\n"
-                        + "- goldberg/coldclient/" + PathConstants.GoldbergColdClientLoaderExe64 + " (permanent)",
+                        + "- goldberg/ColdClientLoader/" + PathConstants.GoldbergColdClientLoaderExe32 + " (permanent)\n"
+                        + "- goldberg/ColdClientLoader/" + PathConstants.GoldbergColdClientLoaderExe64 + " (permanent)",
                     FooterText = "Do you want to continue?",
                     CustomIcon = SystemIcons.Shield,
                     Buttons = new List<AppTaskDialogButton>

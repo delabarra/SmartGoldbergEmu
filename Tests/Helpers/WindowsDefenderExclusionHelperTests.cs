@@ -13,14 +13,14 @@ namespace SmartGoldbergEmu.Tests.Helpers
                 new[]
                 {
                     @"C:\temp\coldclient-download.7z",
-                    @"C:\app\goldberg\coldclient\steamclient_loader_x86.exe",
-                    @"C:\app\goldberg\coldclient\steamclient_loader_x64.exe",
+                    @"C:\app\goldberg\ColdClientLoader\steamclient_loader_x86.exe",
+                    @"C:\app\goldberg\ColdClientLoader\steamclient_loader_x64.exe",
                 },
                 add: true);
 
             Assert.Contains("Add-MpPreference -ExclusionPath 'C:\\temp\\coldclient-download.7z'", script);
-            Assert.Contains("Add-MpPreference -ExclusionPath 'C:\\app\\goldberg\\coldclient\\steamclient_loader_x86.exe'", script);
-            Assert.Contains("Add-MpPreference -ExclusionPath 'C:\\app\\goldberg\\coldclient\\steamclient_loader_x64.exe'", script);
+            Assert.Contains("Add-MpPreference -ExclusionPath 'C:\\app\\goldberg\\ColdClientLoader\\steamclient_loader_x86.exe'", script);
+            Assert.Contains("Add-MpPreference -ExclusionPath 'C:\\app\\goldberg\\ColdClientLoader\\steamclient_loader_x64.exe'", script);
             Assert.Contains("; ", script);
             Assert.DoesNotContain("Remove-MpPreference", script);
         }

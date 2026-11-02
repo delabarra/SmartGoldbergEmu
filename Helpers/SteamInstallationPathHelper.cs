@@ -314,7 +314,7 @@ namespace SmartGoldbergEmu.Helpers
             }
 
             if (string.IsNullOrEmpty(errorMessage))
-                errorMessage = "Steam.dll is missing from goldberg\\steam_old and could not be copied from Steam.";
+                errorMessage = "Steam.dll is missing from goldberg\\SteamOld and could not be copied from Steam.";
             return false;
         }
 

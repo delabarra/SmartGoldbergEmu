@@ -75,7 +75,7 @@ namespace SmartGoldbergEmu.Tests.Services
 
                 var result = service.ValidateEmulatorFilesPrerequisite(game, requireLaunchModeBinaries: true);
                 Assert.False(result.IsValid);
-                Assert.Contains("coldclient", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("ColdClient", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
             }
             finally
             {
@@ -84,7 +84,7 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public void ValidateEmulatorFilesPrerequisite_fails_for_regular_mode_when_experimental_files_missing()
+        public void ValidateEmulatorFilesPrerequisite_fails_for_regular_mode_when_standard_steam_api_files_missing()
         {
             StageSteamClientFiles();
             try
@@ -98,7 +98,7 @@ namespace SmartGoldbergEmu.Tests.Services
 
                 var result = service.ValidateEmulatorFilesPrerequisite(game, requireLaunchModeBinaries: true);
                 Assert.False(result.IsValid);
-                Assert.Contains("experimental", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("SteamApi", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
             }
             finally
             {

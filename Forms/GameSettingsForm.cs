@@ -3589,7 +3589,7 @@ namespace SmartGoldbergEmu.Forms
             new LaunchModeOption(GoldbergLaunchMode.SteamDllBesideExe, "Steam.dll",
                 "Copy Steam.dll next to the game .exe.\r\n\r\nFor older games that load a local Steam.dll without the overlay."),
             new LaunchModeOption(GoldbergLaunchMode.ColdClient, "ColdClient loader",
-                "Start via upstream steamclient loaders (opt-in).\r\n\r\nDeploys steamclient like Steamclient mode, then runs goldberg/coldclient loaders. First use downloads the ColdClient pack and adds Defender exclusions."),
+                "Start via upstream steamclient loaders (opt-in).\r\n\r\nDeploys steamclient like Steamclient mode, then runs goldberg/ColdClientLoader loaders. First use downloads the ColdClient pack and adds Defender exclusions."),
             new LaunchModeOption(GoldbergLaunchMode.NoEmulation, "No emulation",
                 "Start the game .exe directly.\r\n\r\nNo Goldberg DLLs or registry setup."),
         };

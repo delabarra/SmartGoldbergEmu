@@ -46,4 +46,4 @@ Items below are **not** fully automated; review them in code review.
 
 ## Goldberg launch (product boundary)
 
-- [ ] No in-process inject APIs (`CreateRemoteThread`, `WriteProcessMemory`, etc.). Deploy uses copy/replace, registry, durable per-game `load_dlls`, and `Process.Start` (game exe or installed ColdClient loaders under `goldberg/coldclient/`).
+- [ ] No in-process inject APIs (`CreateRemoteThread`, `WriteProcessMemory`, etc.). Deploy uses copy/replace, registry, durable per-game `load_dlls`, and `Process.Start` (game exe or installed ColdClient loaders under `goldberg/ColdClientLoader/`).
