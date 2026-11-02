@@ -228,6 +228,14 @@ namespace SmartGoldbergEmu.Services
 
         public bool HasAnyLiveLaunchSession()
         {
+            ulong unused;
+            return TryGetPrimaryLiveLaunchAppId(out unused);
+        }
+
+        // First live launch-session AppId (for LAN Players "playing" presence).
+        public bool TryGetPrimaryLiveLaunchAppId(out ulong appId)
+        {
+            appId = 0;
             string directory = PathConstants.LaunchSessionManifestDirectory;
             if (!Directory.Exists(directory))
                 return false;
@@ -237,8 +245,11 @@ namespace SmartGoldbergEmu.Services
                 if (!TryLoad(manifestPath, out PersistedLaunchSession session))
                     continue;
 
-                if (IsSessionProcessAlive(session))
-                    return true;
+                if (!IsSessionProcessAlive(session) || session.AppId == 0)
+                    continue;
+
+                appId = session.AppId;
+                return true;
             }
 
             return false;

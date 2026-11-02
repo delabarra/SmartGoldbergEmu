@@ -75,6 +75,12 @@
     <Compile Include="Forms\AboutForm.Designer.cs">
       <DependentUpon>AboutForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\LanPlayersForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\LanPlayersForm.Designer.cs">
+      <DependentUpon>LanPlayersForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="Forms\ForkSelectForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -139,6 +145,8 @@
     <Compile Include="Models\ApiKeyStatus.cs" />
     <Compile Include="Models\AppSearchResult.cs" />
     <Compile Include="Models\ApplicationSettings.cs" />
+    <Compile Include="Models\LanPresencePeer.cs" />
+    <Compile Include="Models\LanPersonaState.cs" />
     <Compile Include="Models\GoldbergForkSource.cs" />
     <Compile Include="Models\GoldbergReleaseChannel.cs" />
     <Compile Include="Models\GoldbergLaunchMode.cs" />
@@ -191,6 +199,7 @@
     <Compile Include="Constants\AchievementConstants.cs" />
     <Compile Include="Constants\AddGameStatusMessages.cs" />
     <Compile Include="Constants\ApplicationConstants.cs" />
+    <Compile Include="Constants\LanPresenceConstants.cs" />
     <Compile Include="Constants\GamesIniKeyNames.cs" />
     <Compile Include="Constants\GoldbergForkConstants.cs" />
     <Compile Include="Constants\AssetConstants.cs" />
@@ -226,6 +235,7 @@
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
     <Compile Include="Helpers\ColdClientLoaderIniWriter.cs" />
     <Compile Include="Helpers\WindowsDefenderExclusionHelper.cs" />
+    <Compile Include="Helpers\WindowsUserIdleHelper.cs" />
     <Compile Include="Helpers\SteamActiveProcessRegistryHelper.cs" />
     <Compile Include="Helpers\SteamSourceModRegistryHelper.cs" />
     <Compile Include="Helpers\GoldbergReleaseResolveHelper.cs" />
@@ -402,6 +412,7 @@
     <Compile Include="SteamKit\Types.cs" />
     <Compile Include="Models\PersistedLaunchSession.cs" />
     <Compile Include="Services\LaunchSessionCleanupService.cs" />
+    <Compile Include="Services\LanPresenceService.cs" />
     <Compile Include="Services\GameLaunchService.cs" />
     <Compile Include="Services\GameSettingsSaveService.cs" />
     <Compile Include="Services\GameSetupService.cs" />

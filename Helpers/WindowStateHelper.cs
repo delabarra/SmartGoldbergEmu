@@ -100,6 +100,89 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
+        // Restores LAN list layout from ui_settings.ini. Returns false when caller should use its default placement.
+        public static bool TryRestoreLanListWindowState(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
+
+            try
+            {
+                if (!appDataService.HasPersistedLanListWindowLayout())
+                    return false;
+
+                var windowState = appDataService.GetLanListWindowState();
+                if (windowState == null)
+                    return false;
+
+                bool applied = false;
+
+                if (windowState.Size.Width > 0 && windowState.Size.Height > 0)
+                {
+                    var size = windowState.Size;
+                    size.Width = Math.Max(size.Width, form.MinimumSize.Width);
+                    size.Height = Math.Max(size.Height, form.MinimumSize.Height);
+                    form.Size = size;
+                    applied = true;
+                }
+
+                if (appDataService.HasPersistedLanListWindowLocation() && IsLocationValid(windowState.Location))
+                {
+                    form.StartPosition = FormStartPosition.Manual;
+                    form.Location = windowState.Location;
+                    applied = true;
+                }
+                else if (applied)
+                {
+                    return false;
+                }
+
+                if (windowState.State == FormWindowState.Maximized ||
+                    windowState.State == FormWindowState.Minimized ||
+                    windowState.State == FormWindowState.Normal)
+                {
+                    form.WindowState = windowState.State;
+                    applied = true;
+                }
+
+                return applied;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Failed to restore LAN list window state: {ex.Message}");
+                return false;
+            }
+        }
+
+        public static void SaveLanListWindowState(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
+
+            try
+            {
+                if (form.WindowState == FormWindowState.Minimized)
+                    return;
+
+                var windowState = new WindowState
+                {
+                    Size = form.Size,
+                    Location = form.Location,
+                    State = form.WindowState
+                };
+
+                appDataService.SetLanListWindowState(windowState);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Failed to save LAN list window state: {ex.Message}");
+            }
+        }
+
         public static void CenterFormOnScreen(Form form)
         {
             if (form == null)

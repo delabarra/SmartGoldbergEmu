@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Xml.Serialization;
 using SmartGoldbergEmu.Constants;
 
@@ -34,6 +35,23 @@ namespace SmartGoldbergEmu.Models
 
         public bool LogosViewDropShadow { get; set; }
 
+        // LAN presence: advertise/listen when true; stop all presence traffic when false.
+        public bool LanPlayersOnline { get; set; }
+
+        // Preferred Online / Away / Hidden (persists). Auto-Away overlays Online only at runtime.
+        public LanPersonaState LanPersonaState { get; set; }
+
+        public string LanCustomStatus { get; set; }
+
+        // Local-only favorite Steam64 ids.
+        public List<string> LanFavoriteSteamIds { get; set; }
+
+        // LAN Players list window was open when the app last quit (ui_settings.ini).
+        public bool LanListOpen { get; set; }
+
+        // LAN Players list size/position (ui_settings.ini).
+        public WindowState LanListWindowState { get; set; }
+
         public ApplicationSettings()
         {
             ThemeMode = ThemeMode.System;
@@ -47,6 +65,13 @@ namespace SmartGoldbergEmu.Models
             DetailsColumnWidths = ApplicationConstants.DefaultDetailsColumnWidths;
             FullLaunchOptions = false; // Falls back to the game executable when filtering leaves no options.
             LogosViewDropShadow = true;
+            LanPlayersOnline = true;
+            LanPersonaState = LanPersonaState.Online;
+            LanCustomStatus = string.Empty;
+            LanFavoriteSteamIds = new List<string>();
+            LanListOpen = false;
+            // Null until read from ui_settings.ini or saved from LanPlayersForm (avoid writing defaults on unrelated UI saves).
+            LanListWindowState = null;
         }
     }
 }

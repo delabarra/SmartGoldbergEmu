@@ -16,11 +16,18 @@ namespace SmartGoldbergEmu.Helpers
         private static readonly PropertyInfo DoubleBufferedProperty =
             typeof(Control).GetProperty("DoubleBuffered", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        // Win10 1809 used 19; 1903+ uses 20. We force light title bars (value 0).
+        private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
+        private const int DwmwaUseImmersiveDarkMode = 20;
+
         [DllImport("uxtheme.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
         private static extern int SetWindowTheme(IntPtr hwnd, string pszSubAppName, string pszSubIdList);
 
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
         public static string ExplorerThemeName(bool dark)
         {
@@ -55,6 +62,23 @@ namespace SmartGoldbergEmu.Helpers
             using (Graphics g = Graphics.FromHdc(hdc))
             using (var brush = new SolidBrush(backColor))
                 g.FillRectangle(brush, client);
+        }
+
+        // Keep native caption bars light even when the form client area is dark.
+        public static void ApplyLightTitleBar(Form form)
+        {
+            if (form == null || form.IsDisposed || !form.IsHandleCreated)
+                return;
+
+            int useDark = 0;
+            try
+            {
+                DwmSetWindowAttribute(form.Handle, DwmwaUseImmersiveDarkMode, ref useDark, sizeof(int));
+                DwmSetWindowAttribute(form.Handle, DwmwaUseImmersiveDarkModeBefore20H1, ref useDark, sizeof(int));
+            }
+            catch
+            {
+            }
         }
 
         public static void ApplyExplorerWindowTheme(Control control, bool dark)

@@ -54,6 +54,7 @@ namespace SmartGoldbergEmu.Forms
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileLauncherViewChangelog = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileOpenLauncherFolder = new System.Windows.Forms.ToolStripMenuItem();
+            this.miMnuFileLanPlayers = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.sepMnuFileBeforeExit = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileExit = new System.Windows.Forms.ToolStripMenuItem();
@@ -76,6 +77,7 @@ namespace SmartGoldbergEmu.Forms
             this.sepMnuBarBeforeViewRefresh = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuViewRefresh = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuAbout = new System.Windows.Forms.ToolStripMenuItem();
+            this.miMnuLanToggle = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxViewCompactTiles = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxViewSort = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxViewSortName = new System.Windows.Forms.ToolStripMenuItem();
@@ -151,9 +153,11 @@ namespace SmartGoldbergEmu.Forms
             this.mnuMain.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.miMnuFile,
             this.miMnuBarView,
-            this.miMnuAbout});
+            this.miMnuAbout,
+            this.miMnuLanToggle});
             this.mnuMain.Location = new System.Drawing.Point(0, 0);
             this.mnuMain.Name = "mnuMain";
+            this.mnuMain.ShowItemToolTips = true;
             this.mnuMain.Size = new System.Drawing.Size(314, 24);
             this.mnuMain.TabIndex = 0;
             // 
@@ -164,6 +168,7 @@ namespace SmartGoldbergEmu.Forms
             this.sepMnuFileAfterAddGame,
             this.miMnuFileGoldbergUpdate,
             this.miMnuFileCheckLauncherUpdates,
+            this.miMnuFileLanPlayers,
             this.miMnuFileSettings,
             this.sepMnuFileBeforeExit,
             this.miMnuFileExit});
@@ -280,6 +285,13 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileOpenLauncherFolder.Size = new System.Drawing.Size(186, 22);
             this.miMnuFileOpenLauncherFolder.Text = "Open launcher folder";
             this.miMnuFileOpenLauncherFolder.Click += new System.EventHandler(this.OnOpenLauncherFolder_Click);
+            // 
+            // miMnuFileLanPlayers
+            // 
+            this.miMnuFileLanPlayers.Name = "miMnuFileLanPlayers";
+            this.miMnuFileLanPlayers.Size = new System.Drawing.Size(145, 22);
+            this.miMnuFileLanPlayers.Text = "LAN Players";
+            this.miMnuFileLanPlayers.Click += new System.EventHandler(this.OnLanPlayers_Click);
             // 
             // miMnuFileSettings
             // 
@@ -443,6 +455,18 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuAbout.Size = new System.Drawing.Size(52, 20);
             this.miMnuAbout.Text = "About";
             this.miMnuAbout.Click += new System.EventHandler(this.OnAbout_Click);
+            // 
+            // miMnuLanToggle
+            // 
+            this.miMnuLanToggle.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.miMnuLanToggle.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.miMnuLanToggle.Font = new System.Drawing.Font("Segoe UI Emoji", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
+            this.miMnuLanToggle.Name = "miMnuLanToggle";
+            this.miMnuLanToggle.Padding = new System.Windows.Forms.Padding(6, 0, 6, 0);
+            this.miMnuLanToggle.Size = new System.Drawing.Size(36, 24);
+            this.miMnuLanToggle.Text = "👥";
+            this.miMnuLanToggle.ToolTipText = "LAN Players";
+            this.miMnuLanToggle.Click += new System.EventHandler(this.OnLanToggle_Click);
             // 
             // miCtxViewCompactTiles
             // 
@@ -953,9 +977,11 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripMenuItem miMnuFile;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileAddGame;
         private System.Windows.Forms.ToolStripSeparator sepMnuFileAfterAddGame;
+        private System.Windows.Forms.ToolStripMenuItem miMnuFileLanPlayers;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileSettings;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileExit;
         private System.Windows.Forms.ToolStripMenuItem miMnuAbout;
+        private System.Windows.Forms.ToolStripMenuItem miMnuLanToggle;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileCheckLauncherUpdates;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileLauncherCheckUpdates;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileLauncherViewChangelog;

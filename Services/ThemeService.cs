@@ -87,6 +87,7 @@ namespace SmartGoldbergEmu.Services
                 form.ForeColor = colors.Foreground;
                 ApplyThemeToControls(form.Controls, colors, effectiveTheme);
                 ApplyThemeToMenus(form, colors, effectiveTheme);
+                WinFormsThemePaintHelper.ApplyLightTitleBar(form);
                 // LinkLabel restores the system hyperlink blue after native handle init; re-apply after that.
                 ScheduleLinkColorRefresh(form);
             }

@@ -14,6 +14,7 @@ namespace SmartGoldbergEmu.Forms
         private readonly ThemeService _themeService;
         private bool _themeBound;
         private bool _appIconApplied;
+        private bool _themeAppliedBeforeFirstShow;
 
         protected ThemeService ThemeService => _themeService;
 
@@ -47,6 +48,21 @@ namespace SmartGoldbergEmu.Forms
             ForeColor = colors.Foreground;
         }
 
+        // Theme + dark title bar must be applied before the first visible frame (avoids light→dark flash).
+        protected override void SetVisibleCore(bool value)
+        {
+            if (value && !DesignTimeHelper.IsDesignTime && !_themeAppliedBeforeFirstShow && _themeService != null)
+            {
+                if (!IsHandleCreated)
+                    CreateHandle();
+                EnsureThemeBound();
+                ApplyTheme();
+                _themeAppliedBeforeFirstShow = true;
+            }
+
+            base.SetVisibleCore(value);
+        }
+
         protected override void OnHandleCreated(EventArgs e)
         {
             ApplyApplicationIcon();
@@ -57,9 +73,9 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
             EnsureThemeBound();
-            // Colors before child handles paint with the designer defaults (white).
-            ApplyTheme();
             base.OnHandleCreated(e);
+            // After child HWNDs exist; still before Visible when CreateHandle ran from SetVisibleCore/Show.
+            ApplyTheme();
         }
 
         protected override void WndProc(ref Message m)

@@ -74,6 +74,14 @@ namespace SmartGoldbergEmu.Forms
         private PendingAvatarChange _pendingAvatarChange = PendingAvatarChange.None;
         private string _pendingAvatarSourcePath;
 
+        private GroupBox grpLanPlayers;
+        private Label lblLanPersonaStatus;
+        private ComboBox cmbLanPersonaStatus;
+        private Label lblLanCustomStatus;
+        private TextBox txtLanCustomStatus;
+        private LanPersonaState _initialLanPersonaState = LanPersonaState.Online;
+        private string _initialLanCustomStatus = string.Empty;
+
         public event EventHandler ApiKeyValidationStatusChanged;
 
         public SettingsForm()
@@ -122,6 +130,7 @@ namespace SmartGoldbergEmu.Forms
             _apiKeyValidationClearTimer.Tick += OnApiKeyValidationClearTimer_Tick;
 
             WireEmulatorTab();
+            EnsureLanPlayersSettingsControls();
 
             InitializeTooltips();
 
@@ -536,6 +545,7 @@ namespace SmartGoldbergEmu.Forms
 
             _isLoading = true;
             LoadGoldbergSettings();
+            LoadLanPlayersSettings();
             _previousSaveLocationIndex = cmbSaveLocation.SelectedIndex;
             StoreInitialState();
             WireUpChangeEvents();
@@ -645,8 +655,9 @@ namespace SmartGoldbergEmu.Forms
 
             var goldbergResult = SaveGoldbergSettings();
             var avatarResult = await ApplyPendingAvatarAsync().ConfigureAwait(true);
+            var lanResult = SaveLanPlayersSettings();
 
-            if (apiKeyResult.IsValid && goldbergResult.IsSuccess && avatarResult.IsValid)
+            if (apiKeyResult.IsValid && goldbergResult.IsSuccess && avatarResult.IsValid && lanResult.IsValid)
             {
                 if (!string.IsNullOrEmpty(apiKeySkipReason))
                 {
@@ -665,6 +676,15 @@ namespace SmartGoldbergEmu.Forms
                     LoadSteamIdProfilesIntoCombo();
                 }
 
+                try
+                {
+                    ServiceLocator.LanPresenceService.ApplyLocalPersonaFromSettings();
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogDebug("LAN Players: persona refresh after settings save failed: " + ex.Message);
+                }
+
                 StoreInitialState();
                 btnSave.Enabled = false;
                 DialogResult = DialogResult.OK;
@@ -679,6 +699,8 @@ namespace SmartGoldbergEmu.Forms
                     errorMessages.Add($"Goldberg Settings: {goldbergResult.ErrorMessage}");
                 if (!avatarResult.IsValid)
                     errorMessages.Add($"Avatar: {avatarResult.ErrorMessage}");
+                if (!lanResult.IsValid)
+                    errorMessages.Add($"LAN Players: {lanResult.ErrorMessage}");
 
                 FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save some settings:\n{string.Join("\n", errorMessages)}", "Save Settings",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -2051,6 +2073,11 @@ namespace SmartGoldbergEmu.Forms
                 !AreEmulatorSettingsEqual(BuildEmulatorSettings(), _initialMainSettings))
                 return true;
 
+            if (ReadLanPersonaStateFromUi() != _initialLanPersonaState)
+                return true;
+            if (!string.Equals(ReadLanCustomStatusFromUi(), _initialLanCustomStatus ?? string.Empty, StringComparison.Ordinal))
+                return true;
+
             return false;
         }
 
@@ -2537,9 +2564,156 @@ namespace SmartGoldbergEmu.Forms
                 LocalSavePath = GetPersistedLocalSavePathFromUi(),
                 SavesFolderName = txtSavesFolderName.Text.Trim()
             };
+            _initialLanPersonaState = ReadLanPersonaStateFromUi();
+            _initialLanCustomStatus = ReadLanCustomStatusFromUi();
             _pendingAvatarChange = PendingAvatarChange.None;
             _pendingAvatarSourcePath = null;
             SyncPersistedSaveLocationFromInitialState();
+        }
+
+        private void EnsureLanPlayersSettingsControls()
+        {
+            if (DesignTimeHelper.IsDesignTime || tabUserAccount == null || grpLanPlayers != null)
+                return;
+
+            grpLanPlayers = new GroupBox
+            {
+                Name = "grpLanPlayers",
+                Text = "LAN Players",
+                Location = new Point(12, 194),
+                Size = new Size(568, 92),
+                Padding = new Padding(12),
+                TabIndex = 1
+            };
+
+            lblLanPersonaStatus = new Label
+            {
+                AutoSize = true,
+                Location = new Point(15, 28),
+                Text = "Status:",
+                Name = "lblLanPersonaStatus"
+            };
+
+            cmbLanPersonaStatus = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(100, 24),
+                Size = new Size(180, 21),
+                Name = "cmbLanPersonaStatus"
+            };
+            cmbLanPersonaStatus.Items.AddRange(new object[] { "Online", "Away", "Hidden" });
+            cmbLanPersonaStatus.SelectedIndex = 0;
+
+            lblLanCustomStatus = new Label
+            {
+                AutoSize = true,
+                Location = new Point(15, 58),
+                Text = "Custom status:",
+                Name = "lblLanCustomStatus"
+            };
+
+            txtLanCustomStatus = new TextBox
+            {
+                Location = new Point(100, 54),
+                Size = new Size(435, 20),
+                MaxLength = LanPresenceConstants.MaxCustomStatusChars,
+                Name = "txtLanCustomStatus"
+            };
+
+            grpLanPlayers.Controls.Add(lblLanPersonaStatus);
+            grpLanPlayers.Controls.Add(cmbLanPersonaStatus);
+            grpLanPlayers.Controls.Add(lblLanCustomStatus);
+            grpLanPlayers.Controls.Add(txtLanCustomStatus);
+            tabUserAccount.Controls.Add(grpLanPlayers);
+
+            if (grpSteamWebApi != null)
+            {
+                grpSteamWebApi.Location = new Point(12, 298);
+                grpSteamWebApi.TabIndex = 2;
+            }
+
+            cmbLanPersonaStatus.SelectedIndexChanged += (s, e) =>
+            {
+                if (!_isLoading)
+                    CheckForChanges();
+            };
+            txtLanCustomStatus.TextChanged += (s, e) =>
+            {
+                if (!_isLoading)
+                    CheckForChanges();
+            };
+        }
+
+        private void LoadLanPlayersSettings()
+        {
+            EnsureLanPlayersSettingsControls();
+            if (cmbLanPersonaStatus == null)
+                return;
+
+            try
+            {
+                ApplicationSettings settings = _appDataService.LoadApplicationSettings();
+                switch (settings.LanPersonaState)
+                {
+                    case LanPersonaState.Away:
+                        cmbLanPersonaStatus.SelectedIndex = 1;
+                        break;
+                    case LanPersonaState.Hidden:
+                        cmbLanPersonaStatus.SelectedIndex = 2;
+                        break;
+                    default:
+                        cmbLanPersonaStatus.SelectedIndex = 0;
+                        break;
+                }
+
+                txtLanCustomStatus.Text = settings.LanCustomStatus ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                LogRedactionHelper.WriteDebug("Failed to load LAN Players settings: " + ex.Message);
+                cmbLanPersonaStatus.SelectedIndex = 0;
+                txtLanCustomStatus.Text = string.Empty;
+            }
+        }
+
+        private ValidationResult SaveLanPlayersSettings()
+        {
+            try
+            {
+                ApplicationSettings settings = _appDataService.LoadApplicationSettings();
+                settings.LanPersonaState = ReadLanPersonaStateFromUi();
+                settings.LanCustomStatus = ReadLanCustomStatusFromUi();
+                return _appDataService.SaveApplicationSettings(settings);
+            }
+            catch (Exception ex)
+            {
+                return ValidationResult.Failure(ex.Message);
+            }
+        }
+
+        private LanPersonaState ReadLanPersonaStateFromUi()
+        {
+            if (cmbLanPersonaStatus == null)
+                return LanPersonaState.Online;
+            switch (cmbLanPersonaStatus.SelectedIndex)
+            {
+                case 1:
+                    return LanPersonaState.Away;
+                case 2:
+                    return LanPersonaState.Hidden;
+                default:
+                    return LanPersonaState.Online;
+            }
+        }
+
+        private string ReadLanCustomStatusFromUi()
+        {
+            if (txtLanCustomStatus == null || string.IsNullOrWhiteSpace(txtLanCustomStatus.Text))
+                return string.Empty;
+            string value = txtLanCustomStatus.Text.Trim();
+            if (value.Length > LanPresenceConstants.MaxCustomStatusChars)
+                return value.Substring(0, LanPresenceConstants.MaxCustomStatusChars);
+            return value;
         }
 
         private static string ResolveSteamIdFromCombo(ComboBox combo)

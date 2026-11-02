@@ -81,6 +81,12 @@ namespace SmartGoldbergEmu.Constants
         // Debug/tuning toggle for the Logos view ImageList drop shadow.
         public const string SettingKeyLogosViewDropShadow = "logos_view_drop_shadow";
 
+        public const string SettingKeyLanPlayersOnline = "lan_players_online";
+        public const string SettingKeyLanPersonaState = "lan_persona_state";
+        public const string SettingKeyLanCustomStatus = "lan_custom_status";
+        // Comma-separated Steam64 ids (local favorites only; never sent on the wire).
+        public const string SettingKeyLanFavoriteSteamIds = "lan_favorite_steamids";
+
         // Light, Dark, or System.
         public const string SettingKeyThemeMode = "theme_mode";
 
@@ -94,6 +100,14 @@ namespace SmartGoldbergEmu.Constants
 
         // Normal, Maximized, or Minimized.
         public const string SettingKeyWindowState = "state";
+
+        // Whether the LAN Players list window was open last session (ui_settings.ini).
+        public const string SettingKeyLanListOpen = "lan_list_open";
+
+        // LAN list window layout in ui_settings.ini ([window]).
+        public const string SettingKeyLanListSize = "lan_list_size";
+        public const string SettingKeyLanListLocation = "lan_list_location";
+        public const string SettingKeyLanListState = "lan_list_state";
 
         public const string SettingSectionApplication = "application";
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -42,6 +42,9 @@ namespace SmartGoldbergEmu.Forms
         private readonly ImageListOwnedImages _logoOwnedImages = new ImageListOwnedImages();
         private ApiKeyStatusIndicatorHelper _apiKeyStatusIndicatorHelper;
         private UriFileWatcherHelper _uriFileWatcherHelper;
+        private LanPlayersForm _lanPlayersForm;
+        // When true, LanPlayersForm.FormClosed must not persist "closed" (main window is shutting down).
+        private bool _suppressLanListClosedPersist;
         private string _persistedDetailsColumnWidths;
         private Timer _detailsColumnWidthsSaveTimer;
         private const int DetailsColumnWidthsSaveDebounceMs = 250;
@@ -284,6 +287,20 @@ namespace SmartGoldbergEmu.Forms
             _apiKeyStatusIndicatorHelper?.Dispose();
             _uriFileWatcherHelper?.Dispose();
 
+            _suppressLanListClosedPersist = true;
+            if (_lanPlayersForm != null && !_lanPlayersForm.IsDisposed)
+            {
+                try
+                {
+                    _lanPlayersForm.Close();
+                }
+                catch
+                {
+                }
+            }
+
+            _lanPlayersForm = null;
+
             base.OnFormClosed(e);
         }
 
@@ -328,6 +345,99 @@ namespace SmartGoldbergEmu.Forms
         private void OnSettings_Click(object sender, EventArgs e)
         {
             OpenSettingsDialog();
+        }
+
+        private void OnLanPlayers_Click(object sender, EventArgs e)
+        {
+            ShowLanListWindow(activateExisting: true);
+        }
+
+        private void OnLanToggle_Click(object sender, EventArgs e)
+        {
+            if (_lanPlayersForm != null && !_lanPlayersForm.IsDisposed)
+            {
+                _lanPlayersForm.Close();
+                return;
+            }
+
+            ShowLanListWindow(activateExisting: true);
+        }
+
+        private void ShowLanListWindow(bool activateExisting)
+        {
+            if (_lanPlayersForm != null && !_lanPlayersForm.IsDisposed)
+            {
+                if (activateExisting)
+                {
+                    if (_lanPlayersForm.WindowState == FormWindowState.Minimized)
+                        _lanPlayersForm.WindowState = FormWindowState.Normal;
+                    _lanPlayersForm.Activate();
+                }
+
+                SyncLanToggleMenuState(true);
+                return;
+            }
+
+            _lanPlayersForm = new LanPlayersForm();
+            _lanPlayersForm.FormClosed += OnLanListFormClosed;
+            _lanPlayersForm.Owner = this;
+            _lanPlayersForm.ApplyInitialPlacement();
+            _lanPlayersForm.Show(this);
+            PersistLanListOpen(true);
+            SyncLanToggleMenuState(true);
+        }
+
+        private void OnLanListFormClosed(object sender, FormClosedEventArgs e)
+        {
+            LanPlayersForm closed = sender as LanPlayersForm;
+            if (closed != null)
+            {
+                closed.FormClosed -= OnLanListFormClosed;
+                closed.Dispose();
+            }
+
+            if (ReferenceEquals(_lanPlayersForm, sender))
+                _lanPlayersForm = null;
+
+            if (!_suppressLanListClosedPersist)
+                PersistLanListOpen(false);
+
+            SyncLanToggleMenuState(false);
+        }
+
+        private void SyncLanToggleMenuState(bool open)
+        {
+            if (miMnuLanToggle == null || miMnuLanToggle.IsDisposed)
+                return;
+            miMnuLanToggle.Checked = open;
+        }
+
+        private void PersistLanListOpen(bool open)
+        {
+            try
+            {
+                ValidationResult result = _appDataService.SetLanListOpen(open);
+                if (result != null && !result.IsValid)
+                    Program.LogService?.LogWarning("Could not save LAN list open state: " + result.ErrorMessage);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("Could not save LAN list open state: " + ex.Message);
+            }
+        }
+
+        private void TryRestoreLanListWindow()
+        {
+            try
+            {
+                if (!_appDataService.GetLanListOpen())
+                    return;
+                ShowLanListWindow(activateExisting: false);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("Could not restore LAN list window: " + ex.Message);
+            }
         }
 
         private void InitializeGameDisplay()
@@ -3581,6 +3691,17 @@ namespace SmartGoldbergEmu.Forms
                     }
                 }, ServiceLocator.ApplicationLifetimeToken).ForgetFaults(Program.LogService, "DeferredEnsureGlobalConfigFiles");
 
+                try
+                {
+                    ServiceLocator.LanPresenceService.StartIfEnabled();
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogWarning("LAN presence failed to start: " + ex.Message);
+                }
+
+                TryRestoreLanListWindow();
+
                 if (_appDataService.IsFirstRun())
                 {
                     HandleFirstRun();
@@ -3620,6 +3741,10 @@ namespace SmartGoldbergEmu.Forms
             {
                 FlushPersistDetailsColumnWidths();
                 SaveWindowState();
+                // Remember open across sessions; suppress FormClosed so forced close does not write false.
+                bool lanOpen = _lanPlayersForm != null && !_lanPlayersForm.IsDisposed;
+                _suppressLanListClosedPersist = true;
+                PersistLanListOpen(lanOpen);
             }
             catch (Exception ex)
             {

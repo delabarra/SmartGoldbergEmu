@@ -85,6 +85,7 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<GameSaveWriter> _gameSaveWriter = new Lazy<GameSaveWriter>();
         private static readonly Lazy<StubKitService> _stubKitService = new Lazy<StubKitService>();
         private static readonly Lazy<SteamInterfacesService> _steamInterfacesService = new Lazy<SteamInterfacesService>();
+        private static readonly Lazy<LanPresenceService> _lanPresenceService = new Lazy<LanPresenceService>();
 
         public static ILogService LogService => _logService.Value;
 
@@ -204,11 +205,22 @@ namespace SmartGoldbergEmu.Services
 
         public static SteamInterfacesService SteamInterfacesService => _steamInterfacesService.Value;
 
+        public static LanPresenceService LanPresenceService => _lanPresenceService.Value;
+
         // Idempotent. Prefer calling from MainForm close (dispose-then-close); Program also calls after the message loop as a safety net.
         // Order: cancel app lifetime → cancel delayed launch work → dispose Steam/images/theme → drop TaskReportService ref.
         internal static void DisposeApplicationResources()
         {
             CancelApplicationLifetime();
+
+            try
+            {
+                if (_lanPresenceService.IsValueCreated)
+                    _lanPresenceService.Value.Dispose();
+            }
+            catch
+            {
+            }
 
             try
             {

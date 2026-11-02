@@ -490,6 +490,9 @@ namespace SmartGoldbergEmu.Constants
         public static string LaunchSessionManifestDirectory =>
             Path.Combine(LocalAppDataPerUserDirectory, LaunchSessionManifestFolderName);
 
+        public static string LanPresenceAvatarCacheDirectory =>
+            Path.Combine(LocalAppDataPerUserDirectory, LanPresenceConstants.AvatarCacheFolderName);
+
         public static string CombineLaunchSessionManifestPath(ulong appId) =>
             Path.Combine(LaunchSessionManifestDirectory, appId.ToString() + LaunchSessionManifestFileExtension);
 
