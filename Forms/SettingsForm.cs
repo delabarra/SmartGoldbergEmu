@@ -24,6 +24,8 @@ namespace SmartGoldbergEmu.Forms
         private readonly SteamApiKeyService _apiKeyService;
         private const string SoundPreviewPlaySymbol = "▶";
         private const string SoundPreviewStopSymbol = "⏹";
+        private static readonly Font IconGlyphFont = new Font("Segoe UI Emoji", 9F, FontStyle.Regular, GraphicsUnit.Point);
+        private static readonly Font HintGlyphFont = new Font("Segoe UI Symbol", 10F, FontStyle.Regular, GraphicsUnit.Point);
 
         private readonly object _sound1PreviewSync = new object();
         private readonly object _sound2PreviewSync = new object();
@@ -59,6 +61,9 @@ namespace SmartGoldbergEmu.Forms
         private bool _isApiKeyValidationInProgress = false;
         private readonly Timer _apiKeyValidationClearTimer;
         private const int ApiKeyValidationMessageDisplayMs = 3000;
+        private const int TabAutoHeightPadding = 8;
+        private const int MinClientHeightForButtons = 300;
+        private int _tabControlBottomAreaHeight;
 
         private enum PendingAvatarChange
         {
@@ -94,6 +99,7 @@ namespace SmartGoldbergEmu.Forms
             : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
+            ApplySettingsIconTypography();
             InitializeSaveLocationComboItems();
 
             if (DesignTimeHelper.IsDesignTime)
@@ -137,6 +143,40 @@ namespace SmartGoldbergEmu.Forms
             {
                 txtSteamID.SelectedIndexChanged += TxtSteamID_SelectedIndexChanged;
             }
+        }
+
+        private void ApplySettingsIconTypography()
+        {
+            ApplyGlyphButtonFont(btnRemoveApiKey);
+            ApplyGlyphButtonFont(btnRemoveSteamIdProfile);
+            ApplyGlyphButtonFont(btnBrowseSavePath);
+            ApplyGlyphButtonFont(btnOpenSaveFolder);
+            ApplyGlyphButtonFont(btnBrowseFont);
+            ApplyGlyphButtonFont(btnSound1Browse);
+            ApplyGlyphButtonFont(btnSound2Browse);
+            ApplyGlyphButtonFont(btnSound1Default);
+            ApplyGlyphButtonFont(btnSound2Default);
+            ApplyGlyphButtonFont(btnResetColorBackground);
+            ApplyGlyphButtonFont(btnResetColorElements);
+            ApplyGlyphButtonFont(btnResetColorHoveredElements);
+            ApplyGlyphButtonFont(btnResetColorActiveElements);
+            ApplyGlyphButtonFont(btnResetNotificationColor);
+            ApplyGlyphButtonFont(btnResetColorStatsBackground);
+            ApplyGlyphButtonFont(btnResetColorStatsText);
+
+            if (lblApiKeyHint != null)
+                lblApiKeyHint.Font = HintGlyphFont;
+
+            if (lblProfileHint != null)
+                lblProfileHint.Font = HintGlyphFont;
+        }
+
+        private static void ApplyGlyphButtonFont(Button button)
+        {
+            if (button == null)
+                return;
+
+            button.Font = IconGlyphFont;
         }
 
         private void LoadSteamIdProfilesIntoCombo()
@@ -504,6 +544,9 @@ namespace SmartGoldbergEmu.Forms
 
             LoadSteamIdProfilesIntoCombo();
             btnSave.Enabled = false;
+
+            _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Height);
+            BeginInvoke((Action)(() => AdjustWindowHeightForCurrentTab()));
         }
 
         private void CmbSound1File_SelectedIndexChanged(object sender, EventArgs e)
@@ -1576,6 +1619,38 @@ namespace SmartGoldbergEmu.Forms
 
         private void tabControl_SelectedIndexChanged(object sender, EventArgs e)
         {
+            AdjustWindowHeightForCurrentTab();
+        }
+
+        private void AdjustWindowHeightForCurrentTab()
+        {
+            if (tabControl == null || tabControl.SelectedTab == null)
+                return;
+
+            var selectedTab = tabControl.SelectedTab;
+
+            int contentBottom = selectedTab.Padding.Top;
+            foreach (Control child in selectedTab.Controls)
+            {
+                if (!child.Visible)
+                    continue;
+
+                contentBottom = Math.Max(contentBottom, child.Bottom);
+            }
+
+            int desiredTabPageHeight = Math.Max(
+                selectedTab.Padding.Top + selectedTab.Padding.Bottom + TabAutoHeightPadding,
+                contentBottom + selectedTab.Padding.Bottom + TabAutoHeightPadding);
+
+            int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
+            int desiredTabControlHeight = desiredTabPageHeight + tabChromeHeight;
+            int desiredClientHeight = Math.Max(
+                MinClientHeightForButtons,
+                desiredTabControlHeight + _tabControlBottomAreaHeight);
+
+            int nonClientHeight = Height - ClientSize.Height;
+            MinimumSize = new Size(MinimumSize.Width, MinClientHeightForButtons + nonClientHeight);
+            Height = desiredClientHeight + nonClientHeight;
         }
 
         private void OnElement_Click(object sender, EventArgs e)

@@ -281,10 +281,10 @@ namespace SmartGoldbergEmu.Forms
             this.tabControl.Controls.Add(this.tabNotifications);
             this.tabControl.Controls.Add(this.tabMetrics);
             this.tabControl.Controls.Add(this.tabEmulator);
-            this.tabControl.Location = new System.Drawing.Point(-1, 0);
+            this.tabControl.Location = new System.Drawing.Point(0, 0);
             this.tabControl.Name = "tabControl";
             this.tabControl.SelectedIndex = 0;
-            this.tabControl.Size = new System.Drawing.Size(600, 519);
+            this.tabControl.Size = new System.Drawing.Size(600, 486);
             this.tabControl.TabIndex = 0;
             this.tabControl.SelectedIndexChanged += new System.EventHandler(this.tabControl_SelectedIndexChanged);
             // 
@@ -295,7 +295,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabUserAccount.Location = new System.Drawing.Point(4, 22);
             this.tabUserAccount.Name = "tabUserAccount";
             this.tabUserAccount.Padding = new System.Windows.Forms.Padding(12);
-            this.tabUserAccount.Size = new System.Drawing.Size(592, 533);
+            this.tabUserAccount.Size = new System.Drawing.Size(592, 460);
             this.tabUserAccount.TabIndex = 0;
             this.tabUserAccount.Text = "User Account";
             this.tabUserAccount.UseVisualStyleBackColor = true;
@@ -550,7 +550,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabSaveManagement.Location = new System.Drawing.Point(4, 22);
             this.tabSaveManagement.Name = "tabSaveManagement";
             this.tabSaveManagement.Padding = new System.Windows.Forms.Padding(12);
-            this.tabSaveManagement.Size = new System.Drawing.Size(592, 533);
+            this.tabSaveManagement.Size = new System.Drawing.Size(592, 460);
             this.tabSaveManagement.TabIndex = 1;
             this.tabSaveManagement.Text = "Save Management";
             this.tabSaveManagement.UseVisualStyleBackColor = true;
@@ -577,7 +577,7 @@ namespace SmartGoldbergEmu.Forms
             // chkDisableWarningLocalSave
             // 
             this.chkDisableWarningLocalSave.AutoSize = true;
-            this.chkDisableWarningLocalSave.Location = new System.Drawing.Point(150, 112);
+            this.chkDisableWarningLocalSave.Location = new System.Drawing.Point(20, 112);
             this.chkDisableWarningLocalSave.Name = "chkDisableWarningLocalSave";
             this.chkDisableWarningLocalSave.Size = new System.Drawing.Size(161, 17);
             this.chkDisableWarningLocalSave.TabIndex = 8;
@@ -671,7 +671,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabOverlay.Location = new System.Drawing.Point(4, 22);
             this.tabOverlay.Name = "tabOverlay";
             this.tabOverlay.Padding = new System.Windows.Forms.Padding(12);
-            this.tabOverlay.Size = new System.Drawing.Size(592, 481);
+            this.tabOverlay.Size = new System.Drawing.Size(592, 460);
             this.tabOverlay.TabIndex = 2;
             this.tabOverlay.Text = "Overlay";
             this.tabOverlay.UseVisualStyleBackColor = true;
@@ -810,7 +810,7 @@ namespace SmartGoldbergEmu.Forms
             // btnOpenFontsFolder
             // 
             this.btnOpenFontsFolder.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnOpenFontsFolder.Location = new System.Drawing.Point(434, 85);
+            this.btnOpenFontsFolder.Location = new System.Drawing.Point(472, 85);
             this.btnOpenFontsFolder.Name = "btnOpenFontsFolder";
             this.btnOpenFontsFolder.Size = new System.Drawing.Size(75, 23);
             this.btnOpenFontsFolder.TabIndex = 6;
@@ -832,9 +832,9 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.cmbFontOverride.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbFontOverride.FormattingEnabled = true;
-            this.cmbFontOverride.Location = new System.Drawing.Point(110, 27);
+            this.cmbFontOverride.Location = new System.Drawing.Point(180, 27);
             this.cmbFontOverride.Name = "cmbFontOverride";
-            this.cmbFontOverride.Size = new System.Drawing.Size(219, 21);
+            this.cmbFontOverride.Size = new System.Drawing.Size(149, 21);
             this.cmbFontOverride.TabIndex = 1;
             // 
             // lblFontOverride
@@ -1167,7 +1167,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabNotifications.Location = new System.Drawing.Point(4, 22);
             this.tabNotifications.Name = "tabNotifications";
             this.tabNotifications.Padding = new System.Windows.Forms.Padding(12);
-            this.tabNotifications.Size = new System.Drawing.Size(592, 493);
+            this.tabNotifications.Size = new System.Drawing.Size(592, 460);
             this.tabNotifications.TabIndex = 3;
             this.tabNotifications.Text = "Notifications";
             this.tabNotifications.UseVisualStyleBackColor = true;
@@ -1185,10 +1185,10 @@ namespace SmartGoldbergEmu.Forms
             this.grpSoundSettings.Controls.Add(this.btnSound1Default);
             this.grpSoundSettings.Controls.Add(this.btnSound1PlayStop);
             this.grpSoundSettings.Controls.Add(this.lblSound1);
-            this.grpSoundSettings.Location = new System.Drawing.Point(12, 340);
+            this.grpSoundSettings.Location = new System.Drawing.Point(12, 320);
             this.grpSoundSettings.Name = "grpSoundSettings";
             this.grpSoundSettings.Padding = new System.Windows.Forms.Padding(12);
-            this.grpSoundSettings.Size = new System.Drawing.Size(568, 138);
+            this.grpSoundSettings.Size = new System.Drawing.Size(568, 126);
             this.grpSoundSettings.TabIndex = 2;
             this.grpSoundSettings.TabStop = false;
             this.grpSoundSettings.Text = "Sound Settings";
@@ -1324,7 +1324,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpNotificationSettings.Location = new System.Drawing.Point(12, 12);
             this.grpNotificationSettings.Name = "grpNotificationSettings";
             this.grpNotificationSettings.Padding = new System.Windows.Forms.Padding(12);
-            this.grpNotificationSettings.Size = new System.Drawing.Size(568, 156);
+            this.grpNotificationSettings.Size = new System.Drawing.Size(568, 146);
             this.grpNotificationSettings.TabIndex = 0;
             this.grpNotificationSettings.TabStop = false;
             this.grpNotificationSettings.Text = "Notifications";
@@ -1529,10 +1529,10 @@ namespace SmartGoldbergEmu.Forms
             this.grpAchievements.Controls.Add(this.cmbPosAchievement);
             this.grpAchievements.Controls.Add(this.lblIconSize);
             this.grpAchievements.Controls.Add(this.numIconSize);
-            this.grpAchievements.Location = new System.Drawing.Point(12, 174);
+            this.grpAchievements.Location = new System.Drawing.Point(12, 164);
             this.grpAchievements.Name = "grpAchievements";
             this.grpAchievements.Padding = new System.Windows.Forms.Padding(12);
-            this.grpAchievements.Size = new System.Drawing.Size(568, 160);
+            this.grpAchievements.Size = new System.Drawing.Size(568, 150);
             this.grpAchievements.TabIndex = 1;
             this.grpAchievements.TabStop = false;
             this.grpAchievements.Text = "Achievements";
@@ -1729,7 +1729,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabMetrics.Location = new System.Drawing.Point(4, 22);
             this.tabMetrics.Name = "tabMetrics";
             this.tabMetrics.Padding = new System.Windows.Forms.Padding(12);
-            this.tabMetrics.Size = new System.Drawing.Size(592, 533);
+            this.tabMetrics.Size = new System.Drawing.Size(592, 460);
             this.tabMetrics.TabIndex = 4;
             this.tabMetrics.Text = "Metrics";
             this.tabMetrics.UseVisualStyleBackColor = true;
@@ -1905,7 +1905,7 @@ namespace SmartGoldbergEmu.Forms
             0,
             0,
             131072});
-            this.numStatsPosX.Location = new System.Drawing.Point(140, 150);
+            this.numStatsPosX.Location = new System.Drawing.Point(180, 150);
             this.numStatsPosX.Maximum = new decimal(new int[] {
             1,
             0,
@@ -1923,7 +1923,7 @@ namespace SmartGoldbergEmu.Forms
             0,
             0,
             131072});
-            this.numStatsPosY.Location = new System.Drawing.Point(210, 150);
+            this.numStatsPosY.Location = new System.Drawing.Point(250, 150);
             this.numStatsPosY.Maximum = new decimal(new int[] {
             1,
             0,
@@ -1947,9 +1947,9 @@ namespace SmartGoldbergEmu.Forms
             this.grpOverlayExtras.Controls.Add(this.chkShowAchievementList);
             this.grpOverlayExtras.Controls.Add(this.chkShowNotificationHistory);
             this.grpOverlayExtras.Controls.Add(this.chkEnableScreenshot);
-            this.grpOverlayExtras.Location = new System.Drawing.Point(12, 205);
+            this.grpOverlayExtras.Location = new System.Drawing.Point(12, 201);
             this.grpOverlayExtras.Name = "grpOverlayExtras";
-            this.grpOverlayExtras.Size = new System.Drawing.Size(568, 130);
+            this.grpOverlayExtras.Size = new System.Drawing.Size(568, 122);
             this.grpOverlayExtras.TabIndex = 1;
             this.grpOverlayExtras.TabStop = false;
             this.grpOverlayExtras.Text = "Overlay extras (gbe_fork)";
@@ -2106,7 +2106,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpOverlayButtons.Controls.Add(this.chkShowCheckboxFps);
             this.grpOverlayButtons.Controls.Add(this.chkShowCheckboxFrametime);
             this.grpOverlayButtons.Controls.Add(this.chkShowCheckboxPlaytime);
-            this.grpOverlayButtons.Location = new System.Drawing.Point(12, 343);
+            this.grpOverlayButtons.Location = new System.Drawing.Point(12, 331);
             this.grpOverlayButtons.Name = "grpOverlayButtons";
             this.grpOverlayButtons.Size = new System.Drawing.Size(568, 125);
             this.grpOverlayButtons.TabIndex = 2;
@@ -2242,7 +2242,7 @@ namespace SmartGoldbergEmu.Forms
             this.tabEmulator.Location = new System.Drawing.Point(4, 22);
             this.tabEmulator.Name = "tabEmulator";
             this.tabEmulator.Padding = new System.Windows.Forms.Padding(12);
-            this.tabEmulator.Size = new System.Drawing.Size(592, 481);
+            this.tabEmulator.Size = new System.Drawing.Size(592, 460);
             this.tabEmulator.TabIndex = 5;
             this.tabEmulator.Text = "Emulator";
             this.tabEmulator.UseVisualStyleBackColor = true;
@@ -2257,9 +2257,9 @@ namespace SmartGoldbergEmu.Forms
             this.grpEmulatorWorkarounds.Controls.Add(this.chkDisableSteamoverlaygameidEnvVar);
             this.grpEmulatorWorkarounds.Controls.Add(this.chkForceSteamhttpSuccess);
             this.grpEmulatorWorkarounds.Controls.Add(this.chkAchievementsBypass);
-            this.grpEmulatorWorkarounds.Location = new System.Drawing.Point(12, 364);
+            this.grpEmulatorWorkarounds.Location = new System.Drawing.Point(12, 314);
             this.grpEmulatorWorkarounds.Name = "grpEmulatorWorkarounds";
-            this.grpEmulatorWorkarounds.Size = new System.Drawing.Size(568, 123);
+            this.grpEmulatorWorkarounds.Size = new System.Drawing.Size(568, 108);
             this.grpEmulatorWorkarounds.TabIndex = 2;
             this.grpEmulatorWorkarounds.TabStop = false;
             this.grpEmulatorWorkarounds.Text = "Workarounds (main::misc)";
@@ -2342,14 +2342,14 @@ namespace SmartGoldbergEmu.Forms
             this.grpEmulatorStats.Controls.Add(this.chkDisableLeaderboardsCreateUnknown);
             this.grpEmulatorStats.Location = new System.Drawing.Point(12, 118);
             this.grpEmulatorStats.Name = "grpEmulatorStats";
-            this.grpEmulatorStats.Size = new System.Drawing.Size(568, 240);
+            this.grpEmulatorStats.Size = new System.Drawing.Size(568, 190);
             this.grpEmulatorStats.TabIndex = 1;
             this.grpEmulatorStats.TabStop = false;
             this.grpEmulatorStats.Text = "Stats (main::stats)";
             // 
             // btnBrowseSteamGameStatsReportsDir
             // 
-            this.btnBrowseSteamGameStatsReportsDir.Location = new System.Drawing.Point(476, 143);
+            this.btnBrowseSteamGameStatsReportsDir.Location = new System.Drawing.Point(476, 142);
             this.btnBrowseSteamGameStatsReportsDir.Name = "btnBrowseSteamGameStatsReportsDir";
             this.btnBrowseSteamGameStatsReportsDir.Size = new System.Drawing.Size(75, 23);
             this.btnBrowseSteamGameStatsReportsDir.TabIndex = 9;
@@ -2557,7 +2557,7 @@ namespace SmartGoldbergEmu.Forms
             // btnSave
             // 
             this.btnSave.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnSave.Location = new System.Drawing.Point(432, 531);
+            this.btnSave.Location = new System.Drawing.Point(432, 498);
             this.btnSave.Name = "btnSave";
             this.btnSave.Size = new System.Drawing.Size(75, 23);
             this.btnSave.TabIndex = 1;
@@ -2569,7 +2569,7 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.btnCancel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.btnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            this.btnCancel.Location = new System.Drawing.Point(513, 531);
+            this.btnCancel.Location = new System.Drawing.Point(513, 498);
             this.btnCancel.Name = "btnCancel";
             this.btnCancel.Size = new System.Drawing.Size(75, 23);
             this.btnCancel.TabIndex = 2;
@@ -2583,7 +2583,7 @@ namespace SmartGoldbergEmu.Forms
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.CancelButton = this.btnCancel;
-            this.ClientSize = new System.Drawing.Size(600, 565);
+            this.ClientSize = new System.Drawing.Size(600, 532);
             this.Controls.Add(this.btnCancel);
             this.Controls.Add(this.btnSave);
             this.Controls.Add(this.tabControl);
