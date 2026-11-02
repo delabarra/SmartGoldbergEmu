@@ -3,6 +3,7 @@
 Streamlines and automates the configuration process for the Goldberg Emulator and launches games properly without modifying game files.
 
 - 🚩 This is a fork of Kola124's [https://github.com/Kola124/SmartGoldbergEmu](https://github.com/Kola124/SmartGoldbergEmu)
+- Report issues: [https://github.com/delabarra/SmartGoldbergEmu/issues](https://github.com/delabarra/SmartGoldbergEmu/issues)
 
 ## Features
 
