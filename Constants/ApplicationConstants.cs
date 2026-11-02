@@ -81,12 +81,6 @@ namespace SmartGoldbergEmu.Constants
         // Debug/tuning toggle for the Logos view ImageList drop shadow.
         public const string SettingKeyLogosViewDropShadow = "logos_view_drop_shadow";
 
-        // Auto-unpack removable SteamStub on add/launch (no confirm dialog).
-        public const string SettingKeyAutoHandleSteamStubs = "auto_handle_steam_stubs";
-
-        // Skip the SteamStub confirm dialog on add/launch without auto-patching.
-        public const string SettingKeySuppressSteamStubPrompt = "suppress_steam_stub_prompt";
-
         // Light, Dark, or System.
         public const string SettingKeyThemeMode = "theme_mode";
 

@@ -145,7 +145,6 @@
     <Compile Include="Models\CAchievement.cs" />
     <Compile Include="Models\GameConfig.cs" />
     <Compile Include="Models\AppCatalogSnapshot.cs" />
-    <Compile Include="Models\StubExecutableTarget.cs" />
     <Compile Include="Models\StubKitApplyOutcome.cs" />
     <Compile Include="Models\StubKitApplyResult.cs" />
     <Compile Include="Models\LegacyConfig.cs" />
@@ -320,7 +319,6 @@
     <Compile Include="Services\AppCatalogSnapshotStore.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
     <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
-    <Compile Include="Services\StubKitFeedback.cs" />
     <Compile Include="Services\StubKitService.cs" />
     <Compile Include="AppDataKit\AppDataJson.cs" />
     <Compile Include="AppDataKit\AppDataService.cs" />

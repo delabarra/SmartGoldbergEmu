@@ -11,6 +11,7 @@ using SmartGoldbergEmu.Abstractions;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
+using SmartGoldbergEmu.StubKit;
 using SmartGoldbergEmu.Validation;
 
 namespace SmartGoldbergEmu.Services
@@ -28,6 +29,9 @@ namespace SmartGoldbergEmu.Services
             new Dictionary<int, SteamSourceModRegistryHelper.RestoreToken>();
         private readonly object _deployLock = new object();
         private readonly Dictionary<int, Win32DllDeploymentState> _win32DeploymentByProcessId = new Dictionary<int, Win32DllDeploymentState>();
+        private readonly object _stubExeRestoreLock = new object();
+        private readonly Dictionary<int, PersistedStubExeRestore> _stubExeRestoreByProcessId =
+            new Dictionary<int, PersistedStubExeRestore>();
         private readonly object _activeProcessRegistryLock = new object();
         private readonly HashSet<int> _processIdsWithActiveProcessRegistry = new HashSet<int>();
         private readonly object _launchInProgressLock = new object();
@@ -77,6 +81,7 @@ namespace SmartGoldbergEmu.Services
             public BranchRestoreInfo BranchRestore;
             public bool RestoreActiveProcessRegistry;
             public PersistedSourceModRestore SourceModRestore;
+            public PersistedStubExeRestore StubExeRestore;
         }
 
         public GameLaunchService()
@@ -133,7 +138,8 @@ namespace SmartGoldbergEmu.Services
             Win32DllDeploymentState win32DeployState = null;
             bool activeProcessRegistryConfigured = false;
             BranchRestoreInfo branchRestoreOnExit = null;
-            // After emulator deploy/registry mutations, always restore unless LaunchProcess handed off to a live session.
+            PersistedStubExeRestore stubExeRestore = null;
+            // After emulator deploy/registry mutations or session stub unpack, always restore unless LaunchProcess handed off.
             bool needsFailureCleanup = false;
             bool launchHandedOffToSession = false;
             try
@@ -189,6 +195,28 @@ namespace SmartGoldbergEmu.Services
                 _logger?.LogDebug(
                     $"Launch prep: {game?.AppName} (AppId {game?.AppId}), emulator={effectiveUseEmulator}, launchMode={game?.LaunchMode}, arch={(useX64 ? "x64" : "x86")}, option={launchOptionLabel}");
 
+                // Restore any unfinished prior session (including SteamStub exe) before DRM detect/unpack.
+                if (game.AppId != 0)
+                {
+                    _launchSessionCleanup.ReconcileStaleSessionForAppId(game.AppId);
+                    lock (_manifestPathLock)
+                        _manifestPathByAppId.Remove(game.AppId);
+                    lock (_watcherActiveLock)
+                        _watcherActiveAppIds.Remove(game.AppId);
+                }
+
+                // Silent SteamStub: ColdClient mem-patches; other modes session-unpack and restore on cleanup.
+                ValidationResult stubPrep = TryPrepareSteamStubForLaunch(game, resolvedLaunch, out stubExeRestore);
+                if (!stubPrep.IsValid)
+                {
+                    _logger?.LogError(
+                        $"SteamStub launch prep failed: AppId={game.AppId}, exe={resolvedLaunch}: {stubPrep.ErrorMessage}");
+                    return stubPrep;
+                }
+
+                if (stubExeRestore != null)
+                    needsFailureCleanup = true;
+
                 string sourceModInstallFolder = null;
                 if (effectiveUseEmulator)
                 {
@@ -197,15 +225,6 @@ namespace SmartGoldbergEmu.Services
 
                     if (!_launchSessionCleanup.HasAnyLiveLaunchSession())
                         RestoreSteamClientRegistryForApplicationLifecycle();
-
-                    if (game.AppId != 0)
-                    {
-                        _launchSessionCleanup.ReconcileStaleSessionForAppId(game.AppId);
-                        lock (_manifestPathLock)
-                            _manifestPathByAppId.Remove(game.AppId);
-                        lock (_watcherActiveLock)
-                            _watcherActiveAppIds.Remove(game.AppId);
-                    }
 
                     // Any return/exception after this must restore ActiveProcess, SourceMod, and deploy files.
                     needsFailureCleanup = true;
@@ -390,7 +409,8 @@ namespace SmartGoldbergEmu.Services
                     branchRestoreOnExit,
                     win32DeployState,
                     activeProcessRegistryConfigured,
-                    trackCleanupSession: effectiveUseEmulator);
+                    trackCleanupSession: effectiveUseEmulator || stubExeRestore != null,
+                    stubExeRestore: stubExeRestore);
 
                 if (result.IsValid)
                 {
@@ -423,7 +443,8 @@ namespace SmartGoldbergEmu.Services
                             0,
                             win32DeployState,
                             activeProcessRegistryConfigured,
-                            branchRestoreOnExit);
+                            branchRestoreOnExit,
+                            stubExeRestore);
                     }
                     catch (Exception exCleanup)
                     {
@@ -580,6 +601,22 @@ namespace SmartGoldbergEmu.Services
             bool forceOverlay = File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergGameOverlayRendererDll32))
                 || File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergGameOverlayRendererDll64));
 
+            // steamclient_extra_* only mem-patches SteamStub; inject solely when ColdClient + stub still on the exe.
+            bool hasSteamStub = DetectsSteamStubOnExecutable(gameExePath);
+            string dllsToInjectFolder = ColdClientLoaderIniWriter.ResolveStubDrmInjectFolder(hasSteamStub);
+            if (hasSteamStub && string.IsNullOrEmpty(dllsToInjectFolder))
+            {
+                errorMessage =
+                    "SteamStub was detected but ColdClient stub-patch DLLs are missing under goldberg\\ColdClientLoader\\extra_dlls. "
+                    + "Reinstall ColdClient files, then try again.";
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(dllsToInjectFolder))
+                _logger?.LogDebug("ColdClient: injecting SteamStub in-memory patch DLLs from " + dllsToInjectFolder);
+            else
+                _logger?.LogDebug("ColdClient: DllsToInjectFolder left empty (no SteamStub)");
+
             try
             {
                 string iniPath = ColdClientLoaderIniWriter.WriteLoaderIni(
@@ -590,7 +627,8 @@ namespace SmartGoldbergEmu.Services
                     gameCommandLine,
                     steamClient32,
                     steamClient64,
-                    forceOverlay);
+                    forceOverlay,
+                    dllsToInjectFolder);
                 _logger?.LogDebug($"ColdClient loader ini written: {iniPath}");
             }
             catch (Exception ex)
@@ -601,6 +639,118 @@ namespace SmartGoldbergEmu.Services
 
             loaderWorkingDirectory = Path.GetDirectoryName(loaderExePath);
             return true;
+        }
+
+        // ColdClient leaves the exe alone (mem-patch). Other modes session-unpack and restore on cleanup.
+        private ValidationResult TryPrepareSteamStubForLaunch(
+            GameConfig game,
+            string launchExecutablePath,
+            out PersistedStubExeRestore stubExeRestore)
+        {
+            stubExeRestore = null;
+            if (string.IsNullOrWhiteSpace(launchExecutablePath) || !File.Exists(launchExecutablePath))
+                return ValidationResult.Success();
+
+            if (game != null && game.LaunchMode == GoldbergLaunchMode.ColdClient)
+                return ValidationResult.Success();
+
+            DetectResult detect;
+            try
+            {
+                detect = StubKitService.DetectExecutable(launchExecutablePath);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError("SteamStub detect failed for launch executable.", ex);
+                return ValidationResult.Failure(
+                    "Could not check the game executable for SteamStub: " + ex.Message);
+            }
+
+            if (!DetectResultLooksLikeSteamStub(detect))
+                return ValidationResult.Success();
+
+            if (detect == null || !detect.CanRemove)
+            {
+                string variant = detect != null && !string.IsNullOrEmpty(detect.Name) ? detect.Name : "unknown";
+                return ValidationResult.Failure(
+                    "SteamStub was detected (" + variant + ") but cannot be removed by this build. "
+                    + "Launch aborted.");
+            }
+
+            _logger?.LogDebug("SteamStub detected; unpacking for this launch session: " + launchExecutablePath);
+            StubKitApplyResult apply = ServiceLocator.StubKitService.ApplyForLaunchSession(
+                launchExecutablePath,
+                _logger);
+            if (apply == null || !apply.Success)
+            {
+                return ValidationResult.Failure(FormatStubApplyFailureMessage(apply, launchExecutablePath));
+            }
+
+            string exeFull = Path.GetFullPath(launchExecutablePath);
+            stubExeRestore = new PersistedStubExeRestore
+            {
+                ExecutablePath = exeFull,
+                BackupPath = PathConstants.BuildStubOriginalBackupPath(exeFull),
+            };
+            _logger?.LogDebug(
+                "SteamStub session unpack complete; will restore original on cleanup: " + stubExeRestore.BackupPath);
+            return ValidationResult.Success();
+        }
+
+        private static string FormatStubApplyFailureMessage(StubKitApplyResult apply, string executablePath)
+        {
+            string name = Path.GetFileName(executablePath);
+            if (apply == null)
+                return "Failed to unpack SteamStub on " + name + ".";
+
+            switch (apply.Outcome)
+            {
+                case StubKitApplyOutcome.NoStubFound:
+                    return "SteamStub detection changed while preparing " + name + "; launch aborted.";
+                case StubKitApplyOutcome.CannotRemove:
+                    return "SteamStub on " + name + " was detected but cannot be removed by this build.";
+                case StubKitApplyOutcome.ExistingBackupConflict:
+                    return "A previous SteamStub backup already exists beside " + name
+                        + " (" + Path.GetFileName(apply.LogDetail) + "). "
+                        + "Restore or remove that backup, then try again.";
+                case StubKitApplyOutcome.FileReplaceFailed:
+                    return "SteamStub was unpacked for " + name
+                        + " but the executable could not be replaced. Close the game and try again.";
+                case StubKitApplyOutcome.ExecutablePathInvalid:
+                    return "Could not change SteamStub on " + name + ". Set a valid executable in Properties.";
+                default:
+                    string detail = string.IsNullOrWhiteSpace(apply.LogDetail) ? null : apply.LogDetail;
+                    return string.IsNullOrEmpty(detail)
+                        ? "Could not unpack SteamStub on " + name + "."
+                        : "Could not unpack SteamStub on " + name + ": " + detail;
+            }
+        }
+
+        // True when SteamStub is still present. Use CanRemove as well as Variant: large-file headers-only
+        // detect reports Name="SteamStub (.bind)" with Variant=None and CanRemove=true.
+        private static bool DetectsSteamStubOnExecutable(string executablePath)
+        {
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+                return false;
+
+            try
+            {
+                return DetectResultLooksLikeSteamStub(StubKitService.DetectExecutable(executablePath));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool DetectResultLooksLikeSteamStub(DetectResult detect)
+        {
+            if (detect == null)
+                return false;
+            if (detect.CanRemove || detect.Variant != StubVariant.None)
+                return true;
+            return !string.IsNullOrEmpty(detect.Name)
+                && detect.Name.IndexOf("SteamStub", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private bool TryResolveLaunchUseX64(GameConfig game, out bool useX64)
@@ -1088,7 +1238,8 @@ namespace SmartGoldbergEmu.Services
             int processId,
             Win32DllDeploymentState deployState,
             bool restoreActiveProcessRegistry,
-            BranchRestoreInfo branchRestoreOnExit)
+            BranchRestoreInfo branchRestoreOnExit,
+            PersistedStubExeRestore stubExeRestore = null)
         {
             if (appId != 0)
                 CancelRegistryRestoreTimer(appId);
@@ -1103,12 +1254,16 @@ namespace SmartGoldbergEmu.Services
             lock (_watcherActiveLock)
                 _watcherActiveAppIds.Remove(appId);
 
+            if (stubExeRestore == null)
+                stubExeRestore = TryTakeStubExeRestoreForProcess(processId);
+
             PersistedLaunchSession session = BuildPersistedLaunchSession(
                 appId,
                 processId,
                 deployState,
                 restoreActiveProcessRegistry,
-                branchRestoreOnExit);
+                branchRestoreOnExit,
+                stubExeRestore);
             _launchSessionCleanup.TryExecuteCleanup(manifestPath, session);
 
             lock (_sourceModRestoreLock)
@@ -1123,7 +1278,8 @@ namespace SmartGoldbergEmu.Services
             int processId,
             Win32DllDeploymentState deployState,
             bool restoreActiveProcessRegistry,
-            BranchRestoreInfo branchRestoreOnExit)
+            BranchRestoreInfo branchRestoreOnExit,
+            PersistedStubExeRestore stubExeRestore = null)
         {
             if (appId != 0)
                 CancelRegistryRestoreTimer(appId);
@@ -1139,12 +1295,16 @@ namespace SmartGoldbergEmu.Services
                 _watcherActiveAppIds.Remove(appId);
 
             _launchSessionCleanup.TryDeleteManifest(manifestPath);
+            if (stubExeRestore == null)
+                stubExeRestore = TryTakeStubExeRestoreForProcess(processId);
+
             PersistedLaunchSession session = BuildPersistedLaunchSession(
                 appId,
                 processId,
                 deployState,
                 restoreActiveProcessRegistry,
-                branchRestoreOnExit);
+                branchRestoreOnExit,
+                stubExeRestore);
             _launchSessionCleanup.TryExecuteCleanup(null, session);
 
             lock (_sourceModRestoreLock)
@@ -1162,6 +1322,9 @@ namespace SmartGoldbergEmu.Services
             lock (_deployLock)
                 _win32DeploymentByProcessId.Remove(processId);
 
+            lock (_stubExeRestoreLock)
+                _stubExeRestoreByProcessId.Remove(processId);
+
             lock (_activeProcessRegistryLock)
                 _processIdsWithActiveProcessRegistry.Remove(processId);
 
@@ -1169,6 +1332,29 @@ namespace SmartGoldbergEmu.Services
             {
                 _sourceModRestoreByProcessId.Remove(processId);
                 _sourceModRestoreByProcessId.Remove(0);
+            }
+        }
+
+        private void RememberStubExeRestoreForProcess(int processId, PersistedStubExeRestore stubExeRestore)
+        {
+            if (processId <= 0 || stubExeRestore == null)
+                return;
+
+            lock (_stubExeRestoreLock)
+                _stubExeRestoreByProcessId[processId] = stubExeRestore;
+        }
+
+        private PersistedStubExeRestore TryTakeStubExeRestoreForProcess(int processId)
+        {
+            if (processId <= 0)
+                return null;
+
+            lock (_stubExeRestoreLock)
+            {
+                if (!_stubExeRestoreByProcessId.TryGetValue(processId, out PersistedStubExeRestore restore))
+                    return null;
+                _stubExeRestoreByProcessId.Remove(processId);
+                return restore;
             }
         }
 
@@ -1183,7 +1369,8 @@ namespace SmartGoldbergEmu.Services
             int processId,
             Win32DllDeploymentState deployState,
             bool restoreActiveProcessRegistry,
-            BranchRestoreInfo branchRestoreOnExit)
+            BranchRestoreInfo branchRestoreOnExit,
+            PersistedStubExeRestore stubExeRestore = null)
         {
             var session = new PersistedLaunchSession
             {
@@ -1195,6 +1382,7 @@ namespace SmartGoldbergEmu.Services
                 LoadDllsFolder = appId != 0 ? PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId) : null,
                 DeploySites = MapDeploySites(deployState),
                 SourceModRestore = TryGetPersistedSourceModRestore(processId),
+                StubExeRestore = stubExeRestore,
             };
 
             if (branchRestoreOnExit != null)
@@ -1691,7 +1879,8 @@ namespace SmartGoldbergEmu.Services
             BranchRestoreInfo branchRestoreOnExit = null,
             Win32DllDeploymentState win32DeployState = null,
             bool configureActiveProcessRegistry = false,
-            bool trackCleanupSession = false)
+            bool trackCleanupSession = false,
+            PersistedStubExeRestore stubExeRestore = null)
         {
             try
             {
@@ -1784,7 +1973,8 @@ namespace SmartGoldbergEmu.Services
                         0,
                         win32DeployState,
                         configureActiveProcessRegistry,
-                        branchRestoreOnExit);
+                        branchRestoreOnExit,
+                        stubExeRestore);
                     // Success + cleaned: LaunchGame treats this as handed off and skips failure finally.
                     return ValidationResult.Success();
                 }
@@ -1796,6 +1986,7 @@ namespace SmartGoldbergEmu.Services
                 }
 
                 AttachSourceModRestoreToProcess(processId);
+                RememberStubExeRestoreForProcess(processId, stubExeRestore);
 
                 if (branchRestoreOnExit != null)
                 {
@@ -1824,7 +2015,8 @@ namespace SmartGoldbergEmu.Services
                         processId,
                         win32DeployState,
                         configureActiveProcessRegistry,
-                        branchRestoreOnExit);
+                        branchRestoreOnExit,
+                        stubExeRestore);
                     persisted.GameProcessStartTimeUtcTicks = LaunchSessionCleanupService.TryGetProcessStartTimeUtcTicks(process);
                     string manifestPath = _launchSessionCleanup.WriteSession(persisted);
                     if (!string.IsNullOrEmpty(manifestPath))
@@ -1951,10 +2143,13 @@ namespace SmartGoldbergEmu.Services
                     _sourceModRestoreByProcessId.Remove(0);
             }
 
+            PersistedStubExeRestore stubExeRestore = TryTakeStubExeRestoreForProcess(oldProcessId);
+
             if (deployState == null
                 && branchRestore == null
                 && !restoreActiveProcessRegistry
-                && sourceModRestore == null)
+                && sourceModRestore == null
+                && stubExeRestore == null)
             {
                 return null;
             }
@@ -1966,6 +2161,7 @@ namespace SmartGoldbergEmu.Services
                 BranchRestore = branchRestore,
                 RestoreActiveProcessRegistry = restoreActiveProcessRegistry,
                 SourceModRestore = sourceModRestore,
+                StubExeRestore = stubExeRestore,
             };
         }
 
@@ -1994,7 +2190,8 @@ namespace SmartGoldbergEmu.Services
                 supersededProcessId,
                 superseded.DeployState,
                 restoreActiveProcessRegistry,
-                superseded.BranchRestore);
+                superseded.BranchRestore,
+                superseded.StubExeRestore);
             if (superseded.SourceModRestore != null)
                 session.SourceModRestore = superseded.SourceModRestore;
 
@@ -2087,7 +2284,7 @@ namespace SmartGoldbergEmu.Services
 
                 if (IsWatcherResponsibleForCleanup(appId))
                 {
-                    // Watcher owns beside-exe / load_dlls file restore. Still restore Steam registry here so a
+                    // Watcher owns beside-exe / load_dlls / stub-exe restore. Still restore Steam registry here so a
                     // dead or delayed watcher cannot leave ActiveProcess pointing at Goldberg after a failed launch.
                     bool restoreActiveProcessRegistry;
                     lock (_activeProcessRegistryLock)
@@ -2122,12 +2319,15 @@ namespace SmartGoldbergEmu.Services
                     lock (_activeProcessRegistryLock)
                         restoreActiveProcessRegistry = _processIdsWithActiveProcessRegistry.Remove(process.Id);
 
+                    PersistedStubExeRestore stubExeRestore = TryTakeStubExeRestoreForProcess(process.Id);
+
                     CompleteLaunchSessionCleanup(
                         appId,
                         process.Id,
                         deployState,
                         restoreActiveProcessRegistry,
-                        branchRestore);
+                        branchRestore,
+                        stubExeRestore);
                 }
 
                 process.Exited -= Process_Exited;

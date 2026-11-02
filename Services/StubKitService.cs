@@ -25,114 +25,6 @@ namespace SmartGoldbergEmu.Services
             public DetectResult Result;
         }
 
-        // Distinct existing exes in launcher order; settings Path appended only if not already listed.
-        // Detection is deferred (IsDetectionPending) so the UI can list Loading… items first.
-        public async Task<IReadOnlyList<StubExecutableTarget>> ResolveTargetsAsync(
-            GameConfig game,
-            CancellationToken cancellationToken = default)
-        {
-            var ordered = new List<StubExecutableTarget>();
-            var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            string settingsFullPath = null;
-
-            if (game != null &&
-                GameFolderPathHelper.TryResolveExecutableForStubRemoval(game, out string settingsPath) &&
-                !string.IsNullOrWhiteSpace(settingsPath) &&
-                File.Exists(settingsPath))
-            {
-                settingsFullPath = NormalizeFullPath(settingsPath);
-            }
-
-            if (game == null)
-            {
-                TryAppendSettingsTarget(game, settingsFullPath, ordered, seenPaths);
-                return ordered;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            List<LaunchOption> allOptions = await ServiceLocator.LaunchOptionService
-                .ExtractLaunchOptionsIncludingUserIniAsync(game, cancellationToken)
-                .ConfigureAwait(false);
-
-            List<LaunchOption> filtered = ServiceLocator.LaunchOptionService
-                .FilterLaunchOptionsForCurrentSettings(allOptions);
-
-            if (filtered != null)
-            {
-                foreach (LaunchOption option in filtered)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (option == null || string.IsNullOrWhiteSpace(option.Executable))
-                        continue;
-
-                    ResolvedLaunchCommand command;
-                    try
-                    {
-                        command = ServiceLocator.GameLaunchService.GetResolvedLaunchCommand(game, option);
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-
-                    if (command == null || string.IsNullOrWhiteSpace(command.ExecutablePath))
-                        continue;
-
-                    string resolvedFull = NormalizeFullPath(command.ExecutablePath);
-                    if (string.IsNullOrEmpty(resolvedFull) || !File.Exists(resolvedFull))
-                        continue;
-
-                    // GetResolvedLaunchCommand falls back to game.Path when the option exe is missing;
-                    // skip those so we do not attach the wrong launch-option label to the settings exe.
-                    string optionFileName = Path.GetFileName(option.Executable.Trim());
-                    string resolvedFileName = Path.GetFileName(resolvedFull);
-                    if (!string.IsNullOrEmpty(optionFileName) &&
-                        !string.Equals(optionFileName, resolvedFileName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    if (!seenPaths.Add(resolvedFull))
-                        continue;
-
-                    string displayName = !string.IsNullOrWhiteSpace(option.Description)
-                        ? option.Description.Trim()
-                        : (!string.IsNullOrEmpty(resolvedFileName) ? resolvedFileName : resolvedFull);
-
-                    ordered.Add(CreatePendingTarget(
-                        game,
-                        resolvedFull,
-                        displayName,
-                        isSettingsExecutable: !string.IsNullOrEmpty(settingsFullPath) &&
-                            string.Equals(resolvedFull, settingsFullPath, StringComparison.OrdinalIgnoreCase)));
-                }
-            }
-
-            TryAppendSettingsTarget(game, settingsFullPath, ordered, seenPaths);
-            return ordered;
-        }
-
-        // Fills detection fields on a pending target (PE scan + backup check).
-        public async Task DetectTargetAsync(
-            StubExecutableTarget target,
-            CancellationToken cancellationToken = default)
-        {
-            if (target == null || string.IsNullOrWhiteSpace(target.FullPath))
-                return;
-
-            DetectResult detect = await Task.Run(() => DetectExecutable(target.FullPath), cancellationToken)
-                .ConfigureAwait(false);
-
-            ApplyDetection(target, detect);
-        }
-
-        // Drop LOH pages left by prefix detect when a menu finishes scanning.
-        public static void ReleaseTemporaryBuffers()
-        {
-            ReleaseLargeObjectHeapAfterStubKit();
-        }
-
         // Reads only the PE prefix StubClassifier needs (not the whole executable). Cached per path+mtime.
         public static DetectResult DetectExecutable(string executablePath)
         {
@@ -300,6 +192,25 @@ namespace SmartGoldbergEmu.Services
             ILogService log,
             CancellationToken cancellationToken = default)
         {
+            return await ApplyCoreAsync(gameExecutablePath, log, forLaunchSession: false, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // Session unpack for launch: refuses to overwrite an existing *_o.exe backup.
+        public StubKitApplyResult ApplyForLaunchSession(string gameExecutablePath, ILogService log)
+        {
+            return ApplyCoreAsync(gameExecutablePath, log, forLaunchSession: true, CancellationToken.None)
+                .ConfigureAwait(false)
+                .GetAwaiter()
+                .GetResult();
+        }
+
+        private async Task<StubKitApplyResult> ApplyCoreAsync(
+            string gameExecutablePath,
+            ILogService log,
+            bool forLaunchSession,
+            CancellationToken cancellationToken)
+        {
             if (string.IsNullOrWhiteSpace(gameExecutablePath) || !File.Exists(gameExecutablePath))
             {
                 return new StubKitApplyResult
@@ -334,6 +245,15 @@ namespace SmartGoldbergEmu.Services
             }
 
             string backupPath = PathConstants.BuildStubOriginalBackupPath(executablePath);
+            if (forLaunchSession && !string.IsNullOrEmpty(backupPath) && File.Exists(backupPath))
+            {
+                return new StubKitApplyResult
+                {
+                    Outcome = StubKitApplyOutcome.ExistingBackupConflict,
+                    LogDetail = backupPath
+                };
+            }
+
             log?.LogMessage("StubKit: unpacking " + executablePath);
 
             try
@@ -341,7 +261,7 @@ namespace SmartGoldbergEmu.Services
                 // Keep the full PE buffer inside this worker; returning it to the async state machine
                 // keeps multi-MB LOH arrays alive after patch/restore.
                 StubKitApplyResult result = await Task.Run(
-                        () => ApplyOnBackground(executablePath, backupPath, log),
+                        () => ApplyOnBackground(executablePath, backupPath, log, forLaunchSession),
                         cancellationToken)
                     .ConfigureAwait(false);
 
@@ -365,7 +285,11 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static StubKitApplyResult ApplyOnBackground(string executablePath, string backupPath, ILogService log)
+        private static StubKitApplyResult ApplyOnBackground(
+            string executablePath,
+            string backupPath,
+            ILogService log,
+            bool forLaunchSession)
         {
             byte[] peBytes = null;
             byte[] unpacked = null;
@@ -407,7 +331,13 @@ namespace SmartGoldbergEmu.Services
                 string unpackedPath = executablePath + PathConstants.StubUnpackedExecutableSuffix;
                 try
                 {
-                    ReplaceExecutableWithUnpacked(executablePath, unpacked, unpackedPath, backupPath, log);
+                    ReplaceExecutableWithUnpacked(
+                        executablePath,
+                        unpacked,
+                        unpackedPath,
+                        backupPath,
+                        log,
+                        allowReplaceExistingBackup: !forLaunchSession);
                 }
                 catch (Exception ex)
                 {
@@ -449,108 +379,6 @@ namespace SmartGoldbergEmu.Services
             catch
             {
             }
-        }
-
-        private static void TryAppendSettingsTarget(
-            GameConfig game,
-            string settingsFullPath,
-            List<StubExecutableTarget> ordered,
-            HashSet<string> seenPaths)
-        {
-            if (string.IsNullOrEmpty(settingsFullPath) || !seenPaths.Add(settingsFullPath))
-                return;
-
-            ordered.Add(CreatePendingTarget(
-                game,
-                settingsFullPath,
-                "Settings executable",
-                isSettingsExecutable: true));
-        }
-
-        private static StubExecutableTarget CreatePendingTarget(
-            GameConfig game,
-            string fullPath,
-            string displayName,
-            bool isSettingsExecutable)
-        {
-            return new StubExecutableTarget
-            {
-                FullPath = fullPath,
-                DisplayName = displayName,
-                RelativeOrExeHint = BuildRelativeOrExeHint(game, fullPath),
-                IsSettingsExecutable = isSettingsExecutable,
-                IsDetectionPending = true,
-                HasOriginalBackup = HasOriginalBackup(fullPath)
-            };
-        }
-
-        private static void ApplyDetection(StubExecutableTarget target, DetectResult detect)
-        {
-            bool hasKnownStub = detect != null && detect.Variant != StubVariant.None;
-            // Unknown .bind still surfaces as non-removable rather than a clean "no stub".
-            bool looksProtected = hasKnownStub
-                || (detect != null
-                    && !string.IsNullOrWhiteSpace(detect.Name)
-                    && !string.Equals(detect.Name, "none", StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(detect.Name, "unreadable", StringComparison.OrdinalIgnoreCase)
-                    && !string.Equals(detect.Name, "invalid PE", StringComparison.OrdinalIgnoreCase));
-
-            target.HasSteamStub = looksProtected;
-            target.CanRemove = detect != null && detect.CanRemove;
-            target.HasOriginalBackup = HasOriginalBackup(target.FullPath);
-            target.StubName = detect != null ? detect.Name : "none";
-            target.IsDetectionPending = false;
-        }
-
-        private static string NormalizeFullPath(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return null;
-
-            try
-            {
-                return Path.GetFullPath(path.Trim());
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static string BuildRelativeOrExeHint(GameConfig game, string fullPath)
-        {
-            if (string.IsNullOrEmpty(fullPath))
-                return null;
-
-            string fileName = Path.GetFileName(fullPath);
-            if (game == null || string.IsNullOrWhiteSpace(game.StartFolder))
-                return fileName;
-
-            try
-            {
-                string baseFolder = Path.GetFullPath(game.StartFolder.Trim());
-                if (!baseFolder.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) &&
-                    !baseFolder.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
-                {
-                    baseFolder += Path.DirectorySeparatorChar;
-                }
-
-                string full = Path.GetFullPath(fullPath);
-                if (full.StartsWith(baseFolder, StringComparison.OrdinalIgnoreCase))
-                    return full.Substring(baseFolder.Length);
-
-                Uri baseUri = new Uri(baseFolder);
-                Uri fileUri = new Uri(full);
-                string relative = Uri.UnescapeDataString(baseUri.MakeRelativeUri(fileUri).ToString())
-                    .Replace('/', Path.DirectorySeparatorChar);
-                if (!string.IsNullOrEmpty(relative) && !relative.StartsWith("..", StringComparison.Ordinal))
-                    return relative;
-            }
-            catch
-            {
-            }
-
-            return fileName;
         }
 
         private static void RestoreExecutableFromBackup(string executablePath, string backupPath, ILogService log)
@@ -597,7 +425,8 @@ namespace SmartGoldbergEmu.Services
             byte[] unpackedBytes,
             string unpackedPath,
             string backupPath,
-            ILogService log)
+            ILogService log,
+            bool allowReplaceExistingBackup = true)
         {
             if (File.Exists(unpackedPath))
                 File.Delete(unpackedPath);
@@ -606,6 +435,21 @@ namespace SmartGoldbergEmu.Services
 
             if (File.Exists(backupPath))
             {
+                if (!allowReplaceExistingBackup)
+                {
+                    try
+                    {
+                        if (File.Exists(unpackedPath))
+                            File.Delete(unpackedPath);
+                    }
+                    catch
+                    {
+                    }
+
+                    throw new InvalidOperationException(
+                        "SteamStub original backup already exists: " + backupPath);
+                }
+
                 log?.LogMessage("StubKit: removing existing original backup: " + backupPath);
                 File.Delete(backupPath);
             }

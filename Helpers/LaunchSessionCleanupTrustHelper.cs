@@ -108,6 +108,45 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
+        // Sibling *_o.exe backup produced by StubKit session unpack (same directory as the launch exe).
+        public static bool IsAllowedStubExeRestore(PersistedStubExeRestore stubRestore)
+        {
+            if (stubRestore == null
+                || string.IsNullOrWhiteSpace(stubRestore.ExecutablePath)
+                || string.IsNullOrWhiteSpace(stubRestore.BackupPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                string exeFull = Path.GetFullPath(stubRestore.ExecutablePath.Trim());
+                string backupFull = Path.GetFullPath(stubRestore.BackupPath.Trim());
+                string expectedBackup = PathConstants.BuildStubOriginalBackupPath(exeFull);
+                if (string.IsNullOrEmpty(expectedBackup)
+                    || !string.Equals(backupFull, Path.GetFullPath(expectedBackup), StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                string exeDir = Path.GetDirectoryName(exeFull);
+                string backupDir = Path.GetDirectoryName(backupFull);
+                if (string.IsNullOrEmpty(exeDir)
+                    || !string.Equals(exeDir, backupDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                string exeExt = Path.GetExtension(exeFull);
+                return !string.IsNullOrEmpty(exeExt)
+                    && exeExt.Equals(".exe", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static bool IsAllowedSteamSettingsJunctionPath(string junctionPath)
         {
             if (string.IsNullOrWhiteSpace(junctionPath))

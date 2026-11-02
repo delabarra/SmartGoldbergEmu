@@ -80,6 +80,8 @@ namespace SmartGoldbergEmu.Forms
 
             this.flpHeader.Controls.Add(this.lblHeadline);
 
+            this.flpHeader.Controls.Add(this.lblAdditionalInfo);
+
             this.flpHeader.Controls.Add(this.lblReleaseNotesCaption);
 
             this.flpHeader.Dock = System.Windows.Forms.DockStyle.Top;
@@ -194,15 +196,13 @@ namespace SmartGoldbergEmu.Forms
 
             this.tlpFooter.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
 
-            this.tlpFooter.Controls.Add(this.lblAdditionalInfo, 0, 0);
+            this.tlpFooter.Controls.Add(this.lblProceedQuestion, 0, 0);
 
-            this.tlpFooter.Controls.Add(this.lblProceedQuestion, 0, 1);
+            this.tlpFooter.Controls.Add(this.lblManualDownloadCaption, 0, 1);
 
-            this.tlpFooter.Controls.Add(this.lblManualDownloadCaption, 0, 2);
+            this.tlpFooter.Controls.Add(this.flpManualLinks, 0, 2);
 
-            this.tlpFooter.Controls.Add(this.flpManualLinks, 0, 3);
-
-            this.tlpFooter.Controls.Add(this.flpButtons, 0, 4);
+            this.tlpFooter.Controls.Add(this.flpButtons, 0, 3);
 
             this.tlpFooter.Dock = System.Windows.Forms.DockStyle.Bottom;
 
@@ -212,9 +212,7 @@ namespace SmartGoldbergEmu.Forms
 
             this.tlpFooter.Padding = new System.Windows.Forms.Padding(12, 8, 12, 12);
 
-            this.tlpFooter.RowCount = 5;
-
-            this.tlpFooter.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            this.tlpFooter.RowCount = 4;
 
             this.tlpFooter.RowStyles.Add(new System.Windows.Forms.RowStyle());
 
@@ -236,11 +234,11 @@ namespace SmartGoldbergEmu.Forms
 
             this.lblAdditionalInfo.AutoSize = true;
 
-            this.lblAdditionalInfo.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.lblAdditionalInfo.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
 
-            this.lblAdditionalInfo.Location = new System.Drawing.Point(15, 8);
+            this.lblAdditionalInfo.Location = new System.Drawing.Point(15, 35);
 
-            this.lblAdditionalInfo.Margin = new System.Windows.Forms.Padding(3, 0, 3, 8);
+            this.lblAdditionalInfo.Margin = new System.Windows.Forms.Padding(3, 0, 3, 6);
 
             this.lblAdditionalInfo.MaximumSize = new System.Drawing.Size(556, 0);
 
@@ -248,7 +246,9 @@ namespace SmartGoldbergEmu.Forms
 
             this.lblAdditionalInfo.Size = new System.Drawing.Size(550, 13);
 
-            this.lblAdditionalInfo.TabIndex = 0;
+            this.lblAdditionalInfo.TabIndex = 1;
+
+            this.lblAdditionalInfo.UseMnemonic = false;
 
             // 
 

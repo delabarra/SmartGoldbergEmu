@@ -2115,12 +2115,22 @@ namespace SmartGoldbergEmu.Services
             return CreateChangelogContent(
                 result,
                 "A new version of Goldberg Emulator is available.",
-                additionalInfo: null,
+                additionalInfo: BuildUpdateAvailableVersionSummary(result),
                 proceedQuestion: string.Empty,
                 okButtonText: "Install",
                 cancelButtonText: isStartup ? "Skip" : null,
                 manualDownloadLinks: GetSelectedGoldbergManualDownloadLinks(),
                 showManualDownloadCaption: true);
+        }
+
+        private static string BuildUpdateAvailableVersionSummary(UpdateCheckResult result)
+        {
+            string currentLabel = string.IsNullOrWhiteSpace(result?.CurrentVersion)
+                ? "unknown"
+                : result.CurrentVersion.Trim();
+            string latestLabel = FormatLatestVersionLabel(result, "unknown");
+            return "Current version: " + currentLabel + "\n"
+                + "Latest version: " + latestLabel;
         }
 
         private static ChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)

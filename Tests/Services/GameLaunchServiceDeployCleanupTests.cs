@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
@@ -287,7 +288,19 @@ namespace SmartGoldbergEmu.Tests.Services
                     Assert.Contains("SteamClientDll=" + Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll32), iniText);
                     Assert.Contains("SteamClient64Dll=" + Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64), iniText);
                     Assert.Contains("ForceInjectSteamClient=1", iniText);
+                    // Harness exe is a plain MZ (no SteamStub) — do not inject steamclient_extra_* mem-patch DLLs.
                     Assert.Contains("DllsToInjectFolder=", iniText);
+                    Assert.DoesNotContain(
+                        "DllsToInjectFolder=" + Path.GetFullPath(PathConstants.GoldbergColdClientExtraDllsDirectory),
+                        iniText);
+                    foreach (string line in iniText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        if (line.StartsWith("DllsToInjectFolder=", StringComparison.Ordinal))
+                        {
+                            Assert.Equal("DllsToInjectFolder=", line);
+                            break;
+                        }
+                    }
 
                     bool cleaned = LaunchDeployTestHarness.WaitUntil(
                         () => !File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64))

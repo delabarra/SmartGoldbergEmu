@@ -32,12 +32,6 @@ namespace SmartGoldbergEmu.Models
         // When false, beta branches (config/BetaKey), config tools, and dev/beta launch types are hidden.
         public bool FullLaunchOptions { get; set; }
 
-        // When true, removable SteamStub is unpacked automatically on add/launch without a confirm dialog.
-        public bool AutoHandleSteamStubs { get; set; }
-
-        // When true, the SteamStub confirm dialog is skipped on add/launch (no auto-patch). Mutually exclusive with AutoHandleSteamStubs.
-        public bool SuppressSteamStubPrompt { get; set; }
-
         public bool LogosViewDropShadow { get; set; }
 
         public ApplicationSettings()
@@ -52,8 +46,6 @@ namespace SmartGoldbergEmu.Models
             DetailsColumnOrder = ApplicationConstants.DefaultColumnOrder;
             DetailsColumnWidths = ApplicationConstants.DefaultDetailsColumnWidths;
             FullLaunchOptions = false; // Falls back to the game executable when filtering leaves no options.
-            AutoHandleSteamStubs = false;
-            SuppressSteamStubPrompt = false;
             LogosViewDropShadow = true;
         }
     }

@@ -159,6 +159,44 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void TryExecuteCleanup_restores_steamstub_original_exe_from_session_backup()
+        {
+            string workDir = TestFileHelper.CreateTempDirectory("sge-cleanup-stub-");
+            try
+            {
+                string exePath = Path.Combine(workDir, "game.exe");
+                string backupPath = PathConstants.BuildStubOriginalBackupPath(exePath);
+                string unpackedLeftover = exePath + PathConstants.StubUnpackedExecutableSuffix;
+                File.WriteAllBytes(backupPath, new[] { LaunchDeployTestHarness.OriginalFileMarker });
+                File.WriteAllBytes(exePath, new[] { LaunchDeployTestHarness.GoldbergFileMarker });
+                File.WriteAllBytes(unpackedLeftover, new[] { (byte)0xEE });
+
+                var session = new PersistedLaunchSession
+                {
+                    AppId = LaunchDeployTestHarness.DefaultTestAppId,
+                    GameProcessId = 0,
+                    RestoreActiveProcessRegistry = false,
+                    StubExeRestore = new PersistedStubExeRestore
+                    {
+                        ExecutablePath = exePath,
+                        BackupPath = backupPath,
+                    },
+                };
+
+                var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
+                cleanup.TryExecuteCleanup(null, session);
+
+                Assert.Equal(LaunchDeployTestHarness.OriginalFileMarker, File.ReadAllBytes(exePath)[0]);
+                Assert.False(File.Exists(backupPath));
+                Assert.False(File.Exists(unpackedLeftover));
+            }
+            finally
+            {
+                try { Directory.Delete(workDir, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
         public void TryExecuteCleanup_preserves_load_dlls_folder()
         {
             string loadDlls = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(

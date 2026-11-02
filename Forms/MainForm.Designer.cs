@@ -118,7 +118,6 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenInventoryFile = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenValveDataFile = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowOpenExtraDllsFolder = new System.Windows.Forms.ToolStripMenuItem();
-            this.miCtxRowRemoveSteamStub = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.miCtxRowGuid = new System.Windows.Forms.ToolStripMenuItem();
             this.miCtxRowCopyGuid = new System.Windows.Forms.ToolStripMenuItem();
@@ -591,7 +590,6 @@ namespace SmartGoldbergEmu.Forms
             this.sepCtxRowBeforeEmulation,
             this.miCtxRowEmulation,
             this.miCtxRowFilesFolders,
-            this.miCtxRowRemoveSteamStub,
             this.toolStripSeparator1,
             this.miCtxRowGuid,
             this.miCtxRowCreateShortcut,
@@ -766,12 +764,6 @@ namespace SmartGoldbergEmu.Forms
             this.miCtxRowOpenExtraDllsFolder.Size = new System.Drawing.Size(218, 22);
             this.miCtxRowOpenExtraDllsFolder.Text = "Open extra DLLs folder";
             this.miCtxRowOpenExtraDllsFolder.Click += new System.EventHandler(this.OnOpenExtraDllsFolder_Click);
-            // 
-            // miCtxRowRemoveSteamStub
-            // 
-            this.miCtxRowRemoveSteamStub.Name = "miCtxRowRemoveSteamStub";
-            this.miCtxRowRemoveSteamStub.Size = new System.Drawing.Size(203, 22);
-            this.miCtxRowRemoveSteamStub.Text = "Remove SteamStub";
             // 
             // toolStripSeparator1
             // 
@@ -1029,7 +1021,6 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripMenuItem miCtxRowEmulation;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowFilesFolders;
         private System.Windows.Forms.ToolStripMenuItem miCtxRowOpenGameAssetsFolder;
-        private System.Windows.Forms.ToolStripMenuItem miCtxRowRemoveSteamStub;
         private System.Windows.Forms.ToolStripSeparator sepCtxRowBeforeProps;
         private ToolStripSeparator sepCtxViewSortBeforeNone;
         private ToolStripSeparator sepMnuBarAfterViewModes;

@@ -10,6 +10,7 @@ namespace SmartGoldbergEmu.Models
 
         public string ReleaseNotes { get; set; }
 
+        // Regular-weight text under the headline (for example current/latest version).
         public string AdditionalInfo { get; set; }
 
         // Null uses the form default; empty hides the proceed prompt (view-only).

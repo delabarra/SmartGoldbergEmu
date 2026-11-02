@@ -17,6 +17,14 @@ namespace SmartGoldbergEmu.Models
         public PersistedSourceModRestore SourceModRestore { get; set; }
         public PersistedBranchRestore BranchRestore { get; set; }
         public List<PersistedDeploySite> DeploySites { get; set; }
+        // Session SteamStub unpack: restore original exe from BackupPath on cleanup.
+        public PersistedStubExeRestore StubExeRestore { get; set; }
+    }
+
+    public sealed class PersistedStubExeRestore
+    {
+        public string ExecutablePath { get; set; }
+        public string BackupPath { get; set; }
     }
 
     public sealed class PersistedSourceModRestore

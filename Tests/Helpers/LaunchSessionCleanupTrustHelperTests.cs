@@ -57,6 +57,38 @@ namespace SmartGoldbergEmu.Tests.Helpers
         }
 
         [Fact]
+        public void IsAllowedStubExeRestore_requires_sibling_o_exe_backup()
+        {
+            string dir = TestFileHelper.CreateTempDirectory("sge-trust-stub-");
+            try
+            {
+                string exe = Path.Combine(dir, "game.exe");
+                string backup = PathConstants.BuildStubOriginalBackupPath(exe);
+                Assert.True(LaunchSessionCleanupTrustHelper.IsAllowedStubExeRestore(new PersistedStubExeRestore
+                {
+                    ExecutablePath = exe,
+                    BackupPath = backup,
+                }));
+
+                Assert.False(LaunchSessionCleanupTrustHelper.IsAllowedStubExeRestore(new PersistedStubExeRestore
+                {
+                    ExecutablePath = exe,
+                    BackupPath = Path.Combine(dir, "game.bak.exe"),
+                }));
+
+                Assert.False(LaunchSessionCleanupTrustHelper.IsAllowedStubExeRestore(new PersistedStubExeRestore
+                {
+                    ExecutablePath = Path.Combine(dir, "notes.txt"),
+                    BackupPath = PathConstants.BuildStubOriginalBackupPath(Path.Combine(dir, "notes.txt")),
+                }));
+            }
+            finally
+            {
+                try { Directory.Delete(dir, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
         public void IsAllowedSteamSettingsPaths_require_expected_folder_names()
         {
             string dir = TestFileHelper.CreateTempDirectory("sge-trust-settings-");
