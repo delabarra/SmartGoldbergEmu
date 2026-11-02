@@ -74,10 +74,10 @@ namespace SmartGoldbergEmu.Tests.TestSupport
             TrackGoldbergPath(path);
         }
 
-        public void StageGoldbergExperimental(bool useX64, byte apiMarker = GoldbergFileMarker, byte clientMarker = GoldbergFileMarker)
+        public void StageGoldbergStandardSteamApi(bool useX64, byte apiMarker = GoldbergFileMarker, byte clientMarker = GoldbergFileMarker)
         {
-            string apiPath = PathConstants.CombineGoldbergExperimentalSteamApiPath(useX64);
-            string clientPath = PathConstants.CombineGoldbergExperimentalSteamClientPath(useX64);
+            string apiPath = PathConstants.CombineGoldbergStandardSteamApiPath(useX64);
+            string clientPath = PathConstants.CombineGoldbergStandardSteamApiSteamClientPath(useX64);
             WriteMarkerFile(apiPath, apiMarker);
             WriteMarkerFile(clientPath, clientMarker);
             TrackGoldbergPath(apiPath);
@@ -91,6 +91,49 @@ namespace SmartGoldbergEmu.Tests.TestSupport
             string path = Path.Combine(folder, useX64 ? "plugin_x64.dll" : "plugin_x32.dll");
             WriteMarkerFile(path, StagedExtraDllMarker);
             TrackGoldbergPath(path);
+        }
+
+        public void StageSteamClientGoldbergFiles(byte marker = GoldbergFileMarker)
+        {
+            string[] paths =
+            {
+                PathConstants.CombineGoldbergSteamClientDllPath(false),
+                PathConstants.CombineGoldbergSteamClientDllPath(true),
+                PathConstants.CombineGoldbergGameOverlayRendererPath(false),
+                PathConstants.CombineGoldbergGameOverlayRendererPath(true),
+            };
+            foreach (string path in paths)
+            {
+                WriteMarkerFile(path, marker);
+                TrackGoldbergPath(path);
+            }
+        }
+
+        // Copy cmd.exe so Process.Start can run arch-matched loaders in ColdClient tests.
+        public void StageColdClientLoaderStubs()
+        {
+            Directory.CreateDirectory(PathConstants.GoldbergColdClientDirectory);
+            Directory.CreateDirectory(PathConstants.GoldbergColdClientExtraDllsDirectory);
+            string systemCmd = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+            string loader32 = PathConstants.CombineGoldbergColdClientLoaderPath(false);
+            string loader64 = PathConstants.CombineGoldbergColdClientLoaderPath(true);
+            File.Copy(systemCmd, loader32, overwrite: true);
+            File.Copy(systemCmd, loader64, overwrite: true);
+            TrackGoldbergPath(loader32);
+            TrackGoldbergPath(loader64);
+            TrackGoldbergPath(Path.ChangeExtension(loader32, ".ini"));
+            TrackGoldbergPath(Path.ChangeExtension(loader64, ".ini"));
+
+            string extra32 = Path.Combine(
+                PathConstants.GoldbergColdClientExtraDllsDirectory,
+                GoldbergInstallLayout.ShippedSteamClientExtraDll32FileName);
+            string extra64 = Path.Combine(
+                PathConstants.GoldbergColdClientExtraDllsDirectory,
+                GoldbergInstallLayout.ShippedSteamClientExtraDll64FileName);
+            WriteMarkerFile(extra32, GoldbergFileMarker);
+            WriteMarkerFile(extra64, GoldbergFileMarker);
+            TrackGoldbergPath(extra32);
+            TrackGoldbergPath(extra64);
         }
 
         public GameConfig CreateGameConfig(

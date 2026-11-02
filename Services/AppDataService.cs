@@ -204,12 +204,6 @@ namespace SmartGoldbergEmu.Services
             else
                 settings.FullLaunchOptions = false;
 
-            var autoHandleSteamStubsStr = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_handle_steam_stubs");
-            if (bool.TryParse(autoHandleSteamStubsStr, out bool autoHandleSteamStubs))
-                settings.AutoHandleSteamStubs = autoHandleSteamStubs;
-            else
-                settings.AutoHandleSteamStubs = false;
-
             var logosViewDropShadowStr = _iniService.GetValue(
                 iniFile,
                 ApplicationConstants.SettingSectionApplication,
@@ -381,7 +375,6 @@ namespace SmartGoldbergEmu.Services
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_update", settings.AutoUpdate.ToString().ToLower());
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "is_first_run", settings.IsFirstRun.ToString().ToLower());
                 _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "full_launch_options", settings.FullLaunchOptions.ToString().ToLower());
-                _iniService.SetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_handle_steam_stubs", settings.AutoHandleSteamStubs.ToString().ToLower());
                 _iniService.SetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
@@ -717,16 +710,6 @@ namespace SmartGoldbergEmu.Services
 
             var normalized = ApplicationConstants.NormalizeDetailsColumnWidths(widths);
             return SetAppStringSetting(normalized, "Column widths cannot be null or empty", (s, v) => s.DetailsColumnWidths = v, "Failed to set column widths");
-        }
-
-        public bool GetAutoHandleSteamStubs()
-        {
-            return GetAppSetting(s => s.AutoHandleSteamStubs);
-        }
-
-        public ValidationResult SetAutoHandleSteamStubs(bool autoHandleSteamStubs)
-        {
-            return SetAppSetting(s => { s.AutoHandleSteamStubs = autoHandleSteamStubs; }, "Failed to set auto-handle SteamStubs");
         }
 
         // Optional dev override for launcher update API (e.g. local mock server). Release builds use GitHub constants when unset.

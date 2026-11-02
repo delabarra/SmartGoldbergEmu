@@ -5,7 +5,7 @@ using SmartGoldbergEmu.Constants;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // HKCU SourceModInstallPath session override (gbe_fork steamclient_experimental README).
+    // HKCU SourceModInstallPath session override (gbe_fork SteamClient README).
     public static class SteamSourceModRegistryHelper
     {
         public sealed class RestoreToken

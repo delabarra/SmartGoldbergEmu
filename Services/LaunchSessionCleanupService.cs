@@ -64,14 +64,18 @@ namespace SmartGoldbergEmu.Services
             string path = PathConstants.CombineLaunchSessionManifestPath(session.AppId);
 
             // Keep unfinished cleanup from an earlier session (process id 0); appended so this session's restores run first.
-            if (TryLoad(path, out PersistedLaunchSession pendingRetry)
-                && pendingRetry.GameProcessId == 0
-                && pendingRetry.DeploySites != null
-                && pendingRetry.DeploySites.Count > 0)
+            if (TryLoad(path, out PersistedLaunchSession pendingRetry) && pendingRetry.GameProcessId == 0)
             {
-                if (session.DeploySites == null)
-                    session.DeploySites = new List<PersistedDeploySite>();
-                session.DeploySites.AddRange(pendingRetry.DeploySites);
+                if (pendingRetry.DeploySites != null && pendingRetry.DeploySites.Count > 0)
+                {
+                    if (session.DeploySites == null)
+                        session.DeploySites = new List<PersistedDeploySite>();
+                    session.DeploySites.AddRange(pendingRetry.DeploySites);
+                }
+
+                // Prefer this session's stub restore; keep a pending one only when the new session has none.
+                if (session.StubExeRestore == null && pendingRetry.StubExeRestore != null)
+                    session.StubExeRestore = pendingRetry.StubExeRestore;
             }
 
             string json = JsonConvert.SerializeObject(session, JsonFormatting.Indented);
@@ -300,9 +304,9 @@ namespace SmartGoldbergEmu.Services
                         return;
                     }
 
-                    List<PersistedDeploySite> pendingSites = RunCleanup(session);
-                    if (pendingSites != null)
-                        WritePendingCleanupRetry(session.AppId, manifestPath, pendingSites);
+                    PersistedLaunchSession pendingRetry = RunCleanup(session);
+                    if (pendingRetry != null)
+                        WritePendingCleanupRetry(manifestPath, pendingRetry);
                     else
                         TryDeleteManifest(manifestPath);
                 }
@@ -473,8 +477,12 @@ namespace SmartGoldbergEmu.Services
         }
 
         // Process id 0 keeps the retry manifest out of live-session checks, so startup or the next launch reconciles it.
-        private void WritePendingCleanupRetry(ulong appId, string manifestPath, List<PersistedDeploySite> pendingSites)
+        private void WritePendingCleanupRetry(string manifestPath, PersistedLaunchSession pending)
         {
+            if (pending == null || pending.AppId == 0)
+                return;
+
+            ulong appId = pending.AppId;
             try
             {
                 string path = GetManifestPathForAppId(appId);
@@ -496,9 +504,15 @@ namespace SmartGoldbergEmu.Services
                 if (TryLoad(path, out PersistedLaunchSession existing) && existing.GameProcessId == 0)
                 {
                     retry = existing;
-                    if (retry.DeploySites == null)
-                        retry.DeploySites = new List<PersistedDeploySite>();
-                    retry.DeploySites.AddRange(pendingSites);
+                    if (pending.DeploySites != null && pending.DeploySites.Count > 0)
+                    {
+                        if (retry.DeploySites == null)
+                            retry.DeploySites = new List<PersistedDeploySite>();
+                        retry.DeploySites.AddRange(pending.DeploySites);
+                    }
+
+                    if (retry.StubExeRestore == null && pending.StubExeRestore != null)
+                        retry.StubExeRestore = pending.StubExeRestore;
                 }
                 else
                 {
@@ -509,7 +523,8 @@ namespace SmartGoldbergEmu.Services
                         SessionGeneration = Guid.NewGuid().ToString("D"),
                         GameLibraryFolder = PathConstants.GetGameFolder(appId),
                         LoadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId),
-                        DeploySites = pendingSites,
+                        DeploySites = pending.DeploySites,
+                        StubExeRestore = pending.StubExeRestore,
                     };
                 }
 
@@ -523,7 +538,8 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private List<PersistedDeploySite> RunCleanup(PersistedLaunchSession session)
+        // Returns a process-id-0 retry session when deploy or stub restore is still pending; otherwise null.
+        private PersistedLaunchSession RunCleanup(PersistedLaunchSession session)
         {
             if (session == null)
                 return null;
@@ -541,15 +557,122 @@ namespace SmartGoldbergEmu.Services
             _logger.LogDebug(
                 $"Launch session cleanup for AppId {session.AppId}: "
                 + $"{deployFileCount} beside-exe file(s), library={session.GameLibraryFolder}, load_dlls={session.LoadDllsFolder}, "
-                + $"restoreActiveProcess={session.RestoreActiveProcessRegistry}.");
+                + $"restoreActiveProcess={session.RestoreActiveProcessRegistry}, "
+                + $"stubExeRestore={(session.StubExeRestore != null)}.");
 
             RestoreSourceMod(session);
             List<PersistedDeploySite> pendingSites = CleanupDeploySites(session.DeploySites);
+            PersistedStubExeRestore pendingStub = null;
+            if (!TryRestoreStubExe(session.StubExeRestore))
+                pendingStub = session.StubExeRestore;
+
             if (session.RestoreActiveProcessRegistry)
                 RestoreActiveProcessRegistry();
             CleanupGameLibraryFiles(session);
             RestoreBranch(session);
-            return pendingSites;
+
+            bool hasPendingSites = pendingSites != null && pendingSites.Count > 0;
+            if (!hasPendingSites && pendingStub == null)
+                return null;
+
+            return new PersistedLaunchSession
+            {
+                AppId = session.AppId,
+                GameProcessId = 0,
+                SessionGeneration = Guid.NewGuid().ToString("D"),
+                GameLibraryFolder = session.GameLibraryFolder,
+                LoadDllsFolder = session.LoadDllsFolder,
+                DeploySites = hasPendingSites ? pendingSites : null,
+                StubExeRestore = pendingStub,
+            };
+        }
+
+        private bool TryRestoreStubExe(PersistedStubExeRestore stubRestore)
+        {
+            if (stubRestore == null)
+                return true;
+
+            if (!LaunchSessionCleanupTrustHelper.IsAllowedStubExeRestore(stubRestore))
+            {
+                _logger.LogWarning(
+                    $"Skipping SteamStub exe restore; untrusted path pair: {stubRestore.ExecutablePath} / {stubRestore.BackupPath}");
+                return true;
+            }
+
+            string executablePath;
+            string backupPath;
+            try
+            {
+                executablePath = Path.GetFullPath(stubRestore.ExecutablePath.Trim());
+                backupPath = Path.GetFullPath(stubRestore.BackupPath.Trim());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Skipping SteamStub exe restore; invalid paths: {ex.Message}");
+                return true;
+            }
+
+            string unpackedLeftover = executablePath + PathConstants.StubUnpackedExecutableSuffix;
+            try
+            {
+                if (File.Exists(unpackedLeftover))
+                {
+                    File.Delete(unpackedLeftover);
+                    _logger.LogDebug("Deleted leftover StubKit unpacked file: " + unpackedLeftover);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    $"Could not delete leftover StubKit unpacked file {unpackedLeftover}: {ex.Message}");
+            }
+
+            if (!File.Exists(backupPath))
+            {
+                _logger.LogDebug(
+                    $"SteamStub original backup already gone; assuming prior restore for {executablePath}.");
+                return true;
+            }
+
+            try
+            {
+                string tempPath = executablePath + ".restore.tmp";
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+
+                if (File.Exists(executablePath))
+                    File.Move(executablePath, tempPath);
+
+                try
+                {
+                    File.Move(backupPath, executablePath);
+                }
+                catch
+                {
+                    if (!File.Exists(executablePath) && File.Exists(tempPath))
+                        File.Move(tempPath, executablePath);
+                    throw;
+                }
+
+                try
+                {
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        $"Restored SteamStub original but could not delete temporary file {tempPath}: {ex.Message}");
+                }
+
+                _logger.LogDebug($"Restored SteamStub original executable: {executablePath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to restore SteamStub original executable {executablePath}: {ex.Message}");
+                return false;
+            }
         }
 
         private void RestoreSourceMod(PersistedLaunchSession session)
@@ -873,8 +996,7 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
-                // load_dlls may live under a launcher BaseDirectory the watcher does not share; do not require gameDirectory.
-                CleanupLoadDllsFolder(loadDllsFolder);
+                // Per-game steam_settings/load_dlls is durable user content — do not delete on session cleanup.
             }
             catch (Exception ex)
             {
@@ -882,22 +1004,6 @@ namespace SmartGoldbergEmu.Services
                     $"Failed to cleanup game library files for AppId {session.AppId} "
                     + $"(library={session.GameLibraryFolder}, load_dlls={session.LoadDllsFolder})",
                     ex);
-            }
-        }
-
-        private void CleanupLoadDllsFolder(string loadDllsFolder)
-        {
-            if (string.IsNullOrEmpty(loadDllsFolder) || !Directory.Exists(loadDllsFolder))
-                return;
-
-            try
-            {
-                Directory.Delete(loadDllsFolder, recursive: true);
-                _logger.LogDebug($"Cleaned up load_dlls folder: {loadDllsFolder}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Failed to delete load_dlls folder {loadDllsFolder}: {ex.Message}");
             }
         }
 

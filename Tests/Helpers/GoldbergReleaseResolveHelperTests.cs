@@ -49,6 +49,26 @@ namespace SmartGoldbergEmu.Tests.Helpers
             "{\"name\":\"alex47exe-2026_02_16-win.7z\",\"browser_download_url\":\"https://example/alex.7z\"}" +
             "]}";
 
+        private const string SampleColdClientRepackJson =
+            "{\"tag_name\":\"repack-2026_09_27-2026_02_16-2471\",\"body\":\"notes\",\"assets\":[" +
+            "{\"name\":\"Detanup01-2026_09_27-win.7z\",\"browser_download_url\":\"https://example/detanup.7z\"}," +
+            "{\"name\":\"ColdClientLoader-2026_09_27-win.7z\",\"browser_download_url\":\"https://example/cold.7z\",\"digest\":\"" + SampleDigest + "\"}" +
+            "]}";
+
+        [Fact]
+        public void TryParseColdClientRepackRelease_selects_coldclient_asset()
+        {
+            var result = new GoldbergResolvedRelease();
+            Assert.True(GoldbergReleaseResolveHelper.TryParseColdClientRepackRelease(SampleColdClientRepackJson, result));
+            Assert.True(result.FromRepack);
+            Assert.Equal("2026_09_27", result.LatestVersion);
+            Assert.Equal("https://example/cold.7z", result.DownloadUrl);
+            Assert.Equal("ColdClientLoader-2026_09_27-win.7z", result.ArchiveFileName);
+            Assert.Equal(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                result.ExpectedSha256Hex);
+        }
+
         [Fact]
         public void TryParseRepackRelease_selects_detanup_asset()
         {

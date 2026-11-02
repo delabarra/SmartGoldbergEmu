@@ -46,4 +46,4 @@ Items below are **not** fully automated; review them in code review.
 
 ## Goldberg launch (product boundary)
 
-- [ ] No launcher-side injection (`ColdClientLoader`, `steamclient_loader`, cross-process inject APIs). Deploy uses copy/replace, registry, `load_dlls` staging, and `Process.Start` only.
+- [ ] No in-process inject APIs (`CreateRemoteThread`, `WriteProcessMemory`, etc.). Deploy uses copy/replace, registry, durable per-game `load_dlls`, and `Process.Start` (game exe or installed ColdClient loaders under `goldberg/ColdClientLoader/`).

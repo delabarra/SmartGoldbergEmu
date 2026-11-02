@@ -251,5 +251,21 @@ namespace SmartGoldbergEmu.Tests.Services
                 try { Directory.Delete(gamesRoot, recursive: true); } catch { }
             }
         }
+
+        [Fact]
+        public void TryEnsureColdClientDllFolders_creates_load_dlls_and_coldclient_extra_dlls()
+        {
+            const ulong appId = 424242;
+            string loadDlls = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId);
+            if (Directory.Exists(loadDlls))
+                Directory.Delete(loadDlls, recursive: true);
+
+            GoldbergFilesService.TryEnsureColdClientDllFolders(0);
+            Assert.False(Directory.Exists(loadDlls));
+
+            GoldbergFilesService.TryEnsureColdClientDllFolders(appId);
+            Assert.True(Directory.Exists(loadDlls));
+            Assert.True(Directory.Exists(PathConstants.GoldbergColdClientExtraDllsDirectory));
+        }
     }
 }

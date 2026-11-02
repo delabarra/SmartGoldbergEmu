@@ -47,6 +47,8 @@ namespace SmartGoldbergEmu.Forms
         private string _achievementsRawJson = string.Empty;
 
         private bool _isLoading = false;
+        // Last launch mode accepted into _gameConfig (used to restore the combo after ColdClient cancel).
+        private GoldbergLaunchMode _committedLaunchMode = GoldbergLaunchMode.SteamClient;
         private PlaceholderTextBoxHelper _placeholderHelper;
 
         public GameSettingsForm()
@@ -231,6 +233,7 @@ namespace SmartGoldbergEmu.Forms
                     SetTextBoxText(txtCustomIcon, _gameConfig.CustomIcon);
 
                 SelectLaunchModeUi(_gameConfig.LaunchMode);
+                _committedLaunchMode = _gameConfig.LaunchMode;
 
                 if (txtGameName != null)
                 {
@@ -1774,7 +1777,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             var m = _achievementsPreviewListCache[idx];
-            if (!m.IsHidden || !m.IsUnlocked)
+            if (!m.IsHidden)
                 return;
 
             var currentPreview = _achievementService.BuildAchievementPreviewText(
@@ -3579,14 +3582,16 @@ namespace SmartGoldbergEmu.Forms
 
         private static readonly LaunchModeOption[] LaunchModeOptions =
         {
-            new LaunchModeOption(GoldbergLaunchMode.SteamClient, "Steam Client Mode",
-                "Use Goldberg Steam client mode.\r\n\r\nCopies steamclient DLLs and sets registry so the game uses the emulator."),
-            new LaunchModeOption(GoldbergLaunchMode.StandardSteamApi, "Experimental Mode",
+            new LaunchModeOption(GoldbergLaunchMode.SteamClient, "Steamclient",
+                "Use Goldberg steamclient mode.\r\n\r\nCopies steamclient DLLs and sets registry so the game uses the emulator."),
+            new LaunchModeOption(GoldbergLaunchMode.StandardSteamApi, "steam_api",
                 "Use experimental steam_api beside the game.\r\n\r\nReplaces steam_api.dll in the game folder and links steam_settings."),
-            new LaunchModeOption(GoldbergLaunchMode.SteamDllBesideExe, "Steam.dll Mode",
+            new LaunchModeOption(GoldbergLaunchMode.SteamDllBesideExe, "Steam.dll",
                 "Copy Steam.dll next to the game .exe.\r\n\r\nFor older games that load a local Steam.dll without the overlay."),
+            new LaunchModeOption(GoldbergLaunchMode.ColdClient, "ColdClient loader",
+                "Start via upstream steamclient loaders (opt-in).\r\n\r\nDeploys steamclient like Steamclient mode, then runs goldberg/ColdClientLoader loaders. SteamStub is handled automatically at launch by injecting steamclient_extra_* to patch it in memory. First use downloads the ColdClient pack and adds Defender exclusions."),
             new LaunchModeOption(GoldbergLaunchMode.NoEmulation, "No emulation",
-                "Start the game .exe directly.\r\n\r\nNo Goldberg DLLs or registry setup."),
+                "Start the game .exe directly.\r\n\r\nNo Goldberg DLLs or registry setup. SteamStub is still unpacked for the session and restored when the game exits."),
         };
 
         private void InitializeLaunchModeDropdown()
@@ -3597,6 +3602,7 @@ namespace SmartGoldbergEmu.Forms
             cmbLaunchMode.Items.Clear();
             cmbLaunchMode.Items.AddRange(LaunchModeOptions);
             SelectLaunchModeUi(GoldbergLaunchMode.SteamClient);
+            _committedLaunchMode = GoldbergLaunchMode.SteamClient;
         }
 
         private void SelectLaunchModeUi(GoldbergLaunchMode mode)
@@ -3607,6 +3613,24 @@ namespace SmartGoldbergEmu.Forms
             int index = Array.FindIndex(LaunchModeOptions, option => option.Mode == mode);
             cmbLaunchMode.SelectedIndex = index >= 0 ? index : 0;
             UpdateLaunchModeToolTip();
+        }
+
+        private void RestoreLaunchModeSelection(GoldbergLaunchMode mode)
+        {
+            _isLoading = true;
+            try
+            {
+                SelectLaunchModeUi(mode);
+                if (_gameConfig != null)
+                    _gameConfig.LaunchMode = mode;
+                _committedLaunchMode = mode;
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+
+            CheckForChanges();
         }
 
         private GoldbergLaunchMode GetSelectedLaunchModeFromUi()
@@ -3630,16 +3654,50 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             _gameConfig.LaunchMode = GetSelectedLaunchModeFromUi();
+            _committedLaunchMode = _gameConfig.LaunchMode;
         }
 
-        private void CmbLaunchMode_SelectedIndexChanged(object sender, EventArgs e)
+        private async void CmbLaunchMode_SelectedIndexChanged(object sender, EventArgs e)
         {
             UpdateLaunchModeToolTip();
             if (_isLoading)
                 return;
 
+            GoldbergLaunchMode previousMode = _committedLaunchMode;
+            GoldbergLaunchMode selected = GetSelectedLaunchModeFromUi();
+            if (selected == GoldbergLaunchMode.ColdClient
+                && !ColdClientInstallService.AreInstalled())
+            {
+                bool ok = await EnsureColdClientInstalledFromUiAsync().ConfigureAwait(true);
+                if (IsDisposed || Disposing)
+                    return;
+                if (!ok)
+                {
+                    RestoreLaunchModeSelection(previousMode);
+                    return;
+                }
+            }
+
             ApplyLaunchModeFromUiToGameConfig();
+            if (selected == GoldbergLaunchMode.ColdClient)
+                TryEnsureColdClientDllFoldersForCurrentGame();
         }
+
+        private void TryEnsureColdClientDllFoldersForCurrentGame()
+        {
+            ulong appId = _gameConfig?.AppId ?? 0;
+            if (appId == 0
+                && txtAppID != null
+                && ulong.TryParse(txtAppID.Text.Trim(), out ulong fromForm))
+            {
+                appId = fromForm;
+            }
+
+            GoldbergFilesService.TryEnsureColdClientDllFolders(appId);
+        }
+
+        private Task<bool> EnsureColdClientInstalledFromUiAsync() =>
+            ColdClientInstallService.TryEnsureInstalledWithUiAsync(this, ServiceLocator.LogService);
 
         private string _initialCustomStats = string.Empty;
         private string _customStatsRawJson = string.Empty;

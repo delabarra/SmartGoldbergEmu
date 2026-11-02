@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 using SmartGoldbergEmu.Tests.TestSupport;
@@ -38,6 +39,37 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.Equal("Spacewar", loaded[0].AppName);
                 Assert.Equal(GoldbergLaunchMode.StandardSteamApi, loaded[0].LaunchMode);
                 Assert.Equal(game.GameGuid, loaded[0].GameGuid);
+            }
+            finally
+            {
+                try { Directory.Delete(gamesRoot, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
+        public void SaveGameLibrary_and_LoadGameLibrary_round_trip_coldclient_mode()
+        {
+            string gamesRoot = TestFileHelper.CreateTempDirectory("sge-games-cold-");
+            try
+            {
+                var service = new GameDataService(gamesRoot);
+                var game = new GameConfig
+                {
+                    AppId = 570,
+                    AppName = "Dota 2",
+                    Path = @"C:\Games\dota2.exe",
+                    GameGuid = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                    LaunchMode = GoldbergLaunchMode.ColdClient
+                };
+
+                Assert.True(service.SaveGameLibrary(new List<GameConfig> { game }).IsValid);
+                var loaded = service.LoadGameLibrary();
+                Assert.Single(loaded);
+                Assert.Equal(GoldbergLaunchMode.ColdClient, loaded[0].LaunchMode);
+                Assert.True(service.AnyGameUsesLaunchMode(GoldbergLaunchMode.ColdClient));
+                Assert.False(service.AnyGameUsesLaunchMode(GoldbergLaunchMode.StandardSteamApi));
+                Assert.True(Directory.Exists(PathConstants.CombineGameSteamSettingsLoadDllsDirectory(game.AppId)));
+                Assert.True(Directory.Exists(PathConstants.GoldbergColdClientExtraDllsDirectory));
             }
             finally
             {

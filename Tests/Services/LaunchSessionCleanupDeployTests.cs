@@ -159,28 +159,67 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public void TryExecuteCleanup_removes_load_dlls_folder()
+        public void TryExecuteCleanup_restores_steamstub_original_exe_from_session_backup()
         {
-            string loadDlls = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(
-                LaunchDeployTestHarness.DefaultTestAppId);
+            string workDir = TestFileHelper.CreateTempDirectory("sge-cleanup-stub-");
             try
             {
-                Directory.CreateDirectory(loadDlls);
-                File.WriteAllBytes(Path.Combine(loadDlls, "extra_x64.dll"), new[] { LaunchDeployTestHarness.StagedExtraDllMarker });
+                string exePath = Path.Combine(workDir, "game.exe");
+                string backupPath = PathConstants.BuildStubOriginalBackupPath(exePath);
+                string unpackedLeftover = exePath + PathConstants.StubUnpackedExecutableSuffix;
+                File.WriteAllBytes(backupPath, new[] { LaunchDeployTestHarness.OriginalFileMarker });
+                File.WriteAllBytes(exePath, new[] { LaunchDeployTestHarness.GoldbergFileMarker });
+                File.WriteAllBytes(unpackedLeftover, new[] { (byte)0xEE });
 
                 var session = new PersistedLaunchSession
                 {
                     AppId = LaunchDeployTestHarness.DefaultTestAppId,
                     GameProcessId = 0,
                     RestoreActiveProcessRegistry = false,
-                    // Poisoned path must be ignored; cleanup always uses PathConstants for the AppId.
-                    LoadDllsFolder = TestFileHelper.CreateTempDirectory("sge-cleanup-loaddlls-poison-"),
+                    StubExeRestore = new PersistedStubExeRestore
+                    {
+                        ExecutablePath = exePath,
+                        BackupPath = backupPath,
+                    },
                 };
 
                 var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
                 cleanup.TryExecuteCleanup(null, session);
 
-                Assert.False(Directory.Exists(loadDlls));
+                Assert.Equal(LaunchDeployTestHarness.OriginalFileMarker, File.ReadAllBytes(exePath)[0]);
+                Assert.False(File.Exists(backupPath));
+                Assert.False(File.Exists(unpackedLeftover));
+            }
+            finally
+            {
+                try { Directory.Delete(workDir, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
+        public void TryExecuteCleanup_preserves_load_dlls_folder()
+        {
+            string loadDlls = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(
+                LaunchDeployTestHarness.DefaultTestAppId);
+            try
+            {
+                Directory.CreateDirectory(loadDlls);
+                string dllPath = Path.Combine(loadDlls, "extra_x64.dll");
+                File.WriteAllBytes(dllPath, new[] { LaunchDeployTestHarness.StagedExtraDllMarker });
+
+                var session = new PersistedLaunchSession
+                {
+                    AppId = LaunchDeployTestHarness.DefaultTestAppId,
+                    GameProcessId = 0,
+                    RestoreActiveProcessRegistry = false,
+                    LoadDllsFolder = loadDlls,
+                };
+
+                var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
+                cleanup.TryExecuteCleanup(null, session);
+
+                Assert.True(Directory.Exists(loadDlls));
+                Assert.True(File.Exists(dllPath));
             }
             finally
             {

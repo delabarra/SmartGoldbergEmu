@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
@@ -64,7 +65,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     string steamApiPath = Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64);
                     string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
                     harness.WriteMarkerFile(steamApiPath, LaunchDeployTestHarness.OriginalFileMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -105,7 +106,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
                     harness.WriteMarkerFile(backupPath, LaunchDeployTestHarness.OriginalFileMarker);
                     harness.WriteMarkerFile(steamApiPath, staleGoldbergMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -188,7 +189,7 @@ namespace SmartGoldbergEmu.Tests.Services
                     harness.WriteMarkerFile(
                         Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64),
                         LaunchDeployTestHarness.OriginalFileMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -225,7 +226,7 @@ namespace SmartGoldbergEmu.Tests.Services
                 try
                 {
                     harness.CreateGameInstall(gameFolder, out string executablePath);
-                    harness.StageGoldbergExperimental(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -253,7 +254,70 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public void LaunchGame_stages_load_dlls_and_removes_folder_after_exit()
+        public void LaunchGame_coldclient_mode_writes_loader_ini_and_deploys_steamclient()
+        {
+            using (var harness = new LaunchDeployTestHarness())
+            {
+                string gameFolder = TestFileHelper.CreateTempDirectory("sge-game-coldclient-");
+                try
+                {
+                    harness.CreateGameInstall(gameFolder, out string executablePath);
+                    harness.StageSteamClientGoldbergFiles();
+                    harness.StageColdClientLoaderStubs();
+
+                    var game = harness.CreateGameConfig(
+                        LaunchDeployTestHarness.DefaultTestAppId,
+                        gameFolder,
+                        executablePath,
+                        GoldbergLaunchMode.ColdClient,
+                        parameters: "/c ping 127.0.0.1 -n 4 > nul");
+
+                    var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
+                    Assert.True(result.IsValid, result.ErrorMessage);
+
+                    string gameLibrary = PathConstants.GetGameFolder(LaunchDeployTestHarness.DefaultTestAppId);
+                    Assert.True(File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll32)));
+                    Assert.True(File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64)));
+
+                    string loader64 = PathConstants.CombineGoldbergColdClientLoaderPath(true);
+                    string iniPath = Path.ChangeExtension(loader64, ".ini");
+                    Assert.True(File.Exists(iniPath), "Expected stem.ini beside the x64 ColdClient loader.");
+                    string iniText = File.ReadAllText(iniPath);
+                    Assert.Contains("AppId=" + LaunchDeployTestHarness.DefaultTestAppId, iniText);
+                    Assert.Contains("Exe=" + executablePath, iniText);
+                    Assert.Contains("SteamClientDll=" + Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll32), iniText);
+                    Assert.Contains("SteamClient64Dll=" + Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64), iniText);
+                    Assert.Contains("ForceInjectSteamClient=1", iniText);
+                    // Harness exe is a plain MZ (no SteamStub) — do not inject steamclient_extra_* mem-patch DLLs.
+                    Assert.Contains("DllsToInjectFolder=", iniText);
+                    Assert.DoesNotContain(
+                        "DllsToInjectFolder=" + Path.GetFullPath(PathConstants.GoldbergColdClientExtraDllsDirectory),
+                        iniText);
+                    foreach (string line in iniText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        if (line.StartsWith("DllsToInjectFolder=", StringComparison.Ordinal))
+                        {
+                            Assert.Equal("DllsToInjectFolder=", line);
+                            break;
+                        }
+                    }
+
+                    bool cleaned = LaunchDeployTestHarness.WaitUntil(
+                        () => !File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64))
+                            && !File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll32)),
+                        timeoutMs: 25000);
+
+                    Assert.True(cleaned, "Expected ColdClient session cleanup to remove steamclient from the game library folder.");
+                }
+                finally
+                {
+                    try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                }
+            }
+        }
+
+        [Fact]
+        public void LaunchGame_leaves_durable_load_dlls_folder_after_exit()
         {
             using (var harness = new LaunchDeployTestHarness())
             {
@@ -262,10 +326,11 @@ namespace SmartGoldbergEmu.Tests.Services
                 {
                     harness.CreateGameInstall(gameFolder, out string executablePath);
                     harness.StageGoldbergSteamDll();
-                    harness.StageGoldbergExtraDll(useX64: true);
 
                     string loadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(LaunchDeployTestHarness.DefaultTestAppId);
-                    string stagedExtraDll = Path.Combine(loadDllsFolder, "plugin_x64.dll");
+                    Directory.CreateDirectory(loadDllsFolder);
+                    string durableDll = Path.Combine(loadDllsFolder, "plugin_x64.dll");
+                    harness.WriteMarkerFile(durableDll, LaunchDeployTestHarness.StagedExtraDllMarker);
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -276,18 +341,24 @@ namespace SmartGoldbergEmu.Tests.Services
                     var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
                     Assert.True(result.IsValid, result.ErrorMessage);
 
-                    Assert.True(File.Exists(stagedExtraDll));
-                    Assert.Equal(LaunchDeployTestHarness.StagedExtraDllMarker, harness.ReadMarkerFile(stagedExtraDll));
-
-                    bool cleaned = LaunchDeployTestHarness.WaitUntil(
-                        () => !Directory.Exists(loadDllsFolder),
+                    bool exited = LaunchDeployTestHarness.WaitUntil(
+                        () => !harness.LaunchService.IsGameRunning(game.AppId, game),
                         timeoutMs: 25000);
-
-                    Assert.True(cleaned, "Expected load_dlls folder to be removed after the game process exited.");
+                    Assert.True(exited, "Expected game process to exit.");
+                    Assert.True(Directory.Exists(loadDllsFolder), "Expected durable load_dlls folder to remain after exit.");
+                    Assert.True(File.Exists(durableDll));
+                    Assert.Equal(LaunchDeployTestHarness.StagedExtraDllMarker, harness.ReadMarkerFile(durableDll));
                 }
                 finally
                 {
                     try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                    try
+                    {
+                        string lib = PathConstants.GetGameFolder(LaunchDeployTestHarness.DefaultTestAppId);
+                        if (Directory.Exists(lib))
+                            Directory.Delete(lib, recursive: true);
+                    }
+                    catch { }
                 }
             }
         }
@@ -308,11 +379,12 @@ namespace SmartGoldbergEmu.Tests.Services
                     string steamApiPath = Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64);
                     string backupPath = steamApiPath + PathConstants.SteamApiBackupSidecarExtension;
                     harness.WriteMarkerFile(steamApiPath, LaunchDeployTestHarness.OriginalFileMarker);
-                    harness.StageGoldbergExperimental(useX64: true);
-                    harness.StageGoldbergExtraDll(useX64: true);
+                    harness.StageGoldbergStandardSteamApi(useX64: true);
 
                     string loadDllsFolder = PathConstants.CombineGameSteamSettingsLoadDllsDirectory(
                         LaunchDeployTestHarness.DefaultTestAppId);
+                    Directory.CreateDirectory(loadDllsFolder);
+                    File.WriteAllBytes(Path.Combine(loadDllsFolder, "plugin_x64.dll"), new[] { LaunchDeployTestHarness.StagedExtraDllMarker });
 
                     var game = harness.CreateGameConfig(
                         LaunchDeployTestHarness.DefaultTestAppId,
@@ -332,9 +404,9 @@ namespace SmartGoldbergEmu.Tests.Services
                     Assert.False(
                         File.Exists(Path.Combine(gameFolder, PathConstants.GoldbergSteamClientDll64)),
                         "Expected deployed steamclient to be removed after Process.Start failure.");
-                    Assert.False(
+                    Assert.True(
                         Directory.Exists(loadDllsFolder),
-                        "Expected load_dlls staging to be removed after Process.Start failure.");
+                        "Expected durable load_dlls folder to remain after Process.Start failure.");
                 }
                 finally
                 {

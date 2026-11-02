@@ -16,6 +16,8 @@ namespace SmartGoldbergEmu.Constants
         public const string RepackWinAssetSuffixZip = "-win.zip";
         public const string RepackDownloadArchiveFileName = "goldberg-download.zip";
         public const string UpstreamDownloadArchiveFileName = "goldberg-download.7z";
+        public const string ColdClientRepackAssetPrefix = "ColdClientLoader-";
+        public const string ColdClientDownloadArchiveFileName = "coldclient-download.7z";
 
         public const string ReleasesApiUrlDetanup = "https://api.github.com/repos/Detanup01/gbe_fork/releases/latest";
         public const string ReleasesApiUrlAlex = "https://api.github.com/repos/alex47exe/gse_fork/releases/latest";

@@ -1587,7 +1587,7 @@ namespace SmartGoldbergEmu.Services
                 {
                     logger?.LogError(
                         "Goldberg emulator files still missing after download attempt (game launch). "
-                        + "Check goldberg\\steamclient_experimental and retry Goldberg Update.");
+                        + "Check goldberg\\SteamClient and retry Goldberg Update.");
                     return false;
                 }
                 return true;
@@ -2115,12 +2115,22 @@ namespace SmartGoldbergEmu.Services
             return CreateChangelogContent(
                 result,
                 "A new version of Goldberg Emulator is available.",
-                additionalInfo: null,
+                additionalInfo: BuildUpdateAvailableVersionSummary(result),
                 proceedQuestion: string.Empty,
                 okButtonText: "Install",
                 cancelButtonText: isStartup ? "Skip" : null,
                 manualDownloadLinks: GetSelectedGoldbergManualDownloadLinks(),
                 showManualDownloadCaption: true);
+        }
+
+        private static string BuildUpdateAvailableVersionSummary(UpdateCheckResult result)
+        {
+            string currentLabel = string.IsNullOrWhiteSpace(result?.CurrentVersion)
+                ? "unknown"
+                : result.CurrentVersion.Trim();
+            string latestLabel = FormatLatestVersionLabel(result, "unknown");
+            return "Current version: " + currentLabel + "\n"
+                + "Latest version: " + latestLabel;
         }
 
         private static ChangelogDialogContent BuildReinstallChangelogContent(UpdateCheckResult result)

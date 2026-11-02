@@ -145,7 +145,6 @@
     <Compile Include="Models\CAchievement.cs" />
     <Compile Include="Models\GameConfig.cs" />
     <Compile Include="Models\AppCatalogSnapshot.cs" />
-    <Compile Include="Models\StubExecutableTarget.cs" />
     <Compile Include="Models\StubKitApplyOutcome.cs" />
     <Compile Include="Models\StubKitApplyResult.cs" />
     <Compile Include="Models\LegacyConfig.cs" />
@@ -225,6 +224,8 @@
     <Compile Include="Helpers\LoadDllsArchFilter.cs" />
     <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
+    <Compile Include="Helpers\ColdClientLoaderIniWriter.cs" />
+    <Compile Include="Helpers\WindowsDefenderExclusionHelper.cs" />
     <Compile Include="Helpers\SteamActiveProcessRegistryHelper.cs" />
     <Compile Include="Helpers\SteamSourceModRegistryHelper.cs" />
     <Compile Include="Helpers\GoldbergReleaseResolveHelper.cs" />
@@ -287,6 +288,7 @@
     <Compile Include="Services\DlcService.cs" />
     <Compile Include="Services\EmulatorConfigService.cs" />
     <Compile Include="Services\EmulatorUpdateService.cs" />
+    <Compile Include="Services\ColdClientInstallService.cs" />
     <Compile Include="Services\LauncherUpdateService.cs" />
     <Compile Include="Services\GameDataService.cs" />
     <Compile Include="Services\GameDisplayService.cs" />
@@ -317,7 +319,6 @@
     <Compile Include="Services\AppCatalogSnapshotStore.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
     <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
-    <Compile Include="Services\StubKitFeedback.cs" />
     <Compile Include="Services\StubKitService.cs" />
     <Compile Include="AppDataKit\AppDataJson.cs" />
     <Compile Include="AppDataKit\AppDataService.cs" />

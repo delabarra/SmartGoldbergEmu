@@ -67,8 +67,8 @@ namespace SmartGoldbergEmu.Services
             TryRemoveLegacyGenerateInterfacesFolder(PathConstants.LauncherInstallDirectory);
             TryStripObsoleteP2pPacketSharingMode(PathConstants.GlobalSettingsPath, PathConstants.GamesDirectory, ServiceLocator.IniFileService);
             TryMigrateUserLaunchOptions(PathConstants.GamesDirectory);
-            // One-time: goldberg/steamclient_extra_dlls → steamclient_experimental/extra_dlls.
-            GoldbergInstallLayout.TryMigrateLegacySteamClientExtraDlls(PathConstants.GoldbergDirectory);
+            // Previous goldberg folder names → SteamApi / SteamClient / SteamOld before missing-file checks.
+            GoldbergInstallLayout.RemoveLegacyGoldbergSubfolders(PathConstants.GoldbergDirectory);
             if (Directory.Exists(PathConstants.GoldbergDirectory))
                 GoldbergInstallLayout.WriteGoldbergReadmeFile(PathConstants.GoldbergDirectory);
         }
@@ -986,6 +986,12 @@ namespace SmartGoldbergEmu.Services
                 || value == "3")
             {
                 return GoldbergLaunchMode.NoEmulation;
+            }
+            if (value.Equals("ColdClient", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("coldclient", StringComparison.OrdinalIgnoreCase)
+                || value == "4")
+            {
+                return GoldbergLaunchMode.ColdClient;
             }
             if (Enum.TryParse(value, true, out GoldbergLaunchMode parsed))
                 return parsed;

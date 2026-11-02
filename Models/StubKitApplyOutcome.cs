@@ -10,6 +10,8 @@ namespace SmartGoldbergEmu.Models
         UnpackFailed,
         FileReplaceFailed,
         BackupMissing,
+        // A *_o.exe backup already exists; refuse to overwrite it during session unpack.
+        ExistingBackupConflict,
         RestoreFailed,
         Unexpected
     }

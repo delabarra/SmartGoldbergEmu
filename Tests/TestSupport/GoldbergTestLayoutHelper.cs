@@ -20,10 +20,10 @@ namespace SmartGoldbergEmu.Tests.TestSupport
             WriteEmptyFile(PathConstants.CombineGoldbergGameOverlayRendererPath(true));
         }
 
-        public static void StageGoldbergExperimentalFiles(bool useX64)
+        public static void StageGoldbergStandardSteamApiFiles(bool useX64)
         {
-            WriteEmptyFile(PathConstants.CombineGoldbergExperimentalSteamApiPath(useX64));
-            WriteEmptyFile(PathConstants.CombineGoldbergExperimentalSteamClientPath(useX64));
+            WriteEmptyFile(PathConstants.CombineGoldbergStandardSteamApiPath(useX64));
+            WriteEmptyFile(PathConstants.CombineGoldbergStandardSteamApiSteamClientPath(useX64));
         }
 
         public static void StageSteamDllInGoldbergFolder()

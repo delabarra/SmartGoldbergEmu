@@ -170,6 +170,9 @@ namespace SmartGoldbergEmu.Services
                 for (int i = 0; i < games.Count; i++)
                 {
                     var game = games[i];
+                    if (game.LaunchMode == GoldbergLaunchMode.ColdClient)
+                        GoldbergFilesService.TryEnsureColdClientDllFolders(game.AppId);
+
                     lines.Add($"[{GamesIniKeyNames.GameSectionPrefix}_{i}]");
                     lines.Add($"{GamesIniKeyNames.AppNameWrite}={game.AppName}");
                     lines.Add($"{GamesIniKeyNames.AppIdWrite}={game.AppId}");
@@ -355,6 +358,11 @@ namespace SmartGoldbergEmu.Services
             return LoadGameLibrary();
         }
 
+        public bool AnyGameUsesLaunchMode(GoldbergLaunchMode launchMode)
+        {
+            return LoadGameLibrary().Exists(g => g != null && g.LaunchMode == launchMode);
+        }
+
         public ValidationResult ValidateGameConfig(GameConfig game)
         {
             if (game == null)
@@ -479,6 +487,13 @@ namespace SmartGoldbergEmu.Services
                 || value == "3")
             {
                 return GoldbergLaunchMode.NoEmulation;
+            }
+
+            if (value.Equals("ColdClient", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("coldclient", StringComparison.OrdinalIgnoreCase)
+                || value == "4")
+            {
+                return GoldbergLaunchMode.ColdClient;
             }
 
             if (Enum.TryParse(value, true, out GoldbergLaunchMode parsed))

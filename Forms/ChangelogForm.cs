@@ -13,6 +13,10 @@ namespace SmartGoldbergEmu.Forms
     public partial class ChangelogForm : ThemedForm
     {
         private const int ContentTextWidth = 556;
+        // Matches the designer notes area at the default 520px client height.
+        private const int NotesPanelMaxHeight = 349;
+        private const int NotesPanelMinHeight = 64;
+        private const int NotesContentBottomPad = 8;
 
         private ChangelogDialogContent _content;
         private string _releaseNotesMarkdown;
@@ -55,18 +59,96 @@ namespace SmartGoldbergEmu.Forms
 
         private void EnsureDisplayReady()
         {
+            // CreateControl() is a no-op for handle creation while Visible is false; force the HWND
+            // so theme rendering and height measurement run before ShowDialog.
             if (!IsHandleCreated)
-                CreateControl();
+                CreateHandle();
 
             rtbReleaseNotes.CreateControl();
+            if (_content != null && rtbReleaseNotes.TextLength == 0)
+                RenderReleaseNotes();
+
             PerformLayout();
             flpHeader.PerformLayout();
             tlpFooter.PerformLayout();
             pnlNotes.PerformLayout();
+            AdjustHeightToContent();
+        }
+
+        // Shrink or grow the notes panel (and form) to the rendered release notes; scroll when capped.
+        private void AdjustHeightToContent()
+        {
+            if (IsDisposed || Disposing || !IsHandleCreated)
+                return;
+
+            flpHeader.PerformLayout();
+            tlpFooter.PerformLayout();
+
+            int headerHeight = flpHeader.Height;
+            int footerHeight = tlpFooter.Height;
+            int maxNotesHeight = ResolveMaxNotesPanelHeight(headerHeight, footerHeight);
+            int desiredNotesHeight = MeasureReleaseNotesPanelHeight();
+            int notesHeight = Math.Max(NotesPanelMinHeight, Math.Min(maxNotesHeight, desiredNotesHeight));
+            int clientHeight = headerHeight + notesHeight + footerHeight;
+
+            // Top-dock + explicit height so the panel does not keep the designer Fill size.
+            if (pnlNotes.Dock != DockStyle.Top)
+                pnlNotes.Dock = DockStyle.Top;
+            if (pnlNotes.Height != notesHeight)
+                pnlNotes.Height = notesHeight;
+
+            if (ClientSize.Height != clientHeight)
+                ClientSize = new Size(ClientSize.Width, clientHeight);
+        }
+
+        private int ResolveMaxNotesPanelHeight(int headerHeight, int footerHeight)
+        {
+            int maxNotes = NotesPanelMaxHeight;
+            Screen screen = Screen.FromControl(this);
+            if (screen != null)
+            {
+                int frameChrome = Math.Max(0, Height - ClientSize.Height);
+                int maxClient = screen.WorkingArea.Height - frameChrome - 32;
+                int screenCappedNotes = maxClient - headerHeight - footerHeight;
+                if (screenCappedNotes > 0)
+                    maxNotes = Math.Min(maxNotes, screenCappedNotes);
+            }
+
+            return Math.Max(NotesPanelMinHeight, maxNotes);
+        }
+
+        private int MeasureReleaseNotesPanelHeight()
+        {
+            int rtbChrome = Math.Max(0, rtbReleaseNotes.Height - rtbReleaseNotes.ClientSize.Height);
+            int contentHeight = MeasureReleaseNotesContentClientHeight();
+            return contentHeight + rtbChrome + pnlNotes.Padding.Vertical;
+        }
+
+        private int MeasureReleaseNotesContentClientHeight()
+        {
+            if (rtbReleaseNotes.TextLength <= 0)
+                return rtbReleaseNotes.Font.Height + NotesContentBottomPad;
+
+            int savedStart = rtbReleaseNotes.SelectionStart;
+            int savedLength = rtbReleaseNotes.SelectionLength;
+            try
+            {
+                rtbReleaseNotes.Select(0, 0);
+                rtbReleaseNotes.ScrollToCaret();
+
+                Point end = rtbReleaseNotes.GetPositionFromCharIndex(rtbReleaseNotes.TextLength);
+                int lineHeight = Math.Max(rtbReleaseNotes.Font.Height, 12);
+                return Math.Max(lineHeight, end.Y + lineHeight + NotesContentBottomPad);
+            }
+            finally
+            {
+                rtbReleaseNotes.Select(savedStart, savedLength);
+            }
         }
 
         private void ConfigureReleaseNotesView()
         {
+            pnlNotes.Dock = DockStyle.Top;
             rtbReleaseNotes.ReadOnly = true;
             rtbReleaseNotes.WordWrap = true;
             rtbReleaseNotes.ScrollBars = RichTextBoxScrollBars.Vertical;
@@ -93,20 +175,18 @@ namespace SmartGoldbergEmu.Forms
             {
                 lblAdditionalInfo.Text = string.Empty;
                 lblAdditionalInfo.Visible = false;
-                tlpFooter.RowStyles[0] = new RowStyle(SizeType.Absolute, 0F);
             }
             else
             {
                 lblAdditionalInfo.Text = _content.AdditionalInfo.Trim();
                 lblAdditionalInfo.Visible = true;
-                tlpFooter.RowStyles[0] = new RowStyle(SizeType.AutoSize);
             }
 
             if (_content.ProceedQuestion != null && string.IsNullOrWhiteSpace(_content.ProceedQuestion))
             {
                 lblProceedQuestion.Text = string.Empty;
                 lblProceedQuestion.Visible = false;
-                tlpFooter.RowStyles[1] = new RowStyle(SizeType.Absolute, 0F);
+                tlpFooter.RowStyles[0] = new RowStyle(SizeType.Absolute, 0F);
             }
             else
             {
@@ -114,7 +194,7 @@ namespace SmartGoldbergEmu.Forms
                     ? "Do you want to proceed?"
                     : _content.ProceedQuestion;
                 lblProceedQuestion.Visible = true;
-                tlpFooter.RowStyles[1] = new RowStyle(SizeType.AutoSize);
+                tlpFooter.RowStyles[0] = new RowStyle(SizeType.AutoSize);
             }
 
             btnOk.Text = string.IsNullOrWhiteSpace(_content.OkButtonText) ? "OK" : _content.OkButtonText.Trim();
@@ -188,10 +268,10 @@ namespace SmartGoldbergEmu.Forms
             bool showCaptionRow = hasLinks && showCaption;
             lblManualDownloadCaption.Visible = showCaptionRow;
             flpManualLinks.Visible = hasLinks;
-            tlpFooter.RowStyles[2] = showCaptionRow
+            tlpFooter.RowStyles[1] = showCaptionRow
                 ? new RowStyle(SizeType.AutoSize)
                 : new RowStyle(SizeType.Absolute, 0F);
-            tlpFooter.RowStyles[3] = hasLinks
+            tlpFooter.RowStyles[2] = hasLinks
                 ? new RowStyle(SizeType.AutoSize)
                 : new RowStyle(SizeType.Absolute, 0F);
         }
@@ -208,8 +288,10 @@ namespace SmartGoldbergEmu.Forms
 
         private void RtbReleaseNotes_MouseMove(object sender, MouseEventArgs e)
         {
-            string url = TryGetHyperlinkUrlAtPoint(e.Location);
-            rtbReleaseNotes.Cursor = url != null ? Cursors.Hand : Cursors.Default;
+            // Use IBeam off-link so we do not fight RichTextBox's native text cursor (Default caused flicker).
+            Cursor wanted = TryGetHyperlinkUrlAtPoint(e.Location) != null ? Cursors.Hand : Cursors.IBeam;
+            if (rtbReleaseNotes.Cursor != wanted)
+                rtbReleaseNotes.Cursor = wanted;
         }
 
         private string TryGetHyperlinkUrlAtPoint(Point location)
@@ -266,6 +348,7 @@ namespace SmartGoldbergEmu.Forms
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            AdjustHeightToContent();
             Activate();
             BringToFront();
         }

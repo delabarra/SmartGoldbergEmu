@@ -146,7 +146,7 @@ function Test-NoLauncherInjectionInCs {
     if ($hits.Count -gt 0) {
         Add-Failure "Forbidden launcher injection API/name in C# ($($hits.Count)): $($hits -join ', ')"
     }
-    Write-Check -Name 'No launcher-side injection paths in *.cs' -Passed ($hits.Count -eq 0)
+    Write-Check -Name 'No in-process inject APIs in *.cs' -Passed ($hits.Count -eq 0)
 }
 
 function Test-NoTrackedBuildArtifacts {

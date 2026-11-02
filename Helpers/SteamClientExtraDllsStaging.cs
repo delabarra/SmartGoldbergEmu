@@ -4,7 +4,7 @@ using SmartGoldbergEmu.Constants;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // Copies goldberg/steamclient_experimental/extra_dlls into per-game steam_settings/load_dlls before launch.
+    // Copies goldberg/SteamClient/extra_dlls into per-game steam_settings/load_dlls before launch.
     // Flat top-level only: Goldberg load_dlls scans that folder non-recursively (LoadLibraryW).
     // Skips upstream extra_dlls inject samples; those must not go in load_dlls.
     public static class SteamClientExtraDllsStaging
