@@ -141,5 +141,61 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
     }
+
+    internal static class TabFormSizingHelper
+    {
+        internal const int DefaultContentPadding = 8;
+
+        internal static int MeasureTabPageContentHeight(TabPage tabPage, int contentPadding = DefaultContentPadding)
+        {
+            if (tabPage == null)
+                return 0;
+
+            int contentBottom = tabPage.Padding.Top;
+            foreach (Control child in tabPage.Controls)
+            {
+                if (!child.Visible)
+                    continue;
+
+                contentBottom = Math.Max(contentBottom, child.Bottom);
+            }
+
+            return contentBottom + tabPage.Padding.Bottom + contentPadding;
+        }
+
+        internal static int CalculateDesiredClientHeight(
+            TabControl tabControl,
+            TabPage selectedTab,
+            int tabControlBottomAreaHeight,
+            int minClientHeight,
+            int contentPadding = DefaultContentPadding)
+        {
+            if (tabControl == null || selectedTab == null)
+                return minClientHeight;
+
+            int desiredTabPageHeight = MeasureTabPageContentHeight(selectedTab, contentPadding);
+            int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
+            int desiredTabControlHeight = desiredTabPageHeight + tabChromeHeight;
+            return Math.Max(minClientHeight, desiredTabControlHeight + tabControlBottomAreaHeight);
+        }
+
+        internal static bool TryApplyFormHeight(Form form, int desiredClientHeight, int minClientHeight)
+        {
+            if (form == null)
+                return false;
+
+            int nonClientHeight = form.Height - form.ClientSize.Height;
+            int minFormHeight = minClientHeight + nonClientHeight;
+            if (form.MinimumSize.Height < minFormHeight)
+                form.MinimumSize = new Size(form.MinimumSize.Width, minFormHeight);
+
+            int desiredFormHeight = desiredClientHeight + nonClientHeight;
+            if (Math.Abs(form.Height - desiredFormHeight) <= 1)
+                return false;
+
+            form.Height = desiredFormHeight;
+            return true;
+        }
+    }
 }
 

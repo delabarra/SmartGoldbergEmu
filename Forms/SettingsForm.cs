@@ -61,7 +61,6 @@ namespace SmartGoldbergEmu.Forms
         private bool _isApiKeyValidationInProgress = false;
         private readonly Timer _apiKeyValidationClearTimer;
         private const int ApiKeyValidationMessageDisplayMs = 3000;
-        private const int TabAutoHeightPadding = 8;
         private const int MinClientHeightForButtons = 300;
         private int _tabControlBottomAreaHeight;
 
@@ -1627,30 +1626,13 @@ namespace SmartGoldbergEmu.Forms
             if (tabControl == null || tabControl.SelectedTab == null)
                 return;
 
-            var selectedTab = tabControl.SelectedTab;
+            int desiredClientHeight = TabFormSizingHelper.CalculateDesiredClientHeight(
+                tabControl,
+                tabControl.SelectedTab,
+                _tabControlBottomAreaHeight,
+                MinClientHeightForButtons);
 
-            int contentBottom = selectedTab.Padding.Top;
-            foreach (Control child in selectedTab.Controls)
-            {
-                if (!child.Visible)
-                    continue;
-
-                contentBottom = Math.Max(contentBottom, child.Bottom);
-            }
-
-            int desiredTabPageHeight = Math.Max(
-                selectedTab.Padding.Top + selectedTab.Padding.Bottom + TabAutoHeightPadding,
-                contentBottom + selectedTab.Padding.Bottom + TabAutoHeightPadding);
-
-            int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
-            int desiredTabControlHeight = desiredTabPageHeight + tabChromeHeight;
-            int desiredClientHeight = Math.Max(
-                MinClientHeightForButtons,
-                desiredTabControlHeight + _tabControlBottomAreaHeight);
-
-            int nonClientHeight = Height - ClientSize.Height;
-            MinimumSize = new Size(MinimumSize.Width, MinClientHeightForButtons + nonClientHeight);
-            Height = desiredClientHeight + nonClientHeight;
+            TabFormSizingHelper.TryApplyFormHeight(this, desiredClientHeight, MinClientHeightForButtons);
         }
 
         private void OnElement_Click(object sender, EventArgs e)

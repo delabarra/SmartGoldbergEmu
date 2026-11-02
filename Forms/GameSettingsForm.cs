@@ -50,6 +50,10 @@ namespace SmartGoldbergEmu.Forms
         // Last launch mode accepted into _gameConfig (used to restore the combo after ColdClient cancel).
         private GoldbergLaunchMode _committedLaunchMode = GoldbergLaunchMode.SteamClient;
         private PlaceholderTextBoxHelper _placeholderHelper;
+        private const int MinClientHeightForButtons = 360;
+        private readonly Dictionary<TabPage, int> _tabPageContentHeights = new Dictionary<TabPage, int>();
+        private int _tabControlBottomAreaHeight;
+        private int _statsAchievementsOriginalTabHeight;
 
         public GameSettingsForm()
             : this(null, false, null, null, null, null, null, null, null, null, null, null, null, null)
@@ -74,6 +78,8 @@ namespace SmartGoldbergEmu.Forms
             : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
+
+            _statsAchievementsOriginalTabHeight = tabStatsAchievements != null ? tabStatsAchievements.Height : 0;
 
             _gameConfig = game;
             _isEditMode = isEditMode;
@@ -105,6 +111,10 @@ namespace SmartGoldbergEmu.Forms
             _achievementService = achievementService ?? ServiceLocator.AchievementService;
             _gameLaunchService = ServiceLocator.GameLaunchService;
             _steamApiKeyService = steamApiKeyService ?? ServiceLocator.SteamApiKeyService;
+
+            CacheTabPageContentHeights();
+            if (tabControl != null)
+                tabControl.SelectedIndexChanged += TabControl_SelectedIndexChanged;
 
             _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
             InitializeLaunchModeDropdown();
@@ -201,6 +211,48 @@ namespace SmartGoldbergEmu.Forms
             _isLoading = false;
             btnSave.Enabled = !_isEditMode;
             UpdateGameFolderInstallDirHintVisibility();
+
+            _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Height);
+            BeginInvoke((Action)(() => AdjustWindowHeightForCurrentTab()));
+        }
+
+        private void TabControl_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            AdjustWindowHeightForCurrentTab();
+        }
+
+        private void CacheTabPageContentHeights()
+        {
+            if (tabControl == null)
+                return;
+
+            _tabPageContentHeights.Clear();
+            foreach (TabPage tabPage in tabControl.TabPages)
+                _tabPageContentHeights[tabPage] = TabFormSizingHelper.MeasureTabPageContentHeight(tabPage);
+        }
+
+        private void AdjustWindowHeightForCurrentTab()
+        {
+            if (tabControl == null || tabControl.SelectedTab == null)
+                return;
+
+            if (_tabControlBottomAreaHeight <= 0)
+                _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Height);
+
+            var selectedTab = tabControl.SelectedTab;
+            int desiredTabPageHeight = TabFormSizingHelper.MeasureTabPageContentHeight(selectedTab);
+            int cachedTabPageHeight;
+            if (_tabPageContentHeights.TryGetValue(selectedTab, out cachedTabPageHeight))
+                desiredTabPageHeight = Math.Max(desiredTabPageHeight, cachedTabPageHeight);
+
+            if (selectedTab == tabStatsAchievements && _statsAchievementsOriginalTabHeight > 0)
+                desiredTabPageHeight = Math.Max(desiredTabPageHeight, _statsAchievementsOriginalTabHeight);
+
+            int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
+            int desiredTabControlHeight = desiredTabPageHeight + tabChromeHeight;
+            int desiredClientHeight = Math.Max(MinClientHeightForButtons, desiredTabControlHeight + _tabControlBottomAreaHeight);
+
+            TabFormSizingHelper.TryApplyFormHeight(this, desiredClientHeight, MinClientHeightForButtons);
         }
 
         private void LoadGameConfig()
