@@ -50,6 +50,7 @@ namespace SmartGoldbergEmu.Forms
         // Last launch mode accepted into _gameConfig (used to restore the combo after ColdClient cancel).
         private GoldbergLaunchMode _committedLaunchMode = GoldbergLaunchMode.SteamClient;
         private PlaceholderTextBoxHelper _placeholderHelper;
+        private ThemedTabSelector _themedTabSelector;
         private const int MinClientHeightForButtons = 360;
         private readonly Dictionary<TabPage, int> _tabPageContentHeights = new Dictionary<TabPage, int>();
         private int _tabControlBottomAreaHeight;
@@ -114,7 +115,11 @@ namespace SmartGoldbergEmu.Forms
 
             CacheTabPageContentHeights();
             if (tabControl != null)
+            {
+                _themedTabSelector = ThemedTabSelector.Attach(this, tabControl);
+                _themedTabSelector.StripHeightChanged += ThemedTabSelector_StripHeightChanged;
                 tabControl.SelectedIndexChanged += TabControl_SelectedIndexChanged;
+            }
 
             _placeholderHelper = new PlaceholderTextBoxHelper(GetThemeForegroundColor, GetThemePlaceholderColor);
             InitializeLaunchModeDropdown();
@@ -212,11 +217,17 @@ namespace SmartGoldbergEmu.Forms
             btnSave.Enabled = !_isEditMode;
             UpdateGameFolderInstallDirHintVisibility();
 
-            _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Height);
+            // Bottom area is below the tab control (Save/Cancel). Strip sits above, so use Bottom not Height.
+            _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Bottom);
             BeginInvoke((Action)(() => AdjustWindowHeightForCurrentTab()));
         }
 
         private void TabControl_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            AdjustWindowHeightForCurrentTab();
+        }
+
+        private void ThemedTabSelector_StripHeightChanged(object sender, EventArgs e)
         {
             AdjustWindowHeightForCurrentTab();
         }
@@ -237,7 +248,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             if (_tabControlBottomAreaHeight <= 0)
-                _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Height);
+                _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Bottom);
 
             var selectedTab = tabControl.SelectedTab;
             int desiredTabPageHeight = TabFormSizingHelper.MeasureTabPageContentHeight(selectedTab);
@@ -249,8 +260,11 @@ namespace SmartGoldbergEmu.Forms
                 desiredTabPageHeight = Math.Max(desiredTabPageHeight, _statsAchievementsOriginalTabHeight);
 
             int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
+            int stripHeight = _themedTabSelector != null ? _themedTabSelector.StripHeight : tabControl.Top;
             int desiredTabControlHeight = desiredTabPageHeight + tabChromeHeight;
-            int desiredClientHeight = Math.Max(MinClientHeightForButtons, desiredTabControlHeight + _tabControlBottomAreaHeight);
+            int desiredClientHeight = Math.Max(
+                MinClientHeightForButtons,
+                stripHeight + desiredTabControlHeight + _tabControlBottomAreaHeight);
 
             TabFormSizingHelper.TryApplyFormHeight(this, desiredClientHeight, MinClientHeightForButtons);
         }
@@ -1255,6 +1269,8 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnThemeApplied()
         {
+            if (_themedTabSelector != null && _themeService != null)
+                _themedTabSelector.ApplyColors(_themeService.GetThemeColors(_themeService.EffectiveTheme));
             ApplyDlcTextBoxTheme();
             ApplyAchievementsPreviewTheme();
             ApplyModsTabTheme();
@@ -1271,6 +1287,12 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (_themedTabSelector != null)
+            {
+                _themedTabSelector.StripHeightChanged -= ThemedTabSelector_StripHeightChanged;
+                _themedTabSelector.Dispose();
+                _themedTabSelector = null;
+            }
             CancelModsListResolve();
             StopAndDisposeRestoreMessageHideTimer();
             StopAndDisposeAchievementsFilterDebounceTimer();
