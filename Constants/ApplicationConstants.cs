@@ -87,6 +87,9 @@ namespace SmartGoldbergEmu.Constants
         // Comma-separated Steam64 ids (local favorites only; never sent on the wire).
         public const string SettingKeyLanFavoriteSteamIds = "lan_favorite_steamids";
 
+        // Comma-separated Steam64 ids muted for LAN chat alerts (local only; never sent on the wire).
+        public const string SettingKeyLanMutedSteamIds = "lan_muted_steamids";
+
         // Comma-separated Steam64 ids blocked for LAN chat (local only; never sent on the wire).
         public const string SettingKeyLanChatBlockedSteamIds = "lan_chat_blocked_steamids";
 

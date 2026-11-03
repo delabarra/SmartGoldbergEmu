@@ -34,7 +34,9 @@ namespace SmartGoldbergEmu.Forms
             this.btnIgnore = new System.Windows.Forms.Button();
             this.btnIgnoreUser = new System.Windows.Forms.Button();
             this.rtfHistory = new System.Windows.Forms.RichTextBox();
+            this.pnlStatusBar = new System.Windows.Forms.Panel();
             this.lblStatus = new System.Windows.Forms.Label();
+            this.lblComposeChars = new System.Windows.Forms.Label();
             this.pnlComposer = new System.Windows.Forms.Panel();
             this.txtCompose = new System.Windows.Forms.TextBox();
             this.btnSend = new System.Windows.Forms.Button();
@@ -43,6 +45,7 @@ namespace SmartGoldbergEmu.Forms
             ((System.ComponentModel.ISupportInitialize)(this.picAvatar)).BeginInit();
             this.pnlGate.SuspendLayout();
             this.flpGateButtons.SuspendLayout();
+            this.pnlStatusBar.SuspendLayout();
             this.pnlComposer.SuspendLayout();
             this.SuspendLayout();
             //
@@ -53,7 +56,7 @@ namespace SmartGoldbergEmu.Forms
             this.tlpRoot.Controls.Add(this.pnlProfile, 0, 0);
             this.tlpRoot.Controls.Add(this.pnlGate, 0, 1);
             this.tlpRoot.Controls.Add(this.rtfHistory, 0, 2);
-            this.tlpRoot.Controls.Add(this.lblStatus, 0, 3);
+            this.tlpRoot.Controls.Add(this.pnlStatusBar, 0, 3);
             this.tlpRoot.Controls.Add(this.pnlComposer, 0, 4);
             this.tlpRoot.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tlpRoot.Location = new System.Drawing.Point(0, 0);
@@ -207,13 +210,35 @@ namespace SmartGoldbergEmu.Forms
             this.rtfHistory.TabIndex = 2;
             this.rtfHistory.TabStop = false;
             //
+            // pnlStatusBar
+            //
+            this.pnlStatusBar.Controls.Add(this.lblStatus);
+            this.pnlStatusBar.Controls.Add(this.lblComposeChars);
+            this.pnlStatusBar.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.pnlStatusBar.Location = new System.Drawing.Point(11, 405);
+            this.pnlStatusBar.Name = "pnlStatusBar";
+            this.pnlStatusBar.Size = new System.Drawing.Size(438, 22);
+            this.pnlStatusBar.TabIndex = 3;
+            //
+            // lblComposeChars
+            //
+            this.lblComposeChars.Dock = System.Windows.Forms.DockStyle.Right;
+            this.lblComposeChars.Location = new System.Drawing.Point(278, 0);
+            this.lblComposeChars.Name = "lblComposeChars";
+            this.lblComposeChars.Padding = new System.Windows.Forms.Padding(8, 0, 0, 0);
+            this.lblComposeChars.Size = new System.Drawing.Size(160, 22);
+            this.lblComposeChars.TabIndex = 1;
+            this.lblComposeChars.Text = "500 characters remaining";
+            this.lblComposeChars.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+            //
             // lblStatus
             //
+            this.lblStatus.AutoEllipsis = true;
             this.lblStatus.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.lblStatus.Location = new System.Drawing.Point(11, 405);
+            this.lblStatus.Location = new System.Drawing.Point(0, 0);
             this.lblStatus.Name = "lblStatus";
-            this.lblStatus.Size = new System.Drawing.Size(438, 22);
-            this.lblStatus.TabIndex = 3;
+            this.lblStatus.Size = new System.Drawing.Size(288, 22);
+            this.lblStatus.TabIndex = 0;
             this.lblStatus.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             //
             // pnlComposer
@@ -270,6 +295,8 @@ namespace SmartGoldbergEmu.Forms
             this.pnlGate.PerformLayout();
             this.flpGateButtons.ResumeLayout(false);
             this.flpGateButtons.PerformLayout();
+            this.pnlStatusBar.ResumeLayout(false);
+            this.pnlStatusBar.PerformLayout();
             this.pnlComposer.ResumeLayout(false);
             this.pnlComposer.PerformLayout();
             this.ResumeLayout(false);
@@ -290,7 +317,9 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.Button btnIgnore;
         private System.Windows.Forms.Button btnIgnoreUser;
         private System.Windows.Forms.RichTextBox rtfHistory;
+        private System.Windows.Forms.Panel pnlStatusBar;
         private System.Windows.Forms.Label lblStatus;
+        private System.Windows.Forms.Label lblComposeChars;
         private System.Windows.Forms.Panel pnlComposer;
         private System.Windows.Forms.TextBox txtCompose;
         private System.Windows.Forms.Button btnSend;

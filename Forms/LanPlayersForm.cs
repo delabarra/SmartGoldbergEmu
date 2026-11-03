@@ -25,6 +25,10 @@ namespace SmartGoldbergEmu.Forms
         private readonly List<Image> _rowAvatars = new List<Image>();
         private readonly ContextMenuStrip _playerMenu;
         private Timer _lastSeenRefreshTimer;
+        private Timer _pendingMenuTimer;
+        // SteamId + screen point — not a Control: RefreshPeerList disposes row controls and would abort Show.
+        private string _pendingMenuSteamId;
+        private Point _pendingMenuScreenLocation;
         private Font _sectionFont;
         private Font _nameFont;
         private Font _metaFont;
@@ -109,6 +113,12 @@ namespace SmartGoldbergEmu.Forms
                 flpLanPlayers.SizeChanged -= OnFlpLanPlayers_SizeChanged;
             UnhookPresenceEvents();
             StopAndDisposeLastSeenRefreshTimer();
+            CancelPendingPlayerMenu();
+            if (_pendingMenuTimer != null)
+            {
+                _pendingMenuTimer.Dispose();
+                _pendingMenuTimer = null;
+            }
             _playerMenu.Opening -= OnPlayerMenu_Opening;
             _playerMenu.Dispose();
             ClearPlayerRows();
@@ -323,6 +333,7 @@ namespace SmartGoldbergEmu.Forms
                 : Array.Empty<LanPresencePeer>();
 
             HashSet<string> favorites = LoadFavoriteSet();
+            HashSet<string> muted = LoadMutedSet();
             Point scroll = flpLanPlayers.AutoScrollPosition;
             _rebuildingRows = true;
             flpLanPlayers.SuspendLayout();
@@ -335,7 +346,7 @@ namespace SmartGoldbergEmu.Forms
                 int rowWidth = GetRowWidth();
 
                 flpLanPlayers.Controls.Add(BuildPlayerRow(
-                    self, colors, rowWidth, isSelf: true, channelOnline: _presence.IsOnline, isFavorite: false));
+                    self, colors, rowWidth, isSelf: true, channelOnline: _presence.IsOnline, isFavorite: false, isMuted: false));
 
                 if (!_presence.IsOnline)
                 {
@@ -375,8 +386,17 @@ namespace SmartGoldbergEmu.Forms
                 {
                     flpLanPlayers.Controls.Add(BuildSectionLabel("Favorites", colors, rowWidth));
                     for (int i = 0; i < favoritePresent.Count; i++)
+                    {
+                        LanPresencePeer peer = favoritePresent[i];
                         flpLanPlayers.Controls.Add(BuildPlayerRow(
-                            favoritePresent[i], colors, rowWidth, isSelf: false, channelOnline: true, isFavorite: true));
+                            peer,
+                            colors,
+                            rowWidth,
+                            isSelf: false,
+                            channelOnline: true,
+                            isFavorite: true,
+                            isMuted: muted.Contains(peer.SteamId ?? string.Empty)));
+                    }
                 }
 
                 flpLanPlayers.Controls.Add(BuildSectionLabel(
@@ -387,17 +407,32 @@ namespace SmartGoldbergEmu.Forms
                     rowWidth));
 
                 for (int i = 0; i < onlineOthers.Count; i++)
+                {
+                    LanPresencePeer peer = onlineOthers[i];
                     flpLanPlayers.Controls.Add(BuildPlayerRow(
-                        onlineOthers[i], colors, rowWidth, isSelf: false, channelOnline: true, isFavorite: false));
+                        peer,
+                        colors,
+                        rowWidth,
+                        isSelf: false,
+                        channelOnline: true,
+                        isFavorite: false,
+                        isMuted: muted.Contains(peer.SteamId ?? string.Empty)));
+                }
 
                 if (lastSeen.Count > 0)
                 {
                     flpLanPlayers.Controls.Add(BuildSectionLabel("Last seen", colors, rowWidth));
                     for (int i = 0; i < lastSeen.Count; i++)
                     {
-                        bool fav = favorites.Contains(lastSeen[i].SteamId ?? string.Empty);
+                        string id = lastSeen[i].SteamId ?? string.Empty;
                         flpLanPlayers.Controls.Add(BuildPlayerRow(
-                            lastSeen[i], colors, rowWidth, isSelf: false, channelOnline: true, isFavorite: fav));
+                            lastSeen[i],
+                            colors,
+                            rowWidth,
+                            isSelf: false,
+                            channelOnline: true,
+                            isFavorite: favorites.Contains(id),
+                            isMuted: muted.Contains(id)));
                     }
                 }
 
@@ -444,15 +479,28 @@ namespace SmartGoldbergEmu.Forms
 
         private HashSet<string> LoadFavoriteSet()
         {
+            return LoadSteamIdSet(settings => settings.LanFavoriteSteamIds);
+        }
+
+        private HashSet<string> LoadMutedSet()
+        {
+            return LoadSteamIdSet(settings => settings.LanMutedSteamIds);
+        }
+
+        private HashSet<string> LoadSteamIdSet(Func<ApplicationSettings, List<string>> getList)
+        {
             var set = new HashSet<string>(StringComparer.Ordinal);
+            if (getList == null)
+                return set;
             try
             {
                 ApplicationSettings settings = _appData.LoadApplicationSettings();
-                if (settings.LanFavoriteSteamIds == null)
+                List<string> list = getList(settings);
+                if (list == null)
                     return set;
-                for (int i = 0; i < settings.LanFavoriteSteamIds.Count; i++)
+                for (int i = 0; i < list.Count; i++)
                 {
-                    string id = settings.LanFavoriteSteamIds[i];
+                    string id = list[i];
                     if (!string.IsNullOrWhiteSpace(id))
                         set.Add(id.Trim());
                 }
@@ -503,7 +551,8 @@ namespace SmartGoldbergEmu.Forms
             int rowWidth,
             bool isSelf,
             bool channelOnline,
-            bool isFavorite)
+            bool isFavorite,
+            bool isMuted)
         {
             if (peer == null)
                 peer = new LanPresencePeer();
@@ -511,6 +560,8 @@ namespace SmartGoldbergEmu.Forms
             string name = string.IsNullOrWhiteSpace(peer.DisplayName) ? peer.SteamId : peer.DisplayName;
             if (isFavorite && !isSelf)
                 name = "★ " + name;
+            if (isMuted && !isSelf)
+                name = "🔇 " + name;
 
             string statusLine = LanPersonaDisplayHelper.FormatPersonaStatusLine(peer, isSelf, channelOnline);
             string steamId = peer.SteamId ?? string.Empty;
@@ -531,7 +582,7 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            row.MouseDown += OnPlayerRow_MouseDown;
+            WirePlayerRowMenuEvents(row);
             row.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var pic = new PictureBox
@@ -543,7 +594,7 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            pic.MouseDown += OnPlayerRow_MouseDown;
+            WirePlayerRowMenuEvents(pic);
             pic.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
             Image avatar = LanAvatarImageHelper.TryLoadAvatar(peer.AvatarFilePath, AvatarDisplaySize);
             if (avatar != null)
@@ -568,7 +619,7 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            lblName.MouseDown += OnPlayerRow_MouseDown;
+            WirePlayerRowMenuEvents(lblName);
             lblName.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var lblStatus = new Label
@@ -584,7 +635,7 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            lblStatus.MouseDown += OnPlayerRow_MouseDown;
+            WirePlayerRowMenuEvents(lblStatus);
             lblStatus.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var lblSteamId = new Label
@@ -600,7 +651,7 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            lblSteamId.MouseDown += OnPlayerRow_MouseDown;
+            WirePlayerRowMenuEvents(lblSteamId);
             lblSteamId.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             row.Controls.Add(pic);
@@ -611,18 +662,39 @@ namespace SmartGoldbergEmu.Forms
             return row;
         }
 
-        private void OnPlayerRow_MouseDown(object sender, MouseEventArgs e)
+        private void WirePlayerRowMenuEvents(Control control)
         {
-            if (e.Button != MouseButtons.Right)
+            if (control == null)
+                return;
+            // MouseUp (not MouseDown): Show-on-down is dismissed by the matching mouse-up.
+            control.MouseUp += OnPlayerRow_MouseUp;
+        }
+
+        private void OnPlayerRow_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
                 return;
 
-            CaptureContextPeer(sender);
+            Control control = sender as Control;
+            if (control == null || control.IsDisposed)
+                return;
+
+            CaptureContextPeer(control);
+            if (string.IsNullOrEmpty(_contextSteamId))
+                return;
+
+            // Defer menu so a double-click can open chat instead.
+            SchedulePendingPlayerMenu(_contextSteamId, control.PointToScreen(e.Location));
         }
 
         private void OnPlayerRow_MouseDoubleClick(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left)
                 return;
+
+            CancelPendingPlayerMenu();
+            if (_playerMenu.Visible)
+                _playerMenu.Close();
 
             CaptureContextPeer(sender);
             if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
@@ -649,16 +721,70 @@ namespace SmartGoldbergEmu.Forms
             LanChatUiHost.OpenChat(_contextSteamId, Owner ?? this);
         }
 
-        private void CaptureContextPeer(object sender)
+        private void SchedulePendingPlayerMenu(string steamId, Point screenLocation)
         {
-            Control c = sender as Control;
-            string steamId = null;
-            while (c != null && string.IsNullOrEmpty(steamId))
+            CancelPendingPlayerMenu();
+            if (string.IsNullOrEmpty(steamId))
+                return;
+
+            _pendingMenuSteamId = steamId;
+            _pendingMenuScreenLocation = screenLocation;
+
+            if (_pendingMenuTimer == null)
             {
-                steamId = c.Tag as string;
+                _pendingMenuTimer = new Timer();
+                _pendingMenuTimer.Tick += OnPendingMenuTimer_Tick;
+            }
+
+            _pendingMenuTimer.Interval = SystemInformation.DoubleClickTime;
+            _pendingMenuTimer.Start();
+        }
+
+        private void CancelPendingPlayerMenu()
+        {
+            if (_pendingMenuTimer != null)
+                _pendingMenuTimer.Stop();
+            _pendingMenuSteamId = null;
+        }
+
+        private void OnPendingMenuTimer_Tick(object sender, EventArgs e)
+        {
+            string steamId = _pendingMenuSteamId;
+            Point screenLocation = _pendingMenuScreenLocation;
+            CancelPendingPlayerMenu();
+
+            if (IsDisposed || Disposing || string.IsNullOrEmpty(steamId))
+                return;
+
+            ApplyContextPeer(steamId);
+            if (string.IsNullOrEmpty(_contextSteamId))
+                return;
+
+            // Screen coords: row Controls may have been disposed/rebuilt by PeersChanged since the click.
+            _playerMenu.Show(screenLocation);
+        }
+
+        private static string FindSteamIdTag(Control start)
+        {
+            Control c = start;
+            while (c != null)
+            {
+                string steamId = c.Tag as string;
+                if (!string.IsNullOrEmpty(steamId))
+                    return steamId;
                 c = c.Parent;
             }
 
+            return null;
+        }
+
+        private void CaptureContextPeer(object sender)
+        {
+            ApplyContextPeer(FindSteamIdTag(sender as Control));
+        }
+
+        private void ApplyContextPeer(string steamId)
+        {
             _contextSteamId = steamId ?? string.Empty;
             LanPresencePeer self = _presence.GetLocalSelfSnapshot();
             _contextIsSelf = self != null
@@ -668,12 +794,20 @@ namespace SmartGoldbergEmu.Forms
 
         private void OnPlayerMenu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            ClearMenuItems(_playerMenu);
+            // Right-click sets SourceControl to the row child; left-click Show(Point) may leave it null —
+            // do not wipe a SteamId already applied for the deferred left-click menu.
+            Control source = _playerMenu.SourceControl;
+            if (source != null && !string.IsNullOrEmpty(FindSteamIdTag(source)))
+                CaptureContextPeer(source);
+
+            // Cancel before clearing — emptying then cancelling leaves ContextMenuStrip needing another click.
             if (string.IsNullOrEmpty(_contextSteamId))
             {
                 e.Cancel = true;
                 return;
             }
+
+            ClearMenuItems(_playerMenu);
 
             if (_contextIsSelf)
             {
@@ -745,6 +879,20 @@ namespace SmartGoldbergEmu.Forms
                     _playerMenu.Items.Add("Remove from favorites", null, OnToggleFavorite_Click);
                 else
                     _playerMenu.Items.Add("Add to favorites", null, OnToggleFavorite_Click);
+
+                bool muted = false;
+                try
+                {
+                    muted = _appData.IsLanMutedSteamId(_contextSteamId);
+                }
+                catch
+                {
+                }
+
+                if (muted)
+                    _playerMenu.Items.Add("Unmute", null, OnToggleMute_Click);
+                else
+                    _playerMenu.Items.Add("Mute", null, OnToggleMute_Click);
             }
         }
 
@@ -998,6 +1146,35 @@ namespace SmartGoldbergEmu.Forms
             catch (Exception ex)
             {
                 Program.LogService?.LogWarning("LAN Players: failed to update favorite: " + ex.Message);
+                return;
+            }
+
+            RefreshPeerList();
+        }
+
+        private void OnToggleMute_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
+                return;
+
+            try
+            {
+                bool currentlyMuted = _appData.IsLanMutedSteamId(_contextSteamId);
+                ValidationResult result = _appData.SetLanMutedSteamId(_contextSteamId, !currentlyMuted);
+                if (!result.IsValid)
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        this,
+                        result.ErrorMessage ?? "Could not update mute list.",
+                        "LAN Players",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN Players: failed to update mute: " + ex.Message);
                 return;
             }
 

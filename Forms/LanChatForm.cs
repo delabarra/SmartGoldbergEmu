@@ -76,6 +76,7 @@ namespace SmartGoldbergEmu.Forms
             txtCompose.MaxLength = LanChatConstants.MaxMessageChars;
             txtCompose.TextChanged += OnComposeTextChanged;
             txtCompose.Resize += OnComposeResize;
+            UpdateComposeCharCount();
             if (_appData != null)
                 WindowStateHelper.TryRestoreLanChatWindowSize(this, _appData);
             HookChatEvents();
@@ -150,10 +151,19 @@ namespace SmartGoldbergEmu.Forms
         protected override void OnActivated(EventArgs e)
         {
             base.OnActivated(e);
-            // Minimized windows can get spurious activate during FlashWindowEx on Win11.
-            if (WindowState == FormWindowState.Minimized || !ContainsFocus)
+            // Minimized: Win11 can spuriously activate during FlashWindowEx; wait for restore.
+            // ContainsFocus can lag one tick after Activated — defer the clear check.
+            if (WindowState == FormWindowState.Minimized)
                 return;
-            ClearUnreadAttention();
+            BeginInvoke(new Action(TryClearUnreadAttentionIfInteractive));
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            // Taskbar restore often Activates while still Minimized, then restores without a second Activated.
+            if (_hasUnreadAttention && WindowState != FormWindowState.Minimized)
+                BeginInvoke(new Action(TryClearUnreadAttentionIfInteractive));
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -170,6 +180,17 @@ namespace SmartGoldbergEmu.Forms
             LanChatUiHost.NotifyClosed(this);
             DisposeAvatarImage();
             base.OnFormClosed(e);
+        }
+
+        private void TryClearUnreadAttentionIfInteractive()
+        {
+            if (IsDisposed || Disposing || !_hasUnreadAttention)
+                return;
+            if (WindowState == FormWindowState.Minimized)
+                return;
+            if (!ContainsFocus && !ReferenceEquals(ActiveForm, this))
+                return;
+            ClearUnreadAttention();
         }
 
         private void ClearUnreadAttention()
@@ -322,6 +343,7 @@ namespace SmartGoldbergEmu.Forms
             base.OnThemeApplied();
             RefreshProfile();
             RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
+            UpdateComposeCharCount();
         }
 
         private void RefreshProfile()
@@ -540,7 +562,27 @@ namespace SmartGoldbergEmu.Forms
 
         private void OnComposeTextChanged(object sender, EventArgs e)
         {
+            UpdateComposeCharCount();
             SyncComposeScrollBars();
+        }
+
+        private void UpdateComposeCharCount()
+        {
+            if (lblComposeChars == null || lblComposeChars.IsDisposed)
+                return;
+
+            int max = txtCompose.MaxLength > 0
+                ? txtCompose.MaxLength
+                : LanChatConstants.MaxMessageChars;
+            int remaining = Math.Max(0, max - txtCompose.TextLength);
+            lblComposeChars.Text = remaining == 1
+                ? "1 character remaining"
+                : remaining + " characters remaining";
+
+            ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
+            lblComposeChars.ForeColor = remaining == 0
+                ? colors.WarningColor
+                : colors.StatusTextSecondary;
         }
 
         private void OnComposeResize(object sender, EventArgs e)

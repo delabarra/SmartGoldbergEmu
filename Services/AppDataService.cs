@@ -237,6 +237,11 @@ namespace SmartGoldbergEmu.Services
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyLanFavoriteSteamIds));
+            settings.LanMutedSteamIds = ParseLanFavoriteSteamIds(
+                _iniService.GetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeyLanMutedSteamIds));
             settings.LanChatBlockedSteamIds = ParseLanFavoriteSteamIds(
                 _iniService.GetValue(
                     iniFile,
@@ -531,6 +536,11 @@ namespace SmartGoldbergEmu.Services
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyLanFavoriteSteamIds,
                     FormatLanFavoriteSteamIds(settings.LanFavoriteSteamIds));
+                _iniService.SetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeyLanMutedSteamIds,
+                    FormatLanFavoriteSteamIds(settings.LanMutedSteamIds));
                 _iniService.SetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
@@ -1356,6 +1366,20 @@ ip_country=US
                 favorite,
                 s => s.LanFavoriteSteamIds,
                 (s, list) => s.LanFavoriteSteamIds = list);
+        }
+
+        public bool IsLanMutedSteamId(string steamId)
+        {
+            return IsSteamIdInSettingsList(steamId, s => s.LanMutedSteamIds);
+        }
+
+        public ValidationResult SetLanMutedSteamId(string steamId, bool muted)
+        {
+            return MutateSteamIdSettingsList(
+                steamId,
+                muted,
+                s => s.LanMutedSteamIds,
+                (s, list) => s.LanMutedSteamIds = list);
         }
 
         public bool IsLanChatBlockedSteamId(string steamId)

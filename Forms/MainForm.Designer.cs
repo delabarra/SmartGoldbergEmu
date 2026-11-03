@@ -54,7 +54,6 @@ namespace SmartGoldbergEmu.Forms
             this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileLauncherViewChangelog = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileOpenLauncherFolder = new System.Windows.Forms.ToolStripMenuItem();
-            this.miMnuFileLanPlayers = new System.Windows.Forms.ToolStripMenuItem();
             this.miMnuFileSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.sepMnuFileBeforeExit = new System.Windows.Forms.ToolStripSeparator();
             this.miMnuFileExit = new System.Windows.Forms.ToolStripMenuItem();
@@ -168,7 +167,6 @@ namespace SmartGoldbergEmu.Forms
             this.sepMnuFileAfterAddGame,
             this.miMnuFileGoldbergUpdate,
             this.miMnuFileCheckLauncherUpdates,
-            this.miMnuFileLanPlayers,
             this.miMnuFileSettings,
             this.sepMnuFileBeforeExit,
             this.miMnuFileExit});
@@ -285,13 +283,6 @@ namespace SmartGoldbergEmu.Forms
             this.miMnuFileOpenLauncherFolder.Size = new System.Drawing.Size(186, 22);
             this.miMnuFileOpenLauncherFolder.Text = "Open launcher folder";
             this.miMnuFileOpenLauncherFolder.Click += new System.EventHandler(this.OnOpenLauncherFolder_Click);
-            // 
-            // miMnuFileLanPlayers
-            // 
-            this.miMnuFileLanPlayers.Name = "miMnuFileLanPlayers";
-            this.miMnuFileLanPlayers.Size = new System.Drawing.Size(145, 22);
-            this.miMnuFileLanPlayers.Text = "LAN Players";
-            this.miMnuFileLanPlayers.Click += new System.EventHandler(this.OnLanPlayers_Click);
             // 
             // miMnuFileSettings
             // 
@@ -977,7 +968,6 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ToolStripMenuItem miMnuFile;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileAddGame;
         private System.Windows.Forms.ToolStripSeparator sepMnuFileAfterAddGame;
-        private System.Windows.Forms.ToolStripMenuItem miMnuFileLanPlayers;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileSettings;
         private System.Windows.Forms.ToolStripMenuItem miMnuFileExit;
         private System.Windows.Forms.ToolStripMenuItem miMnuAbout;

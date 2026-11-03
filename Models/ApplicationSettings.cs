@@ -46,6 +46,9 @@ namespace SmartGoldbergEmu.Models
         // Local-only favorite Steam64 ids.
         public List<string> LanFavoriteSteamIds { get; set; }
 
+        // Local-only muted Steam64 ids (suppress chat popups; still listed).
+        public List<string> LanMutedSteamIds { get; set; }
+
         // Local-only Steam64 ids blocked from LAN chat ("Ignore user").
         public List<string> LanChatBlockedSteamIds { get; set; }
 
@@ -78,6 +81,7 @@ namespace SmartGoldbergEmu.Models
             LanPersonaState = LanPersonaState.Online;
             LanCustomStatus = string.Empty;
             LanFavoriteSteamIds = new List<string>();
+            LanMutedSteamIds = new List<string>();
             LanChatBlockedSteamIds = new List<string>();
             LanChatTrustedSteamIds = new List<string>();
             LanListOpen = false;

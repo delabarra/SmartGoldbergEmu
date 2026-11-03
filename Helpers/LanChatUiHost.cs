@@ -195,13 +195,32 @@ namespace SmartGoldbergEmu.Helpers
 
             if (existing != null && !existing.IsDisposed)
             {
-                existing.NotifyAttention();
+                // Open chat still flashes; muted peers do not steal attention when closed.
+                if (!IsPeerMuted(session.PeerSteamId))
+                    existing.NotifyAttention();
                 return;
             }
+
+            if (IsPeerMuted(session.PeerSteamId))
+                return;
 
             // Invite or later message with chat closed: open quietly (no focus steal).
             // Flashing MainForm alone is invisible when it is already foreground.
             OpenChatCore(session.PeerSteamId, parent, userInitiated: false);
+        }
+
+        private static bool IsPeerMuted(string peerSteamId)
+        {
+            if (string.IsNullOrWhiteSpace(peerSteamId))
+                return false;
+            try
+            {
+                return ServiceLocator.AppDataService.IsLanMutedSteamId(peerSteamId);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void OpenChatCore(string peerSteamId, Form parent, bool userInitiated)

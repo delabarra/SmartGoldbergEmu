@@ -348,11 +348,6 @@ namespace SmartGoldbergEmu.Forms
             OpenSettingsDialog();
         }
 
-        private void OnLanPlayers_Click(object sender, EventArgs e)
-        {
-            ShowLanListWindow(activateExisting: true);
-        }
-
         private void OnLanToggle_Click(object sender, EventArgs e)
         {
             if (_lanPlayersForm != null && !_lanPlayersForm.IsDisposed)
@@ -382,7 +377,7 @@ namespace SmartGoldbergEmu.Forms
             _lanPlayersForm = new LanPlayersForm();
             _lanPlayersForm.FormClosed += OnLanListFormClosed;
             _lanPlayersForm.ApplyInitialPlacement(this);
-            _lanPlayersForm.Show();
+            _lanPlayersForm.Show(this);
             PersistLanListOpen(true);
             SyncLanToggleMenuState(true);
         }
