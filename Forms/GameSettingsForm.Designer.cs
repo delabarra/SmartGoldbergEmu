@@ -62,10 +62,7 @@ namespace SmartGoldbergEmu.Forms
             this.txtGameName = new System.Windows.Forms.TextBox();
             this.btnLookupGameName = new System.Windows.Forms.Button();
             this.lblSteamAPIStatus = new System.Windows.Forms.Label();
-            this.lblSteamAPIStatusX32Value = new System.Windows.Forms.Label();
-            this.lblSteamAPIStatusX64Value = new System.Windows.Forms.Label();
-            this.lblSteamApiHint = new System.Windows.Forms.Label();
-            this.lblPatchOpMessage = new System.Windows.Forms.Label();
+            this.rtbSteamApiStatus = new System.Windows.Forms.RichTextBox();
             this.lblLaunchMode = new System.Windows.Forms.Label();
             this.cmbLaunchMode = new System.Windows.Forms.ComboBox();
             this.btnRestoreDlls = new System.Windows.Forms.Button();
@@ -242,6 +239,7 @@ namespace SmartGoldbergEmu.Forms
             // 
             // tabGameInfo
             // 
+            this.tabGameInfo.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.tabGameInfo.Controls.Add(this.grpPaths);
             this.tabGameInfo.Controls.Add(this.grpSteamLaunchOptions);
             this.tabGameInfo.Controls.Add(this.grpBasicInfo);
@@ -295,8 +293,6 @@ namespace SmartGoldbergEmu.Forms
             this.lblHintGameFolder.Size = new System.Drawing.Size(24, 17);
             this.lblHintGameFolder.TabIndex = 20;
             this.lblHintGameFolder.Text = "⚠️";
-            this.toolTip.SetToolTip(this.lblHintGameFolder, "Pick the folder that contains the whole game, not only the .exe.\r\n\r\nExample:\r\nGam" +
-        "e folder: ...\\steamapps\\common\\Duke Nukem 3D\r\nExecutable: bin\\duke3d.exe");
             this.lblHintGameFolder.Visible = false;
             // 
             // btnBrowseWorkingDirectory
@@ -307,7 +303,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnBrowseWorkingDirectory.Size = new System.Drawing.Size(23, 23);
             this.btnBrowseWorkingDirectory.TabIndex = 5;
             this.btnBrowseWorkingDirectory.Text = "🔍";
-            this.toolTip.SetToolTip(this.btnBrowseWorkingDirectory, "Browse for the working directory.");
             this.btnBrowseWorkingDirectory.UseVisualStyleBackColor = true;
             this.btnBrowseWorkingDirectory.Click += new System.EventHandler(this.OnBrowseWorkingDirectory_Click);
             // 
@@ -319,8 +314,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtWorkingDirectory.Name = "txtWorkingDirectory";
             this.txtWorkingDirectory.Size = new System.Drawing.Size(424, 20);
             this.txtWorkingDirectory.TabIndex = 4;
-            this.toolTip.SetToolTip(this.txtWorkingDirectory, "Folder used as the working directory when the game starts. Leave empty to use the" +
-        " game folder.");
             // 
             // lblWorkingDirectory
             // 
@@ -339,7 +332,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnClearCustomIcon.Size = new System.Drawing.Size(23, 23);
             this.btnClearCustomIcon.TabIndex = 11;
             this.btnClearCustomIcon.Text = "❌";
-            this.toolTip.SetToolTip(this.btnClearCustomIcon, "Clear the custom icon path.");
             this.btnClearCustomIcon.UseVisualStyleBackColor = true;
             this.btnClearCustomIcon.Click += new System.EventHandler(this.OnClearCustomIcon_Click);
             // 
@@ -351,7 +343,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtLaunchParameters.Name = "txtLaunchParameters";
             this.txtLaunchParameters.Size = new System.Drawing.Size(455, 20);
             this.txtLaunchParameters.TabIndex = 6;
-            this.toolTip.SetToolTip(this.txtLaunchParameters, "Command-line arguments passed to the game, same as Steam launch options.");
             // 
             // lnkLauncherOptionsSteamDb
             // 
@@ -362,7 +353,6 @@ namespace SmartGoldbergEmu.Forms
             this.lnkLauncherOptionsSteamDb.TabIndex = 7;
             this.lnkLauncherOptionsSteamDb.TabStop = true;
             this.lnkLauncherOptionsSteamDb.Text = "Launcher Options (SteamDB)";
-            this.toolTip.SetToolTip(this.lnkLauncherOptionsSteamDb, "Open SteamDB launch options for this App ID in your browser.");
             this.lnkLauncherOptionsSteamDb.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.OnLauncherOptionsSteamDb_LinkClicked);
             // 
             // lblCustomIcon
@@ -382,7 +372,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnBrowseCustomIcon.Size = new System.Drawing.Size(23, 23);
             this.btnBrowseCustomIcon.TabIndex = 10;
             this.btnBrowseCustomIcon.Text = "🔍";
-            this.toolTip.SetToolTip(this.btnBrowseCustomIcon, "Browse for a custom icon file.");
             this.btnBrowseCustomIcon.UseVisualStyleBackColor = true;
             this.btnBrowseCustomIcon.Click += new System.EventHandler(this.OnBrowseCustomIcon_Click);
             // 
@@ -403,7 +392,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtCustomIcon.Name = "txtCustomIcon";
             this.txtCustomIcon.Size = new System.Drawing.Size(395, 20);
             this.txtCustomIcon.TabIndex = 9;
-            this.toolTip.SetToolTip(this.txtCustomIcon, "Optional .ico file shown for this game in the launcher library.");
             // 
             // btnBrowseGameExecutable
             // 
@@ -413,7 +401,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnBrowseGameExecutable.Size = new System.Drawing.Size(23, 23);
             this.btnBrowseGameExecutable.TabIndex = 3;
             this.btnBrowseGameExecutable.Text = "🔍";
-            this.toolTip.SetToolTip(this.btnBrowseGameExecutable, "Browse for the game executable.");
             this.btnBrowseGameExecutable.UseVisualStyleBackColor = true;
             this.btnBrowseGameExecutable.Click += new System.EventHandler(this.OnBrowseGameExecutable_Click);
             // 
@@ -425,7 +412,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtGameExecutable.Name = "txtGameExecutable";
             this.txtGameExecutable.Size = new System.Drawing.Size(424, 20);
             this.txtGameExecutable.TabIndex = 2;
-            this.toolTip.SetToolTip(this.txtGameExecutable, "Path to the game .exe. Can be relative to the game folder or a full path.");
             // 
             // lblGameExecutable
             // 
@@ -444,7 +430,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnBrowseGameFolder.Size = new System.Drawing.Size(23, 23);
             this.btnBrowseGameFolder.TabIndex = 1;
             this.btnBrowseGameFolder.Text = "🔍";
-            this.toolTip.SetToolTip(this.btnBrowseGameFolder, "Browse for the game install folder.");
             this.btnBrowseGameFolder.UseVisualStyleBackColor = true;
             this.btnBrowseGameFolder.Click += new System.EventHandler(this.OnBrowseGameFolder_Click);
             // 
@@ -457,7 +442,6 @@ namespace SmartGoldbergEmu.Forms
             this.lnkSteamCmdLineOptionsValveWiki.TabIndex = 8;
             this.lnkSteamCmdLineOptionsValveWiki.TabStop = true;
             this.lnkSteamCmdLineOptionsValveWiki.Text = "Arguments List Hints (Valve wiki)";
-            this.toolTip.SetToolTip(this.lnkSteamCmdLineOptionsValveWiki, "Open Valve\'s list of Steam command-line options in your browser.");
             this.lnkSteamCmdLineOptionsValveWiki.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.OnSteamCmdLineOptionsValveWiki_LinkClicked);
             // 
             // txtGameFolder
@@ -468,7 +452,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtGameFolder.Name = "txtGameFolder";
             this.txtGameFolder.Size = new System.Drawing.Size(424, 20);
             this.txtGameFolder.TabIndex = 0;
-            this.toolTip.SetToolTip(this.txtGameFolder, "Full path to the game install folder (usually steamapps\\common\\GameName).");
             // 
             // lblGameFolder
             // 
@@ -487,8 +470,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtBetaBranchName.Name = "txtBetaBranchName";
             this.txtBetaBranchName.Size = new System.Drawing.Size(395, 20);
             this.txtBetaBranchName.TabIndex = 13;
-            this.toolTip.SetToolTip(this.txtBetaBranchName, "Beta branch name. Must exist in branches.json or the public branch is used.\r\n\r\nDe" +
-        "fault: public");
             // 
             // lblBetaBranchName
             // 
@@ -507,7 +488,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkBetaBranch.Size = new System.Drawing.Size(85, 17);
             this.chkBetaBranch.TabIndex = 12;
             this.chkBetaBranch.Text = "Beta Branch";
-            this.toolTip.SetToolTip(this.chkBetaBranch, "Tell the game it is running on a beta branch.\r\n\r\nDefault: off");
             this.chkBetaBranch.UseVisualStyleBackColor = true;
             // 
             // grpSteamLaunchOptions
@@ -522,7 +502,7 @@ namespace SmartGoldbergEmu.Forms
             this.grpSteamLaunchOptions.Controls.Add(this.btnSaveUserLaunchOption);
             this.grpSteamLaunchOptions.Location = new System.Drawing.Point(20, 470);
             this.grpSteamLaunchOptions.Name = "grpSteamLaunchOptions";
-            this.grpSteamLaunchOptions.Size = new System.Drawing.Size(640, 88);
+            this.grpSteamLaunchOptions.Size = new System.Drawing.Size(638, 88);
             this.grpSteamLaunchOptions.TabIndex = 2;
             this.grpSteamLaunchOptions.TabStop = false;
             this.grpSteamLaunchOptions.Text = "Launch Options";
@@ -545,9 +525,8 @@ namespace SmartGoldbergEmu.Forms
             this.cmbSteamLaunchOptions.FormattingEnabled = true;
             this.cmbSteamLaunchOptions.Location = new System.Drawing.Point(143, 22);
             this.cmbSteamLaunchOptions.Name = "cmbSteamLaunchOptions";
-            this.cmbSteamLaunchOptions.Size = new System.Drawing.Size(304, 21);
+            this.cmbSteamLaunchOptions.Size = new System.Drawing.Size(302, 21);
             this.cmbSteamLaunchOptions.TabIndex = 1;
-            this.toolTip.SetToolTip(this.cmbSteamLaunchOptions, "Pick a launch option from Steam assets or your saved presets.");
             this.cmbSteamLaunchOptions.Visible = false;
             this.cmbSteamLaunchOptions.SelectedIndexChanged += new System.EventHandler(this.CmbSteamLaunchOptions_SelectedIndexChanged);
             // 
@@ -555,12 +534,11 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.btnRemoveUserLaunchOption.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnRemoveUserLaunchOption.Enabled = false;
-            this.btnRemoveUserLaunchOption.Location = new System.Drawing.Point(453, 20);
+            this.btnRemoveUserLaunchOption.Location = new System.Drawing.Point(451, 20);
             this.btnRemoveUserLaunchOption.Name = "btnRemoveUserLaunchOption";
             this.btnRemoveUserLaunchOption.Size = new System.Drawing.Size(23, 23);
             this.btnRemoveUserLaunchOption.TabIndex = 2;
             this.btnRemoveUserLaunchOption.Text = "🗑️";
-            this.toolTip.SetToolTip(this.btnRemoveUserLaunchOption, "Remove the selected saved launch option.");
             this.btnRemoveUserLaunchOption.UseVisualStyleBackColor = true;
             this.btnRemoveUserLaunchOption.Click += new System.EventHandler(this.OnRemoveUserLaunchOption_Click);
             // 
@@ -579,19 +557,17 @@ namespace SmartGoldbergEmu.Forms
             | System.Windows.Forms.AnchorStyles.Right)));
             this.txtUserLaunchOptionName.Location = new System.Drawing.Point(143, 49);
             this.txtUserLaunchOptionName.Name = "txtUserLaunchOptionName";
-            this.txtUserLaunchOptionName.Size = new System.Drawing.Size(422, 20);
+            this.txtUserLaunchOptionName.Size = new System.Drawing.Size(420, 20);
             this.txtUserLaunchOptionName.TabIndex = 5;
-            this.toolTip.SetToolTip(this.txtUserLaunchOptionName, "Name for saving the current launch parameters as a preset.");
             // 
             // btnSaveUserLaunchOption
             // 
             this.btnSaveUserLaunchOption.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnSaveUserLaunchOption.Location = new System.Drawing.Point(575, 47);
+            this.btnSaveUserLaunchOption.Location = new System.Drawing.Point(573, 47);
             this.btnSaveUserLaunchOption.Name = "btnSaveUserLaunchOption";
             this.btnSaveUserLaunchOption.Size = new System.Drawing.Size(23, 23);
             this.btnSaveUserLaunchOption.TabIndex = 6;
             this.btnSaveUserLaunchOption.Text = "💾";
-            this.toolTip.SetToolTip(this.btnSaveUserLaunchOption, "Save the current launch parameters under this name.");
             this.btnSaveUserLaunchOption.UseVisualStyleBackColor = true;
             this.btnSaveUserLaunchOption.Click += new System.EventHandler(this.OnSaveUserLaunchOption_Click);
             // 
@@ -607,17 +583,14 @@ namespace SmartGoldbergEmu.Forms
             this.grpBasicInfo.Controls.Add(this.txtGameName);
             this.grpBasicInfo.Controls.Add(this.btnLookupGameName);
             this.grpBasicInfo.Controls.Add(this.lblSteamAPIStatus);
-            this.grpBasicInfo.Controls.Add(this.lblSteamAPIStatusX32Value);
-            this.grpBasicInfo.Controls.Add(this.lblSteamAPIStatusX64Value);
-            this.grpBasicInfo.Controls.Add(this.lblSteamApiHint);
-            this.grpBasicInfo.Controls.Add(this.lblPatchOpMessage);
+            this.grpBasicInfo.Controls.Add(this.rtbSteamApiStatus);
             this.grpBasicInfo.Controls.Add(this.lblLaunchMode);
             this.grpBasicInfo.Controls.Add(this.cmbLaunchMode);
             this.grpBasicInfo.Controls.Add(this.btnRestoreDlls);
             this.grpBasicInfo.Location = new System.Drawing.Point(20, 10);
             this.grpBasicInfo.Name = "grpBasicInfo";
             this.grpBasicInfo.Padding = new System.Windows.Forms.Padding(10);
-            this.grpBasicInfo.Size = new System.Drawing.Size(635, 200);
+            this.grpBasicInfo.Size = new System.Drawing.Size(635, 234);
             this.grpBasicInfo.TabIndex = 0;
             this.grpBasicInfo.TabStop = false;
             this.grpBasicInfo.Text = "Game Info";
@@ -637,7 +610,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtAppID.Name = "txtAppID";
             this.txtAppID.Size = new System.Drawing.Size(130, 20);
             this.txtAppID.TabIndex = 1;
-            this.toolTip.SetToolTip(this.txtAppID, "Steam App ID (the number from the store page URL).");
             // 
             // btnLookupAppID
             // 
@@ -646,7 +618,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnLookupAppID.Size = new System.Drawing.Size(23, 23);
             this.btnLookupAppID.TabIndex = 2;
             this.btnLookupAppID.Text = "🔍";
-            this.toolTip.SetToolTip(this.btnLookupAppID, "Look up the App ID from Steam using the game name.");
             this.btnLookupAppID.UseVisualStyleBackColor = true;
             this.btnLookupAppID.Click += new System.EventHandler(this.OnLookupAppID_Click);
             // 
@@ -667,7 +638,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtGameName.Name = "txtGameName";
             this.txtGameName.Size = new System.Drawing.Size(417, 20);
             this.txtGameName.TabIndex = 5;
-            this.toolTip.SetToolTip(this.txtGameName, "Name shown in the launcher library.");
             // 
             // btnLookupGameName
             // 
@@ -677,66 +647,43 @@ namespace SmartGoldbergEmu.Forms
             this.btnLookupGameName.Size = new System.Drawing.Size(23, 23);
             this.btnLookupGameName.TabIndex = 6;
             this.btnLookupGameName.Text = "🔍";
-            this.toolTip.SetToolTip(this.btnLookupGameName, "Look up the game name from Steam using the App ID.");
             this.btnLookupGameName.UseVisualStyleBackColor = true;
             this.btnLookupGameName.Click += new System.EventHandler(this.OnLookupGameName_Click);
             // 
             // lblSteamAPIStatus
             // 
             this.lblSteamAPIStatus.AutoSize = true;
-            this.lblSteamAPIStatus.Location = new System.Drawing.Point(20, 118);
+            this.lblSteamAPIStatus.Location = new System.Drawing.Point(20, 112);
             this.lblSteamAPIStatus.Name = "lblSteamAPIStatus";
             this.lblSteamAPIStatus.Size = new System.Drawing.Size(60, 13);
             this.lblSteamAPIStatus.TabIndex = 8;
             this.lblSteamAPIStatus.Text = "Steam API:";
             // 
-            // lblSteamAPIStatusX32Value
+            // rtbSteamApiStatus
             // 
-            this.lblSteamAPIStatusX32Value.AutoSize = true;
-            this.lblSteamAPIStatusX32Value.Location = new System.Drawing.Point(147, 107);
-            this.lblSteamAPIStatusX32Value.Name = "lblSteamAPIStatusX32Value";
-            this.lblSteamAPIStatusX32Value.Size = new System.Drawing.Size(140, 13);
-            this.lblSteamAPIStatusX32Value.TabIndex = 9;
-            this.lblSteamAPIStatusX32Value.Text = "lblSteamAPIStatusX32Value";
-            // 
-            // lblSteamAPIStatusX64Value
-            // 
-            this.lblSteamAPIStatusX64Value.AutoSize = true;
-            this.lblSteamAPIStatusX64Value.Location = new System.Drawing.Point(147, 120);
-            this.lblSteamAPIStatusX64Value.Name = "lblSteamAPIStatusX64Value";
-            this.lblSteamAPIStatusX64Value.Size = new System.Drawing.Size(140, 13);
-            this.lblSteamAPIStatusX64Value.TabIndex = 10;
-            this.lblSteamAPIStatusX64Value.Text = "lblSteamAPIStatusX64Value";
-            // 
-            // lblSteamApiHint
-            // 
-            this.lblSteamApiHint.AutoSize = true;
-            this.lblSteamApiHint.Location = new System.Drawing.Point(147, 147);
-            this.lblSteamApiHint.Name = "lblSteamApiHint";
-            this.lblSteamApiHint.Size = new System.Drawing.Size(47, 13);
-            this.lblSteamApiHint.TabIndex = 19;
-            this.lblSteamApiHint.Text = "(api hint)";
-            this.lblSteamApiHint.Visible = false;
-            // 
-            // lblPatchOpMessage
-            // 
-            this.lblPatchOpMessage.AutoSize = true;
-            this.lblPatchOpMessage.Location = new System.Drawing.Point(147, 160);
-            this.lblPatchOpMessage.Name = "lblPatchOpMessage";
-            this.lblPatchOpMessage.Size = new System.Drawing.Size(87, 13);
-            this.lblPatchOpMessage.TabIndex = 14;
-            this.lblPatchOpMessage.Text = "(patch operation)";
-            this.lblPatchOpMessage.Visible = false;
+            this.rtbSteamApiStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.rtbSteamApiStatus.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.rtbSteamApiStatus.DetectUrls = false;
+            this.rtbSteamApiStatus.Font = new System.Drawing.Font("Consolas", 8.25F);
+            this.rtbSteamApiStatus.Location = new System.Drawing.Point(150, 108);
+            this.rtbSteamApiStatus.Name = "rtbSteamApiStatus";
+            this.rtbSteamApiStatus.ReadOnly = true;
+            this.rtbSteamApiStatus.ScrollBars = System.Windows.Forms.RichTextBoxScrollBars.Vertical;
+            this.rtbSteamApiStatus.Size = new System.Drawing.Size(352, 95);
+            this.rtbSteamApiStatus.TabIndex = 9;
+            this.rtbSteamApiStatus.TabStop = false;
+            this.rtbSteamApiStatus.Text = "";
+            this.rtbSteamApiStatus.WordWrap = false;
             // 
             // lblLaunchMode
             // 
             this.lblLaunchMode.AutoSize = true;
             this.lblLaunchMode.Location = new System.Drawing.Point(20, 85);
             this.lblLaunchMode.Name = "lblLaunchMode";
-            this.lblLaunchMode.Size = new System.Drawing.Size(75, 13);
+            this.lblLaunchMode.Size = new System.Drawing.Size(85, 13);
             this.lblLaunchMode.TabIndex = 50;
             this.lblLaunchMode.Text = "Emulation mode:";
-            this.toolTip.SetToolTip(this.lblLaunchMode, "How Goldberg is wired when this game starts.");
             // 
             // cmbLaunchMode
             // 
@@ -751,13 +698,11 @@ namespace SmartGoldbergEmu.Forms
             // 
             this.btnRestoreDlls.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnRestoreDlls.Enabled = false;
-            this.btnRestoreDlls.Location = new System.Drawing.Point(510, 148);
+            this.btnRestoreDlls.Location = new System.Drawing.Point(510, 108);
             this.btnRestoreDlls.Name = "btnRestoreDlls";
             this.btnRestoreDlls.Size = new System.Drawing.Size(88, 23);
             this.btnRestoreDlls.TabIndex = 8;
             this.btnRestoreDlls.Text = "Restore";
-            this.toolTip.SetToolTip(this.btnRestoreDlls, "Restore Steamworks files if a clean candidate is found in the game folder.\r\nInclu" +
-        "des renamed copies such as steam_api_o.dll or steam_api64.bak.dll.");
             this.btnRestoreDlls.UseVisualStyleBackColor = false;
             this.btnRestoreDlls.Click += new System.EventHandler(this.OnRestoreDlls_Click);
             // 
@@ -826,8 +771,6 @@ namespace SmartGoldbergEmu.Forms
             this.lstSubscribedGroups.Name = "lstSubscribedGroups";
             this.lstSubscribedGroups.Size = new System.Drawing.Size(305, 93);
             this.lstSubscribedGroups.TabIndex = 0;
-            this.toolTip.SetToolTip(this.lstSubscribedGroups, "Steam group IDs, one per line.\r\n\r\nSaved to subscribed_groups.txt. Some games use " +
-        "this for unlocks.");
             this.lstSubscribedGroups.SelectedIndexChanged += new System.EventHandler(this.LstSubscribedGroups_SelectedIndexChanged);
             // 
             // lstSubscribedGroupsClans
@@ -842,8 +785,6 @@ namespace SmartGoldbergEmu.Forms
             this.lstSubscribedGroupsClans.Name = "lstSubscribedGroupsClans";
             this.lstSubscribedGroupsClans.Size = new System.Drawing.Size(294, 93);
             this.lstSubscribedGroupsClans.TabIndex = 2;
-            this.toolTip.SetToolTip(this.lstSubscribedGroupsClans, "Clan groups as ID, name, and tag per line (tab-separated).\r\n\r\nSaved to subscribed" +
-        "_groups_clans.txt.");
             this.lstSubscribedGroupsClans.SelectedIndexChanged += new System.EventHandler(this.LstSubscribedGroupsClans_SelectedIndexChanged);
             // 
             // txtSubscribedGroupIdEntry
@@ -853,7 +794,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtSubscribedGroupIdEntry.Name = "txtSubscribedGroupIdEntry";
             this.txtSubscribedGroupIdEntry.Size = new System.Drawing.Size(247, 20);
             this.txtSubscribedGroupIdEntry.TabIndex = 3;
-            this.toolTip.SetToolTip(this.txtSubscribedGroupIdEntry, "Group ID to add. Find IDs at a Steam group page URL with /memberslistxml/?xml=1");
             // 
             // btnAddSubscribedGroup
             // 
@@ -863,7 +803,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnAddSubscribedGroup.Size = new System.Drawing.Size(23, 23);
             this.btnAddSubscribedGroup.TabIndex = 4;
             this.btnAddSubscribedGroup.Text = "➕";
-            this.toolTip.SetToolTip(this.btnAddSubscribedGroup, "Add the group ID to the list.");
             this.btnAddSubscribedGroup.UseVisualStyleBackColor = true;
             this.btnAddSubscribedGroup.Click += new System.EventHandler(this.OnAddSubscribedGroup_Click);
             // 
@@ -875,7 +814,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnRemoveSubscribedGroup.Size = new System.Drawing.Size(23, 23);
             this.btnRemoveSubscribedGroup.TabIndex = 5;
             this.btnRemoveSubscribedGroup.Text = "➖";
-            this.toolTip.SetToolTip(this.btnRemoveSubscribedGroup, "Remove the selected group ID.");
             this.btnRemoveSubscribedGroup.UseVisualStyleBackColor = true;
             this.btnRemoveSubscribedGroup.Click += new System.EventHandler(this.OnRemoveSubscribedGroup_Click);
             // 
@@ -886,7 +824,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtSubscribedGroupClanEntry.Name = "txtSubscribedGroupClanEntry";
             this.txtSubscribedGroupClanEntry.Size = new System.Drawing.Size(236, 20);
             this.txtSubscribedGroupClanEntry.TabIndex = 6;
-            this.toolTip.SetToolTip(this.txtSubscribedGroupClanEntry, "Clan line to add: ID, name, and tag separated by tabs.");
             // 
             // btnAddSubscribedGroupClan
             // 
@@ -896,7 +833,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnAddSubscribedGroupClan.Size = new System.Drawing.Size(23, 23);
             this.btnAddSubscribedGroupClan.TabIndex = 7;
             this.btnAddSubscribedGroupClan.Text = "➕";
-            this.toolTip.SetToolTip(this.btnAddSubscribedGroupClan, "Add the clan line to the list.");
             this.btnAddSubscribedGroupClan.UseVisualStyleBackColor = true;
             this.btnAddSubscribedGroupClan.Click += new System.EventHandler(this.OnAddSubscribedGroupClan_Click);
             // 
@@ -908,7 +844,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnRemoveSubscribedGroupClan.Size = new System.Drawing.Size(23, 23);
             this.btnRemoveSubscribedGroupClan.TabIndex = 8;
             this.btnRemoveSubscribedGroupClan.Text = "➖";
-            this.toolTip.SetToolTip(this.btnRemoveSubscribedGroupClan, "Remove the selected clan row.");
             this.btnRemoveSubscribedGroupClan.UseVisualStyleBackColor = true;
             this.btnRemoveSubscribedGroupClan.Click += new System.EventHandler(this.OnRemoveSubscribedGroupClan_Click);
             // 
@@ -933,7 +868,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnFindDLCs.Size = new System.Drawing.Size(75, 23);
             this.btnFindDLCs.TabIndex = 1;
             this.btnFindDLCs.Text = "Find DLCs";
-            this.toolTip.SetToolTip(this.btnFindDLCs, "Fetch DLC App IDs from Steam and fill the list.");
             this.btnFindDLCs.UseVisualStyleBackColor = true;
             this.btnFindDLCs.Click += new System.EventHandler(this.OnFindDLCs_Click);
             // 
@@ -950,7 +884,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtDLCList.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.txtDLCList.Size = new System.Drawing.Size(600, 295);
             this.txtDLCList.TabIndex = 2;
-            this.toolTip.SetToolTip(this.txtDLCList, "DLC entries as AppID=name.\r\n\r\nWritten to configs.app.ini when unlock all is off.");
             // 
             // chkUnlockAllDLC
             // 
@@ -960,8 +893,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkUnlockAllDLC.Size = new System.Drawing.Size(98, 17);
             this.chkUnlockAllDLC.TabIndex = 0;
             this.chkUnlockAllDLC.Text = "Unlock All DLC";
-            this.toolTip.SetToolTip(this.chkUnlockAllDLC, "Tell the game every DLC is owned.\r\n\r\nTurn off to use only the DLC list below.\r\n\r\n" +
-        "Default: on");
             this.chkUnlockAllDLC.UseVisualStyleBackColor = true;
             // 
             // tabOtherSettings
@@ -1004,8 +935,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtForceIpCountry.Name = "txtForceIpCountry";
             this.txtForceIpCountry.Size = new System.Drawing.Size(200, 20);
             this.txtForceIpCountry.TabIndex = 9;
-            this.toolTip.SetToolTip(this.txtForceIpCountry, "Country code (ISO alpha-2) reported when the game asks for your region.\r\n\r\nDefaul" +
-        "t: US");
             // 
             // lblForceIpCountry
             // 
@@ -1022,7 +951,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtClanTag.Name = "txtClanTag";
             this.txtClanTag.Size = new System.Drawing.Size(200, 20);
             this.txtClanTag.TabIndex = 7;
-            this.toolTip.SetToolTip(this.txtClanTag, "Clan tag reported to the game.");
             // 
             // lblClanTag
             // 
@@ -1039,8 +967,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtForceSteamId.Name = "txtForceSteamId";
             this.txtForceSteamId.Size = new System.Drawing.Size(200, 20);
             this.txtForceSteamId.TabIndex = 3;
-            this.toolTip.SetToolTip(this.txtForceSteamId, "Your Steam64 ID. Invalid values are ignored and a generated ID is used.\r\n\r\nDefaul" +
-        "t: random ID saved in global settings");
             // 
             // lblForceSteamId
             // 
@@ -1059,8 +985,6 @@ namespace SmartGoldbergEmu.Forms
             this.cmbForceLanguage.Name = "cmbForceLanguage";
             this.cmbForceLanguage.Size = new System.Drawing.Size(200, 21);
             this.cmbForceLanguage.TabIndex = 5;
-            this.toolTip.SetToolTip(this.cmbForceLanguage, "Language reported to the game. Must be in supported_languages.txt.\r\n\r\nDefault: en" +
-        "glish");
             // 
             // lblForceLanguage
             // 
@@ -1077,7 +1001,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtForceAccountName.Name = "txtForceAccountName";
             this.txtForceAccountName.Size = new System.Drawing.Size(200, 20);
             this.txtForceAccountName.TabIndex = 1;
-            this.toolTip.SetToolTip(this.txtForceAccountName, "Account name reported to the game.\r\n\r\nDefault: from global settings (gse orca)");
             // 
             // lblForceAccountName
             // 
@@ -1121,7 +1044,6 @@ namespace SmartGoldbergEmu.Forms
             this.numAltSteamIdCount.Name = "numAltSteamIdCount";
             this.numAltSteamIdCount.Size = new System.Drawing.Size(100, 20);
             this.numAltSteamIdCount.TabIndex = 2;
-            this.toolTip.SetToolTip(this.numAltSteamIdCount, "How many calls before switching to the alternate Steam ID.\r\n\r\nDefault: 5");
             this.numAltSteamIdCount.Value = new decimal(new int[] {
             5,
             0,
@@ -1143,7 +1065,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtAltSteamId.Name = "txtAltSteamId";
             this.txtAltSteamId.Size = new System.Drawing.Size(200, 20);
             this.txtAltSteamId.TabIndex = 1;
-            this.toolTip.SetToolTip(this.txtAltSteamId, "Alternate Steam ID for encrypted save games.");
             // 
             // lblAltSteamId
             // 
@@ -1162,7 +1083,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtUserTicket.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.txtUserTicket.Size = new System.Drawing.Size(470, 78);
             this.txtUserTicket.TabIndex = 0;
-            this.toolTip.SetToolTip(this.txtUserTicket, "Base64 Steam ticket for this user (advanced).");
             // 
             // lblUserTicket
             // 
@@ -1269,7 +1189,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtAchievementsFilter.Name = "txtAchievementsFilter";
             this.txtAchievementsFilter.Size = new System.Drawing.Size(256, 20);
             this.txtAchievementsFilter.TabIndex = 1;
-            this.toolTip.SetToolTip(this.txtAchievementsFilter, "Filter the achievement preview by name or description.");
             this.txtAchievementsFilter.TextChanged += new System.EventHandler(this.TxtAchievementsFilter_TextChanged);
             // 
             // btnRefreshAchievements
@@ -1280,7 +1199,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnRefreshAchievements.Size = new System.Drawing.Size(75, 23);
             this.btnRefreshAchievements.TabIndex = 2;
             this.btnRefreshAchievements.Text = "Refresh";
-            this.toolTip.SetToolTip(this.btnRefreshAchievements, "Reload achievements.json from disk or fetch from Steam.");
             this.btnRefreshAchievements.UseVisualStyleBackColor = true;
             this.btnRefreshAchievements.Click += new System.EventHandler(this.OnRefreshAchievements_Click);
             // 
@@ -1331,7 +1249,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnRefreshStats.Size = new System.Drawing.Size(75, 23);
             this.btnRefreshStats.TabIndex = 1;
             this.btnRefreshStats.Text = "Refresh";
-            this.toolTip.SetToolTip(this.btnRefreshStats, "Reload stats.json from disk or generate it from Steam if missing.");
             this.btnRefreshStats.UseVisualStyleBackColor = true;
             this.btnRefreshStats.Click += new System.EventHandler(this.OnRefreshStats_Click);
             // 
@@ -1359,8 +1276,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkPauseSessionWhenUnfocused.Size = new System.Drawing.Size(217, 17);
             this.chkPauseSessionWhenUnfocused.TabIndex = 2;
             this.chkPauseSessionWhenUnfocused.Text = "Pause session playtime when unfocused";
-            this.toolTip.SetToolTip(this.chkPauseSessionWhenUnfocused, "Pause session playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: of" +
-        "f");
             this.chkPauseSessionWhenUnfocused.UseVisualStyleBackColor = true;
             // 
             // chkPauseTotalWhenUnfocused
@@ -1371,7 +1286,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkPauseTotalWhenUnfocused.Size = new System.Drawing.Size(202, 17);
             this.chkPauseTotalWhenUnfocused.TabIndex = 1;
             this.chkPauseTotalWhenUnfocused.Text = "Pause total playtime when unfocused";
-            this.toolTip.SetToolTip(this.chkPauseTotalWhenUnfocused, "Pause total playtime when the game window loses focus (Alt+Tab).\r\n\r\nDefault: off");
             this.chkPauseTotalWhenUnfocused.UseVisualStyleBackColor = true;
             // 
             // chkRecordPlaytime
@@ -1382,7 +1296,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkRecordPlaytime.Size = new System.Drawing.Size(103, 17);
             this.chkRecordPlaytime.TabIndex = 0;
             this.chkRecordPlaytime.Text = "Record Playtime";
-            this.toolTip.SetToolTip(this.chkRecordPlaytime, "Record play time to a playtime.txt file under GSE Saves.\r\n\r\nDefault: off");
             this.chkRecordPlaytime.UseVisualStyleBackColor = true;
             // 
             // chkAllowUnknownStats
@@ -1393,7 +1306,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkAllowUnknownStats.Size = new System.Drawing.Size(127, 17);
             this.chkAllowUnknownStats.TabIndex = 3;
             this.chkAllowUnknownStats.Text = "Allow Unknown Stats";
-            this.toolTip.SetToolTip(this.chkAllowUnknownStats, "Allow saving stats that are not listed in stats.json.\r\n\r\nDefault: off");
             this.chkAllowUnknownStats.UseVisualStyleBackColor = true;
             // 
             // chkDisableLeaderboardsCreateUnknown
@@ -1404,8 +1316,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableLeaderboardsCreateUnknown.Size = new System.Drawing.Size(212, 17);
             this.chkDisableLeaderboardsCreateUnknown.TabIndex = 4;
             this.chkDisableLeaderboardsCreateUnknown.Text = "Disable Leaderboards Create Unknown";
-            this.toolTip.SetToolTip(this.chkDisableLeaderboardsCreateUnknown, "Do not auto-create unknown leaderboards when the game looks them up.\r\n\r\nDefault: " +
-        "off");
             this.chkDisableLeaderboardsCreateUnknown.UseVisualStyleBackColor = true;
             // 
             // grpOtherStatsSettings
@@ -1444,8 +1354,6 @@ namespace SmartGoldbergEmu.Forms
             this.numIconsPerIteration.Name = "numIconsPerIteration";
             this.numIconsPerIteration.Size = new System.Drawing.Size(60, 20);
             this.numIconsPerIteration.TabIndex = 4;
-            this.toolTip.SetToolTip(this.numIconsPerIteration, "How many achievement icons to load per callback (two icons per achievement).\r\n\r\nD" +
-        "efault: 10");
             this.numIconsPerIteration.Value = new decimal(new int[] {
             5,
             0,
@@ -1460,8 +1368,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkAchievementsBypass.Size = new System.Drawing.Size(130, 17);
             this.chkAchievementsBypass.TabIndex = 2;
             this.chkAchievementsBypass.Text = "Achievements Bypass";
-            this.toolTip.SetToolTip(this.chkAchievementsBypass, "Always make unlock-achievement calls succeed.\r\n\r\nWorkaround for some games.\r\n\r\nDe" +
-        "fault: off");
             this.chkAchievementsBypass.UseVisualStyleBackColor = true;
             // 
             // chkSaveOnlyHigherStatAchievementProgress
@@ -1472,8 +1378,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkSaveOnlyHigherStatAchievementProgress.Size = new System.Drawing.Size(240, 17);
             this.chkSaveOnlyHigherStatAchievementProgress.TabIndex = 1;
             this.chkSaveOnlyHigherStatAchievementProgress.Text = "Save Only Higher Stat Achievement Progress";
-            this.toolTip.SetToolTip(this.chkSaveOnlyHigherStatAchievementProgress, "Only save achievement progress from stats when the new value is higher.\r\n\r\nDefaul" +
-        "t: on");
             this.chkSaveOnlyHigherStatAchievementProgress.UseVisualStyleBackColor = true;
             // 
             // chkStatAchievementProgressFunctionality
@@ -1484,8 +1388,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkStatAchievementProgressFunctionality.Size = new System.Drawing.Size(216, 17);
             this.chkStatAchievementProgressFunctionality.TabIndex = 0;
             this.chkStatAchievementProgressFunctionality.Text = "Stat Achievement Progress Functionality";
-            this.toolTip.SetToolTip(this.chkStatAchievementProgressFunctionality, "Update achievement progress when a linked stat changes.\r\n\r\nCan cause extra disk w" +
-        "rites and overlay popups.\r\n\r\nDefault: on");
             this.chkStatAchievementProgressFunctionality.UseVisualStyleBackColor = true;
             // 
             // tabServerMultiplayer
@@ -1531,9 +1433,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkOffline.Size = new System.Drawing.Size(138, 17);
             this.chkOffline.TabIndex = 4;
             this.chkOffline.Text = "Report Steam as Offline";
-            this.toolTip.SetToolTip(this.chkOffline, "Tell the game that Steam is in offline mode (not logged on).\r\n\r\nSome games that c" +
-        "onnect to their own online servers only work with this on.\r\n\r\nLAN play still wor" +
-        "ks.\r\n\r\nDefault: off");
             this.chkOffline.UseVisualStyleBackColor = true;
             // 
             // chkDisableNetworking
@@ -1544,7 +1443,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableNetworking.Size = new System.Drawing.Size(118, 17);
             this.chkDisableNetworking.TabIndex = 0;
             this.chkDisableNetworking.Text = "Disable Networking";
-            this.toolTip.SetToolTip(this.chkDisableNetworking, "Turn off all Steam networking (lobbies, P2P, etc.).\r\n\r\nDefault: off");
             this.chkDisableNetworking.UseVisualStyleBackColor = true;
             // 
             // chkShareLeaderboardsOverNetwork
@@ -1555,8 +1453,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkShareLeaderboardsOverNetwork.Size = new System.Drawing.Size(191, 17);
             this.chkShareLeaderboardsOverNetwork.TabIndex = 5;
             this.chkShareLeaderboardsOverNetwork.Text = "Share Leaderboards Over Network";
-            this.toolTip.SetToolTip(this.chkShareLeaderboardsOverNetwork, "Share leaderboard scores with others on the same LAN (experimental).\r\n\r\nDefault: " +
-        "off");
             this.chkShareLeaderboardsOverNetwork.UseVisualStyleBackColor = true;
             // 
             // numForcePort
@@ -1575,8 +1471,6 @@ namespace SmartGoldbergEmu.Forms
             this.numForcePort.Name = "numForcePort";
             this.numForcePort.Size = new System.Drawing.Size(68, 20);
             this.numForcePort.TabIndex = 9;
-            this.toolTip.SetToolTip(this.numForcePort, "UDP/TCP port the emulator listens on. Everyone on the LAN must use the same port." +
-        "\r\n\r\nDefault: 47584");
             this.numForcePort.Value = new decimal(new int[] {
             47584,
             0,
@@ -1591,8 +1485,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableLanOnly.Size = new System.Drawing.Size(109, 17);
             this.chkDisableLanOnly.TabIndex = 1;
             this.chkDisableLanOnly.Text = "Disable LAN Only";
-            this.toolTip.SetToolTip(this.chkDisableLanOnly, "Allow the game to reach the real internet instead of LAN-only hooks.\r\n\r\nNeeded fo" +
-        "r some HTTP downloads.\r\n\r\nDefault: off");
             this.chkDisableLanOnly.UseVisualStyleBackColor = true;
             // 
             // lblForcePort
@@ -1612,7 +1504,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableSharingStatsWithGameserver.Size = new System.Drawing.Size(212, 17);
             this.chkDisableSharingStatsWithGameserver.TabIndex = 2;
             this.chkDisableSharingStatsWithGameserver.Text = "Disable Sharing Stats With Gameserver";
-            this.toolTip.SetToolTip(this.chkDisableSharingStatsWithGameserver, "Do not share stats or achievements with game servers.\r\n\r\nDefault: off");
             this.chkDisableSharingStatsWithGameserver.UseVisualStyleBackColor = true;
             // 
             // chkDisableSourceQuery
@@ -1623,8 +1514,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableSourceQuery.Size = new System.Drawing.Size(129, 17);
             this.chkDisableSourceQuery.TabIndex = 3;
             this.chkDisableSourceQuery.Text = "Disable Source Query";
-            this.toolTip.SetToolTip(this.chkDisableSourceQuery, "Do not send server details to the server browser (game servers only).\r\n\r\nDefault:" +
-        " off");
             this.chkDisableSourceQuery.UseVisualStyleBackColor = true;
             // 
             // chkDisableLobbyCreation
@@ -1635,7 +1524,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableLobbyCreation.Size = new System.Drawing.Size(135, 17);
             this.chkDisableLobbyCreation.TabIndex = 6;
             this.chkDisableLobbyCreation.Text = "Disable Lobby Creation";
-            this.toolTip.SetToolTip(this.chkDisableLobbyCreation, "Block creating lobbies in Steam matchmaking.\r\n\r\nDefault: off");
             this.chkDisableLobbyCreation.UseVisualStyleBackColor = true;
             // 
             // chkDownloadSteamhttpRequests
@@ -1646,8 +1534,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDownloadSteamhttpRequests.Size = new System.Drawing.Size(187, 17);
             this.chkDownloadSteamhttpRequests.TabIndex = 7;
             this.chkDownloadSteamhttpRequests.Text = "Download Steam HTTP Requests";
-            this.toolTip.SetToolTip(this.chkDownloadSteamhttpRequests, "Save Steam HTTP downloads under steam_settings\\http\\.\r\n\r\nNeeds LAN-only off and n" +
-        "etworking on.\r\n\r\nDefault: off");
             this.chkDownloadSteamhttpRequests.UseVisualStyleBackColor = true;
             // 
             // grpMatchmakingSettings
@@ -1674,7 +1560,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkBlockUnknownClients.Size = new System.Drawing.Size(136, 17);
             this.chkBlockUnknownClients.TabIndex = 3;
             this.chkBlockUnknownClients.Text = "Block Unknown Clients";
-            this.toolTip.SetToolTip(this.chkBlockUnknownClients, "Game servers accept only real Steam clients and known emulators.\r\n\r\nDefault: off");
             this.chkBlockUnknownClients.UseVisualStyleBackColor = true;
             // 
             // chkMatchmaking
@@ -1685,7 +1570,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkMatchmaking.Size = new System.Drawing.Size(90, 17);
             this.chkMatchmaking.TabIndex = 0;
             this.chkMatchmaking.Text = "Matchmaking";
-            this.toolTip.SetToolTip(this.chkMatchmaking, "Matchmaking and lobby options in configs.main.ini (below).");
             this.chkMatchmaking.UseVisualStyleBackColor = true;
             // 
             // chkImmediateGameserverStats
@@ -1696,8 +1580,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkImmediateGameserverStats.Size = new System.Drawing.Size(161, 17);
             this.chkImmediateGameserverStats.TabIndex = 1;
             this.chkImmediateGameserverStats.Text = "Immediate Gameserver Stats";
-            this.toolTip.SetToolTip(this.chkImmediateGameserverStats, "Sync stats with game servers immediately instead of waiting for callbacks.\r\n\r\nNot" +
-        " recommended.\r\n\r\nDefault: off");
             this.chkImmediateGameserverStats.UseVisualStyleBackColor = true;
             // 
             // chkMatchmakingServerListActualType
@@ -1708,8 +1590,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkMatchmakingServerListActualType.Size = new System.Drawing.Size(203, 17);
             this.chkMatchmakingServerListActualType.TabIndex = 2;
             this.chkMatchmakingServerListActualType.Text = "Matchmaking Server List Actual Type";
-            this.toolTip.SetToolTip(this.chkMatchmakingServerListActualType, "Return the real server list type (internet, friends, etc.).\r\n\r\nOff always reports" +
-        " LAN.\r\n\r\nNot recommended.\r\n\r\nDefault: off");
             this.chkMatchmakingServerListActualType.UseVisualStyleBackColor = true;
             // 
             // chkMatchmakingServerDetailsViaSourceQuery
@@ -1720,8 +1600,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkMatchmakingServerDetailsViaSourceQuery.Size = new System.Drawing.Size(245, 17);
             this.chkMatchmakingServerDetailsViaSourceQuery.TabIndex = 3;
             this.chkMatchmakingServerDetailsViaSourceQuery.Text = "Matchmaking Server Details Via Source Query";
-            this.toolTip.SetToolTip(this.chkMatchmakingServerDetailsViaSourceQuery, "Query servers for matchmaking details instead of LAN discovery.\r\n\r\nNot recommende" +
-        "d; can break some games.\r\n\r\nDefault: off");
             this.chkMatchmakingServerDetailsViaSourceQuery.UseVisualStyleBackColor = true;
             // 
             // grpCustomBroadcasts
@@ -1760,8 +1638,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtCustomBroadcasts.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.txtCustomBroadcasts.Size = new System.Drawing.Size(600, 105);
             this.txtCustomBroadcasts.TabIndex = 1;
-            this.toolTip.SetToolTip(this.txtCustomBroadcasts, "Goldberg also sends its discovery packets to these addresses.\r\n\r\nEveryone must us" +
-        "e the same listen port.\r\n\r\nSaved to steam_settings\\custom_broadcasts.txt.");
             // 
             // tabInventory
             // 
@@ -1799,7 +1675,6 @@ namespace SmartGoldbergEmu.Forms
             this.lblInventoryHint.TabIndex = 0;
             this.lblInventoryHint.Text = "Item definitions (keyed by itemdefid). Reload from disk after editing items.json " +
     "elsewhere; double-click Qty (or F2) to change quantity only.";
-            this.toolTip.SetToolTip(this.lblInventoryHint, "Inventory item definitions live in steam_settings\\items.json.");
             // 
             // pnlInventoryButtons
             // 
@@ -1820,8 +1695,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkUse32BitInventoryItemIds.Size = new System.Drawing.Size(163, 17);
             this.chkUse32BitInventoryItemIds.TabIndex = 1;
             this.chkUse32BitInventoryItemIds.Text = "Use 32-bit Inventory Item IDs";
-            this.toolTip.SetToolTip(this.chkUse32BitInventoryItemIds, "Use 32-bit inventory item IDs.\r\n\r\nWorkaround for very old Team Fortress 2 builds." +
-        "\r\n\r\nDefault: off");
             this.chkUse32BitInventoryItemIds.UseVisualStyleBackColor = true;
             // 
             // btnReloadInventoryFromDisk
@@ -1831,7 +1704,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnReloadInventoryFromDisk.Size = new System.Drawing.Size(140, 28);
             this.btnReloadInventoryFromDisk.TabIndex = 0;
             this.btnReloadInventoryFromDisk.Text = "Reload from disk";
-            this.toolTip.SetToolTip(this.btnReloadInventoryFromDisk, "Reload items.json from the game steam_settings folder.");
             this.btnReloadInventoryFromDisk.UseVisualStyleBackColor = true;
             // 
             // lstInventoryItems
@@ -1892,7 +1764,6 @@ namespace SmartGoldbergEmu.Forms
             this.txtInventoryRaw.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.txtInventoryRaw.Size = new System.Drawing.Size(653, 0);
             this.txtInventoryRaw.TabIndex = 3;
-            this.toolTip.SetToolTip(this.txtInventoryRaw, "Raw items.json text for this game.");
             this.txtInventoryRaw.Visible = false;
             // 
             // tabMods
@@ -1929,8 +1800,6 @@ namespace SmartGoldbergEmu.Forms
             this.lblModsHint.Size = new System.Drawing.Size(649, 41);
             this.lblModsHint.TabIndex = 0;
             this.lblModsHint.Text = resources.GetString("lblModsHint.Text");
-            this.toolTip.SetToolTip(this.lblModsHint, "Lists files in steam_settings\\mods\\. Names use Workshop titles when a Steam API k" +
-        "ey is set.");
             // 
             // pnlModsToolbar
             // 
@@ -1953,7 +1822,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnCopyFoldersToMods.Size = new System.Drawing.Size(135, 23);
             this.btnCopyFoldersToMods.TabIndex = 2;
             this.btnCopyFoldersToMods.Text = "Copy folder to mods…";
-            this.toolTip.SetToolTip(this.btnCopyFoldersToMods, "Copy selected folders into steam_settings\\mods\\.");
             this.btnCopyFoldersToMods.UseVisualStyleBackColor = true;
             this.btnCopyFoldersToMods.Click += new System.EventHandler(this.OnCopyFoldersToMods_Click);
             // 
@@ -1966,7 +1834,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnCopyFilesToMods.Size = new System.Drawing.Size(123, 23);
             this.btnCopyFilesToMods.TabIndex = 1;
             this.btnCopyFilesToMods.Text = "Copy files to mods…";
-            this.toolTip.SetToolTip(this.btnCopyFilesToMods, "Copy selected files into steam_settings\\mods\\.");
             this.btnCopyFilesToMods.UseVisualStyleBackColor = true;
             this.btnCopyFilesToMods.Click += new System.EventHandler(this.OnCopyFilesToMods_Click);
             // 
@@ -1979,7 +1846,6 @@ namespace SmartGoldbergEmu.Forms
             this.btnOpenModsFolder.Size = new System.Drawing.Size(118, 23);
             this.btnOpenModsFolder.TabIndex = 0;
             this.btnOpenModsFolder.Text = "Open mods folder";
-            this.toolTip.SetToolTip(this.btnOpenModsFolder, "Open the mods folder in File Explorer.");
             this.btnOpenModsFolder.UseVisualStyleBackColor = true;
             this.btnOpenModsFolder.Click += new System.EventHandler(this.OnOpenModsFolder_Click);
             // 
@@ -2049,7 +1915,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkEnableSteamPreownedIds.Size = new System.Drawing.Size(162, 17);
             this.chkEnableSteamPreownedIds.TabIndex = 3;
             this.chkEnableSteamPreownedIds.Text = "Enable Steam Preowned IDs";
-            this.toolTip.SetToolTip(this.chkEnableSteamPreownedIds, "Add many Steam apps to owned DLC and installed app lists.\r\n\r\nDefault: off");
             this.chkEnableSteamPreownedIds.UseVisualStyleBackColor = true;
             // 
             // tabAdvancedFeatures
@@ -2085,7 +1950,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkDisableSteamoverlaygameidEnvVar.Size = new System.Drawing.Size(206, 17);
             this.chkDisableSteamoverlaygameidEnvVar.TabIndex = 1;
             this.chkDisableSteamoverlaygameidEnvVar.Text = "Disable SteamOverlayGameId env var";
-            this.toolTip.SetToolTip(this.chkDisableSteamoverlaygameidEnvVar, "Do not set SteamOverlayGameId env var so Steam Input can work.\r\n\r\nDefault: off");
             this.chkDisableSteamoverlaygameidEnvVar.UseVisualStyleBackColor = true;
             // 
             // chkEnableExperimentalOverlayGame
@@ -2096,8 +1960,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkEnableExperimentalOverlayGame.Size = new System.Drawing.Size(191, 17);
             this.chkEnableExperimentalOverlayGame.TabIndex = 0;
             this.chkEnableExperimentalOverlayGame.Text = "Enable experimental Steam overlay";
-            this.toolTip.SetToolTip(this.chkEnableExperimentalOverlayGame, "Enable Goldberg\'s experimental in-game overlay.\r\n\r\nMay cause crashes.\r\n\r\nDefault:" +
-        " off");
             this.chkEnableExperimentalOverlayGame.UseVisualStyleBackColor = true;
             // 
             // chkForceSteamhttpSuccess
@@ -2108,7 +1970,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkForceSteamhttpSuccess.Size = new System.Drawing.Size(162, 17);
             this.chkForceSteamhttpSuccess.TabIndex = 12;
             this.chkForceSteamhttpSuccess.Text = "Force Steam HTTP Success";
-            this.toolTip.SetToolTip(this.chkForceSteamhttpSuccess, "Make Steam HTTP requests always report success.\r\n\r\nDefault: off");
             this.chkForceSteamhttpSuccess.UseVisualStyleBackColor = true;
             // 
             // chkFreeWeekend
@@ -2119,8 +1980,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkFreeWeekend.Size = new System.Drawing.Size(134, 17);
             this.chkFreeWeekend.TabIndex = 5;
             this.chkFreeWeekend.Text = "Simulate free weekend";
-            this.toolTip.SetToolTip(this.chkFreeWeekend, "Pretend a free-weekend player is online.\r\n\r\nSome games give extra bonuses.\r\n\r\nDef" +
-        "ault: off");
             this.chkFreeWeekend.UseVisualStyleBackColor = true;
             // 
             // chkEnableVoiceChat
@@ -2131,7 +1990,6 @@ namespace SmartGoldbergEmu.Forms
             this.chkEnableVoiceChat.Size = new System.Drawing.Size(112, 17);
             this.chkEnableVoiceChat.TabIndex = 10;
             this.chkEnableVoiceChat.Text = "Enable voice chat";
-            this.toolTip.SetToolTip(this.chkEnableVoiceChat, "Enable experimental voice chat.\r\n\r\nDefault: off");
             this.chkEnableVoiceChat.UseVisualStyleBackColor = true;
             // 
             // btnCancel
@@ -2270,7 +2128,7 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.TextBox txtClanTag;
         private System.Windows.Forms.Label lblClanTag;
         private System.Windows.Forms.Button btnRestoreDlls;
-        private System.Windows.Forms.Label lblSteamAPIStatusX32Value;
+        private System.Windows.Forms.RichTextBox rtbSteamApiStatus;
         private System.Windows.Forms.Label lblSteamAPIStatus;
         
         private System.Windows.Forms.GroupBox grpPaths;
@@ -2421,9 +2279,6 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.ColumnHeader colInventoryQuantity;
         private System.Windows.Forms.ColumnHeader colInventoryType;
         private System.Windows.Forms.ColumnHeader colInventoryFiller;
-        private Label lblPatchOpMessage;
-        private Label lblSteamAPIStatusX64Value;
-        private Label lblSteamApiHint;
         private Button btnAddSubscribedGroupClan;
         private Button btnRemoveSubscribedGroupClan;
         private Button btnRemoveSubscribedGroup;
