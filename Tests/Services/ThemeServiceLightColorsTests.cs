@@ -41,14 +41,14 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public void GetFallbackMosaicArtColors_light_matches_list_view_theme()
+        public void GetFallbackMosaicArtColors_light_uses_soft_dark_steam_logo()
         {
             using (var theme = new ThemeService())
             {
                 ThemeColors colors = theme.GetThemeColors(ThemeMode.Light);
                 theme.GetFallbackMosaicArtColors(ThemeMode.Light, out Color background, out Color foreground);
                 Assert.Equal(colors.ListViewBackground, background);
-                Assert.Equal(colors.ListViewForeground, foreground);
+                Assert.Equal(Color.FromArgb(90, 90, 94), foreground);
             }
         }
     }

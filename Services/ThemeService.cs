@@ -262,7 +262,10 @@ namespace SmartGoldbergEmu.Services
             EnsureNotDisposed();
             ThemeColors colors = GetThemeColors(effectiveTheme);
             background = colors.ListViewBackground;
-            foreground = colors.ListViewForeground;
+            // Light: soft charcoal instead of ControlText black — Steam silhouette is too harsh on gray tiles.
+            foreground = effectiveTheme == ThemeMode.Light
+                ? Color.FromArgb(90, 90, 94)
+                : colors.ListViewForeground;
         }
 
         public bool IsSystemDarkMode()
