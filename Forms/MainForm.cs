@@ -924,11 +924,13 @@ namespace SmartGoldbergEmu.Forms
                 {
                     using (var image = Image.FromFile(imagePath))
                     {
+                        // Game resources logos only: center opaque content (Steam CDN padding often sits low).
                         return CreateMosaicDisplayBitmapFromSource(
                             image,
                             viewMode,
                             imageNormalizationService,
-                            logosDropShadow);
+                            logosDropShadow,
+                            trimLogoOpaqueContent: viewMode == ApplicationConstants.ViewModeLogos);
                     }
                 }
                 catch
@@ -1002,7 +1004,8 @@ namespace SmartGoldbergEmu.Forms
             ImageNormalizationService imageNormalizationService,
             bool logosDropShadow,
             bool waitingPlaceholder = false,
-            bool waitingDropShadow = false)
+            bool waitingDropShadow = false,
+            bool trimLogoOpaqueContent = false)
         {
             if (source == null || imageNormalizationService == null)
                 return null;
@@ -1012,7 +1015,8 @@ namespace SmartGoldbergEmu.Forms
                 viewMode,
                 logosDropShadow,
                 waitingPlaceholder,
-                waitingDropShadow);
+                waitingDropShadow,
+                trimLogoOpaqueContent);
         }
 
         // Seeds the AppId mosaic key with waiting art before the list drops the pending-* key (avoids a blank tile on Save).

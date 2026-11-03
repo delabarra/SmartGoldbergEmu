@@ -20,7 +20,13 @@ namespace SmartGoldbergEmu.Services
         // Single path for Store Banner / Library Cover / Logos mosaic ImageList bitmaps.
         public Bitmap CreateMosaicDisplayBitmap(Image source, string viewMode, bool logosDropShadow = false)
         {
-            return CreateMosaicDisplayBitmap(source, viewMode, logosDropShadow, waitingPlaceholder: false, waitingDropShadow: false);
+            return CreateMosaicDisplayBitmap(
+                source,
+                viewMode,
+                logosDropShadow,
+                waitingPlaceholder: false,
+                waitingDropShadow: false,
+                trimLogoOpaqueContent: false);
         }
 
         public Bitmap CreateMosaicDisplayBitmap(
@@ -28,7 +34,8 @@ namespace SmartGoldbergEmu.Services
             string viewMode,
             bool logosDropShadow,
             bool waitingPlaceholder,
-            bool waitingDropShadow = false)
+            bool waitingDropShadow = false,
+            bool trimLogoOpaqueContent = false)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
@@ -36,7 +43,11 @@ namespace SmartGoldbergEmu.Services
             if (viewMode == ApplicationConstants.ViewModeTile)
                 return CreateStoreBannerDisplayBitmap(source, waitingPlaceholder, waitingPlaceholder && waitingDropShadow);
             if (viewMode == ApplicationConstants.ViewModeLogos)
-                return MosaicViewHelper.CreateLogoViewDisplayBitmap(source, logosDropShadow);
+            {
+                // Opaque trim is for on-disk game library logos only; waiting / fallback keep full-image fit.
+                bool trimOpaque = trimLogoOpaqueContent && !waitingPlaceholder;
+                return MosaicViewHelper.CreateLogoViewDisplayBitmap(source, logosDropShadow, trimOpaque);
+            }
             return CreateLibraryCoverDisplayBitmap(source, waitingPlaceholder && waitingDropShadow);
         }
 
