@@ -876,14 +876,14 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
-            Color bodyBack = colors.FieldBackground;
+            Color bodyBack = colors.Background;
             Color footerBack = colors.ControlBackground;
-            Color bodyFore = colors.FieldForeground;
+            Color bodyFore = colors.Foreground;
 
             BackColor = bodyBack;
             ForeColor = bodyFore;
 
-            // Body (white) → checkbox or 2-line spacer (same white) → button footer (grey).
+            // Classic gray dialog body → checkbox/spacer (same face) → button footer.
             ApplyBandColors(_pnlBody, bodyBack, bodyFore, colors);
             if (_pnlCheckStrip != null)
                 ApplyBandColors(_pnlCheckStrip, bodyBack, bodyFore, colors);

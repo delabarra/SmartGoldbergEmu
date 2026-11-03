@@ -154,7 +154,7 @@ namespace SmartGoldbergEmu.Helpers
             if (_themeMode == ThemeMode.Dark)
                 return _colors.Border;
 
-            return SystemColors.ControlLightLight;
+            return _colors.ImageMarginBackground;
         }
     }
 }

@@ -288,6 +288,7 @@
     <Compile Include="Helpers\HttpHelpers.cs" />
     <Compile Include="Helpers\LargeObjectHeapHelper.cs" />
     <Compile Include="Helpers\PlaceholderTextBoxHelper.cs" />
+    <Compile Include="Helpers\ThemedTabSelector.cs" />
     <Compile Include="Helpers\ThemedToolStripRenderer.cs" />
     <Compile Include="Helpers\ThemedToolStripRendererFactory.cs" />
     <Compile Include="Helpers\ToolTipHelper.cs" />

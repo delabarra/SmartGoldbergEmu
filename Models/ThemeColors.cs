@@ -6,7 +6,7 @@ namespace SmartGoldbergEmu.Models
     {
         public Color Background { get; set; }
         public Color Foreground { get; set; }
-        // Text boxes, combo boxes, numeric inputs, and list boxes (classic light UI: window white on gray dialogs).
+        // Text boxes, combo boxes, numeric inputs, and list boxes (window white on classic gray dialogs).
         public Color FieldBackground { get; set; }
         // Text on FieldBackground (WinForms WindowText on Window).
         public Color FieldForeground { get; set; }

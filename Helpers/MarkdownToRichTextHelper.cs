@@ -59,7 +59,8 @@ namespace SmartGoldbergEmu.Helpers
 
             textBox.Clear();
             textBox.ForeColor = colors.FieldForeground;
-            textBox.BackColor = colors.FieldBackground;
+            // Match dialog face (classic gray); FieldBackground is editable window white.
+            textBox.BackColor = colors.ControlBackground;
             textBox.Font = CreateFont("Segoe UI", BaseFontSize, FontStyle.Regular);
 
             if (string.IsNullOrWhiteSpace(markdown))
@@ -275,12 +276,13 @@ namespace SmartGoldbergEmu.Helpers
                 {
                     _textBox.SelectionFont = CodeFont;
                     _textBox.SelectionColor = _colors.FieldForeground;
-                    _textBox.SelectionBackColor = _colors.ControlBackground;
+                    // Field (window) face so code chips contrast on the gray notes surface.
+                    _textBox.SelectionBackColor = _colors.FieldBackground;
                     _textBox.AppendText(codeLine);
                     FinishLine();
                 }
 
-                _textBox.SelectionBackColor = _colors.FieldBackground;
+                _textBox.SelectionBackColor = _colors.ControlBackground;
                 _textBox.SelectionFont = BaseFont;
                 ResetParagraphIndent();
             }
@@ -324,9 +326,9 @@ namespace SmartGoldbergEmu.Helpers
 
                     _textBox.SelectionFont = CodeFont;
                     _textBox.SelectionColor = textColor;
-                    _textBox.SelectionBackColor = _colors.ControlBackground;
-                    _textBox.AppendText(match.Groups[1].Value);
                     _textBox.SelectionBackColor = _colors.FieldBackground;
+                    _textBox.AppendText(match.Groups[1].Value);
+                    _textBox.SelectionBackColor = _colors.ControlBackground;
                     _textBox.SelectionFont = baseFont;
                     index = match.Index + match.Length;
                 }
