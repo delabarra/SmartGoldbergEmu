@@ -13,6 +13,13 @@ namespace SmartGoldbergEmu.Tests.Helpers
         }
 
         [Fact]
+        public void ApplyExplorerScrollBars_accepts_null_control()
+        {
+            WinFormsThemePaintHelper.ApplyExplorerScrollBars(null, dark: true);
+            WinFormsThemePaintHelper.ApplyExplorerScrollBars(null, dark: false);
+        }
+
+        [Fact]
         public void DisabledVisualStyleThemeName_dark_disables_visual_styles()
         {
             Assert.Equal(string.Empty, WinFormsThemePaintHelper.DisabledVisualStyleThemeName(true));

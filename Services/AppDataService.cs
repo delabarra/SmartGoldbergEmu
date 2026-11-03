@@ -222,7 +222,7 @@ namespace SmartGoldbergEmu.Services
             else
                 settings.LanPlayersOnline = true;
 
-            settings.LanPersonaState = ParseLanPersonaState(
+            settings.LanPersonaState = LanPersonaStateHelper.ParseSettings(
                 _iniService.GetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
@@ -237,6 +237,16 @@ namespace SmartGoldbergEmu.Services
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyLanFavoriteSteamIds));
+            settings.LanChatBlockedSteamIds = ParseLanFavoriteSteamIds(
+                _iniService.GetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeyLanChatBlockedSteamIds));
+            settings.LanChatTrustedSteamIds = ParseLanFavoriteSteamIds(
+                _iniService.GetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeyLanChatTrustedSteamIds));
 
             var autoUpdateStr = _iniService.GetValue(iniFile, ApplicationConstants.SettingSectionApplication, "auto_update");
             if (bool.TryParse(autoUpdateStr, out bool autoUpdate))
@@ -267,6 +277,7 @@ namespace SmartGoldbergEmu.Services
             settings.WindowState = ReadWindowState(uiIni) ?? ReadWindowState(configIni) ?? new WindowState();
             settings.LanListOpen = ReadLanListOpen(uiIni) ?? false;
             settings.LanListWindowState = ReadLanListWindowState(uiIni);
+            settings.LanChatWindowState = ReadLanChatWindowState(uiIni);
         }
 
         private bool? ReadLanListOpen(IniFile iniFile)
@@ -317,6 +328,15 @@ namespace SmartGoldbergEmu.Services
                 ApplicationConstants.SettingKeyLanListSize,
                 ApplicationConstants.SettingKeyLanListLocation,
                 ApplicationConstants.SettingKeyLanListState);
+        }
+
+        private WindowState ReadLanChatWindowState(IniFile iniFile)
+        {
+            return ReadWindowStateKeys(
+                iniFile,
+                ApplicationConstants.SettingKeyLanChatSize,
+                ApplicationConstants.SettingKeyLanChatLocation,
+                ApplicationConstants.SettingKeyLanChatState);
         }
 
         private WindowState ReadWindowStateKeys(IniFile iniFile, string sizeKey, string locationKey, string stateKey)
@@ -420,6 +440,26 @@ namespace SmartGoldbergEmu.Services
                     lanWs.State.ToString());
             }
 
+            if (settings.LanChatWindowState != null)
+            {
+                var chatWs = settings.LanChatWindowState;
+                _iniService.SetValue(
+                    uiIni,
+                    ApplicationConstants.SettingSectionWindow,
+                    ApplicationConstants.SettingKeyLanChatSize,
+                    $"{chatWs.Size.Width},{chatWs.Size.Height}");
+                _iniService.SetValue(
+                    uiIni,
+                    ApplicationConstants.SettingSectionWindow,
+                    ApplicationConstants.SettingKeyLanChatLocation,
+                    $"{chatWs.Location.X},{chatWs.Location.Y}");
+                _iniService.SetValue(
+                    uiIni,
+                    ApplicationConstants.SettingSectionWindow,
+                    ApplicationConstants.SettingKeyLanChatState,
+                    chatWs.State.ToString());
+            }
+
             _iniService.SetValue(
                 uiIni,
                 ApplicationConstants.SettingSectionWindow,
@@ -475,7 +515,7 @@ namespace SmartGoldbergEmu.Services
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyLanPersonaState,
-                    FormatLanPersonaState(settings.LanPersonaState));
+                    LanPersonaStateHelper.FormatSettings(settings.LanPersonaState));
                 _iniService.SetValue(
                     iniFile,
                     ApplicationConstants.SettingSectionApplication,
@@ -491,6 +531,16 @@ namespace SmartGoldbergEmu.Services
                     ApplicationConstants.SettingSectionApplication,
                     ApplicationConstants.SettingKeyLanFavoriteSteamIds,
                     FormatLanFavoriteSteamIds(settings.LanFavoriteSteamIds));
+                _iniService.SetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeyLanChatBlockedSteamIds,
+                    FormatLanFavoriteSteamIds(settings.LanChatBlockedSteamIds));
+                _iniService.SetValue(
+                    iniFile,
+                    ApplicationConstants.SettingSectionApplication,
+                    ApplicationConstants.SettingKeyLanChatTrustedSteamIds,
+                    FormatLanFavoriteSteamIds(settings.LanChatTrustedSteamIds));
 
                 StripUiSettingsFromConfig(iniFile);
                 _iniService.WriteFile(iniFile, _configFilePath);
@@ -632,6 +682,27 @@ namespace SmartGoldbergEmu.Services
             if (windowState == null)
                 return ValidationResult.Failure("LAN list window state cannot be null");
             return SetAppSetting(s => { s.LanListWindowState = windowState; }, "Failed to set LAN list window state");
+        }
+
+        public WindowState GetLanChatWindowState()
+        {
+            return GetAppSetting(s => s.LanChatWindowState);
+        }
+
+        public bool HasPersistedLanChatWindowLayout()
+        {
+            if (!File.Exists(_uiSettingsFilePath))
+                return false;
+
+            var iniFile = _iniService.ParseFile(_uiSettingsFilePath);
+            return ReadLanChatWindowState(iniFile) != null;
+        }
+
+        public ValidationResult SetLanChatWindowState(WindowState windowState)
+        {
+            if (windowState == null)
+                return ValidationResult.Failure("LAN chat window state cannot be null");
+            return SetAppSetting(s => { s.LanChatWindowState = windowState; }, "Failed to set LAN chat window state");
         }
 
         public bool IsFirstRun()
@@ -1275,29 +1346,102 @@ ip_country=US
 
         public bool IsLanFavoriteSteamId(string steamId)
         {
-            if (string.IsNullOrWhiteSpace(steamId))
-                return false;
-            ApplicationSettings settings = LoadApplicationSettings();
-            return settings.LanFavoriteSteamIds != null
-                && settings.LanFavoriteSteamIds.Contains(steamId.Trim());
+            return IsSteamIdInSettingsList(steamId, s => s.LanFavoriteSteamIds);
         }
 
         public ValidationResult SetLanFavoriteSteamId(string steamId, bool favorite)
         {
+            return MutateSteamIdSettingsList(
+                steamId,
+                favorite,
+                s => s.LanFavoriteSteamIds,
+                (s, list) => s.LanFavoriteSteamIds = list);
+        }
+
+        public bool IsLanChatBlockedSteamId(string steamId)
+        {
+            return IsSteamIdInSettingsList(steamId, s => s.LanChatBlockedSteamIds);
+        }
+
+        public ValidationResult SetLanChatBlockedSteamId(string steamId, bool blocked)
+        {
+            return MutateSteamIdSettingsList(
+                steamId,
+                blocked,
+                s => s.LanChatBlockedSteamIds,
+                (s, list) => s.LanChatBlockedSteamIds = list,
+                // Block clears prior accept trust.
+                (settings, id, include) =>
+                {
+                    if (!include)
+                        return false;
+                    if (settings.LanChatTrustedSteamIds == null)
+                        settings.LanChatTrustedSteamIds = new List<string>();
+                    return settings.LanChatTrustedSteamIds.Remove(id);
+                });
+        }
+
+        public bool IsLanChatTrustedSteamId(string steamId)
+        {
+            return IsSteamIdInSettingsList(steamId, s => s.LanChatTrustedSteamIds);
+        }
+
+        public ValidationResult SetLanChatTrustedSteamId(string steamId, bool trusted)
+        {
+            return MutateSteamIdSettingsList(
+                steamId,
+                trusted,
+                s => s.LanChatTrustedSteamIds,
+                (s, list) => s.LanChatTrustedSteamIds = list);
+        }
+
+        private bool IsSteamIdInSettingsList(string steamId, Func<ApplicationSettings, List<string>> getList)
+        {
+            if (string.IsNullOrWhiteSpace(steamId) || getList == null)
+                return false;
+            ApplicationSettings settings = LoadApplicationSettings();
+            List<string> list = getList(settings);
+            return list != null && list.Contains(steamId.Trim());
+        }
+
+        private ValidationResult MutateSteamIdSettingsList(
+            string steamId,
+            bool include,
+            Func<ApplicationSettings, List<string>> getList,
+            Action<ApplicationSettings, List<string>> setList,
+            Func<ApplicationSettings, string, bool, bool> extraMutate = null)
+        {
             if (string.IsNullOrWhiteSpace(steamId))
                 return ValidationResult.Failure("Steam ID is required.");
+            if (getList == null || setList == null)
+                return ValidationResult.Failure("Steam ID list is required.");
 
             steamId = steamId.Trim();
             ApplicationSettings settings = LoadApplicationSettings();
-            if (settings.LanFavoriteSteamIds == null)
-                settings.LanFavoriteSteamIds = new List<string>();
+            List<string> list = getList(settings);
+            if (list == null)
+            {
+                list = new List<string>();
+                setList(settings, list);
+            }
 
-            bool has = settings.LanFavoriteSteamIds.Contains(steamId);
-            if (favorite && !has)
-                settings.LanFavoriteSteamIds.Add(steamId);
-            else if (!favorite && has)
-                settings.LanFavoriteSteamIds.Remove(steamId);
-            else
+            bool changed = false;
+            bool has = list.Contains(steamId);
+            if (include && !has)
+            {
+                list.Add(steamId);
+                changed = true;
+            }
+            else if (!include && has)
+            {
+                list.Remove(steamId);
+                changed = true;
+            }
+
+            if (extraMutate != null && extraMutate(settings, steamId, include))
+                changed = true;
+
+            if (!changed)
                 return ValidationResult.Success();
 
             return SaveApplicationSettings(settings);
@@ -1308,31 +1452,6 @@ ip_country=US
             ApplicationSettings settings = LoadApplicationSettings();
             settings.LanPersonaState = state;
             return SaveApplicationSettings(settings);
-        }
-
-        private static LanPersonaState ParseLanPersonaState(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return LanPersonaState.Online;
-            value = value.Trim();
-            if (string.Equals(value, "away", StringComparison.OrdinalIgnoreCase))
-                return LanPersonaState.Away;
-            if (string.Equals(value, "hidden", StringComparison.OrdinalIgnoreCase))
-                return LanPersonaState.Hidden;
-            return LanPersonaState.Online;
-        }
-
-        private static string FormatLanPersonaState(LanPersonaState state)
-        {
-            switch (state)
-            {
-                case LanPersonaState.Away:
-                    return "away";
-                case LanPersonaState.Hidden:
-                    return "hidden";
-                default:
-                    return "online";
-            }
         }
 
         private static string TruncateLanCustomStatus(string value)

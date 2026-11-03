@@ -87,6 +87,12 @@ namespace SmartGoldbergEmu.Constants
         // Comma-separated Steam64 ids (local favorites only; never sent on the wire).
         public const string SettingKeyLanFavoriteSteamIds = "lan_favorite_steamids";
 
+        // Comma-separated Steam64 ids blocked for LAN chat (local only; never sent on the wire).
+        public const string SettingKeyLanChatBlockedSteamIds = "lan_chat_blocked_steamids";
+
+        // Comma-separated Steam64 ids accepted for LAN chat once (local only; skip gate forever until blocked).
+        public const string SettingKeyLanChatTrustedSteamIds = "lan_chat_trusted_steamids";
+
         // Light, Dark, or System.
         public const string SettingKeyThemeMode = "theme_mode";
 
@@ -108,6 +114,11 @@ namespace SmartGoldbergEmu.Constants
         public const string SettingKeyLanListSize = "lan_list_size";
         public const string SettingKeyLanListLocation = "lan_list_location";
         public const string SettingKeyLanListState = "lan_list_state";
+
+        // Shared LAN chat window size in ui_settings.ini ([window]). Location stays per-open (centered on parent).
+        public const string SettingKeyLanChatSize = "lan_chat_size";
+        public const string SettingKeyLanChatLocation = "lan_chat_location";
+        public const string SettingKeyLanChatState = "lan_chat_state";
 
         public const string SettingSectionApplication = "application";
 

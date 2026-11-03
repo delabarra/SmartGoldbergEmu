@@ -18,6 +18,8 @@ namespace SmartGoldbergEmu.Models
         public Color StatusStripForeground { get; set; }
         public Color StatusTextSecondary { get; set; }
         public Color StatusTextAccent { get; set; }
+        // Local-only LAN self row when status is Offline or Hidden (graphite).
+        public Color OfflineColor { get; set; }
         public Color ListViewBackground { get; set; }
         public Color ListViewForeground { get; set; }
         public Color ListViewAlternate { get; set; }

@@ -83,15 +83,22 @@ namespace SmartGoldbergEmu.Helpers
 
         public static void ApplyExplorerWindowTheme(Control control, bool dark)
         {
-            ApplyWindowTheme(control, ExplorerThemeName(dark), applyListViewHeader: true);
+            ApplyWindowTheme(control, ExplorerThemeName(dark), applyListViewHeader: true, subIdList: null);
+        }
+
+        // AutoScroll Panel/FlowLayoutPanel NC scrollbars ignore a bare Explorer theme; they need the ScrollBar class id.
+        public static void ApplyExplorerScrollBars(Control control, bool dark)
+        {
+            string themeName = ExplorerThemeName(dark);
+            ApplyWindowTheme(control, themeName, applyListViewHeader: false, subIdList: themeName != null ? "ScrollBar" : null);
         }
 
         public static void ApplyDisabledVisualStyles(Control control, bool dark)
         {
-            ApplyWindowTheme(control, DisabledVisualStyleThemeName(dark), applyListViewHeader: false);
+            ApplyWindowTheme(control, DisabledVisualStyleThemeName(dark), applyListViewHeader: false, subIdList: null);
         }
 
-        private static void ApplyWindowTheme(Control control, string themeName, bool applyListViewHeader)
+        private static void ApplyWindowTheme(Control control, string themeName, bool applyListViewHeader, string subIdList)
         {
             if (control == null)
                 return;
@@ -100,7 +107,7 @@ namespace SmartGoldbergEmu.Helpers
             {
                 if (!control.IsHandleCreated || control.IsDisposed)
                     return;
-                SetWindowTheme(control.Handle, themeName, null);
+                SetWindowTheme(control.Handle, themeName, subIdList);
                 if (!applyListViewHeader)
                     return;
                 IntPtr header = SendMessage(control.Handle, LvmGetHeader, IntPtr.Zero, IntPtr.Zero);

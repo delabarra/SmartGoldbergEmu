@@ -79,7 +79,8 @@ namespace SmartGoldbergEmu.Forms
         private ComboBox cmbLanPersonaStatus;
         private Label lblLanCustomStatus;
         private TextBox txtLanCustomStatus;
-        private LanPersonaState _initialLanPersonaState = LanPersonaState.Online;
+        // Includes Offline (channel off); Online/Away/Busy/Hidden map to LanPersonaState when online.
+        private int _initialLanStatusIndex;
         private string _initialLanCustomStatus = string.Empty;
 
         public event EventHandler ApiKeyValidationStatusChanged;
@@ -678,11 +679,13 @@ namespace SmartGoldbergEmu.Forms
 
                 try
                 {
+                    ApplicationSettings lanSettings = _appDataService.LoadApplicationSettings();
+                    ServiceLocator.LanPresenceService.SetOnline(lanSettings.LanPlayersOnline);
                     ServiceLocator.LanPresenceService.ApplyLocalPersonaFromSettings();
                 }
                 catch (Exception ex)
                 {
-                    Program.LogService?.LogDebug("LAN Players: persona refresh after settings save failed: " + ex.Message);
+                    Program.LogService?.LogDebug("LAN Players: presence refresh after settings save failed: " + ex.Message);
                 }
 
                 StoreInitialState();
@@ -2073,7 +2076,7 @@ namespace SmartGoldbergEmu.Forms
                 !AreEmulatorSettingsEqual(BuildEmulatorSettings(), _initialMainSettings))
                 return true;
 
-            if (ReadLanPersonaStateFromUi() != _initialLanPersonaState)
+            if (ReadLanStatusIndexFromUi() != _initialLanStatusIndex)
                 return true;
             if (!string.Equals(ReadLanCustomStatusFromUi(), _initialLanCustomStatus ?? string.Empty, StringComparison.Ordinal))
                 return true;
@@ -2564,7 +2567,7 @@ namespace SmartGoldbergEmu.Forms
                 LocalSavePath = GetPersistedLocalSavePathFromUi(),
                 SavesFolderName = txtSavesFolderName.Text.Trim()
             };
-            _initialLanPersonaState = ReadLanPersonaStateFromUi();
+            _initialLanStatusIndex = ReadLanStatusIndexFromUi();
             _initialLanCustomStatus = ReadLanCustomStatusFromUi();
             _pendingAvatarChange = PendingAvatarChange.None;
             _pendingAvatarSourcePath = null;
@@ -2601,7 +2604,7 @@ namespace SmartGoldbergEmu.Forms
                 Size = new Size(180, 21),
                 Name = "cmbLanPersonaStatus"
             };
-            cmbLanPersonaStatus.Items.AddRange(new object[] { "Online", "Away", "Hidden" });
+            cmbLanPersonaStatus.Items.AddRange(new object[] { "Online", "Away", "Busy", "Hidden", "Offline" });
             cmbLanPersonaStatus.SelectedIndex = 0;
 
             lblLanCustomStatus = new Label
@@ -2653,19 +2656,7 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 ApplicationSettings settings = _appDataService.LoadApplicationSettings();
-                switch (settings.LanPersonaState)
-                {
-                    case LanPersonaState.Away:
-                        cmbLanPersonaStatus.SelectedIndex = 1;
-                        break;
-                    case LanPersonaState.Hidden:
-                        cmbLanPersonaStatus.SelectedIndex = 2;
-                        break;
-                    default:
-                        cmbLanPersonaStatus.SelectedIndex = 0;
-                        break;
-                }
-
+                cmbLanPersonaStatus.SelectedIndex = ResolveLanStatusIndex(settings);
                 txtLanCustomStatus.Text = settings.LanCustomStatus ?? string.Empty;
             }
             catch (Exception ex)
@@ -2681,7 +2672,7 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 ApplicationSettings settings = _appDataService.LoadApplicationSettings();
-                settings.LanPersonaState = ReadLanPersonaStateFromUi();
+                ApplyLanStatusFromUi(settings);
                 settings.LanCustomStatus = ReadLanCustomStatusFromUi();
                 return _appDataService.SaveApplicationSettings(settings);
             }
@@ -2691,18 +2682,58 @@ namespace SmartGoldbergEmu.Forms
             }
         }
 
-        private LanPersonaState ReadLanPersonaStateFromUi()
+        // 0 Online, 1 Away, 2 Busy, 3 Hidden, 4 Offline (channel off; persona unchanged).
+        private static int ResolveLanStatusIndex(ApplicationSettings settings)
+        {
+            if (settings == null || !settings.LanPlayersOnline)
+                return 4;
+            switch (settings.LanPersonaState)
+            {
+                case LanPersonaState.Away:
+                    return 1;
+                case LanPersonaState.Busy:
+                    return 2;
+                case LanPersonaState.Hidden:
+                    return 3;
+                default:
+                    return 0;
+            }
+        }
+
+        private int ReadLanStatusIndexFromUi()
         {
             if (cmbLanPersonaStatus == null)
-                return LanPersonaState.Online;
-            switch (cmbLanPersonaStatus.SelectedIndex)
+                return 0;
+            int index = cmbLanPersonaStatus.SelectedIndex;
+            if (index < 0 || index > 4)
+                return 0;
+            return index;
+        }
+
+        private void ApplyLanStatusFromUi(ApplicationSettings settings)
+        {
+            int index = ReadLanStatusIndexFromUi();
+            if (index == 4)
+            {
+                settings.LanPlayersOnline = false;
+                return;
+            }
+
+            settings.LanPlayersOnline = true;
+            switch (index)
             {
                 case 1:
-                    return LanPersonaState.Away;
+                    settings.LanPersonaState = LanPersonaState.Away;
+                    break;
                 case 2:
-                    return LanPersonaState.Hidden;
+                    settings.LanPersonaState = LanPersonaState.Busy;
+                    break;
+                case 3:
+                    settings.LanPersonaState = LanPersonaState.Hidden;
+                    break;
                 default:
-                    return LanPersonaState.Online;
+                    settings.LanPersonaState = LanPersonaState.Online;
+                    break;
             }
         }
 

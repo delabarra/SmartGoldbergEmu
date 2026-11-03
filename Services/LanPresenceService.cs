@@ -39,7 +39,7 @@ namespace SmartGoldbergEmu.Services
         private string _avatarHash = string.Empty;
         private string _localSteamId = string.Empty;
         private string _localName = string.Empty;
-        // Preferred persona from settings (Online / Away / Hidden). Away here is manual and sticky.
+        // Preferred persona from settings (Online / Away / Busy / Hidden). Away/Busy here are manual and sticky.
         private LanPersonaState _localPersonaState = LanPersonaState.Online;
         // Runtime overlay: only when preferred is Online and the machine is idle.
         private bool _autoAwayActive;
@@ -54,6 +54,9 @@ namespace SmartGoldbergEmu.Services
 
         public event EventHandler PeersChanged;
         public event EventHandler OnlineStateChanged;
+
+        // Chat types (cq/cd/cm) multiplexed on this socket; LanChatService handles the payload.
+        public event EventHandler<LanChatPacketEventArgs> ChatPacketReceived;
 
         public LanPresenceService()
             : this(ServiceLocator.LogService)
@@ -485,16 +488,123 @@ namespace SmartGoldbergEmu.Services
                 return;
 
             if (string.Equals(type, LanPresenceConstants.MessagePresence, StringComparison.Ordinal))
-                HandlePresence(root);
+                HandlePresence(root, remote);
             else if (string.Equals(type, LanPresenceConstants.MessageAvatarRequest, StringComparison.Ordinal))
                 HandleAvatarRequest(root, remote);
             else if (string.Equals(type, LanPresenceConstants.MessageAvatarResponse, StringComparison.Ordinal))
                 HandleAvatarResponse(root);
+            else if (LanChatConstants.IsChatType(type))
+                RaiseChatPacket(root, remote);
         }
 
-        private void HandlePresence(JsonObject root)
+        private void RaiseChatPacket(JsonObject root, IPEndPoint remote)
         {
-            string steamId = SanitizeSteamId(root["sid"] != null ? root["sid"].ToString() : null);
+            EventHandler<LanChatPacketEventArgs> handler = ChatPacketReceived;
+            if (handler == null || root == null || remote == null)
+                return;
+            try
+            {
+                handler(this, new LanChatPacketEventArgs(root, remote));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug("LAN chat packet handler error: " + ex.Message);
+            }
+        }
+
+        // Same path as presence/avatar: unicast is often dropped when the peer firewall only
+        // learned the port from inbound broadcasts. Chat packets carry "to" for filtering.
+        public bool TrySendBroadcast(byte[] payload)
+        {
+            if (payload == null || payload.Length == 0)
+                return false;
+            if (payload.Length > LanPresenceConstants.MaxPacketBytes)
+                return false;
+
+            UdpClient udp;
+            lock (_gate)
+            {
+                if (!_online || _udp == null || _disposed)
+                    return false;
+                udp = _udp;
+            }
+
+            try
+            {
+                udp.Send(payload, payload.Length, new IPEndPoint(IPAddress.Broadcast, LanPresenceConstants.UdpPort));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug("LAN broadcast send failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        public bool IsPeerPresent(string steamId)
+        {
+            LanPresencePeer peer;
+            return TryGetPeer(steamId, out peer) && peer.IsPresent;
+        }
+
+        // Cloned peer by Steam64, present or aged-out.
+        public bool TryGetPeer(string steamId, out LanPresencePeer peer)
+        {
+            peer = null;
+            steamId = LanWireHelper.SanitizeSteamId(steamId);
+            if (string.IsNullOrEmpty(steamId))
+                return false;
+
+            lock (_gate)
+            {
+                LanPresencePeer stored;
+                if (!_peers.TryGetValue(steamId, out stored) || stored == null)
+                    return false;
+                peer = ClonePeer(stored);
+                return true;
+            }
+        }
+
+        public bool IsPresentPeerFromEndpoint(string steamId, IPEndPoint remote)
+        {
+            steamId = LanWireHelper.SanitizeSteamId(steamId);
+            if (string.IsNullOrEmpty(steamId) || remote == null || remote.Address == null)
+                return false;
+
+            lock (_gate)
+            {
+                LanPresencePeer peer;
+                if (!_peers.TryGetValue(steamId, out peer) || peer == null || !peer.IsPresent)
+                    return false;
+                if (string.IsNullOrWhiteSpace(peer.RemoteAddress))
+                    return false;
+                return IpAddressesEqual(peer.RemoteAddress.Trim(), remote.Address);
+            }
+        }
+
+        private static bool IpAddressesEqual(string stored, IPAddress remote)
+        {
+            if (string.IsNullOrEmpty(stored) || remote == null)
+                return false;
+            if (string.Equals(stored, remote.ToString(), StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            IPAddress storedAddress;
+            if (!IPAddress.TryParse(stored, out storedAddress) || storedAddress == null)
+                return false;
+
+            // Normalize IPv4-mapped IPv6 (::ffff:a.b.c.d) so presence IP matches chat source.
+            if (storedAddress.IsIPv4MappedToIPv6)
+                storedAddress = storedAddress.MapToIPv4();
+            if (remote.IsIPv4MappedToIPv6)
+                remote = remote.MapToIPv4();
+
+            return storedAddress.Equals(remote);
+        }
+
+        private void HandlePresence(JsonObject root, IPEndPoint remote)
+        {
+            string steamId = LanWireHelper.SanitizeSteamId(root["sid"] != null ? root["sid"].ToString() : null);
             if (string.IsNullOrEmpty(steamId))
                 return;
 
@@ -518,7 +628,7 @@ namespace SmartGoldbergEmu.Services
 
             string gameName = SanitizeGameName(root["g"] != null ? root["g"].ToString() : null);
             string avatarHash = SanitizeAvatarHash(root["h"] != null ? root["h"].ToString() : null);
-            LanPersonaState persona = ParsePersonaState(root["st"] != null ? root["st"].ToString() : null);
+            LanPersonaState persona = LanPersonaStateHelper.ParseWire(root["st"] != null ? root["st"].ToString() : null);
             string customStatus = SanitizeCustomStatus(root["cs"] != null ? root["cs"].ToString() : null);
             ulong lfgAppId = 0;
             if (root["lfg"] != null)
@@ -611,6 +721,16 @@ namespace SmartGoldbergEmu.Services
 
                 peer.LastSeenUtc = DateTime.UtcNow;
 
+                if (remote != null && remote.Address != null)
+                {
+                    string remoteAddress = remote.Address.ToString();
+                    if (!string.Equals(peer.RemoteAddress ?? string.Empty, remoteAddress, StringComparison.OrdinalIgnoreCase))
+                    {
+                        peer.RemoteAddress = remoteAddress;
+                        changed = true;
+                    }
+                }
+
                 string cachedPath = ResolveCachedAvatarPath(steamId, avatarHash);
                 if (!string.IsNullOrEmpty(cachedPath) && File.Exists(cachedPath))
                 {
@@ -683,7 +803,7 @@ namespace SmartGoldbergEmu.Services
 
         private void HandleAvatarRequest(JsonObject root, IPEndPoint remote)
         {
-            string forId = SanitizeSteamId(root["for"] != null ? root["for"].ToString() : null);
+            string forId = LanWireHelper.SanitizeSteamId(root["for"] != null ? root["for"].ToString() : null);
             string want = SanitizeAvatarHash(root["want"] != null ? root["want"].ToString() : null);
             if (string.IsNullOrEmpty(forId) || string.IsNullOrEmpty(want))
                 return;
@@ -712,7 +832,7 @@ namespace SmartGoldbergEmu.Services
                     return;
                 if (_avatarJpeg == null || _avatarJpeg.Length == 0)
                     return;
-                if (!TryConsumeRateUnlocked(
+                if (!LanWireHelper.TryConsumeRate(
                         _avatarReplyTimestamps,
                         remoteKey,
                         LanPresenceConstants.AvatarReplyMaxPerRemote,
@@ -763,7 +883,7 @@ namespace SmartGoldbergEmu.Services
 
         private void HandleAvatarResponse(JsonObject root)
         {
-            string steamId = SanitizeSteamId(root["sid"] != null ? root["sid"].ToString() : null);
+            string steamId = LanWireHelper.SanitizeSteamId(root["sid"] != null ? root["sid"].ToString() : null);
             string hash = SanitizeAvatarHash(root["h"] != null ? root["h"].ToString() : null);
             string b64 = root["img"] != null ? root["img"].ToString() : null;
             if (string.IsNullOrEmpty(steamId) || string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(b64))
@@ -800,7 +920,7 @@ namespace SmartGoldbergEmu.Services
                 // Only accept the hash this peer is currently advertising.
                 if (!string.Equals(existing.AvatarHash ?? string.Empty, hash, StringComparison.Ordinal))
                     return;
-                if (!TryConsumeRateUnlocked(
+                if (!LanWireHelper.TryConsumeRate(
                         _avatarAcceptTimestamps,
                         steamId,
                         LanPresenceConstants.AvatarAcceptMaxPerPeer,
@@ -860,10 +980,7 @@ namespace SmartGoldbergEmu.Services
             obj["a"] = new JsonNumber((long)appId);
             obj["g"] = new JsonString(Truncate(gameName ?? string.Empty, LanPresenceConstants.MaxGameNameChars));
             obj["h"] = new JsonString(_avatarHash ?? string.Empty);
-            obj["st"] = new JsonString(
-                GetEffectivePersonaStateUnlocked() == LanPersonaState.Away
-                    ? LanPresenceConstants.PersonaAway
-                    : LanPresenceConstants.PersonaOnline);
+            obj["st"] = new JsonString(LanPersonaStateHelper.FormatWire(GetEffectivePersonaStateUnlocked()));
             obj["cs"] = new JsonString(Truncate(_localCustomStatus ?? string.Empty, LanPresenceConstants.MaxCustomStatusChars));
             obj["lfg"] = new JsonNumber((long)_localLookingForPlayAppId);
             obj["lfgn"] = new JsonString(
@@ -879,7 +996,7 @@ namespace SmartGoldbergEmu.Services
             {
                 UserSettings user = ServiceLocator.GoldbergCfgService.LoadGlobalUserSettings();
                 _localName = SanitizeName(user != null ? user.AccountName : null);
-                _localSteamId = SanitizeSteamId(user != null ? user.AccountSteamId : null);
+                _localSteamId = LanWireHelper.SanitizeSteamId(user != null ? user.AccountSteamId : null);
                 if (string.IsNullOrEmpty(_localName))
                     _localName = ApplicationConstants.DefaultAccountName;
                 if (string.IsNullOrEmpty(_localSteamId))
@@ -901,7 +1018,7 @@ namespace SmartGoldbergEmu.Services
             {
                 ApplicationSettings settings = ServiceLocator.AppDataService.LoadApplicationSettings();
                 _localPersonaState = settings != null ? settings.LanPersonaState : LanPersonaState.Online;
-                // Manual Away/Hidden are sticky; drop any auto-Away overlay when preferred is not Online.
+                // Manual Away/Busy/Hidden are sticky; drop any auto-Away overlay when preferred is not Online.
                 if (_localPersonaState != LanPersonaState.Online)
                     _autoAwayActive = false;
                 _localCustomStatus = SanitizeCustomStatus(settings != null ? settings.LanCustomStatus : null);
@@ -1094,42 +1211,6 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        private static bool TryConsumeRateUnlocked(
-            Dictionary<string, List<long>> map,
-            string key,
-            int maxPerWindow,
-            int windowMs)
-        {
-            if (map == null || string.IsNullOrEmpty(key) || maxPerWindow <= 0 || windowMs <= 0)
-                return false;
-
-            long nowTicks = DateTime.UtcNow.Ticks;
-            long cutoff = nowTicks - ((long)windowMs * TimeSpan.TicksPerMillisecond);
-
-            List<long> stamps;
-            if (!map.TryGetValue(key, out stamps))
-            {
-                stamps = new List<long>(maxPerWindow);
-                map[key] = stamps;
-            }
-
-            int write = 0;
-            for (int i = 0; i < stamps.Count; i++)
-            {
-                if (stamps[i] >= cutoff)
-                    stamps[write++] = stamps[i];
-            }
-
-            if (write < stamps.Count)
-                stamps.RemoveRange(write, stamps.Count - write);
-
-            if (stamps.Count >= maxPerWindow)
-                return false;
-
-            stamps.Add(nowTicks);
-            return true;
-        }
-
         private static bool AvatarPacketFits(byte[] jpeg)
         {
             // Approximate worst-case wrapper; reject before we ever try to send.
@@ -1186,22 +1267,6 @@ namespace SmartGoldbergEmu.Services
                 && data[data.Length - 1] == 0xD9;
         }
 
-        private static string SanitizeSteamId(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return string.Empty;
-            value = value.Trim();
-            if (value.Length > LanPresenceConstants.MaxSteamIdChars)
-                return string.Empty;
-            for (int i = 0; i < value.Length; i++)
-            {
-                if (value[i] < '0' || value[i] > '9')
-                    return string.Empty;
-            }
-
-            return value;
-        }
-
         private static string SanitizeName(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -1223,13 +1288,14 @@ namespace SmartGoldbergEmu.Services
             return Truncate(StripControls(value.Trim()), LanPresenceConstants.MaxCustomStatusChars);
         }
 
-        private static LanPersonaState ParsePersonaState(string value)
+        // True while preferred/effective persona is Busy (LAN chat is dropped).
+        public bool IsLocalBusy
         {
-            if (string.IsNullOrWhiteSpace(value))
-                return LanPersonaState.Online;
-            if (string.Equals(value.Trim(), LanPresenceConstants.PersonaAway, StringComparison.OrdinalIgnoreCase))
-                return LanPersonaState.Away;
-            return LanPersonaState.Online;
+            get
+            {
+                lock (_gate)
+                    return _online && GetEffectivePersonaStateUnlocked() == LanPersonaState.Busy;
+            }
         }
 
         private static string SanitizeAvatarHash(string value)
@@ -1283,6 +1349,7 @@ namespace SmartGoldbergEmu.Services
                 AvatarHash = peer.AvatarHash,
                 AvatarFilePath = peer.AvatarFilePath,
                 LastSeenUtc = peer.LastSeenUtc,
+                RemoteAddress = peer.RemoteAddress,
                 IsPresent = peer.IsPresent,
                 PersonaState = peer.PersonaState,
                 CustomStatus = peer.CustomStatus,

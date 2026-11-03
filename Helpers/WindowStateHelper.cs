@@ -156,6 +156,62 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
+        public static bool TryRestoreLanChatWindowSize(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
+
+            try
+            {
+                if (!appDataService.HasPersistedLanChatWindowLayout())
+                    return false;
+
+                var windowState = appDataService.GetLanChatWindowState();
+                if (windowState == null || windowState.Size.Width <= 0 || windowState.Size.Height <= 0)
+                    return false;
+
+                var size = windowState.Size;
+                size.Width = Math.Max(size.Width, form.MinimumSize.Width);
+                size.Height = Math.Max(size.Height, form.MinimumSize.Height);
+                form.Size = size;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Failed to restore LAN chat window size: {ex.Message}");
+                return false;
+            }
+        }
+
+        public static void SaveLanChatWindowState(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
+
+            try
+            {
+                if (form.WindowState == FormWindowState.Minimized)
+                    return;
+
+                var windowState = new WindowState
+                {
+                    Size = form.Size,
+                    Location = form.Location,
+                    State = form.WindowState
+                };
+
+                appDataService.SetLanChatWindowState(windowState);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"Failed to save LAN chat window state: {ex.Message}");
+            }
+        }
+
         public static void SaveLanListWindowState(Form form, AppDataService appDataService)
         {
             if (form == null)

@@ -25,7 +25,9 @@ namespace SmartGoldbergEmu.Constants
 
         public const string PersonaOnline = "online";
         public const string PersonaAway = "away";
-        // Auto-Away only while saved persona is Online; manual Away/Hidden are not overridden.
+        public const string PersonaBusy = "busy";
+        public const string PersonaHidden = "hidden";
+        // Auto-Away only while saved persona is Online; manual Away/Busy/Hidden are not overridden.
         public const int AwayIdleMs = 5 * 60 * 1000;
         // 96 fits LAN list + HiDPI; larger (128+) often blows a single UDP datagram after base64.
         public const int AvatarPixelSize = 96;

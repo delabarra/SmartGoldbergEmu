@@ -1,26 +1,38 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
+using Timer = System.Windows.Forms.Timer;
 
 namespace SmartGoldbergEmu.Forms
 {
     public partial class LanPlayersForm : ThemedForm
     {
-        private const int AvatarDisplaySize = 40;
-        private const int RowHeightTwoLine = 56;
-        private const int RowHeightThreeLine = 72;
+        // Compact list rows (chat header uses 64px).
+        private const int AvatarDisplaySize = 48;
+        private const int RowHeight = 78;
+        private const int NameLineHeight = 18;
+        private const int StatusLineHeight = 16;
+        private const int IdLineHeight = 16;
+        private const int LastSeenRefreshIntervalMs = 30000;
+        private const int RowWidthScrollbarPad = 24;
 
         private readonly LanPresenceService _presence;
         private readonly AppDataService _appData;
         private readonly List<Image> _rowAvatars = new List<Image>();
         private readonly ContextMenuStrip _playerMenu;
+        private Timer _lastSeenRefreshTimer;
+        private Font _sectionFont;
+        private Font _nameFont;
+        private Font _metaFont;
+        private Image _placeholderAvatar;
+        private Color _placeholderBackColor;
         private bool _eventsHooked;
         private bool _initialLayoutApplied;
+        private bool _rebuildingRows;
         private string _contextSteamId;
         private bool _contextIsSelf;
 
@@ -35,16 +47,24 @@ namespace SmartGoldbergEmu.Forms
             _presence = presence ?? throw new ArgumentNullException(nameof(presence));
             _appData = appData ?? throw new ArgumentNullException(nameof(appData));
             InitializeComponent();
+            EnsureRowFonts();
+            flpLanPlayers.SizeChanged += OnFlpLanPlayers_SizeChanged;
             _playerMenu = new ContextMenuStrip();
             _playerMenu.Opening += OnPlayerMenu_Opening;
             if (WindowStateHelper.TryRestoreLanListWindowState(this, _appData))
                 _initialLayoutApplied = true;
             HookPresenceEvents();
-            UpdateOnlineButton();
+            EnsureLastSeenRefreshTimer();
+            UpdateWindowTitle();
             RefreshPeerList();
         }
 
         public void ApplyInitialPlacement()
+        {
+            ApplyInitialPlacement(Owner);
+        }
+
+        public void ApplyInitialPlacement(Form relativeTo)
         {
             if (_initialLayoutApplied)
                 return;
@@ -55,7 +75,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
-            PositionBesideOwner();
+            PositionBesideOwner(relativeTo);
             _initialLayoutApplied = true;
         }
 
@@ -77,15 +97,34 @@ namespace SmartGoldbergEmu.Forms
             base.OnFormClosing(e);
         }
 
-        private void PositionBesideOwner()
+        protected override void OnThemeApplied()
         {
-            if (Owner == null)
+            base.OnThemeApplied();
+            RefreshPeerList();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            if (flpLanPlayers != null)
+                flpLanPlayers.SizeChanged -= OnFlpLanPlayers_SizeChanged;
+            UnhookPresenceEvents();
+            StopAndDisposeLastSeenRefreshTimer();
+            _playerMenu.Opening -= OnPlayerMenu_Opening;
+            _playerMenu.Dispose();
+            ClearPlayerRows();
+            DisposeRowFontsAndPlaceholder();
+            base.OnFormClosed(e);
+        }
+
+        private void PositionBesideOwner(Form relativeTo)
+        {
+            if (relativeTo == null)
                 return;
 
-            Rectangle ownerBounds = Owner.Bounds;
+            Rectangle ownerBounds = relativeTo.Bounds;
             int x = ownerBounds.Right - 8;
             int y = ownerBounds.Top + 40;
-            Rectangle wa = Screen.FromControl(Owner).WorkingArea;
+            Rectangle wa = Screen.FromControl(relativeTo).WorkingArea;
             if (x + Width > wa.Right)
                 x = ownerBounds.Left - Width + 8;
             if (x < wa.Left)
@@ -114,13 +153,91 @@ namespace SmartGoldbergEmu.Forms
             _eventsHooked = false;
         }
 
+        // Relative "Last seen Xm ago" text only changes with wall-clock time, not peer events.
+        private void EnsureLastSeenRefreshTimer()
+        {
+            if (DesignTimeHelper.IsDesignTime || _lastSeenRefreshTimer != null)
+                return;
+
+            _lastSeenRefreshTimer = new Timer { Interval = LastSeenRefreshIntervalMs };
+            _lastSeenRefreshTimer.Tick += OnLastSeenRefreshTimer_Tick;
+            _lastSeenRefreshTimer.Start();
+        }
+
+        private void StopAndDisposeLastSeenRefreshTimer()
+        {
+            if (_lastSeenRefreshTimer == null)
+                return;
+
+            _lastSeenRefreshTimer.Stop();
+            _lastSeenRefreshTimer.Tick -= OnLastSeenRefreshTimer_Tick;
+            _lastSeenRefreshTimer.Dispose();
+            _lastSeenRefreshTimer = null;
+        }
+
+        private void OnLastSeenRefreshTimer_Tick(object sender, EventArgs e)
+        {
+            if (IsDisposed || Disposing || !Visible || !_presence.IsOnline)
+                return;
+            RefreshLastSeenLabelsOnly();
+        }
+
+        // Updates relative "Last seen … ago" copy without rebuilding rows (keeps scroll / avatars stable).
+        private void RefreshLastSeenLabelsOnly()
+        {
+            if (flpLanPlayers == null || flpLanPlayers.IsDisposed)
+                return;
+
+            IReadOnlyList<LanPresencePeer> peers = _presence.GetPeersSnapshot();
+            var absentById = new Dictionary<string, DateTime>(StringComparer.Ordinal);
+            for (int i = 0; i < peers.Count; i++)
+            {
+                LanPresencePeer peer = peers[i];
+                if (peer == null || peer.IsPresent || string.IsNullOrEmpty(peer.SteamId))
+                    continue;
+                absentById[peer.SteamId] = peer.LastSeenUtc;
+            }
+
+            if (absentById.Count == 0)
+                return;
+
+            for (int i = 0; i < flpLanPlayers.Controls.Count; i++)
+            {
+                Control row = flpLanPlayers.Controls[i];
+                string steamId = row.Tag as string;
+                if (string.IsNullOrEmpty(steamId) || !absentById.TryGetValue(steamId, out DateTime lastSeenUtc))
+                    continue;
+
+                for (int c = 0; c < row.Controls.Count; c++)
+                {
+                    Label lbl = row.Controls[c] as Label;
+                    if (lbl == null)
+                        continue;
+                    string text = lbl.Text ?? string.Empty;
+                    if (!text.StartsWith("Last seen", StringComparison.Ordinal))
+                        continue;
+                    string next = LanPersonaDisplayHelper.FormatLastSeen(lastSeenUtc);
+                    if (!string.Equals(lbl.Text, next, StringComparison.Ordinal))
+                        lbl.Text = next;
+                    break;
+                }
+            }
+        }
+
         private void OnPresencePeersChanged(object sender, EventArgs e)
         {
             if (IsDisposed || Disposing)
                 return;
             if (InvokeRequired)
             {
-                BeginInvoke(new Action(RefreshPeerList));
+                try
+                {
+                    BeginInvoke(new Action(RefreshPeerList));
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+
                 return;
             }
 
@@ -133,55 +250,72 @@ namespace SmartGoldbergEmu.Forms
                 return;
             if (InvokeRequired)
             {
-                BeginInvoke(new Action(() =>
+                try
                 {
-                    UpdateOnlineButton();
-                    RefreshPeerList();
-                }));
+                    BeginInvoke(new Action(() =>
+                    {
+                        UpdateWindowTitle();
+                        RefreshPeerList();
+                    }));
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+
                 return;
             }
 
-            UpdateOnlineButton();
+            UpdateWindowTitle();
             RefreshPeerList();
         }
 
-        private void OnOnlineToggle_Click(object sender, EventArgs e)
+        private void UpdateWindowTitle()
         {
-            bool nextOnline = !_presence.IsOnline;
-            try
+            Text = _presence.IsOnline ? "LAN Players" : "LAN Players (Offline)";
+        }
+
+        private int GetRowWidth()
+        {
+            if (flpLanPlayers == null || flpLanPlayers.IsDisposed)
+                return 200;
+            return Math.Max(200, flpLanPlayers.ClientSize.Width - RowWidthScrollbarPad);
+        }
+
+        private void OnFlpLanPlayers_SizeChanged(object sender, EventArgs e)
+        {
+            if (_rebuildingRows || IsDisposed || Disposing || flpLanPlayers == null || flpLanPlayers.IsDisposed)
+                return;
+            ApplyRowWidths();
+        }
+
+        private void ApplyRowWidths()
+        {
+            if (flpLanPlayers == null || flpLanPlayers.IsDisposed)
+                return;
+
+            int rowWidth = GetRowWidth();
+            int textWidth = Math.Max(40, rowWidth - AvatarDisplaySize - 30);
+            for (int i = 0; i < flpLanPlayers.Controls.Count; i++)
             {
-                ApplicationSettings settings = _appData.LoadApplicationSettings();
-                settings.LanPlayersOnline = nextOnline;
-                ValidationResult save = _appData.SaveApplicationSettings(settings);
-                if (!save.IsValid)
+                Control row = flpLanPlayers.Controls[i];
+                if (row == null || row.IsDisposed)
+                    continue;
+                row.Width = rowWidth;
+                for (int c = 0; c < row.Controls.Count; c++)
                 {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        save.ErrorMessage ?? "Could not save LAN online preference.",
-                        "LAN Players",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                    Label lbl = row.Controls[c] as Label;
+                    if (lbl == null)
+                        continue;
+                    lbl.Width = textWidth;
                 }
             }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN Players: failed to persist online preference: " + ex.Message);
-            }
-
-            _presence.SetOnline(nextOnline);
-            UpdateOnlineButton();
-            RefreshPeerList();
-        }
-
-        private void UpdateOnlineButton()
-        {
-            bool online = _presence.IsOnline;
-            btnOnlineToggle.Text = online ? "Go Offline" : "Go Online";
-            Text = online ? "LAN Players" : "LAN Players (Offline)";
         }
 
         private void RefreshPeerList()
         {
+            if (flpLanPlayers == null || flpLanPlayers.IsDisposed || IsDisposed || Disposing)
+                return;
+
             ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
             LanPresencePeer self = _presence.GetLocalSelfSnapshot();
             IReadOnlyList<LanPresencePeer> peers = _presence.IsOnline
@@ -189,16 +323,16 @@ namespace SmartGoldbergEmu.Forms
                 : Array.Empty<LanPresencePeer>();
 
             HashSet<string> favorites = LoadFavoriteSet();
-
+            Point scroll = flpLanPlayers.AutoScrollPosition;
+            _rebuildingRows = true;
             flpLanPlayers.SuspendLayout();
             try
             {
                 ClearPlayerRows();
 
-                lblEmpty.Visible = false;
                 flpLanPlayers.Visible = true;
 
-                int rowWidth = Math.Max(200, flpLanPlayers.ClientSize.Width - 24);
+                int rowWidth = GetRowWidth();
 
                 flpLanPlayers.Controls.Add(BuildPlayerRow(
                     self, colors, rowWidth, isSelf: true, channelOnline: _presence.IsOnline, isFavorite: false));
@@ -206,7 +340,7 @@ namespace SmartGoldbergEmu.Forms
                 if (!_presence.IsOnline)
                 {
                     flpLanPlayers.Controls.Add(BuildSectionLabel("You are offline.", colors, rowWidth));
-                    UpdateGamesFoundStatus(0);
+                    UpdateFooterStatus(0, 0);
                     return;
                 }
 
@@ -217,7 +351,9 @@ namespace SmartGoldbergEmu.Forms
                 for (int i = 0; i < peers.Count; i++)
                 {
                     LanPresencePeer peer = peers[i];
-                    bool fav = favorites.Contains(peer.SteamId ?? string.Empty);
+                    if (peer == null || string.IsNullOrEmpty(peer.SteamId))
+                        continue;
+                    bool fav = favorites.Contains(peer.SteamId);
                     if (peer.IsPresent)
                     {
                         if (fav)
@@ -265,20 +401,24 @@ namespace SmartGoldbergEmu.Forms
                     }
                 }
 
-                UpdateGamesFoundStatus(CountUniqueGamesFound(self, favoritePresent, onlineOthers));
+                int presentPlayers = 1 + favoritePresent.Count + onlineOthers.Count;
+                UpdateFooterStatus(
+                    CountUniqueGamesFound(self, favoritePresent, onlineOthers),
+                    presentPlayers);
             }
             finally
             {
                 flpLanPlayers.ResumeLayout(true);
+                flpLanPlayers.AutoScrollPosition = new Point(-scroll.X, -scroll.Y);
+                _rebuildingRows = false;
             }
         }
 
-        private void UpdateGamesFoundStatus(int uniqueGames)
+        private void UpdateFooterStatus(int uniqueGames, int presentPlayers)
         {
-            if (uniqueGames == 1)
-                lblGamesFound.Text = "1 game found";
-            else
-                lblGamesFound.Text = uniqueGames + " games found";
+            string gamesText = uniqueGames == 1 ? "1 game" : uniqueGames + " games";
+            string playersText = presentPlayers == 1 ? "1 player" : presentPlayers + " players";
+            lblGamesFound.Text = gamesText + " · " + playersText;
         }
 
         // Distinct AppIds currently being played by you or present peers.
@@ -350,7 +490,7 @@ namespace SmartGoldbergEmu.Forms
                 Margin = new Padding(0, 8, 0, 2),
                 Padding = new Padding(8, 4, 8, 0),
                 Text = text,
-                Font = new Font("Segoe UI", 8.25F, FontStyle.Regular),
+                Font = _sectionFont,
                 ForeColor = colors.StatusTextSecondary,
                 BackColor = Color.Transparent,
                 AutoEllipsis = true
@@ -365,45 +505,51 @@ namespace SmartGoldbergEmu.Forms
             bool channelOnline,
             bool isFavorite)
         {
+            if (peer == null)
+                peer = new LanPresencePeer();
+
             string name = string.IsNullOrWhiteSpace(peer.DisplayName) ? peer.SteamId : peer.DisplayName;
             if (isFavorite && !isSelf)
                 name = "★ " + name;
 
-            string statusLine = FormatPersonaStatusLine(peer, isSelf, channelOnline);
-            string gameLine = FormatGameStatusLine(peer, channelOnline);
-            bool showGame = !string.IsNullOrEmpty(gameLine);
-            int rowHeight = showGame ? RowHeightThreeLine : RowHeightTwoLine;
+            string statusLine = LanPersonaDisplayHelper.FormatPersonaStatusLine(peer, isSelf, channelOnline);
+            string steamId = peer.SteamId ?? string.Empty;
+            string idLine = steamId;
+            int textBlockHeight = NameLineHeight + StatusLineHeight + IdLineHeight;
+            int textTop = Math.Max(0, (RowHeight - textBlockHeight) / 2);
 
-            Color statusColor = colors.StatusTextSecondary;
-            if (channelOnline && peer.IsPresent && peer.PersonaState != LanPersonaState.Away)
-                statusColor = colors.StatusTextSecondary;
-            if (channelOnline && peer.IsPlaying)
-                statusColor = colors.SuccessColor;
+            LanPersonaDisplayHelper.ResolvePersonaColors(
+                peer, colors, isSelf, channelOnline, out Color nameColor, out Color statusColor);
 
             var row = new Panel
             {
                 Width = rowWidth,
-                Height = rowHeight,
+                Height = RowHeight,
                 Margin = new Padding(0, 0, 0, 2),
                 BackColor = isSelf ? colors.ControlBackground : colors.ListViewBackground,
-                Padding = new Padding(8, 6, 8, 6),
-                Tag = peer.SteamId ?? string.Empty,
+                Padding = new Padding(8, 0, 8, 0),
+                Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
             row.MouseDown += OnPlayerRow_MouseDown;
+            row.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var pic = new PictureBox
             {
                 Size = new Size(AvatarDisplaySize, AvatarDisplaySize),
-                Location = new Point(8, (rowHeight - AvatarDisplaySize) / 2),
+                Location = new Point(8, (RowHeight - AvatarDisplaySize) / 2),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 BackColor = colors.ControlBackground,
-                Tag = peer.SteamId ?? string.Empty,
+                Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
             pic.MouseDown += OnPlayerRow_MouseDown;
-            Image avatar = TryLoadAvatar(peer.AvatarFilePath) ?? CreatePlaceholderAvatar(colors);
-            _rowAvatars.Add(avatar);
+            pic.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
+            Image avatar = LanAvatarImageHelper.TryLoadAvatar(peer.AvatarFilePath, AvatarDisplaySize);
+            if (avatar != null)
+                _rowAvatars.Add(avatar);
+            else
+                avatar = GetPlaceholderAvatar(colors);
             pic.Image = avatar;
 
             int textLeft = 8 + AvatarDisplaySize + 10;
@@ -412,55 +558,55 @@ namespace SmartGoldbergEmu.Forms
             var lblName = new Label
             {
                 AutoSize = false,
-                Location = new Point(textLeft, 6),
-                Size = new Size(textWidth, 18),
+                Location = new Point(textLeft, textTop),
+                Size = new Size(textWidth, NameLineHeight),
                 Text = name,
-                Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold),
-                ForeColor = colors.ListViewForeground,
+                Font = _nameFont,
+                ForeColor = nameColor,
                 BackColor = Color.Transparent,
                 AutoEllipsis = true,
-                Tag = peer.SteamId ?? string.Empty,
+                Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
             lblName.MouseDown += OnPlayerRow_MouseDown;
+            lblName.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var lblStatus = new Label
             {
                 AutoSize = false,
-                Location = new Point(textLeft, 24),
-                Size = new Size(textWidth, 16),
+                Location = new Point(textLeft, textTop + NameLineHeight),
+                Size = new Size(textWidth, StatusLineHeight),
                 Text = statusLine,
-                Font = new Font("Segoe UI", 8.25F, FontStyle.Regular),
-                ForeColor = (!channelOnline || !peer.IsPresent) ? colors.StatusTextSecondary : statusColor,
+                Font = _metaFont,
+                ForeColor = statusColor,
                 BackColor = Color.Transparent,
                 AutoEllipsis = true,
-                Tag = peer.SteamId ?? string.Empty,
+                Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
             lblStatus.MouseDown += OnPlayerRow_MouseDown;
+            lblStatus.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
+
+            var lblSteamId = new Label
+            {
+                AutoSize = false,
+                Location = new Point(textLeft, textTop + NameLineHeight + StatusLineHeight),
+                Size = new Size(textWidth, IdLineHeight),
+                Text = idLine,
+                Font = _metaFont,
+                ForeColor = colors.StatusTextSecondary,
+                BackColor = Color.Transparent,
+                AutoEllipsis = true,
+                Tag = steamId,
+                ContextMenuStrip = _playerMenu
+            };
+            lblSteamId.MouseDown += OnPlayerRow_MouseDown;
+            lblSteamId.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             row.Controls.Add(pic);
             row.Controls.Add(lblName);
             row.Controls.Add(lblStatus);
-
-            if (showGame)
-            {
-                var lblGame = new Label
-                {
-                    AutoSize = false,
-                    Location = new Point(textLeft, 42),
-                    Size = new Size(textWidth, 16),
-                    Text = gameLine,
-                    Font = new Font("Segoe UI", 8.25F, FontStyle.Regular),
-                    ForeColor = colors.SuccessColor,
-                    BackColor = Color.Transparent,
-                    AutoEllipsis = true,
-                    Tag = peer.SteamId ?? string.Empty,
-                    ContextMenuStrip = _playerMenu
-                };
-                lblGame.MouseDown += OnPlayerRow_MouseDown;
-                row.Controls.Add(lblGame);
-            }
+            row.Controls.Add(lblSteamId);
 
             return row;
         }
@@ -470,6 +616,41 @@ namespace SmartGoldbergEmu.Forms
             if (e.Button != MouseButtons.Right)
                 return;
 
+            CaptureContextPeer(sender);
+        }
+
+        private void OnPlayerRow_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            CaptureContextPeer(sender);
+            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
+                return;
+
+            bool chatBlocked = false;
+            try
+            {
+                chatBlocked = ServiceLocator.LanChatService.IsChatBlocked(_contextSteamId);
+            }
+            catch
+            {
+            }
+
+            if (chatBlocked)
+                return;
+
+            if (!_presence.IsOnline || _presence.IsLocalBusy)
+                return;
+
+            if (!_presence.IsPeerPresent(_contextSteamId))
+                return;
+
+            LanChatUiHost.OpenChat(_contextSteamId, Owner ?? this);
+        }
+
+        private void CaptureContextPeer(object sender)
+        {
             Control c = sender as Control;
             string steamId = null;
             while (c != null && string.IsNullOrEmpty(steamId))
@@ -480,12 +661,14 @@ namespace SmartGoldbergEmu.Forms
 
             _contextSteamId = steamId ?? string.Empty;
             LanPresencePeer self = _presence.GetLocalSelfSnapshot();
-            _contextIsSelf = string.Equals(_contextSteamId, self.SteamId, StringComparison.Ordinal);
+            _contextIsSelf = self != null
+                && !string.IsNullOrEmpty(_contextSteamId)
+                && string.Equals(_contextSteamId, self.SteamId, StringComparison.Ordinal);
         }
 
         private void OnPlayerMenu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            _playerMenu.Items.Clear();
+            ClearMenuItems(_playerMenu);
             if (string.IsNullOrEmpty(_contextSteamId))
             {
                 e.Cancel = true;
@@ -505,12 +688,16 @@ namespace SmartGoldbergEmu.Forms
                 {
                 }
 
-                // Check preferred (saved) status; auto-Away from idle does not change the menu check.
+                // Preferred status when channel is online; Offline is channel off (persona kept).
+                // Auto-Away from idle does not change the menu check.
                 var status = new ToolStripMenuItem("Status");
+                bool channelOnline = _presence.IsOnline;
                 LanPersonaState current = settings != null ? settings.LanPersonaState : LanPersonaState.Online;
-                status.DropDownItems.Add(CreatePersonaStatusItem("Online", LanPersonaState.Online, current));
-                status.DropDownItems.Add(CreatePersonaStatusItem("Away", LanPersonaState.Away, current));
-                status.DropDownItems.Add(CreatePersonaStatusItem("Hidden", LanPersonaState.Hidden, current));
+                status.DropDownItems.Add(CreatePersonaStatusItem("Online", LanPersonaState.Online, current, channelOnline));
+                status.DropDownItems.Add(CreatePersonaStatusItem("Away", LanPersonaState.Away, current, channelOnline));
+                status.DropDownItems.Add(CreatePersonaStatusItem("Busy", LanPersonaState.Busy, current, channelOnline));
+                status.DropDownItems.Add(CreatePersonaStatusItem("Hidden", LanPersonaState.Hidden, current, channelOnline));
+                status.DropDownItems.Add(CreateOfflineStatusItem(channelOnline));
                 _playerMenu.Items.Add(status);
 
                 if (_presence.IsOnline)
@@ -525,6 +712,26 @@ namespace SmartGoldbergEmu.Forms
             }
             else
             {
+                bool present = _presence.IsPeerPresent(_contextSteamId);
+
+                bool chatBlocked = false;
+                try
+                {
+                    chatBlocked = ServiceLocator.LanChatService.IsChatBlocked(_contextSteamId);
+                }
+                catch
+                {
+                }
+
+                if (chatBlocked)
+                {
+                    _playerMenu.Items.Add("Allow chat again", null, OnAllowChatAgain_Click);
+                }
+                else if (present && _presence.IsOnline && !_presence.IsLocalBusy)
+                {
+                    _playerMenu.Items.Add("Message…", null, OnMessagePeer_Click);
+                }
+
                 bool favorite = false;
                 try
                 {
@@ -604,18 +811,66 @@ namespace SmartGoldbergEmu.Forms
             }
 
             _presence.ApplyLocalPersonaFromSettings();
+            UpdateWindowTitle();
             RefreshPeerList();
         }
 
-        private ToolStripMenuItem CreatePersonaStatusItem(string text, LanPersonaState state, LanPersonaState current)
+        private ToolStripMenuItem CreatePersonaStatusItem(
+            string text,
+            LanPersonaState state,
+            LanPersonaState current,
+            bool channelOnline)
         {
             var item = new ToolStripMenuItem(text)
             {
-                Checked = state == current,
+                Checked = channelOnline && state == current,
                 CheckOnClick = false
             };
             item.Click += (s, e) => SetPersonaState(state);
             return item;
+        }
+
+        private ToolStripMenuItem CreateOfflineStatusItem(bool channelOnline)
+        {
+            var item = new ToolStripMenuItem("Offline")
+            {
+                Checked = !channelOnline,
+                CheckOnClick = false
+            };
+            item.Click += (s, e) => SetChannelOffline();
+            return item;
+        }
+
+        private void SetChannelOffline()
+        {
+            if (!_presence.IsOnline)
+                return;
+
+            try
+            {
+                ApplicationSettings settings = _appData.LoadApplicationSettings();
+                settings.LanPlayersOnline = false;
+                ValidationResult save = _appData.SaveApplicationSettings(settings);
+                if (!save.IsValid)
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        this,
+                        save.ErrorMessage ?? "Could not go offline.",
+                        "LAN Players",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN Players: failed to persist offline preference: " + ex.Message);
+                return;
+            }
+
+            _presence.SetOnline(false);
+            UpdateWindowTitle();
+            RefreshPeerList();
         }
 
         private void SetPersonaState(LanPersonaState state)
@@ -669,7 +924,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             _presence.ApplyLocalPersonaFromSettings();
-            UpdateOnlineButton();
+            UpdateWindowTitle();
             RefreshPeerList();
         }
 
@@ -682,6 +937,41 @@ namespace SmartGoldbergEmu.Forms
         {
             _presence.SetLookingForPlay(appId);
             RefreshPeerList();
+        }
+
+        private void OnMessagePeer_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
+                return;
+            LanChatUiHost.OpenChat(_contextSteamId, this.Owner ?? this);
+        }
+
+        private void OnAllowChatAgain_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
+                return;
+
+            try
+            {
+                ValidationResult result = ServiceLocator.LanChatService.SetChatBlocked(_contextSteamId, false);
+                if (!result.IsValid)
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        this,
+                        result.ErrorMessage ?? "Could not unblock chat.",
+                        "LAN Chat",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN chat unblock failed: " + ex.Message);
+                return;
+            }
+
+            LanChatUiHost.OpenChat(_contextSteamId, this.Owner ?? this);
         }
 
         private void OnToggleFavorite_Click(object sender, EventArgs e)
@@ -723,6 +1013,7 @@ namespace SmartGoldbergEmu.Forms
             {
                 Control c = flpLanPlayers.Controls[0];
                 flpLanPlayers.Controls.RemoveAt(0);
+                DetachRowImages(c);
                 c.Dispose();
             }
 
@@ -735,88 +1026,85 @@ namespace SmartGoldbergEmu.Forms
             _rowAvatars.Clear();
         }
 
-        private static string FormatPersonaStatusLine(LanPresencePeer peer, bool isSelf, bool channelOnline)
+        private static void DetachRowImages(Control root)
         {
-            if (!channelOnline)
-                return "Offline";
+            PictureBox pic = root as PictureBox;
+            if (pic != null)
+                pic.Image = null;
 
-            if (!isSelf && !peer.IsPresent)
-                return FormatLastSeen(peer.LastSeenUtc);
-
-            string state;
-            if (isSelf && peer.PersonaState == LanPersonaState.Hidden)
-                state = "Hidden";
-            else if (peer.PersonaState == LanPersonaState.Away)
-                state = "Away";
-            else
-                state = "Online";
-
-            if (peer.IsLookingForPlay)
-            {
-                string game = !string.IsNullOrWhiteSpace(peer.LookingForPlayGameName)
-                    ? peer.LookingForPlayGameName.Trim()
-                    : ("App " + peer.LookingForPlayAppId);
-                state = state + " · Looking to play " + game;
-            }
-
-            if (!string.IsNullOrWhiteSpace(peer.CustomStatus))
-                state = state + " — " + peer.CustomStatus.Trim();
-
-            return state;
+            for (int i = 0; i < root.Controls.Count; i++)
+                DetachRowImages(root.Controls[i]);
         }
 
-        private static string FormatGameStatusLine(LanPresencePeer peer, bool channelOnline)
+        private static void ClearMenuItems(ContextMenuStrip menu)
         {
-            if (!channelOnline || !peer.IsPresent || !peer.IsPlaying)
-                return null;
+            if (menu == null)
+                return;
 
-            string game = !string.IsNullOrWhiteSpace(peer.GameName)
-                ? peer.GameName.Trim()
-                : ("App " + peer.AppId);
-            return "Playing " + game;
-        }
-
-        private static string FormatLastSeen(DateTime lastSeenUtc)
-        {
-            TimeSpan age = DateTime.UtcNow - lastSeenUtc;
-            if (age.TotalSeconds < 45)
-                return "Last seen just now";
-            if (age.TotalMinutes < 60)
-                return "Last seen " + Math.Max(1, (int)age.TotalMinutes) + "m ago";
-            if (age.TotalHours < 48)
-                return "Last seen " + Math.Max(1, (int)age.TotalHours) + "h ago";
-            return "Last seen " + Math.Max(1, (int)age.TotalDays) + "d ago";
-        }
-
-        private static Image TryLoadAvatar(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                return null;
-
-            try
+            while (menu.Items.Count > 0)
             {
-                byte[] bytes = File.ReadAllBytes(path);
-                using (var ms = new MemoryStream(bytes))
-                using (var img = Image.FromStream(ms))
-                {
-                    return new Bitmap(img, new Size(AvatarDisplaySize, AvatarDisplaySize));
-                }
-            }
-            catch
-            {
-                return null;
+                ToolStripItem item = menu.Items[0];
+                menu.Items.RemoveAt(0);
+                item.Dispose();
             }
         }
 
-        private static Image CreatePlaceholderAvatar(ThemeColors colors)
+        private void EnsureRowFonts()
         {
+            if (_sectionFont == null)
+                _sectionFont = new Font("Segoe UI", 8.25F, FontStyle.Regular);
+            if (_nameFont == null)
+                _nameFont = new Font("Segoe UI", 9F, FontStyle.Bold);
+            if (_metaFont == null)
+                _metaFont = new Font("Segoe UI", 8.25F, FontStyle.Regular);
+        }
+
+        private void DisposeRowFontsAndPlaceholder()
+        {
+            if (_sectionFont != null)
+            {
+                _sectionFont.Dispose();
+                _sectionFont = null;
+            }
+
+            if (_nameFont != null)
+            {
+                _nameFont.Dispose();
+                _nameFont = null;
+            }
+
+            if (_metaFont != null)
+            {
+                _metaFont.Dispose();
+                _metaFont = null;
+            }
+
+            if (_placeholderAvatar != null)
+            {
+                _placeholderAvatar.Dispose();
+                _placeholderAvatar = null;
+            }
+        }
+
+        private Image GetPlaceholderAvatar(ThemeColors colors)
+        {
+            Color bg = colors != null ? colors.ControlBackground : Color.DimGray;
+            if (_placeholderAvatar != null && _placeholderBackColor.ToArgb() == bg.ToArgb())
+                return _placeholderAvatar;
+
+            if (_placeholderAvatar != null)
+            {
+                _placeholderAvatar.Dispose();
+                _placeholderAvatar = null;
+            }
+
             var bmp = new Bitmap(AvatarDisplaySize, AvatarDisplaySize);
             using (Graphics g = Graphics.FromImage(bmp))
-            {
-                g.Clear(colors != null ? colors.ControlBackground : Color.DimGray);
-            }
+                g.Clear(bg);
 
-            return bmp;
+            _placeholderAvatar = bmp;
+            _placeholderBackColor = bg;
+            return _placeholderAvatar;
         }
     }
 }

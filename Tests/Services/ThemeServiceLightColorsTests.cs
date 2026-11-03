@@ -27,6 +27,7 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.Equal(SystemColors.Control, colors.StatusStripBackground);
                 Assert.Equal(SystemColors.GrayText, colors.StatusTextSecondary);
                 Assert.Equal(SystemColors.Highlight, colors.StatusTextAccent);
+                Assert.Equal(Color.FromArgb(45, 45, 48), colors.OfflineColor);
                 Assert.Equal(SystemColors.ControlDark, colors.Border);
                 Assert.Equal(SystemColors.Highlight, colors.Highlight);
                 Assert.Equal(SystemColors.HighlightText, colors.HighlightText);

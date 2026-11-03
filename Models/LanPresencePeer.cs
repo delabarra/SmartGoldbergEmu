@@ -12,6 +12,9 @@ namespace SmartGoldbergEmu.Models
         public string AvatarFilePath { get; set; }
         public DateTime LastSeenUtc { get; set; }
 
+        // Last UDP source IP for this Steam64 (unicast chat / bind checks). Not shown in the list UI.
+        public string RemoteAddress { get; set; }
+
         // Fresh heartbeat within expire window.
         public bool IsPresent { get; set; }
 

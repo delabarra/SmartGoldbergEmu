@@ -300,6 +300,7 @@ namespace SmartGoldbergEmu.Forms
             }
 
             _lanPlayersForm = null;
+            LanChatUiHost.Detach(this);
 
             base.OnFormClosed(e);
         }
@@ -380,9 +381,8 @@ namespace SmartGoldbergEmu.Forms
 
             _lanPlayersForm = new LanPlayersForm();
             _lanPlayersForm.FormClosed += OnLanListFormClosed;
-            _lanPlayersForm.Owner = this;
-            _lanPlayersForm.ApplyInitialPlacement();
-            _lanPlayersForm.Show(this);
+            _lanPlayersForm.ApplyInitialPlacement(this);
+            _lanPlayersForm.Show();
             PersistLanListOpen(true);
             SyncLanToggleMenuState(true);
         }
@@ -3694,6 +3694,8 @@ namespace SmartGoldbergEmu.Forms
                 try
                 {
                     ServiceLocator.LanPresenceService.StartIfEnabled();
+                    ServiceLocator.LanChatService.EnsureHooked();
+                    LanChatUiHost.Attach(this);
                 }
                 catch (Exception ex)
                 {
