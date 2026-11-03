@@ -63,6 +63,7 @@ namespace SmartGoldbergEmu.Forms
         private const int ApiKeyValidationMessageDisplayMs = 3000;
         private const int MinClientHeightForButtons = 300;
         private int _tabControlBottomAreaHeight;
+        private ThemedTabSelector _themedTabSelector;
 
         private enum PendingAvatarChange
         {
@@ -129,6 +130,12 @@ namespace SmartGoldbergEmu.Forms
             _avatarPath = PathConstants.GlobalAccountAvatarPath;
             _apiKeyValidationClearTimer = new Timer { Interval = ApiKeyValidationMessageDisplayMs };
             _apiKeyValidationClearTimer.Tick += OnApiKeyValidationClearTimer_Tick;
+
+            if (tabControl != null)
+            {
+                _themedTabSelector = ThemedTabSelector.Attach(this, tabControl);
+                _themedTabSelector.StripHeightChanged += ThemedTabSelector_StripHeightChanged;
+            }
 
             WireEmulatorTab();
             EnsureLanPlayersSettingsControls();
@@ -555,7 +562,8 @@ namespace SmartGoldbergEmu.Forms
             LoadSteamIdProfilesIntoCombo();
             btnSave.Enabled = false;
 
-            _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Height);
+            // Bottom area is below the tab control (Save/Cancel). Strip sits above, so use Bottom not Height.
+            _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Bottom);
             BeginInvoke((Action)(() => AdjustWindowHeightForCurrentTab()));
         }
 
@@ -1646,16 +1654,25 @@ namespace SmartGoldbergEmu.Forms
             AdjustWindowHeightForCurrentTab();
         }
 
+        private void ThemedTabSelector_StripHeightChanged(object sender, EventArgs e)
+        {
+            AdjustWindowHeightForCurrentTab();
+        }
+
         private void AdjustWindowHeightForCurrentTab()
         {
             if (tabControl == null || tabControl.SelectedTab == null)
                 return;
 
-            int desiredClientHeight = TabFormSizingHelper.CalculateDesiredClientHeight(
-                tabControl,
-                tabControl.SelectedTab,
-                _tabControlBottomAreaHeight,
-                MinClientHeightForButtons);
+            if (_tabControlBottomAreaHeight <= 0)
+                _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Bottom);
+
+            int desiredTabPageHeight = TabFormSizingHelper.MeasureTabPageContentHeight(tabControl.SelectedTab);
+            int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
+            int stripHeight = _themedTabSelector != null ? _themedTabSelector.StripHeight : tabControl.Top;
+            int desiredClientHeight = Math.Max(
+                MinClientHeightForButtons,
+                stripHeight + desiredTabPageHeight + tabChromeHeight + _tabControlBottomAreaHeight);
 
             TabFormSizingHelper.TryApplyFormHeight(this, desiredClientHeight, MinClientHeightForButtons);
         }
@@ -1760,6 +1777,8 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnThemeApplied()
         {
+            if (_themedTabSelector != null && _themeService != null)
+                _themedTabSelector.ApplyColors(_themeService.GetThemeColors(_themeService.EffectiveTheme));
             ConfigureSoundPreviewPlayStopButtons();
             RefreshApiKeyValidationColor();
         }
@@ -1822,6 +1841,13 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (_themedTabSelector != null)
+            {
+                _themedTabSelector.StripHeightChanged -= ThemedTabSelector_StripHeightChanged;
+                _themedTabSelector.Dispose();
+                _themedTabSelector = null;
+            }
+
             CancelSound1Preview();
             CancelSound2Preview();
 
