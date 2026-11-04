@@ -61,7 +61,7 @@ namespace SmartGoldbergEmu.Services
             }
 
             // Same filter as launch dialog initial list (saved FullLaunchOptions); form may re-filter if user toggles Show Extra.
-            // type=none platform/arch entries are never user-visible (Steam auto-picks them).
+            // Silent type=none arch variants stay out of the picker unless alternates exist (then the best none is Steam's default Play).
             var filteredOptions = FilterLaunchOptionsForCurrentSettings(launchOptions);
 
             if (filteredOptions.Count <= 1)
@@ -735,19 +735,44 @@ namespace SmartGoldbergEmu.Services
             if (options == null)
                 return new List<LaunchOption>();
 
+            // Selectable rows only (silent type=none stripped). Restricted types honor Show Extra / FullLaunchOptions.
             var filtered = FilterOptions(options, excludeRestrictedTypes);
+
+            // Steam: when alternates exist, the best silent type=none becomes the default "Play" row beside them.
+            // Arch-only type=none lists stay empty here so launch auto-picks without a dialog.
+            if (filtered.Count > 0)
+            {
+                LaunchOption bestAuto = PickBestAutomaticLaunchOption(
+                    options.Where(IsSteamPlatformAutoLaunchOption).ToList());
+                if (bestAuto != null && !filtered.Any(o => ReferenceEquals(o, bestAuto)))
+                    filtered.Insert(0, bestAuto);
+            }
+
             return filtered
-                .OrderBy(opt => string.IsNullOrEmpty(opt.Type) || opt.Type.Equals("default", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .OrderBy(GetLaunchOptionUiSortRank)
                 .ToList();
         }
 
-        // Steam platform/arch auto entries (type=none) are invisible in the picker but still auto-selected at launch.
+        // Silent type=none (no description): OS/arch routing. Described type=none stays selectable like Steam.
         public static bool IsSteamPlatformAutoLaunchOption(LaunchOption option)
         {
-            if (option == null)
-                return false;
-            string t = option.Type != null ? option.Type.Trim() : string.Empty;
-            return t.Equals(SteamPicsKeyNames.LaunchOptionTypeNone, StringComparison.OrdinalIgnoreCase);
+            return option != null && option.IsSteamPlatformAutoLaunchType();
+        }
+
+        // default / silent none first (Steam's primary Play), then untitled, then named extras.
+        private static int GetLaunchOptionUiSortRank(LaunchOption opt)
+        {
+            if (opt == null)
+                return 100;
+
+            string t = opt.Type != null ? opt.Type.Trim() : string.Empty;
+            if (t.Equals(SteamPicsKeyNames.Default, StringComparison.OrdinalIgnoreCase))
+                return 0;
+            if (opt.IsSteamPlatformAutoLaunchType())
+                return 1;
+            if (string.IsNullOrEmpty(t))
+                return 2;
+            return 3;
         }
 
         // Prefer games.ini Path when a type=none Steam entry would start a different existing executable.
@@ -1038,7 +1063,7 @@ namespace SmartGoldbergEmu.Services
                 if (opt == null)
                     return false;
 
-                // Never list Steam platform/arch auto entries (type=none), even with Show Extra on.
+                // Silent type=none stays out of the base list; FilterLaunchOptionsForUi may re-add the best one.
                 if (opt.IsSteamPlatformAutoLaunchType())
                     return false;
 

@@ -356,7 +356,7 @@ namespace SmartGoldbergEmu.Forms
             this.MinimumSize = new System.Drawing.Size(400, 400);
             this.Name = "LanChatForm";
             this.ShowInTaskbar = true;
-            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            this.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
             this.Text = "LAN Chat";
             this.tlpRoot.ResumeLayout(false);
             this.tlpRoot.PerformLayout();
@@ -371,7 +371,6 @@ namespace SmartGoldbergEmu.Forms
             this.flpLobbyInviteButtons.ResumeLayout(false);
             this.flpLobbyInviteButtons.PerformLayout();
             this.pnlStatusBar.ResumeLayout(false);
-            this.pnlStatusBar.PerformLayout();
             this.pnlComposer.ResumeLayout(false);
             this.pnlComposer.PerformLayout();
             this.ResumeLayout(false);

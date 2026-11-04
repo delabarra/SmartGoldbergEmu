@@ -185,7 +185,7 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public void SetLanChatWindowState_round_trips_size_in_ui_settings()
+        public void SetLanChatWindowState_round_trips_size_and_location_in_ui_settings()
         {
             string dir = TestFileHelper.CreateTempDirectory("sge-ui-settings-lan-chat-");
             try
@@ -202,14 +202,18 @@ namespace SmartGoldbergEmu.Tests.Services
                 });
                 Assert.True(result.IsValid);
                 Assert.True(service.HasPersistedLanChatWindowLayout());
+                Assert.True(service.HasPersistedLanChatWindowLocation());
 
                 var loaded = service.GetLanChatWindowState();
                 Assert.NotNull(loaded);
                 Assert.Equal(480, loaded.Size.Width);
                 Assert.Equal(540, loaded.Size.Height);
+                Assert.Equal(10, loaded.Location.X);
+                Assert.Equal(20, loaded.Location.Y);
 
                 string uiText = File.ReadAllText(uiSettingsPath);
                 Assert.Contains("lan_chat_size=480,540", uiText);
+                Assert.Contains("lan_chat_location=10,20", uiText);
                 Assert.DoesNotContain("lan_chat_size", File.ReadAllText(configPath));
             }
             finally

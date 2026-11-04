@@ -88,7 +88,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblGamesFound.Name = "lblGamesFound";
             this.lblGamesFound.Size = new System.Drawing.Size(285, 17);
             this.lblGamesFound.Spring = true;
-            this.lblGamesFound.Text = "0 games · 0 players";
+            this.lblGamesFound.Text = "Found 0 players in 0 games";
             this.lblGamesFound.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             //
             // LanPlayersForm

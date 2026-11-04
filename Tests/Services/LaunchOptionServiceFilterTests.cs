@@ -67,19 +67,104 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
-        public void FilterLaunchOptionsForUi_excludes_type_none_even_when_showing_extra()
+        public void FilterLaunchOptionsForUi_hides_arch_only_type_none_when_no_alternates()
         {
             var options = new List<LaunchOption>
             {
                 new LaunchOption { Executable = "StreetsOfRogue.exe", Type = SteamPicsKeyNames.LaunchOptionTypeNone, OsArch = "64" },
                 new LaunchOption { Executable = "StreetsOfRogue32.exe", Type = SteamPicsKeyNames.LaunchOptionTypeNone, OsArch = "32" },
-                new LaunchOption { Description = "Play", Type = "default", Executable = "play.exe" },
             };
 
             var filtered = _service.FilterLaunchOptionsForUi(options, excludeRestrictedTypes: false);
 
-            Assert.Single(filtered);
+            Assert.Empty(filtered);
+        }
+
+        [Fact]
+        public void FilterLaunchOptionsForUi_includes_best_type_none_when_alternates_exist()
+        {
+            // DOOM + DOOM II (2280): silent type=none default + described alternate.
+            var none64 = new LaunchOption
+            {
+                Executable = @"rerelease\DOOM.exe",
+                Type = SteamPicsKeyNames.LaunchOptionTypeNone,
+                OsArch = "64",
+            };
+            var none32 = new LaunchOption
+            {
+                Executable = @"rerelease\DOOM32.exe",
+                Type = SteamPicsKeyNames.LaunchOptionTypeNone,
+                OsArch = "32",
+            };
+            var dos = new LaunchOption
+            {
+                Description = "Launch DOS version",
+                Executable = @"dosbox\launcher.exe",
+            };
+
+            var filtered = _service.FilterLaunchOptionsForUi(
+                new List<LaunchOption> { none32, dos, none64 },
+                excludeRestrictedTypes: true);
+
+            Assert.Equal(2, filtered.Count);
+            Assert.Same(
+                Environment.Is64BitOperatingSystem ? none64 : none32,
+                filtered[0]);
+            Assert.Same(dos, filtered[1]);
+        }
+
+        [Fact]
+        public void FilterLaunchOptionsForUi_keeps_described_type_none_as_selectable()
+        {
+            var options = new List<LaunchOption>
+            {
+                new LaunchOption
+                {
+                    Executable = @"rerelease\DOOM.exe",
+                    Type = SteamPicsKeyNames.LaunchOptionTypeNone,
+                    OsArch = "64",
+                },
+                new LaunchOption
+                {
+                    Description = "Launch DOS version",
+                    Executable = @"base\dosbox.exe",
+                    Type = SteamPicsKeyNames.LaunchOptionTypeNone,
+                },
+            };
+
+            var filtered = _service.FilterLaunchOptionsForUi(options, excludeRestrictedTypes: false);
+
+            Assert.Equal(2, filtered.Count);
+            Assert.Contains(filtered, o => o.Description == "Launch DOS version");
+            Assert.Contains(filtered, o => o.Executable == @"rerelease\DOOM.exe");
+        }
+
+        [Fact]
+        public void FilterLaunchOptionsForUi_adds_best_type_none_beside_explicit_default()
+        {
+            var none64 = new LaunchOption
+            {
+                Executable = "StreetsOfRogue.exe",
+                Type = SteamPicsKeyNames.LaunchOptionTypeNone,
+                OsArch = "64",
+            };
+            var none32 = new LaunchOption
+            {
+                Executable = "StreetsOfRogue32.exe",
+                Type = SteamPicsKeyNames.LaunchOptionTypeNone,
+                OsArch = "32",
+            };
+            var play = new LaunchOption { Description = "Play", Type = "default", Executable = "play.exe" };
+
+            var filtered = _service.FilterLaunchOptionsForUi(
+                new List<LaunchOption> { none64, none32, play },
+                excludeRestrictedTypes: false);
+
+            Assert.Equal(2, filtered.Count);
             Assert.Equal("Play", filtered[0].Description);
+            Assert.Same(
+                Environment.Is64BitOperatingSystem ? none64 : none32,
+                filtered[1]);
         }
 
         [Fact]

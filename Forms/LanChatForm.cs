@@ -24,6 +24,7 @@ namespace SmartGoldbergEmu.Forms
         private readonly LanPresenceService _presence;
         private readonly AppDataService _appData;
         private readonly string _peerSteamId;
+        private readonly ContextMenuStrip _peerMenu;
         private bool _eventsHooked;
         private bool _showWithoutActivation;
         private bool _hasUnreadAttention;
@@ -36,6 +37,7 @@ namespace SmartGoldbergEmu.Forms
         private bool _sending;
         private bool _acceptingLobbyInvite;
         private bool _syncingComposeScroll;
+        private bool _initialLayoutApplied;
         // Layout while Minimized uses a tiny ClientSize; defer panel/history updates until restore.
         private bool _deferredSessionRefresh;
 
@@ -77,6 +79,9 @@ namespace SmartGoldbergEmu.Forms
             _presence = presence ?? throw new ArgumentNullException(nameof(presence));
             _appData = appData;
             InitializeComponent();
+            _peerMenu = new ContextMenuStrip();
+            _peerMenu.Opening += OnPeerMenu_Opening;
+            WireProfileContextMenu();
             rtfHistory.HandleCreated += OnHistoryHandleCreated;
             rtfHistory.Resize += OnHistoryResize;
             txtCompose.MaxLength = LanChatConstants.MaxMessageChars;
@@ -84,12 +89,32 @@ namespace SmartGoldbergEmu.Forms
             txtCompose.Resize += OnComposeResize;
             pnlComposer.Resize += (s, e) => EnsureComposerLayout();
             UpdateComposeCharCount();
-            if (_appData != null)
-                WindowStateHelper.TryRestoreLanChatWindowSize(this, _appData);
+            if (_appData != null && WindowStateHelper.TryRestoreLanChatWindowState(this, _appData))
+                _initialLayoutApplied = true;
             HookChatEvents();
             _chat.EnsureSessionShell(_peerSteamId);
             RefreshProfile();
             RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
+        }
+
+        // Restored layout wins; otherwise center on the relative form (Main / LAN Players).
+        public void ApplyInitialPlacement(Form relativeTo)
+        {
+            if (_initialLayoutApplied)
+                return;
+
+            if (_appData != null && WindowStateHelper.TryRestoreLanChatWindowState(this, _appData))
+            {
+                _initialLayoutApplied = true;
+                return;
+            }
+
+            if (relativeTo != null && !relativeTo.IsDisposed)
+                WindowStateHelper.CenterFormOnParent(this, relativeTo);
+            else
+                WindowStateHelper.CenterFormOnScreen(this);
+
+            _initialLayoutApplied = true;
         }
 
         public void SetOpenWithoutActivation(bool value)
@@ -193,8 +218,61 @@ namespace SmartGoldbergEmu.Forms
             FlashWindowHelper.Stop(this);
             UnhookChatEvents();
             LanChatUiHost.NotifyClosed(this);
+            DetachProfileContextMenu();
+            if (_peerMenu != null)
+            {
+                _peerMenu.Opening -= OnPeerMenu_Opening;
+                _peerMenu.Dispose();
+            }
             DisposeAvatarImage();
             base.OnFormClosed(e);
+        }
+
+        private void WireProfileContextMenu()
+        {
+            foreach (Control control in EnumerateProfileControls())
+                control.ContextMenuStrip = _peerMenu;
+        }
+
+        private void DetachProfileContextMenu()
+        {
+            foreach (Control control in EnumerateProfileControls())
+            {
+                if (ReferenceEquals(control.ContextMenuStrip, _peerMenu))
+                    control.ContextMenuStrip = null;
+            }
+        }
+
+        private IEnumerable<Control> EnumerateProfileControls()
+        {
+            Control[] profileControls = { pnlProfile, picAvatar, lblName, lblPersona, lblSteamId };
+            for (int i = 0; i < profileControls.Length; i++)
+            {
+                Control control = profileControls[i];
+                if (control != null && !control.IsDisposed)
+                    yield return control;
+            }
+        }
+
+        private void OnPeerMenu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            LanPeerContextMenuHelper.ClearItems(_peerMenu);
+            LanPeerContextMenuHelper.PopulatePeerMenu(
+                _peerMenu,
+                this,
+                _peerSteamId,
+                _presence,
+                _appData,
+                new LanPeerContextMenuHelper.Options
+                {
+                    IncludeMessage = false,
+                    IncludeRemoveFromPlayersSeen = true,
+                    OpenChatOnAllowAgain = false,
+                    AfterLocalChange = RefreshProfile
+                });
+
+            if (_peerMenu.Items.Count == 0)
+                e.Cancel = true;
         }
 
         private void TryClearUnreadAttentionIfInteractive()

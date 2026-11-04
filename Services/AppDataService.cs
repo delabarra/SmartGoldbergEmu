@@ -733,6 +733,11 @@ namespace SmartGoldbergEmu.Services
             return ReadLanChatWindowState(iniFile) != null;
         }
 
+        public bool HasPersistedLanChatWindowLocation()
+        {
+            return HasPersistedWindowSettingKey(_uiSettingsFilePath, ApplicationConstants.SettingKeyLanChatLocation);
+        }
+
         public ValidationResult SetLanChatWindowState(WindowState windowState)
         {
             if (windowState == null)

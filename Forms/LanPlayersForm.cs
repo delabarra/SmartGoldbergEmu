@@ -1,14 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Constants;
-using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
@@ -39,10 +35,6 @@ namespace SmartGoldbergEmu.Forms
         // Survives RefreshPeerList rebuilds for this form instance.
         private readonly HashSet<string> _collapsedSections = new HashSet<string>(StringComparer.Ordinal);
         private Timer _lastSeenRefreshTimer;
-        private Timer _pendingMenuTimer;
-        // SteamId + screen point — not a Control: RefreshPeerList disposes row controls and would abort Show.
-        private string _pendingMenuSteamId;
-        private Point _pendingMenuScreenLocation;
         private Font _sectionFont;
         private Font _nameFont;
         private Font _metaFont;
@@ -127,12 +119,6 @@ namespace SmartGoldbergEmu.Forms
                 flpLanPlayers.SizeChanged -= OnFlpLanPlayers_SizeChanged;
             UnhookPresenceEvents();
             StopAndDisposeLastSeenRefreshTimer();
-            CancelPendingPlayerMenu();
-            if (_pendingMenuTimer != null)
-            {
-                _pendingMenuTimer.Dispose();
-                _pendingMenuTimer = null;
-            }
             _playerMenu.Opening -= OnPlayerMenu_Opening;
             _playerMenu.Dispose();
             ClearPlayerRows();
@@ -452,9 +438,9 @@ namespace SmartGoldbergEmu.Forms
 
         private void UpdateFooterStatus(int uniqueGames, int presentPlayers)
         {
-            string gamesText = uniqueGames == 1 ? "1 game" : uniqueGames + " games";
             string playersText = presentPlayers == 1 ? "1 player" : presentPlayers + " players";
-            lblGamesFound.Text = gamesText + " · " + playersText;
+            string gamesText = uniqueGames == 1 ? "1 game" : uniqueGames + " games";
+            lblGamesFound.Text = "Found " + playersText + " in " + gamesText;
         }
 
         // Distinct AppIds currently being played by you or present peers.
@@ -730,7 +716,6 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            WirePlayerRowMenuEvents(row);
             row.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var pic = new PictureBox
@@ -742,7 +727,6 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            WirePlayerRowMenuEvents(pic);
             pic.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
             Image avatar = LanAvatarImageHelper.TryLoadAvatar(peer.AvatarFilePath, AvatarDisplaySize);
             if (avatar != null)
@@ -767,7 +751,6 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            WirePlayerRowMenuEvents(lblName);
             lblName.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var lblStatus = new Label
@@ -783,7 +766,6 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            WirePlayerRowMenuEvents(lblStatus);
             lblStatus.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             var lblSteamId = new Label
@@ -799,7 +781,6 @@ namespace SmartGoldbergEmu.Forms
                 Tag = steamId,
                 ContextMenuStrip = _playerMenu
             };
-            WirePlayerRowMenuEvents(lblSteamId);
             lblSteamId.MouseDoubleClick += OnPlayerRow_MouseDoubleClick;
 
             row.Controls.Add(pic);
@@ -810,37 +791,11 @@ namespace SmartGoldbergEmu.Forms
             return row;
         }
 
-        private void WirePlayerRowMenuEvents(Control control)
-        {
-            if (control == null)
-                return;
-            // MouseUp (not MouseDown): Show-on-down is dismissed by the matching mouse-up.
-            control.MouseUp += OnPlayerRow_MouseUp;
-        }
-
-        private void OnPlayerRow_MouseUp(object sender, MouseEventArgs e)
-        {
-            if (e.Button != MouseButtons.Left)
-                return;
-
-            Control control = sender as Control;
-            if (control == null || control.IsDisposed)
-                return;
-
-            CaptureContextPeer(control);
-            if (string.IsNullOrEmpty(_contextSteamId))
-                return;
-
-            // Defer menu so a double-click can open chat instead.
-            SchedulePendingPlayerMenu(_contextSteamId, control.PointToScreen(e.Location));
-        }
-
         private void OnPlayerRow_MouseDoubleClick(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left)
                 return;
 
-            CancelPendingPlayerMenu();
             if (_playerMenu.Visible)
                 _playerMenu.Close();
 
@@ -867,49 +822,6 @@ namespace SmartGoldbergEmu.Forms
                 return;
 
             LanChatUiHost.OpenChat(_contextSteamId, Owner ?? this);
-        }
-
-        private void SchedulePendingPlayerMenu(string steamId, Point screenLocation)
-        {
-            CancelPendingPlayerMenu();
-            if (string.IsNullOrEmpty(steamId))
-                return;
-
-            _pendingMenuSteamId = steamId;
-            _pendingMenuScreenLocation = screenLocation;
-
-            if (_pendingMenuTimer == null)
-            {
-                _pendingMenuTimer = new Timer();
-                _pendingMenuTimer.Tick += OnPendingMenuTimer_Tick;
-            }
-
-            _pendingMenuTimer.Interval = SystemInformation.DoubleClickTime;
-            _pendingMenuTimer.Start();
-        }
-
-        private void CancelPendingPlayerMenu()
-        {
-            if (_pendingMenuTimer != null)
-                _pendingMenuTimer.Stop();
-            _pendingMenuSteamId = null;
-        }
-
-        private void OnPendingMenuTimer_Tick(object sender, EventArgs e)
-        {
-            string steamId = _pendingMenuSteamId;
-            Point screenLocation = _pendingMenuScreenLocation;
-            CancelPendingPlayerMenu();
-
-            if (IsDisposed || Disposing || string.IsNullOrEmpty(steamId))
-                return;
-
-            ApplyContextPeer(steamId);
-            if (string.IsNullOrEmpty(_contextSteamId))
-                return;
-
-            // Screen coords: row Controls may have been disposed/rebuilt by PeersChanged since the click.
-            _playerMenu.Show(screenLocation);
         }
 
         private static string FindSteamIdTag(Control start)
@@ -942,10 +854,8 @@ namespace SmartGoldbergEmu.Forms
 
         private void OnPlayerMenu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            // Right-click sets SourceControl to the row child; left-click Show(Point) may leave it null —
-            // do not wipe a SteamId already applied for the deferred left-click menu.
             Control source = _playerMenu.SourceControl;
-            if (source != null && !string.IsNullOrEmpty(FindSteamIdTag(source)))
+            if (source != null)
                 CaptureContextPeer(source);
 
             // Cancel before clearing — emptying then cancelling leaves ContextMenuStrip needing another click.
@@ -955,7 +865,7 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
-            ClearMenuItems(_playerMenu);
+            LanPeerContextMenuHelper.ClearItems(_playerMenu);
 
             if (_contextIsSelf)
                 PopulateSelfPlayerMenu();
@@ -1000,135 +910,21 @@ namespace SmartGoldbergEmu.Forms
             _playerMenu.Items.Add("Edit account…", null, OnEditAccount_Click);
         }
 
-        // Chat → play together → favorites → safety → copy.
         private void PopulatePeerPlayerMenu()
         {
-            bool present = _presence.IsPeerPresent(_contextSteamId);
-            bool chatBlocked = false;
-            try
-            {
-                chatBlocked = ServiceLocator.LanChatService.IsChatBlocked(_contextSteamId);
-            }
-            catch
-            {
-            }
-
-            bool addedTopGroup = false;
-            if (chatBlocked)
-            {
-                _playerMenu.Items.Add("Allow chat again", null, OnAllowChatAgain_Click);
-                addedTopGroup = true;
-            }
-            else if (present && _presence.IsOnline && !_presence.IsLocalBusy)
-            {
-                _playerMenu.Items.Add("Message…", null, OnMessagePeer_Click);
-                addedTopGroup = true;
-            }
-
-            bool addedPlayAction = false;
-            if (present && _presence.IsOnline)
-            {
-                LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
-
-                ulong joinAppId = LanGameJoinService.GetJoinableAppId(peer);
-                if (joinAppId != 0)
+            LanPeerContextMenuHelper.PopulatePeerMenu(
+                _playerMenu,
+                this,
+                _contextSteamId,
+                _presence,
+                _appData,
+                new LanPeerContextMenuHelper.Options
                 {
-                    // Join requires the AppId in this library — denylist alone must not show the item.
-                    GameConfig joinGame = ServiceLocator.LanGameJoinService.TryGetLibraryGame(joinAppId);
-                    if (joinGame != null
-                        && LanGameJoinService.SupportsSteamLobbyJoin(joinAppId, joinGame))
-                    {
-                        EnsureMenuSeparator(ref addedTopGroup);
-                        _playerMenu.Items.Add("Join lobby", null, OnJoinPeerGame_Click);
-                        addedPlayAction = true;
-                    }
-                }
-
-                LanPresencePeer self = _presence.GetLocalSelfSnapshot();
-                if (self != null && self.HasJoinableLobby && self.AppId != 0)
-                {
-                    GameConfig inviteGame = ServiceLocator.LanGameJoinService.TryGetLibraryGame(self.AppId);
-                    if (LanGameJoinService.SupportsSteamLobbyJoin(self.AppId, inviteGame))
-                    {
-                        if (!addedPlayAction)
-                            EnsureMenuSeparator(ref addedTopGroup);
-                        _playerMenu.Items.Add("Invite to lobby…", null, OnInvitePeerToLobby_Click);
-                        addedPlayAction = true;
-                    }
-                }
-
-                if (peer != null && peer.IsPlaying && peer.AppId != 0)
-                {
-                    if (!addedPlayAction)
-                        EnsureMenuSeparator(ref addedTopGroup);
-                    _playerMenu.Items.Add("Open Steam store page…", null, OnOpenPeerSteamStore_Click);
-                    addedPlayAction = true;
-                }
-            }
-
-            if (addedTopGroup || addedPlayAction)
-                _playerMenu.Items.Add(new ToolStripSeparator());
-
-            bool favorite = false;
-            try
-            {
-                favorite = _appData.IsLanFavoriteSteamId(_contextSteamId);
-            }
-            catch
-            {
-            }
-
-            if (favorite)
-                _playerMenu.Items.Add("Remove from favorites", null, OnToggleFavorite_Click);
-            else
-                _playerMenu.Items.Add("Add to favorites", null, OnToggleFavorite_Click);
-
-            // Absent remembered peers only — online rows stay in Online until they leave.
-            if (!present)
-            {
-                bool remembered = false;
-                try
-                {
-                    remembered = _appData.IsLanSeenPeer(_contextSteamId);
-                }
-                catch
-                {
-                }
-
-                if (remembered)
-                    _playerMenu.Items.Add("Remove from Players seen", null, OnRemoveFromPlayersSeen_Click);
-            }
-
-            _playerMenu.Items.Add(new ToolStripSeparator());
-
-            bool muted = false;
-            try
-            {
-                muted = _appData.IsLanMutedSteamId(_contextSteamId);
-            }
-            catch
-            {
-            }
-
-            if (muted)
-                _playerMenu.Items.Add("Unmute", null, OnToggleMute_Click);
-            else
-                _playerMenu.Items.Add("Mute", null, OnToggleMute_Click);
-
-            // Unblock stays in the chat group above; safety group only offers Block when not blocked.
-            if (!chatBlocked)
-                _playerMenu.Items.Add("Block chat", null, OnBlockChat_Click);
-
-            _playerMenu.Items.Add(new ToolStripSeparator());
-            _playerMenu.Items.Add("Copy Steam ID", null, OnCopySteamId_Click);
-        }
-
-        private void EnsureMenuSeparator(ref bool priorGroupAdded)
-        {
-            if (!priorGroupAdded)
-                return;
-            _playerMenu.Items.Add(new ToolStripSeparator());
-            priorGroupAdded = false;
+                    IncludeMessage = true,
+                    IncludeRemoveFromPlayersSeen = true,
+                    OpenChatOnAllowAgain = true,
+                    AfterLocalChange = RefreshPeerList
+                });
         }
 
         private void PopulateLookingToPlayMenu(ToolStripMenuItem parent)
@@ -1354,188 +1150,6 @@ namespace SmartGoldbergEmu.Forms
             RefreshPeerList();
         }
 
-        private void OnMessagePeer_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
-                return;
-            LanChatUiHost.OpenChat(_contextSteamId, this.Owner ?? this);
-        }
-
-        private void OnJoinPeerGame_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId))
-                return;
-
-            LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
-            if (peer == null)
-            {
-                MessageBox.Show(this, "That player is no longer available.", "LAN Players",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            Form owner = Owner ?? this;
-            CancellationToken token = ServiceLocator.ApplicationLifetimeToken;
-            _ = JoinPeerGameUiAsync(peer, owner, token)
-                .ForgetFaults(Program.LogService, nameof(OnJoinPeerGame_Click));
-        }
-
-        private async Task JoinPeerGameUiAsync(LanPresencePeer peer, Form owner, CancellationToken token)
-        {
-            ValidationResult result;
-            try
-            {
-                result = await ServiceLocator.LanGameJoinService
-                    .JoinPeerGameAsync(peer, owner, token)
-                    .ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN join failed: " + ex.Message);
-                if (!IsDisposed && !Disposing)
-                {
-                    MessageBox.Show(
-                        this,
-                        "Could not join: " + ex.Message,
-                        "LAN Players",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-                return;
-            }
-
-            if (result != null && !result.IsValid && !IsDisposed && !Disposing
-                && !string.Equals(
-                    result.ErrorMessage,
-                    LanGameJoinService.RelaunchCancelledMessage,
-                    StringComparison.Ordinal))
-            {
-                MessageBox.Show(
-                    this,
-                    result.ErrorMessage ?? "Could not join.",
-                    "LAN Players",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-            }
-        }
-
-        private void OnInvitePeerToLobby_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId))
-                return;
-
-            LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
-            if (peer == null)
-            {
-                MessageBox.Show(this, "That player is no longer available.", "LAN Players",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            CancellationToken token = ServiceLocator.ApplicationLifetimeToken;
-            _ = InvitePeerToLobbyUiAsync(peer, token)
-                .ForgetFaults(Program.LogService, nameof(OnInvitePeerToLobby_Click));
-        }
-
-        private void OnOpenPeerSteamStore_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId))
-                return;
-
-            LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
-            if (peer == null || !peer.IsPlaying || peer.AppId == 0)
-            {
-                MessageBox.Show(this, "That player is not in a game right now.", "LAN Players",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            string url = string.Format(
-                CultureInfo.InvariantCulture,
-                ApplicationConstants.SteamStoreAppUrlFormat,
-                peer.AppId);
-            if (!PathValidationHelper.IsSafeUrl(url))
-            {
-                MessageBox.Show(this, "Invalid URL format detected.", "Invalid URL",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                Process.Start(url);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError("Failed to open Steam store page", ex);
-                MessageBox.Show(this, "Failed to open store page.", "Could Not Open Link",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private async Task InvitePeerToLobbyUiAsync(LanPresencePeer peer, CancellationToken token)
-        {
-            ValidationResult result;
-            try
-            {
-                UseWaitCursor = true;
-                result = await ServiceLocator.LanGameJoinService
-                    .InvitePeerToLocalGameAsync(peer, token)
-                    .ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN lobby invite failed: " + ex.Message);
-                result = ValidationResult.Failure(ex.Message);
-            }
-            finally
-            {
-                if (!IsDisposed && !Disposing)
-                    UseWaitCursor = false;
-            }
-
-            if (IsDisposed || Disposing)
-                return;
-
-            if (result != null && result.IsValid)
-            {
-                LanPresencePeer self = _presence.GetLocalSelfSnapshot();
-                ulong appId = self != null ? self.AppId : 0;
-                string gameName = self != null ? self.GameName : null;
-                ServiceLocator.LanChatService.RecordGameInviteSent(peer.SteamId, appId, gameName);
-                LanChatUiHost.OpenChat(peer.SteamId, Owner ?? this, userInitiated: true);
-                return;
-            }
-
-            MessageBox.Show(
-                this,
-                result != null ? (result.ErrorMessage ?? "Could not send invite.") : "Could not send invite.",
-                "LAN Players",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-        }
-
-        private LanPresencePeer FindPeerSnapshot(string steamId)
-        {
-            if (string.IsNullOrEmpty(steamId))
-                return null;
-            try
-            {
-                IReadOnlyList<LanPresencePeer> peers = _presence.GetPeersSnapshot();
-                for (int i = 0; i < peers.Count; i++)
-                {
-                    LanPresencePeer p = peers[i];
-                    if (p != null && string.Equals(p.SteamId, steamId, StringComparison.Ordinal))
-                        return p;
-                }
-            }
-            catch
-            {
-            }
-
-            return null;
-        }
-
         private void OnCopySteamId_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(_contextSteamId))
@@ -1555,145 +1169,6 @@ namespace SmartGoldbergEmu.Forms
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
-        }
-
-        private void OnBlockChat_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
-                return;
-
-            try
-            {
-                ValidationResult result = ServiceLocator.LanChatService.SetChatBlocked(_contextSteamId, true);
-                if (!result.IsValid)
-                {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        result.ErrorMessage ?? "Could not block chat.",
-                        "LAN Chat",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN chat block failed: " + ex.Message);
-            }
-        }
-
-        private void OnAllowChatAgain_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
-                return;
-
-            try
-            {
-                ValidationResult result = ServiceLocator.LanChatService.SetChatBlocked(_contextSteamId, false);
-                if (!result.IsValid)
-                {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        result.ErrorMessage ?? "Could not unblock chat.",
-                        "LAN Chat",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN chat unblock failed: " + ex.Message);
-                return;
-            }
-
-            LanChatUiHost.OpenChat(_contextSteamId, this.Owner ?? this);
-        }
-
-        private void OnRemoveFromPlayersSeen_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
-                return;
-
-            try
-            {
-                ValidationResult result = _presence.ForgetSeenPeer(_contextSteamId);
-                if (!result.IsValid)
-                {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        result.ErrorMessage ?? "Could not remove player from Players seen.",
-                        "LAN Players",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN Players: failed to remove seen peer: " + ex.Message);
-                return;
-            }
-
-            RefreshPeerList();
-        }
-
-        private void OnToggleFavorite_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
-                return;
-
-            bool currentlyFavorite = false;
-            try
-            {
-                currentlyFavorite = _appData.IsLanFavoriteSteamId(_contextSteamId);
-                ValidationResult result = _appData.SetLanFavoriteSteamId(_contextSteamId, !currentlyFavorite);
-                if (!result.IsValid)
-                {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        result.ErrorMessage ?? "Could not update favorites.",
-                        "LAN Players",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN Players: failed to update favorite: " + ex.Message);
-                return;
-            }
-
-            RefreshPeerList();
-        }
-
-        private void OnToggleMute_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
-                return;
-
-            try
-            {
-                bool currentlyMuted = _appData.IsLanMutedSteamId(_contextSteamId);
-                ValidationResult result = _appData.SetLanMutedSteamId(_contextSteamId, !currentlyMuted);
-                if (!result.IsValid)
-                {
-                    FormMessageBoxHelper.ShowIfAlive(
-                        this,
-                        result.ErrorMessage ?? "Could not update mute list.",
-                        "LAN Players",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogWarning("LAN Players: failed to update mute: " + ex.Message);
-                return;
-            }
-
-            RefreshPeerList();
         }
 
         private void ClearPlayerRows()
@@ -1726,19 +1201,6 @@ namespace SmartGoldbergEmu.Forms
 
             for (int i = 0; i < root.Controls.Count; i++)
                 DetachRowImages(root.Controls[i]);
-        }
-
-        private static void ClearMenuItems(ContextMenuStrip menu)
-        {
-            if (menu == null)
-                return;
-
-            while (menu.Items.Count > 0)
-            {
-                ToolStripItem item = menu.Items[0];
-                menu.Items.RemoveAt(0);
-                item.Dispose();
-            }
         }
 
         private void EnsureRowFonts()

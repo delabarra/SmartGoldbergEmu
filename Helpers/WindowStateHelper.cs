@@ -78,26 +78,7 @@ namespace SmartGoldbergEmu.Helpers
             if (appDataService == null)
                 throw new ArgumentNullException(nameof(appDataService));
 
-            try
-            {
-                if (form.WindowState == FormWindowState.Minimized)
-                {
-                    return;
-                }
-
-                var windowState = new WindowState
-                {
-                    Size = form.Size,
-                    Location = form.Location,
-                    State = form.WindowState
-                };
-
-                appDataService.SetWindowState(windowState);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Failed to save window state: {ex.Message}");
-            }
+            SaveFormWindowState(form, appDataService.SetWindowState, "Failed to save window state");
         }
 
         // Restores LAN list layout from ui_settings.ini. Returns false when caller should use its default placement.
@@ -108,81 +89,28 @@ namespace SmartGoldbergEmu.Helpers
             if (appDataService == null)
                 throw new ArgumentNullException(nameof(appDataService));
 
-            try
-            {
-                if (!appDataService.HasPersistedLanListWindowLayout())
-                    return false;
-
-                var windowState = appDataService.GetLanListWindowState();
-                if (windowState == null)
-                    return false;
-
-                bool applied = false;
-
-                if (windowState.Size.Width > 0 && windowState.Size.Height > 0)
-                {
-                    var size = windowState.Size;
-                    size.Width = Math.Max(size.Width, form.MinimumSize.Width);
-                    size.Height = Math.Max(size.Height, form.MinimumSize.Height);
-                    form.Size = size;
-                    applied = true;
-                }
-
-                if (appDataService.HasPersistedLanListWindowLocation() && IsLocationValid(windowState.Location))
-                {
-                    form.StartPosition = FormStartPosition.Manual;
-                    form.Location = windowState.Location;
-                    applied = true;
-                }
-                else if (applied)
-                {
-                    return false;
-                }
-
-                if (windowState.State == FormWindowState.Maximized ||
-                    windowState.State == FormWindowState.Minimized ||
-                    windowState.State == FormWindowState.Normal)
-                {
-                    form.WindowState = windowState.State;
-                    applied = true;
-                }
-
-                return applied;
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Failed to restore LAN list window state: {ex.Message}");
-                return false;
-            }
+            return TryRestoreAuxiliaryWindowState(
+                form,
+                appDataService.HasPersistedLanListWindowLayout,
+                appDataService.GetLanListWindowState,
+                appDataService.HasPersistedLanListWindowLocation,
+                "Failed to restore LAN list window state");
         }
 
-        public static bool TryRestoreLanChatWindowSize(Form form, AppDataService appDataService)
+        // Restores LAN chat layout from ui_settings.ini. Returns false when caller should use its default placement.
+        public static bool TryRestoreLanChatWindowState(Form form, AppDataService appDataService)
         {
             if (form == null)
                 throw new ArgumentNullException(nameof(form));
             if (appDataService == null)
                 throw new ArgumentNullException(nameof(appDataService));
 
-            try
-            {
-                if (!appDataService.HasPersistedLanChatWindowLayout())
-                    return false;
-
-                var windowState = appDataService.GetLanChatWindowState();
-                if (windowState == null || windowState.Size.Width <= 0 || windowState.Size.Height <= 0)
-                    return false;
-
-                var size = windowState.Size;
-                size.Width = Math.Max(size.Width, form.MinimumSize.Width);
-                size.Height = Math.Max(size.Height, form.MinimumSize.Height);
-                form.Size = size;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Failed to restore LAN chat window size: {ex.Message}");
-                return false;
-            }
+            return TryRestoreAuxiliaryWindowState(
+                form,
+                appDataService.HasPersistedLanChatWindowLayout,
+                appDataService.GetLanChatWindowState,
+                appDataService.HasPersistedLanChatWindowLocation,
+                "Failed to restore LAN chat window state");
         }
 
         public static void SaveLanChatWindowState(Form form, AppDataService appDataService)
@@ -192,24 +120,7 @@ namespace SmartGoldbergEmu.Helpers
             if (appDataService == null)
                 throw new ArgumentNullException(nameof(appDataService));
 
-            try
-            {
-                if (form.WindowState == FormWindowState.Minimized)
-                    return;
-
-                var windowState = new WindowState
-                {
-                    Size = form.Size,
-                    Location = form.Location,
-                    State = form.WindowState
-                };
-
-                appDataService.SetLanChatWindowState(windowState);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Failed to save LAN chat window state: {ex.Message}");
-            }
+            SaveFormWindowState(form, appDataService.SetLanChatWindowState, "Failed to save LAN chat window state");
         }
 
         public static void SaveLanListWindowState(Form form, AppDataService appDataService)
@@ -219,24 +130,7 @@ namespace SmartGoldbergEmu.Helpers
             if (appDataService == null)
                 throw new ArgumentNullException(nameof(appDataService));
 
-            try
-            {
-                if (form.WindowState == FormWindowState.Minimized)
-                    return;
-
-                var windowState = new WindowState
-                {
-                    Size = form.Size,
-                    Location = form.Location,
-                    State = form.WindowState
-                };
-
-                appDataService.SetLanListWindowState(windowState);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Failed to save LAN list window state: {ex.Message}");
-            }
+            SaveFormWindowState(form, appDataService.SetLanListWindowState, "Failed to save LAN list window state");
         }
 
         public static void CenterFormOnScreen(Form form)
@@ -261,6 +155,26 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
+        public static void CenterFormOnParent(Form form, Form parent)
+        {
+            if (form == null || parent == null || parent.IsDisposed)
+                return;
+
+            try
+            {
+                form.StartPosition = FormStartPosition.Manual;
+                int x = parent.Location.X + Math.Max(0, (parent.Width - form.Width) / 2);
+                int y = parent.Location.Y + Math.Max(0, (parent.Height - form.Height) / 2);
+                form.Location = new Point(x, y);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
         public static bool IsLocationValid(Point location)
         {
             try
@@ -277,6 +191,87 @@ namespace SmartGoldbergEmu.Helpers
             catch
             {
                 return false;
+            }
+        }
+
+        private static bool TryRestoreAuxiliaryWindowState(
+            Form form,
+            Func<bool> hasPersistedLayout,
+            Func<WindowState> getWindowState,
+            Func<bool> hasPersistedLocation,
+            string failureLogPrefix)
+        {
+            try
+            {
+                if (!hasPersistedLayout())
+                    return false;
+
+                var windowState = getWindowState();
+                if (windowState == null)
+                    return false;
+
+                bool applied = false;
+
+                if (windowState.Size.Width > 0 && windowState.Size.Height > 0)
+                {
+                    var size = windowState.Size;
+                    size.Width = Math.Max(size.Width, form.MinimumSize.Width);
+                    size.Height = Math.Max(size.Height, form.MinimumSize.Height);
+                    form.Size = size;
+                    applied = true;
+                }
+
+                if (hasPersistedLocation() && IsLocationValid(windowState.Location))
+                {
+                    form.StartPosition = FormStartPosition.Manual;
+                    form.Location = windowState.Location;
+                    applied = true;
+                }
+                else if (applied)
+                {
+                    // Size restored but no usable location — caller applies default placement.
+                    return false;
+                }
+
+                if (windowState.State == FormWindowState.Maximized ||
+                    windowState.State == FormWindowState.Minimized ||
+                    windowState.State == FormWindowState.Normal)
+                {
+                    form.WindowState = windowState.State;
+                    applied = true;
+                }
+
+                return applied;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"{failureLogPrefix}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static void SaveFormWindowState(
+            Form form,
+            Func<WindowState, ValidationResult> persist,
+            string failureLogPrefix)
+        {
+            try
+            {
+                if (form.WindowState == FormWindowState.Minimized)
+                    return;
+
+                var windowState = new WindowState
+                {
+                    Size = form.Size,
+                    Location = form.Location,
+                    State = form.WindowState
+                };
+
+                persist(windowState);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"{failureLogPrefix}: {ex.Message}");
             }
         }
     }
@@ -337,4 +332,3 @@ namespace SmartGoldbergEmu.Helpers
         }
     }
 }
-

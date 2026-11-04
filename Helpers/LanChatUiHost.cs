@@ -267,8 +267,7 @@ namespace SmartGoldbergEmu.Helpers
             try
             {
                 // No Owner — owned forms never get a taskbar button; chat needs its own.
-                if (parent != null && !parent.IsDisposed)
-                    CenterOnParent(form, parent);
+                form.ApplyInitialPlacement(parent);
                 form.Show();
 
                 if (userInitiated)
@@ -299,24 +298,5 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        private static void CenterOnParent(Form form, Form parent)
-        {
-            if (form == null || parent == null || parent.IsDisposed)
-                return;
-
-            try
-            {
-                form.StartPosition = FormStartPosition.Manual;
-                int x = parent.Location.X + Math.Max(0, (parent.Width - form.Width) / 2);
-                int y = parent.Location.Y + Math.Max(0, (parent.Height - form.Height) / 2);
-                form.Location = new System.Drawing.Point(x, y);
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (InvalidOperationException)
-            {
-            }
-        }
     }
 }

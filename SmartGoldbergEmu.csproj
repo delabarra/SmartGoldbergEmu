@@ -253,6 +253,7 @@
     <Compile Include="Helpers\WindowsDefenderExclusionHelper.cs" />
     <Compile Include="Helpers\WindowsUserIdleHelper.cs" />
     <Compile Include="Helpers\LanChatUiHost.cs" />
+    <Compile Include="Helpers\LanPeerContextMenuHelper.cs" />
     <Compile Include="Helpers\FlashWindowHelper.cs" />
     <Compile Include="Helpers\LanPersonaDisplayHelper.cs" />
     <Compile Include="Helpers\LanWireHelper.cs" />
