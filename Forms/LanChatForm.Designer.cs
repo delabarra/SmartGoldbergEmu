@@ -33,6 +33,11 @@ namespace SmartGoldbergEmu.Forms
             this.btnAccept = new System.Windows.Forms.Button();
             this.btnIgnore = new System.Windows.Forms.Button();
             this.btnIgnoreUser = new System.Windows.Forms.Button();
+            this.pnlLobbyInvite = new System.Windows.Forms.Panel();
+            this.lblLobbyInvite = new System.Windows.Forms.Label();
+            this.flpLobbyInviteButtons = new System.Windows.Forms.FlowLayoutPanel();
+            this.btnLobbyAccept = new System.Windows.Forms.Button();
+            this.btnLobbyDecline = new System.Windows.Forms.Button();
             this.rtfHistory = new System.Windows.Forms.RichTextBox();
             this.pnlStatusBar = new System.Windows.Forms.Panel();
             this.lblStatus = new System.Windows.Forms.Label();
@@ -45,6 +50,8 @@ namespace SmartGoldbergEmu.Forms
             ((System.ComponentModel.ISupportInitialize)(this.picAvatar)).BeginInit();
             this.pnlGate.SuspendLayout();
             this.flpGateButtons.SuspendLayout();
+            this.pnlLobbyInvite.SuspendLayout();
+            this.flpLobbyInviteButtons.SuspendLayout();
             this.pnlStatusBar.SuspendLayout();
             this.pnlComposer.SuspendLayout();
             this.SuspendLayout();
@@ -55,15 +62,17 @@ namespace SmartGoldbergEmu.Forms
             this.tlpRoot.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
             this.tlpRoot.Controls.Add(this.pnlProfile, 0, 0);
             this.tlpRoot.Controls.Add(this.pnlGate, 0, 1);
-            this.tlpRoot.Controls.Add(this.rtfHistory, 0, 2);
-            this.tlpRoot.Controls.Add(this.pnlStatusBar, 0, 3);
-            this.tlpRoot.Controls.Add(this.pnlComposer, 0, 4);
+            this.tlpRoot.Controls.Add(this.pnlLobbyInvite, 0, 2);
+            this.tlpRoot.Controls.Add(this.rtfHistory, 0, 3);
+            this.tlpRoot.Controls.Add(this.pnlStatusBar, 0, 4);
+            this.tlpRoot.Controls.Add(this.pnlComposer, 0, 5);
             this.tlpRoot.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tlpRoot.Location = new System.Drawing.Point(0, 0);
             this.tlpRoot.Name = "tlpRoot";
             this.tlpRoot.Padding = new System.Windows.Forms.Padding(8);
-            this.tlpRoot.RowCount = 5;
+            this.tlpRoot.RowCount = 6;
             this.tlpRoot.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 80F));
+            this.tlpRoot.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.AutoSize));
             this.tlpRoot.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.AutoSize));
             this.tlpRoot.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
             this.tlpRoot.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 22F));
@@ -196,6 +205,68 @@ namespace SmartGoldbergEmu.Forms
             this.btnIgnoreUser.UseVisualStyleBackColor = true;
             this.btnIgnoreUser.Click += new System.EventHandler(this.OnIgnoreUser_Click);
             //
+            // pnlLobbyInvite
+            //
+            this.pnlLobbyInvite.AutoSize = true;
+            this.pnlLobbyInvite.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.pnlLobbyInvite.Controls.Add(this.flpLobbyInviteButtons);
+            this.pnlLobbyInvite.Controls.Add(this.lblLobbyInvite);
+            this.pnlLobbyInvite.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.pnlLobbyInvite.Location = new System.Drawing.Point(11, 88);
+            this.pnlLobbyInvite.Name = "pnlLobbyInvite";
+            this.pnlLobbyInvite.Padding = new System.Windows.Forms.Padding(0, 0, 0, 4);
+            this.pnlLobbyInvite.Size = new System.Drawing.Size(438, 48);
+            this.pnlLobbyInvite.TabIndex = 2;
+            this.pnlLobbyInvite.Visible = false;
+            //
+            // lblLobbyInvite
+            //
+            this.lblLobbyInvite.AutoEllipsis = true;
+            this.lblLobbyInvite.AutoSize = true;
+            this.lblLobbyInvite.Dock = System.Windows.Forms.DockStyle.Top;
+            this.lblLobbyInvite.Location = new System.Drawing.Point(0, 0);
+            this.lblLobbyInvite.MaximumSize = new System.Drawing.Size(438, 0);
+            this.lblLobbyInvite.Name = "lblLobbyInvite";
+            this.lblLobbyInvite.Padding = new System.Windows.Forms.Padding(0, 0, 0, 2);
+            this.lblLobbyInvite.Size = new System.Drawing.Size(72, 17);
+            this.lblLobbyInvite.TabIndex = 0;
+            this.lblLobbyInvite.Text = "Lobby invite";
+            //
+            // flpLobbyInviteButtons
+            //
+            this.flpLobbyInviteButtons.AutoSize = true;
+            this.flpLobbyInviteButtons.Controls.Add(this.btnLobbyAccept);
+            this.flpLobbyInviteButtons.Controls.Add(this.btnLobbyDecline);
+            this.flpLobbyInviteButtons.Dock = System.Windows.Forms.DockStyle.Top;
+            this.flpLobbyInviteButtons.Location = new System.Drawing.Point(0, 17);
+            this.flpLobbyInviteButtons.Margin = new System.Windows.Forms.Padding(0);
+            this.flpLobbyInviteButtons.Name = "flpLobbyInviteButtons";
+            this.flpLobbyInviteButtons.Padding = new System.Windows.Forms.Padding(0);
+            this.flpLobbyInviteButtons.Size = new System.Drawing.Size(438, 29);
+            this.flpLobbyInviteButtons.TabIndex = 1;
+            //
+            // btnLobbyAccept
+            //
+            this.btnLobbyAccept.AutoSize = true;
+            this.btnLobbyAccept.Location = new System.Drawing.Point(3, 3);
+            this.btnLobbyAccept.Name = "btnLobbyAccept";
+            this.btnLobbyAccept.Size = new System.Drawing.Size(75, 23);
+            this.btnLobbyAccept.TabIndex = 0;
+            this.btnLobbyAccept.Text = "Accept";
+            this.btnLobbyAccept.UseVisualStyleBackColor = true;
+            this.btnLobbyAccept.Click += new System.EventHandler(this.OnLobbyAccept_Click);
+            //
+            // btnLobbyDecline
+            //
+            this.btnLobbyDecline.AutoSize = true;
+            this.btnLobbyDecline.Location = new System.Drawing.Point(84, 3);
+            this.btnLobbyDecline.Name = "btnLobbyDecline";
+            this.btnLobbyDecline.Size = new System.Drawing.Size(75, 23);
+            this.btnLobbyDecline.TabIndex = 1;
+            this.btnLobbyDecline.Text = "Decline";
+            this.btnLobbyDecline.UseVisualStyleBackColor = true;
+            this.btnLobbyDecline.Click += new System.EventHandler(this.OnLobbyDecline_Click);
+            //
             // rtfHistory
             //
             this.rtfHistory.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
@@ -207,7 +278,7 @@ namespace SmartGoldbergEmu.Forms
             this.rtfHistory.ReadOnly = true;
             this.rtfHistory.ScrollBars = System.Windows.Forms.RichTextBoxScrollBars.Vertical;
             this.rtfHistory.Size = new System.Drawing.Size(438, 254);
-            this.rtfHistory.TabIndex = 2;
+            this.rtfHistory.TabIndex = 3;
             this.rtfHistory.TabStop = false;
             //
             // pnlStatusBar
@@ -218,7 +289,7 @@ namespace SmartGoldbergEmu.Forms
             this.pnlStatusBar.Location = new System.Drawing.Point(11, 405);
             this.pnlStatusBar.Name = "pnlStatusBar";
             this.pnlStatusBar.Size = new System.Drawing.Size(438, 22);
-            this.pnlStatusBar.TabIndex = 3;
+            this.pnlStatusBar.TabIndex = 4;
             //
             // lblComposeChars
             //
@@ -249,7 +320,7 @@ namespace SmartGoldbergEmu.Forms
             this.pnlComposer.Location = new System.Drawing.Point(11, 430);
             this.pnlComposer.Name = "pnlComposer";
             this.pnlComposer.Size = new System.Drawing.Size(438, 82);
-            this.pnlComposer.TabIndex = 4;
+            this.pnlComposer.TabIndex = 5;
             //
             // txtCompose
             //
@@ -295,6 +366,10 @@ namespace SmartGoldbergEmu.Forms
             this.pnlGate.PerformLayout();
             this.flpGateButtons.ResumeLayout(false);
             this.flpGateButtons.PerformLayout();
+            this.pnlLobbyInvite.ResumeLayout(false);
+            this.pnlLobbyInvite.PerformLayout();
+            this.flpLobbyInviteButtons.ResumeLayout(false);
+            this.flpLobbyInviteButtons.PerformLayout();
             this.pnlStatusBar.ResumeLayout(false);
             this.pnlStatusBar.PerformLayout();
             this.pnlComposer.ResumeLayout(false);
@@ -316,6 +391,11 @@ namespace SmartGoldbergEmu.Forms
         private System.Windows.Forms.Button btnAccept;
         private System.Windows.Forms.Button btnIgnore;
         private System.Windows.Forms.Button btnIgnoreUser;
+        private System.Windows.Forms.Panel pnlLobbyInvite;
+        private System.Windows.Forms.Label lblLobbyInvite;
+        private System.Windows.Forms.FlowLayoutPanel flpLobbyInviteButtons;
+        private System.Windows.Forms.Button btnLobbyAccept;
+        private System.Windows.Forms.Button btnLobbyDecline;
         private System.Windows.Forms.RichTextBox rtfHistory;
         private System.Windows.Forms.Panel pnlStatusBar;
         private System.Windows.Forms.Label lblStatus;

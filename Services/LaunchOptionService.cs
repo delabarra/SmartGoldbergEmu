@@ -61,12 +61,17 @@ namespace SmartGoldbergEmu.Services
             }
 
             // Same filter as launch dialog initial list (saved FullLaunchOptions); form may re-filter if user toggles Show Extra.
+            // type=none platform/arch entries are never user-visible (Steam auto-picks them).
             var filteredOptions = FilterLaunchOptionsForCurrentSettings(launchOptions);
 
             if (filteredOptions.Count <= 1)
             {
-                ServiceLocator.LogService.LogDebug($"Found {filteredOptions.Count} launch option(s) after filtering for app {game.AppId}, auto-selecting without showing form");
-                var selected = filteredOptions.Count == 1 ? filteredOptions[0] : null;
+                LaunchOption selected = filteredOptions.Count == 1
+                    ? filteredOptions[0]
+                    : PickBestAutomaticLaunchOption(launchOptions);
+                ServiceLocator.LogService.LogDebug(
+                    $"Found {filteredOptions.Count} user-visible launch option(s) for app {game.AppId}, auto-selecting without showing form" +
+                    (selected != null ? $" -> {selected.Executable ?? selected.Description ?? "(unnamed)"}" : " -> game default"));
                 return new LaunchOptionResult { LaunchOption = selected, SkipLauncher = false, Cancelled = false };
             }
 
@@ -725,6 +730,73 @@ namespace SmartGoldbergEmu.Services
                 .ToList();
         }
 
+        // When the picker has nothing user-visible, Steam still launches: prefer default, then native osarch among type=none.
+        public static LaunchOption PickBestAutomaticLaunchOption(IList<LaunchOption> options)
+        {
+            if (options == null || options.Count == 0)
+                return null;
+
+            LaunchOption best = null;
+            int bestScore = int.MinValue;
+            for (int i = 0; i < options.Count; i++)
+            {
+                LaunchOption opt = options[i];
+                if (opt == null)
+                    continue;
+                int score = ScoreAutomaticLaunchOption(opt);
+                if (best == null || score > bestScore)
+                {
+                    best = opt;
+                    bestScore = score;
+                }
+            }
+            return best;
+        }
+
+        private static int ScoreAutomaticLaunchOption(LaunchOption opt)
+        {
+            int score = 0;
+            string t = opt.Type != null ? opt.Type.Trim() : string.Empty;
+            if (t.Equals(SteamPicsKeyNames.Default, StringComparison.OrdinalIgnoreCase))
+                score += 1000;
+            else if (t.Equals(SteamPicsKeyNames.LaunchOptionTypeNone, StringComparison.OrdinalIgnoreCase))
+                score += 100;
+            else if (string.IsNullOrEmpty(t))
+                score += 50;
+
+            score += ScoreOsArchPreference(opt.OsArch);
+            return score;
+        }
+
+        // Prefer native arch; 32-bit remains eligible on 64-bit Windows but loses to 64-bit / unspecified.
+        private static int ScoreOsArchPreference(string osArchFromVdf)
+        {
+            bool osIs64Bit = Environment.Is64BitOperatingSystem;
+            if (string.IsNullOrWhiteSpace(osArchFromVdf))
+                return osIs64Bit ? 40 : 50;
+
+            string s = osArchFromVdf.Trim().ToLowerInvariant();
+            bool is64 = s == "64" || s == "win64" || s == "x64" || s == "amd64" ||
+                        (s.IndexOf("64", StringComparison.Ordinal) >= 0 && s.IndexOf("32", StringComparison.Ordinal) < 0);
+            bool is32 = s == "32" || s == "win32" || s == "x86" || s == "i386" ||
+                        (s.IndexOf("32", StringComparison.Ordinal) >= 0 && s.IndexOf("64", StringComparison.Ordinal) < 0);
+
+            if (osIs64Bit)
+            {
+                if (is64)
+                    return 50;
+                if (is32)
+                    return 10;
+                return 30;
+            }
+
+            if (is32)
+                return 50;
+            if (is64)
+                return 0;
+            return 40;
+        }
+
         public static int FindDefaultLaunchOptionIndex(IList<LaunchOption> options)
         {
             if (options == null || options.Count == 0)
@@ -917,15 +989,20 @@ namespace SmartGoldbergEmu.Services
 
         private List<LaunchOption> FilterOptions(List<LaunchOption> options, bool excludeConfigType)
         {
-            if (!excludeConfigType)
-            {
-                return options;
-            }
+            if (options == null)
+                return new List<LaunchOption>();
 
             return options.Where(opt =>
             {
                 if (opt == null)
                     return false;
+
+                // Never list Steam platform/arch auto entries (type=none), even with Show Extra on.
+                if (opt.IsSteamPlatformAutoLaunchType())
+                    return false;
+
+                if (!excludeConfigType)
+                    return true;
 
                 // User options are tagged "hidden" but must never be filtered out by the "extra options" checkbox.
                 if (!string.IsNullOrEmpty(opt.Type) && opt.Type.Equals("user", StringComparison.OrdinalIgnoreCase))

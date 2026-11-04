@@ -86,6 +86,7 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<StubKitService> _stubKitService = new Lazy<StubKitService>();
         private static readonly Lazy<SteamInterfacesService> _steamInterfacesService = new Lazy<SteamInterfacesService>();
         private static readonly Lazy<LanPresenceService> _lanPresenceService = new Lazy<LanPresenceService>();
+        private static readonly Lazy<LanGameJoinService> _lanGameJoinService = new Lazy<LanGameJoinService>();
         private static readonly Lazy<LanChatService> _lanChatService = new Lazy<LanChatService>();
 
         public static ILogService LogService => _logService.Value;
@@ -208,6 +209,8 @@ namespace SmartGoldbergEmu.Services
 
         public static LanPresenceService LanPresenceService => _lanPresenceService.Value;
 
+        public static LanGameJoinService LanGameJoinService => _lanGameJoinService.Value;
+
         public static LanChatService LanChatService => _lanChatService.Value;
 
         // Idempotent. Prefer calling from MainForm close (dispose-then-close); Program also calls after the message loop as a safety net.
@@ -220,6 +223,15 @@ namespace SmartGoldbergEmu.Services
             {
                 if (_lanChatService.IsValueCreated)
                     _lanChatService.Value.Dispose();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (_lanGameJoinService.IsValueCreated)
+                    _lanGameJoinService.Value.Dispose();
             }
             catch
             {

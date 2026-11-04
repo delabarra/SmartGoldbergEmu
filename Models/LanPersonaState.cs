@@ -1,6 +1,6 @@
 namespace SmartGoldbergEmu.Models
 {
-    // Local LAN Players persona while the channel is on. Offline is lan_players_online=false, not this enum.
+    // Local LAN Players persona while the channel is on. Offline is lan_enabled=false, not this enum.
     public enum LanPersonaState
     {
         Online = 0,

@@ -23,7 +23,11 @@ namespace SmartGoldbergEmu.Models
         public ulong LookingForPlayAppId { get; set; }
         public string LookingForPlayGameName { get; set; }
 
+        // Host-advertised +connect_lobby / connect string when in a joinable Steam lobby.
+        public string JoinArguments { get; set; }
+
         public bool IsPlaying => AppId != 0;
         public bool IsLookingForPlay => LookingForPlayAppId != 0;
+        public bool HasJoinableLobby => !string.IsNullOrWhiteSpace(JoinArguments);
     }
 }

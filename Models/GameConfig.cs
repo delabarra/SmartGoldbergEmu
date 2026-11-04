@@ -28,6 +28,9 @@ namespace SmartGoldbergEmu.Models
 
         public GoldbergLaunchMode LaunchMode { get; set; }
 
+        // Default = curated denylist; On/Off force LAN Invite/Join Steam-lobby capability.
+        public LanSteamJoinSupport LanSteamJoinSupport { get; set; }
+
         [XmlIgnore]
         public AppInfoKeyValue AppInfo { get; set; }
 
@@ -67,6 +70,7 @@ namespace SmartGoldbergEmu.Models
             CustomIcon = string.Empty;
             GameGuid = Guid.NewGuid();
             LaunchMode = GoldbergLaunchMode.SteamClient;
+            LanSteamJoinSupport = LanSteamJoinSupport.Default;
         }
     }
 }

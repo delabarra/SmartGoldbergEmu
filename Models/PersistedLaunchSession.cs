@@ -12,6 +12,9 @@ namespace SmartGoldbergEmu.Models
         // Bumped on each launch so a superseded cleanup watcher no-ops instead of cleaning a new session.
         public string SessionGeneration { get; set; }
         public bool RestoreActiveProcessRegistry { get; set; }
+        // SteamClient keeps Valve steam_api in the game folder; it can re-read ActiveProcess after load.
+        // Defer restore until exit so the load-window flip does not tear the session down.
+        public bool DeferRegistryRestoreUntilExit { get; set; }
         public string GameLibraryFolder { get; set; }
         public string LoadDllsFolder { get; set; }
         public PersistedSourceModRestore SourceModRestore { get; set; }

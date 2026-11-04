@@ -35,6 +35,9 @@ namespace SmartGoldbergEmu.Forms
         public LaunchOptionsForm(GameConfig game, List<LaunchOption> launchOptions)
         {
             InitializeComponent();
+            // Disarm until OnShown drains Enter left over from a prior AcceptButton dialog
+            // (e.g. "Launch without restoring" on the Steam API warning).
+            AcceptButton = null;
 
             _game = game;
             _appDataService = ServiceLocator.AppDataService;
@@ -65,14 +68,35 @@ namespace SmartGoldbergEmu.Forms
                 ServiceLocator.LogService.LogWarning("Launch options list is empty");
 
             this.Load += LaunchOptionsForm_Load;
+            this.Shown += LaunchOptionsForm_Shown;
         }
 
         private void LaunchOptionsForm_Load(object sender, EventArgs e)
         {
             _formLoadTime = DateTime.Now;
-            
+
             // Focus the list, not the Launch button, so a stray Enter does not launch.
             lstLaunchOptions.Focus();
+        }
+
+        private void LaunchOptionsForm_Shown(object sender, EventArgs e)
+        {
+            _formLoadTime = DateTime.Now;
+            // Next pump turn: leftover Enter from the previous modal can no longer hit AcceptButton.
+            BeginInvoke(new Action(ArmAcceptButton));
+        }
+
+        private void ArmAcceptButton()
+        {
+            if (IsDisposed || Disposing)
+                return;
+            AcceptButton = btnLaunch;
+        }
+
+        // Only for list KeyDown — do not gate the Launch button click (that blocked intentional launches).
+        private bool IsWithinPostShowEnterGrace()
+        {
+            return (DateTime.Now - _formLoadTime).TotalMilliseconds < 300;
         }
 
         private void OnCopyLaunchDetails_Click(object sender, EventArgs e)
@@ -279,8 +303,8 @@ namespace SmartGoldbergEmu.Forms
         {
             if (e.KeyCode == Keys.Enter && lstLaunchOptions.SelectedItem != null)
             {
-                // Ignore Enter queued from before the form loaded so it does not auto-launch.
-                if ((DateTime.Now - _formLoadTime).TotalMilliseconds < 100)
+                // Ignore Enter queued from before the form showed so it does not auto-launch.
+                if (IsWithinPostShowEnterGrace())
                 {
                     e.Handled = true;
                     return;

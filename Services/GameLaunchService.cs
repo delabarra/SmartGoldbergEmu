@@ -130,6 +130,118 @@ namespace SmartGoldbergEmu.Services
             return IsGameSessionActive(appId);
         }
 
+        // Close a live session so LAN Accept/Join can relaunch with +connect_lobby / connect args.
+        public ValidationResult TryCloseRunningGame(ulong appId, int waitExitMs = 20000)
+        {
+            if (appId == 0)
+                return ValidationResult.Success();
+
+            if (!IsGameSessionActive(appId))
+                return ValidationResult.Success();
+
+            if (waitExitMs < 1000)
+                waitExitMs = 1000;
+
+            Process process = null;
+            bool disposeProcess = false;
+            if (!TryGetActiveLaunchedProcess(appId, out process))
+            {
+                int pid;
+                if (_launchSessionCleanup.TryGetLiveSessionProcessId(appId, out pid))
+                {
+                    try
+                    {
+                        process = Process.GetProcessById(pid);
+                        disposeProcess = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogDebug("LAN relaunch: could not open session PID " + pid + ": " + ex.Message);
+                    }
+                }
+            }
+
+            if (process == null)
+            {
+                return ValidationResult.Failure(
+                    "Could not find the running game process to close. Close it manually, then Accept again.");
+            }
+
+            try
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        bool closed = false;
+                        try
+                        {
+                            closed = process.CloseMainWindow();
+                        }
+                        catch (InvalidOperationException)
+                        {
+                        }
+
+                        int softWait = Math.Min(waitExitMs, 8000);
+                        if (!closed || !process.WaitForExit(softWait))
+                        {
+                            try
+                            {
+                                if (!process.HasExited)
+                                    process.Kill();
+                            }
+                            catch (InvalidOperationException)
+                            {
+                            }
+
+                            int hardWait = Math.Max(1000, waitExitMs - softWait);
+                            if (!process.WaitForExit(hardWait))
+                            {
+                                return ValidationResult.Failure(
+                                    "Timed out closing the game. Close it manually, then Accept again.");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning("LAN relaunch: failed to close game process: " + ex.Message);
+                    return ValidationResult.Failure(
+                        "Could not close the running game: " + ex.Message);
+                }
+            }
+            finally
+            {
+                if (disposeProcess)
+                {
+                    try
+                    {
+                        process.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            int spinMs = Math.Max(2000, waitExitMs / 2);
+            int waited = 0;
+            while (IsGameSessionActive(appId) && waited < spinMs)
+            {
+                Thread.Sleep(100);
+                waited += 100;
+            }
+
+            if (IsGameSessionActive(appId))
+            {
+                return ValidationResult.Failure(
+                    "The game is still marked as running. Close it manually, then Accept again.");
+            }
+
+            _logger?.LogMessage("LAN relaunch: closed running session for AppId " + appId + ".");
+            return ValidationResult.Success();
+        }
+
         // Non-zero Steam App IDs require Goldberg binaries under goldberg/ when useEmulator is true.
         public ValidationResult LaunchGame(GameConfig game, bool useEmulator = true, LaunchOption launchOption = null)
         {
@@ -1370,7 +1482,8 @@ namespace SmartGoldbergEmu.Services
             Win32DllDeploymentState deployState,
             bool restoreActiveProcessRegistry,
             BranchRestoreInfo branchRestoreOnExit,
-            PersistedStubExeRestore stubExeRestore = null)
+            PersistedStubExeRestore stubExeRestore = null,
+            bool deferRegistryRestoreUntilExit = false)
         {
             var session = new PersistedLaunchSession
             {
@@ -1378,6 +1491,7 @@ namespace SmartGoldbergEmu.Services
                 GameProcessId = processId,
                 SessionGeneration = Guid.NewGuid().ToString("D"),
                 RestoreActiveProcessRegistry = restoreActiveProcessRegistry,
+                DeferRegistryRestoreUntilExit = deferRegistryRestoreUntilExit,
                 GameLibraryFolder = appId != 0 ? PathConstants.GetGameFolder(appId) : null,
                 LoadDllsFolder = appId != 0 ? PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId) : null,
                 DeploySites = MapDeploySites(deployState),
@@ -2010,13 +2124,18 @@ namespace SmartGoldbergEmu.Services
 
                 if (trackCleanupSession && game.AppId != 0)
                 {
+                    // SteamClient: Valve steam_api stays in the game folder and can re-read ActiveProcess after load.
+                    bool deferRegistryRestoreUntilExit =
+                        configureActiveProcessRegistry
+                        && game.LaunchMode == GoldbergLaunchMode.SteamClient;
                     PersistedLaunchSession persisted = BuildPersistedLaunchSession(
                         game.AppId,
                         processId,
                         win32DeployState,
                         configureActiveProcessRegistry,
                         branchRestoreOnExit,
-                        stubExeRestore);
+                        stubExeRestore,
+                        deferRegistryRestoreUntilExit);
                     persisted.GameProcessStartTimeUtcTicks = LaunchSessionCleanupService.TryGetProcessStartTimeUtcTicks(process);
                     string manifestPath = _launchSessionCleanup.WriteSession(persisted);
                     if (!string.IsNullOrEmpty(manifestPath))

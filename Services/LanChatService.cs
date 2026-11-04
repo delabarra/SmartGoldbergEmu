@@ -281,7 +281,8 @@ namespace SmartGoldbergEmu.Services
                     FromSteamId = localId,
                     Text = text,
                     TimestampUtc = utc,
-                    IsLocal = true
+                    IsLocal = true,
+                    Kind = LanChatMessageKind.Text
                 };
                 session.Messages.Add(localMessage);
                 TrimMessagesUnlocked(session);
@@ -303,6 +304,298 @@ namespace SmartGoldbergEmu.Services
             {
                 error = "Could not send on the LAN.";
                 return false;
+            }
+
+            RaiseSessionUpdated(peerSteamId);
+            return true;
+        }
+
+        // Local chat line after a successful lobby invite UDP send (no wire chat packet).
+        public void RecordGameInviteSent(string peerSteamId, ulong appId, string gameName)
+        {
+            peerSteamId = LanWireHelper.SanitizeSteamId(peerSteamId);
+            if (string.IsNullOrEmpty(peerSteamId) || appId == 0)
+                return;
+
+            string localId = GetLocalSteamId();
+            if (string.IsNullOrEmpty(localId))
+                return;
+
+            string displayGame = FormatInviteGameName(appId, gameName);
+            DateTime utc = DateTime.UtcNow;
+            lock (_gate)
+            {
+                if (_blockedIds.Contains(peerSteamId))
+                    return;
+
+                PeerSession session = GetOrCreateSessionUnlocked(peerSteamId);
+                // One "You sent…" per silent invite window; further clicks wait for a cooldown reply.
+                if (HasRecentLocalInviteNoteUnlocked(
+                        session,
+                        LanChatMessageKind.GameInviteSent,
+                        LanPresenceConstants.InviteAcceptWindowMs,
+                        utc))
+                    return;
+
+                session.Messages.Add(new LanChatMessage
+                {
+                    MessageId = NewMessageId(),
+                    FromSteamId = localId,
+                    // Short history note only — Accept/Decline live on the form panel.
+                    Text = "You sent an invitation to join " + displayGame + ".",
+                    TimestampUtc = utc,
+                    IsLocal = true,
+                    Kind = LanChatMessageKind.GameInviteSent
+                });
+                TrimMessagesUnlocked(session);
+            }
+
+            RaiseSessionUpdated(peerSteamId);
+        }
+
+        // Local chat line when the peer silently rejected a repeat lobby invite (cooldown packet).
+        public void RecordGameInviteCooldown(string peerSteamId, int remainingSeconds)
+        {
+            peerSteamId = LanWireHelper.SanitizeSteamId(peerSteamId);
+            if (string.IsNullOrEmpty(peerSteamId))
+                return;
+
+            if (remainingSeconds < 1)
+                remainingSeconds = 1;
+
+            string localId = GetLocalSteamId();
+            if (string.IsNullOrEmpty(localId))
+                return;
+
+            string wait = remainingSeconds == 1
+                ? "1 second"
+                : (remainingSeconds.ToString() + " seconds");
+            DateTime utc = DateTime.UtcNow;
+            lock (_gate)
+            {
+                if (_blockedIds.Contains(peerSteamId))
+                    return;
+
+                PeerSession session = GetOrCreateSessionUnlocked(peerSteamId);
+                string text = "Try again in " + wait + ".";
+                // Refresh the trailing cooldown line instead of stacking one per spam click.
+                bool refreshed = false;
+                if (session.Messages.Count > 0)
+                {
+                    LanChatMessage last = session.Messages[session.Messages.Count - 1];
+                    if (last != null
+                        && last.Kind == LanChatMessageKind.GameInviteCooldown
+                        && last.IsLocal
+                        && (utc - last.TimestampUtc).TotalMilliseconds < LanPresenceConstants.InviteAcceptWindowMs)
+                    {
+                        last.Text = text;
+                        last.TimestampUtc = utc;
+                        refreshed = true;
+                    }
+                }
+
+                if (!refreshed)
+                {
+                    session.Messages.Add(new LanChatMessage
+                    {
+                        MessageId = NewMessageId(),
+                        FromSteamId = localId,
+                        Text = text,
+                        TimestampUtc = utc,
+                        IsLocal = true,
+                        Kind = LanChatMessageKind.GameInviteCooldown
+                    });
+                    TrimMessagesUnlocked(session);
+                }
+            }
+
+            RaiseSessionUpdated(peerSteamId);
+        }
+
+        // Inbound lobby invite from presence (already sanitized/rate-limited). Display only;
+        // Accept pulls join args from session state, never from message Text.
+        public void RecordGameInviteReceived(LanGameInviteEventArgs invite)
+        {
+            if (invite == null || invite.AppId == 0)
+                return;
+
+            string peerSteamId = LanWireHelper.SanitizeSteamId(invite.FromSteamId);
+            if (string.IsNullOrEmpty(peerSteamId))
+                return;
+
+            string join = SanitizeJoinArguments(invite.JoinArguments);
+            string displayGame = FormatInviteGameName(invite.AppId, invite.GameName);
+
+            DateTime utc = DateTime.UtcNow;
+            string messageId = NewMessageId();
+            lock (_gate)
+            {
+                if (_blockedIds.Contains(peerSteamId))
+                    return;
+
+                PeerSession session = GetOrCreateSessionUnlocked(peerSteamId);
+                if (!string.IsNullOrWhiteSpace(invite.FromDisplayName))
+                    session.PeerDisplayName = SanitizeChatText(invite.FromDisplayName);
+
+                // Latest invite wins — avoid stacking Accept targets from the same peer.
+                session.PendingGameInvite = new PendingGameInvite
+                {
+                    AppId = invite.AppId,
+                    GameName = SanitizeInviteGameName(invite.GameName),
+                    JoinArguments = join,
+                    FromSteamId = peerSteamId,
+                    FromDisplayName = session.PeerDisplayName ?? string.Empty,
+                    MessageId = messageId
+                };
+
+                session.Messages.Add(new LanChatMessage
+                {
+                    MessageId = messageId,
+                    FromSteamId = peerSteamId,
+                    // Short history note only — Accept/Decline + wording live on the form panel.
+                    Text = "sent an invitation to join " + displayGame + ".",
+                    TimestampUtc = utc,
+                    IsLocal = false,
+                    Kind = LanChatMessageKind.GameInvite
+                });
+                TrimMessagesUnlocked(session);
+            }
+
+            RaiseSessionUpdated(peerSteamId);
+        }
+
+        // Removes pending payload and returns a copy for GameLaunchService. Never parses chat Text.
+        public bool TryTakePendingGameInvite(string peerSteamId, out LanGameInviteEventArgs invite, out string error)
+        {
+            invite = null;
+            error = null;
+            peerSteamId = LanWireHelper.SanitizeSteamId(peerSteamId);
+            if (string.IsNullOrEmpty(peerSteamId))
+            {
+                error = "Unknown player.";
+                return false;
+            }
+
+            lock (_gate)
+            {
+                PeerSession session;
+                if (!_sessions.TryGetValue(peerSteamId, out session)
+                    || session.PendingGameInvite == null
+                    || session.PendingGameInvite.AppId == 0)
+                {
+                    error = "No pending lobby invite.";
+                    return false;
+                }
+
+                PendingGameInvite pending = session.PendingGameInvite;
+                session.PendingGameInvite = null;
+                invite = new LanGameInviteEventArgs
+                {
+                    FromSteamId = pending.FromSteamId,
+                    FromDisplayName = pending.FromDisplayName ?? string.Empty,
+                    AppId = pending.AppId,
+                    GameName = pending.GameName ?? string.Empty,
+                    JoinArguments = pending.JoinArguments ?? string.Empty
+                };
+            }
+
+            RaiseSessionUpdated(peerSteamId);
+            return true;
+        }
+
+        // After a successful Accept launch (or confirmed relaunch). Not used when relaunch is cancelled.
+        public void RecordGameInviteAccepted(string peerSteamId)
+        {
+            peerSteamId = LanWireHelper.SanitizeSteamId(peerSteamId);
+            if (string.IsNullOrEmpty(peerSteamId))
+                return;
+
+            string localId = GetLocalSteamId() ?? string.Empty;
+            lock (_gate)
+            {
+                PeerSession session;
+                if (!_sessions.TryGetValue(peerSteamId, out session))
+                    return;
+
+                session.Messages.Add(new LanChatMessage
+                {
+                    MessageId = NewMessageId(),
+                    FromSteamId = localId,
+                    Text = "Accepted lobby invite.",
+                    TimestampUtc = DateTime.UtcNow,
+                    IsLocal = true,
+                    Kind = LanChatMessageKind.GameInviteResult
+                });
+                TrimMessagesUnlocked(session);
+            }
+
+            RaiseSessionUpdated(peerSteamId);
+        }
+
+        // Put Accept payload back when relaunch was declined or launch failed before start.
+        public void RestorePendingGameInvite(LanGameInviteEventArgs invite)
+        {
+            if (invite == null || invite.AppId == 0)
+                return;
+
+            string peerSteamId = LanWireHelper.SanitizeSteamId(invite.FromSteamId);
+            if (string.IsNullOrEmpty(peerSteamId))
+                return;
+
+            lock (_gate)
+            {
+                if (_blockedIds.Contains(peerSteamId))
+                    return;
+
+                PeerSession session = GetOrCreateSessionUnlocked(peerSteamId);
+                session.PendingGameInvite = new PendingGameInvite
+                {
+                    AppId = invite.AppId,
+                    GameName = SanitizeInviteGameName(invite.GameName),
+                    JoinArguments = SanitizeJoinArguments(invite.JoinArguments),
+                    FromSteamId = peerSteamId,
+                    FromDisplayName = string.IsNullOrWhiteSpace(invite.FromDisplayName)
+                        ? (session.PeerDisplayName ?? string.Empty)
+                        : SanitizeChatText(invite.FromDisplayName),
+                    MessageId = NewMessageId()
+                };
+            }
+
+            RaiseSessionUpdated(peerSteamId);
+        }
+
+        public bool TryDeclineGameInvite(string peerSteamId, out string error)
+        {
+            error = null;
+            peerSteamId = LanWireHelper.SanitizeSteamId(peerSteamId);
+            if (string.IsNullOrEmpty(peerSteamId))
+            {
+                error = "Unknown player.";
+                return false;
+            }
+
+            string localId = GetLocalSteamId() ?? string.Empty;
+            lock (_gate)
+            {
+                PeerSession session;
+                if (!_sessions.TryGetValue(peerSteamId, out session)
+                    || session.PendingGameInvite == null)
+                {
+                    error = "No pending lobby invite.";
+                    return false;
+                }
+
+                session.PendingGameInvite = null;
+                session.Messages.Add(new LanChatMessage
+                {
+                    MessageId = NewMessageId(),
+                    FromSteamId = localId,
+                    Text = "Declined lobby invite.",
+                    TimestampUtc = DateTime.UtcNow,
+                    IsLocal = true,
+                    Kind = LanChatMessageKind.GameInviteResult
+                });
+                TrimMessagesUnlocked(session);
             }
 
             RaiseSessionUpdated(peerSteamId);
@@ -345,6 +638,7 @@ namespace SmartGoldbergEmu.Services
                     {
                         session.Status = LanChatSessionStatus.Blocked;
                         session.PendingInviteMessageId = null;
+                        session.PendingGameInvite = null;
                         session.StatusDetail = "Chat from this player is blocked.";
                         session.Messages.Clear();
                     }
@@ -896,7 +1190,8 @@ namespace SmartGoldbergEmu.Services
                 FromSteamId = fromId,
                 Text = text,
                 TimestampUtc = utc,
-                IsLocal = false
+                IsLocal = false,
+                Kind = LanChatMessageKind.Text
             });
             TrimMessagesUnlocked(session);
         }
@@ -913,8 +1208,20 @@ namespace SmartGoldbergEmu.Services
                     FromSteamId = m.FromSteamId,
                     Text = m.Text,
                     TimestampUtc = m.TimestampUtc,
-                    IsLocal = m.IsLocal
+                    IsLocal = m.IsLocal,
+                    Kind = m.Kind
                 });
+            }
+
+            LanPendingGameInviteSnapshot pendingGame = null;
+            if (session.PendingGameInvite != null && session.PendingGameInvite.AppId != 0)
+            {
+                pendingGame = new LanPendingGameInviteSnapshot
+                {
+                    AppId = session.PendingGameInvite.AppId,
+                    GameName = session.PendingGameInvite.GameName ?? string.Empty,
+                    HasJoinArguments = !string.IsNullOrEmpty(session.PendingGameInvite.JoinArguments)
+                };
             }
 
             return new LanChatSessionSnapshot
@@ -924,8 +1231,66 @@ namespace SmartGoldbergEmu.Services
                 Status = session.Status,
                 PendingInviteMessageId = session.PendingInviteMessageId,
                 StatusDetail = session.StatusDetail ?? string.Empty,
+                PendingGameInvite = pendingGame,
                 Messages = messages
             };
+        }
+
+        private static bool HasRecentLocalInviteNoteUnlocked(
+            PeerSession session,
+            LanChatMessageKind kind,
+            int windowMs,
+            DateTime utc)
+        {
+            if (session == null || session.Messages == null || windowMs <= 0)
+                return false;
+
+            for (int i = session.Messages.Count - 1; i >= 0; i--)
+            {
+                LanChatMessage m = session.Messages[i];
+                if (m == null || !m.IsLocal || m.Kind != kind)
+                    continue;
+                return (utc - m.TimestampUtc).TotalMilliseconds < windowMs;
+            }
+
+            return false;
+        }
+
+        private static string FormatInviteGameName(ulong appId, string gameName)
+        {
+            string cleaned = SanitizeInviteGameName(gameName);
+            if (!string.IsNullOrEmpty(cleaned))
+                return cleaned;
+            return "App " + appId;
+        }
+
+        private static string SanitizeInviteGameName(string value)
+        {
+            string cleaned = SanitizeChatText(value);
+            if (cleaned.Length > LanPresenceConstants.MaxGameNameChars)
+                cleaned = cleaned.Substring(0, LanPresenceConstants.MaxGameNameChars);
+            return cleaned;
+        }
+
+        // Re-sanitize join args stored for Accept; never show raw value in chat UI.
+        private static string SanitizeJoinArguments(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            var sb = new StringBuilder(value.Length);
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+                if (c < 32 || c == 127)
+                    continue;
+                sb.Append(c);
+            }
+
+            string cleaned = sb.ToString().Trim();
+            if (cleaned.Length > LanPresenceConstants.MaxJoinArgumentsChars)
+                cleaned = cleaned.Substring(0, LanPresenceConstants.MaxJoinArgumentsChars);
+            return cleaned;
         }
 
         private static byte[] BuildPacket(
@@ -1077,9 +1442,21 @@ namespace SmartGoldbergEmu.Services
             public string PendingInviteMessageId;
             public string StatusDetail = string.Empty;
             public DateTime SoftIgnoreUntilUtc = DateTime.MinValue;
+            // Lobby join payload for Accept — not derived from message Text.
+            public PendingGameInvite PendingGameInvite;
             public readonly List<LanChatMessage> Messages = new List<LanChatMessage>();
             public readonly HashSet<string> SeenMessageIds = new HashSet<string>(StringComparer.Ordinal);
             public readonly Queue<string> SeenMessageIdOrder = new Queue<string>();
+        }
+
+        private sealed class PendingGameInvite
+        {
+            public ulong AppId;
+            public string GameName;
+            public string JoinArguments;
+            public string FromSteamId;
+            public string FromDisplayName;
+            public string MessageId;
         }
     }
 }

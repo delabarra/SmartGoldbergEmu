@@ -1,0 +1,4 @@
+{
+  "path": "h:\\GitHub-Desktop\\SmartGoldbergEmu\\LanKit\\LanDiscoverStatus.cs",
+  "contents": "namespace SmartGoldbergEmu.LanKit\n{\n    public enum LanDiscoverStatus\n    {\n        // No join args and no useful peer sighting.\n        None = 0,\n        // Peer Steam64 (or same-AppId friend) was on the network but had no connect/+connect_lobby yet.\n        PeerSeenWithoutJoin = 1,\n        // Rich-presence connect or +connect_lobby was found.\n        JoinArgsFound = 2\n    }\n}\n"
+}

@@ -3,6 +3,14 @@ using System.Collections.Generic;
 
 namespace SmartGoldbergEmu.Models
 {
+    // UI-safe lobby invite summary — join args stay in LanChatService until Accept.
+    public sealed class LanPendingGameInviteSnapshot
+    {
+        public ulong AppId { get; set; }
+        public string GameName { get; set; }
+        public bool HasJoinArguments { get; set; }
+    }
+
     public sealed class LanChatSessionSnapshot
     {
         public string PeerSteamId { get; set; }
@@ -10,6 +18,7 @@ namespace SmartGoldbergEmu.Models
         public LanChatSessionStatus Status { get; set; }
         public string PendingInviteMessageId { get; set; }
         public string StatusDetail { get; set; }
+        public LanPendingGameInviteSnapshot PendingGameInvite { get; set; }
         public IReadOnlyList<LanChatMessage> Messages { get; set; }
     }
 

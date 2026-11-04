@@ -1,7 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
@@ -19,11 +26,18 @@ namespace SmartGoldbergEmu.Forms
         private const int IdLineHeight = 16;
         private const int LastSeenRefreshIntervalMs = 30000;
         private const int RowWidthScrollbarPad = 24;
+        private const int SectionHeaderHeight = 24;
+        private const string SectionFavorites = "favorites";
+        private const string SectionOnline = "online";
+        private const string SectionLastSeen = "lastSeen";
+        private const string SectionTagPrefix = "section:";
 
         private readonly LanPresenceService _presence;
         private readonly AppDataService _appData;
         private readonly List<Image> _rowAvatars = new List<Image>();
         private readonly ContextMenuStrip _playerMenu;
+        // Survives RefreshPeerList rebuilds for this form instance.
+        private readonly HashSet<string> _collapsedSections = new HashSet<string>(StringComparer.Ordinal);
         private Timer _lastSeenRefreshTimer;
         private Timer _pendingMenuTimer;
         // SteamId + screen point — not a Control: RefreshPeerList disposes row controls and would abort Show.
@@ -348,98 +362,85 @@ namespace SmartGoldbergEmu.Forms
                 flpLanPlayers.Controls.Add(BuildPlayerRow(
                     self, colors, rowWidth, isSelf: true, channelOnline: _presence.IsOnline, isFavorite: false, isMuted: false));
 
-                if (!_presence.IsOnline)
-                {
-                    flpLanPlayers.Controls.Add(BuildSectionLabel("You are offline.", colors, rowWidth));
-                    UpdateFooterStatus(0, 0);
-                    return;
-                }
-
                 var favoritePresent = new List<LanPresencePeer>();
-                var onlineOthers = new List<LanPresencePeer>();
+                var onlinePresent = new List<LanPresencePeer>();
                 var lastSeen = new List<LanPresencePeer>();
+                var presentIds = new HashSet<string>(StringComparer.Ordinal);
 
-                for (int i = 0; i < peers.Count; i++)
+                if (_presence.IsOnline)
                 {
-                    LanPresencePeer peer = peers[i];
-                    if (peer == null || string.IsNullOrEmpty(peer.SteamId))
-                        continue;
-                    bool fav = favorites.Contains(peer.SteamId);
-                    if (peer.IsPresent)
+                    for (int i = 0; i < peers.Count; i++)
                     {
-                        if (fav)
-                            favoritePresent.Add(peer);
+                        LanPresencePeer peer = peers[i];
+                        if (peer == null || string.IsNullOrEmpty(peer.SteamId))
+                            continue;
+                        if (peer.IsPresent)
+                        {
+                            // Favorites stay in Online and are also listed under Favorites.
+                            onlinePresent.Add(peer);
+                            presentIds.Add(peer.SteamId);
+                            if (favorites.Contains(peer.SteamId))
+                                favoritePresent.Add(peer);
+                        }
                         else
-                            onlineOthers.Add(peer);
-                    }
-                    else
-                    {
-                        lastSeen.Add(peer);
+                        {
+                            lastSeen.Add(peer);
+                        }
                     }
                 }
+
+                // Same local store pattern as favorites: remembered peers fill Players seen when offline
+                // or when presence has not seeded them yet this session.
+                MergePersistedSeenPeers(lastSeen, presentIds);
 
                 SortPeers(favoritePresent);
-                SortPeers(onlineOthers);
+                SortPeers(onlinePresent);
                 SortPeersByLastSeen(lastSeen);
 
+                // Favorites only when someone online is favorited; Online/Players seen stay visible even empty.
                 if (favoritePresent.Count > 0)
                 {
-                    flpLanPlayers.Controls.Add(BuildSectionLabel("Favorites", colors, rowWidth));
-                    for (int i = 0; i < favoritePresent.Count; i++)
-                    {
-                        LanPresencePeer peer = favoritePresent[i];
-                        flpLanPlayers.Controls.Add(BuildPlayerRow(
-                            peer,
-                            colors,
-                            rowWidth,
-                            isSelf: false,
-                            channelOnline: true,
-                            isFavorite: true,
-                            isMuted: muted.Contains(peer.SteamId ?? string.Empty)));
-                    }
-                }
-
-                flpLanPlayers.Controls.Add(BuildSectionLabel(
-                    onlineOthers.Count == 0 && favoritePresent.Count == 0
-                        ? "No other players on this LAN yet"
-                        : "Online",
-                    colors,
-                    rowWidth));
-
-                for (int i = 0; i < onlineOthers.Count; i++)
-                {
-                    LanPresencePeer peer = onlineOthers[i];
-                    flpLanPlayers.Controls.Add(BuildPlayerRow(
-                        peer,
+                    AddPeerSection(
+                        SectionFavorites,
+                        "Favorites",
+                        favoritePresent,
                         colors,
                         rowWidth,
-                        isSelf: false,
-                        channelOnline: true,
-                        isFavorite: false,
-                        isMuted: muted.Contains(peer.SteamId ?? string.Empty)));
+                        muted,
+                        favorites,
+                        isFavoriteSection: true);
                 }
 
-                if (lastSeen.Count > 0)
+                AddPeerSection(
+                    SectionOnline,
+                    "Online",
+                    onlinePresent,
+                    colors,
+                    rowWidth,
+                    muted,
+                    favorites,
+                    isFavoriteSection: false);
+
+                AddPeerSection(
+                    SectionLastSeen,
+                    "Players seen",
+                    lastSeen,
+                    colors,
+                    rowWidth,
+                    muted,
+                    favorites,
+                    isFavoriteSection: false);
+
+                if (!_presence.IsOnline)
                 {
-                    flpLanPlayers.Controls.Add(BuildSectionLabel("Last seen", colors, rowWidth));
-                    for (int i = 0; i < lastSeen.Count; i++)
-                    {
-                        string id = lastSeen[i].SteamId ?? string.Empty;
-                        flpLanPlayers.Controls.Add(BuildPlayerRow(
-                            lastSeen[i],
-                            colors,
-                            rowWidth,
-                            isSelf: false,
-                            channelOnline: true,
-                            isFavorite: favorites.Contains(id),
-                            isMuted: muted.Contains(id)));
-                    }
+                    UpdateFooterStatus(0, 0);
                 }
-
-                int presentPlayers = 1 + favoritePresent.Count + onlineOthers.Count;
-                UpdateFooterStatus(
-                    CountUniqueGamesFound(self, favoritePresent, onlineOthers),
-                    presentPlayers);
+                else
+                {
+                    UpdateFooterStatus(
+                        CountUniqueGamesFound(self, onlinePresent),
+                        1 + onlinePresent.Count);
+                }
             }
             finally
             {
@@ -457,17 +458,16 @@ namespace SmartGoldbergEmu.Forms
         }
 
         // Distinct AppIds currently being played by you or present peers.
-        private static int CountUniqueGamesFound(
-            LanPresencePeer self,
-            List<LanPresencePeer> favoritePresent,
-            List<LanPresencePeer> onlineOthers)
+        private static int CountUniqueGamesFound(LanPresencePeer self, List<LanPresencePeer> onlinePresent)
         {
             var appIds = new HashSet<ulong>();
             AddPlayingAppId(appIds, self);
-            for (int i = 0; i < favoritePresent.Count; i++)
-                AddPlayingAppId(appIds, favoritePresent[i]);
-            for (int i = 0; i < onlineOthers.Count; i++)
-                AddPlayingAppId(appIds, onlineOthers[i]);
+            if (onlinePresent != null)
+            {
+                for (int i = 0; i < onlinePresent.Count; i++)
+                    AddPlayingAppId(appIds, onlinePresent[i]);
+            }
+
             return appIds.Count;
         }
 
@@ -485,6 +485,82 @@ namespace SmartGoldbergEmu.Forms
         private HashSet<string> LoadMutedSet()
         {
             return LoadSteamIdSet(settings => settings.LanMutedSteamIds);
+        }
+
+        private void MergePersistedSeenPeers(List<LanPresencePeer> lastSeen, HashSet<string> presentIds)
+        {
+            if (lastSeen == null)
+                return;
+            if (presentIds == null)
+                presentIds = new HashSet<string>(StringComparer.Ordinal);
+
+            var alreadyListed = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < lastSeen.Count; i++)
+            {
+                LanPresencePeer peer = lastSeen[i];
+                if (peer != null && !string.IsNullOrEmpty(peer.SteamId))
+                    alreadyListed.Add(peer.SteamId);
+            }
+
+            List<LanSeenPeerRecord> records;
+            try
+            {
+                records = _appData.GetLanSeenPeers();
+            }
+            catch
+            {
+                return;
+            }
+
+            if (records == null || records.Count == 0)
+                return;
+
+            LanPresencePeer self = _presence.GetLocalSelfSnapshot();
+            string selfId = self != null ? self.SteamId : null;
+
+            for (int i = 0; i < records.Count; i++)
+            {
+                LanSeenPeerRecord record = records[i];
+                if (record == null || string.IsNullOrWhiteSpace(record.SteamId))
+                    continue;
+                if (presentIds.Contains(record.SteamId) || alreadyListed.Contains(record.SteamId))
+                    continue;
+                if (!string.IsNullOrEmpty(selfId)
+                    && string.Equals(record.SteamId, selfId, StringComparison.Ordinal))
+                    continue;
+
+                string hash = record.AvatarHash ?? string.Empty;
+                string avatarPath = null;
+                if (!string.IsNullOrEmpty(hash))
+                {
+                    try
+                    {
+                        avatarPath = Path.Combine(
+                            PathConstants.LanPresenceAvatarCacheDirectory,
+                            record.SteamId + "_" + hash + ".jpg");
+                        if (!File.Exists(avatarPath))
+                            avatarPath = null;
+                    }
+                    catch
+                    {
+                        avatarPath = null;
+                    }
+                }
+
+                lastSeen.Add(new LanPresencePeer
+                {
+                    SteamId = record.SteamId,
+                    DisplayName = record.DisplayName ?? string.Empty,
+                    AvatarHash = hash,
+                    AvatarFilePath = avatarPath,
+                    LastSeenUtc = record.LastSeenUtc.Kind == DateTimeKind.Utc
+                        ? record.LastSeenUtc
+                        : record.LastSeenUtc.ToUniversalTime(),
+                    IsPresent = false,
+                    PersonaState = LanPersonaState.Online
+                });
+                alreadyListed.Add(record.SteamId);
+            }
         }
 
         private HashSet<string> LoadSteamIdSet(Func<ApplicationSettings, List<string>> getList)
@@ -528,21 +604,93 @@ namespace SmartGoldbergEmu.Forms
             list.Sort((a, b) => b.LastSeenUtc.CompareTo(a.LastSeenUtc));
         }
 
-        private Control BuildSectionLabel(string text, ThemeColors colors, int rowWidth)
+        private void AddPeerSection(
+            string sectionKey,
+            string title,
+            List<LanPresencePeer> peers,
+            ThemeColors colors,
+            int rowWidth,
+            HashSet<string> muted,
+            HashSet<string> favorites,
+            bool isFavoriteSection)
         {
-            return new Label
+            if (peers == null)
+                peers = new List<LanPresencePeer>();
+
+            bool collapsed = _collapsedSections.Contains(sectionKey);
+            flpLanPlayers.Controls.Add(BuildSectionHeader(sectionKey, title, peers.Count, collapsed, colors, rowWidth));
+            if (collapsed)
+                return;
+
+            bool channelOnline = _presence.IsOnline;
+            for (int i = 0; i < peers.Count; i++)
+            {
+                LanPresencePeer peer = peers[i];
+                if (peer == null)
+                    continue;
+                string id = peer.SteamId ?? string.Empty;
+                bool isFavorite = isFavoriteSection || favorites.Contains(id);
+                flpLanPlayers.Controls.Add(BuildPlayerRow(
+                    peer,
+                    colors,
+                    rowWidth,
+                    isSelf: false,
+                    channelOnline: channelOnline,
+                    isFavorite: isFavorite,
+                    isMuted: muted.Contains(id)));
+            }
+        }
+
+        private Control BuildSectionHeader(
+            string sectionKey,
+            string title,
+            int count,
+            bool collapsed,
+            ThemeColors colors,
+            int rowWidth)
+        {
+            string toggle = collapsed ? "+" : "−";
+            string countText = count.ToString(CultureInfo.InvariantCulture);
+            var header = new Label
             {
                 AutoSize = false,
                 Width = rowWidth,
-                Height = 22,
+                Height = SectionHeaderHeight,
                 Margin = new Padding(0, 8, 0, 2),
                 Padding = new Padding(8, 4, 8, 0),
-                Text = text,
+                Text = toggle + "  " + title + "  (" + countText + ")",
                 Font = _sectionFont,
                 ForeColor = colors.StatusTextSecondary,
                 BackColor = Color.Transparent,
-                AutoEllipsis = true
+                AutoEllipsis = true,
+                Cursor = Cursors.Hand,
+                Tag = SectionTagPrefix + sectionKey
             };
+            header.Click += OnSectionHeader_Click;
+            return header;
+        }
+
+        private void OnSectionHeader_Click(object sender, EventArgs e)
+        {
+            Label header = sender as Label;
+            if (header == null)
+                return;
+
+            string sectionKey = GetSectionKeyFromTag(header.Tag as string);
+            if (string.IsNullOrEmpty(sectionKey))
+                return;
+
+            if (!_collapsedSections.Add(sectionKey))
+                _collapsedSections.Remove(sectionKey);
+
+            RefreshPeerList();
+        }
+
+        private static string GetSectionKeyFromTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag) || !tag.StartsWith(SectionTagPrefix, StringComparison.Ordinal))
+                return null;
+            return tag.Substring(SectionTagPrefix.Length);
         }
 
         private Control BuildPlayerRow(
@@ -810,90 +958,177 @@ namespace SmartGoldbergEmu.Forms
             ClearMenuItems(_playerMenu);
 
             if (_contextIsSelf)
-            {
-                _playerMenu.Items.Add("Edit account…", null, OnEditAccount_Click);
-
-                ApplicationSettings settings = null;
-                try
-                {
-                    settings = _appData.LoadApplicationSettings();
-                }
-                catch
-                {
-                }
-
-                // Preferred status when channel is online; Offline is channel off (persona kept).
-                // Auto-Away from idle does not change the menu check.
-                var status = new ToolStripMenuItem("Status");
-                bool channelOnline = _presence.IsOnline;
-                LanPersonaState current = settings != null ? settings.LanPersonaState : LanPersonaState.Online;
-                status.DropDownItems.Add(CreatePersonaStatusItem("Online", LanPersonaState.Online, current, channelOnline));
-                status.DropDownItems.Add(CreatePersonaStatusItem("Away", LanPersonaState.Away, current, channelOnline));
-                status.DropDownItems.Add(CreatePersonaStatusItem("Busy", LanPersonaState.Busy, current, channelOnline));
-                status.DropDownItems.Add(CreatePersonaStatusItem("Hidden", LanPersonaState.Hidden, current, channelOnline));
-                status.DropDownItems.Add(CreateOfflineStatusItem(channelOnline));
-                _playerMenu.Items.Add(status);
-
-                if (_presence.IsOnline)
-                {
-                    var lfg = new ToolStripMenuItem("Looking to play");
-                    PopulateLookingToPlayMenu(lfg);
-                    _playerMenu.Items.Add(lfg);
-
-                    if (_presence.LookingForPlayAppId != 0)
-                        _playerMenu.Items.Add("Clear looking to play", null, OnClearLookingToPlay_Click);
-                }
-            }
+                PopulateSelfPlayerMenu();
             else
+                PopulatePeerPlayerMenu();
+        }
+
+        // Presence first, then account utilities.
+        private void PopulateSelfPlayerMenu()
+        {
+            ApplicationSettings settings = null;
+            try
             {
-                bool present = _presence.IsPeerPresent(_contextSteamId);
-
-                bool chatBlocked = false;
-                try
-                {
-                    chatBlocked = ServiceLocator.LanChatService.IsChatBlocked(_contextSteamId);
-                }
-                catch
-                {
-                }
-
-                if (chatBlocked)
-                {
-                    _playerMenu.Items.Add("Allow chat again", null, OnAllowChatAgain_Click);
-                }
-                else if (present && _presence.IsOnline && !_presence.IsLocalBusy)
-                {
-                    _playerMenu.Items.Add("Message…", null, OnMessagePeer_Click);
-                }
-
-                bool favorite = false;
-                try
-                {
-                    favorite = _appData.IsLanFavoriteSteamId(_contextSteamId);
-                }
-                catch
-                {
-                }
-
-                if (favorite)
-                    _playerMenu.Items.Add("Remove from favorites", null, OnToggleFavorite_Click);
-                else
-                    _playerMenu.Items.Add("Add to favorites", null, OnToggleFavorite_Click);
-
-                bool muted = false;
-                try
-                {
-                    muted = _appData.IsLanMutedSteamId(_contextSteamId);
-                }
-                catch
-                {
-                }
-
-                if (muted)
-                    _playerMenu.Items.Add("Unmute", null, OnToggleMute_Click);
-                else
-                    _playerMenu.Items.Add("Mute", null, OnToggleMute_Click);
+                settings = _appData.LoadApplicationSettings();
             }
+            catch
+            {
+            }
+
+            // Preferred status when channel is online; Offline is channel off (persona kept).
+            // Auto-Away from idle does not change the menu check.
+            var status = new ToolStripMenuItem("Status");
+            bool channelOnline = _presence.IsOnline;
+            LanPersonaState current = settings != null ? settings.LanPersonaState : LanPersonaState.Online;
+            status.DropDownItems.Add(CreatePersonaStatusItem("Online", LanPersonaState.Online, current, channelOnline));
+            status.DropDownItems.Add(CreatePersonaStatusItem("Away", LanPersonaState.Away, current, channelOnline));
+            status.DropDownItems.Add(CreatePersonaStatusItem("Busy", LanPersonaState.Busy, current, channelOnline));
+            status.DropDownItems.Add(CreatePersonaStatusItem("Hidden", LanPersonaState.Hidden, current, channelOnline));
+            status.DropDownItems.Add(new ToolStripSeparator());
+            status.DropDownItems.Add(CreateOfflineStatusItem(channelOnline));
+            _playerMenu.Items.Add(status);
+
+            if (_presence.IsOnline)
+            {
+                var lfg = new ToolStripMenuItem("Looking to play");
+                PopulateLookingToPlayMenu(lfg);
+                _playerMenu.Items.Add(lfg);
+            }
+
+            _playerMenu.Items.Add(new ToolStripSeparator());
+            _playerMenu.Items.Add("Copy Steam ID", null, OnCopySteamId_Click);
+            _playerMenu.Items.Add("Edit account…", null, OnEditAccount_Click);
+        }
+
+        // Chat → play together → favorites → safety → copy.
+        private void PopulatePeerPlayerMenu()
+        {
+            bool present = _presence.IsPeerPresent(_contextSteamId);
+            bool chatBlocked = false;
+            try
+            {
+                chatBlocked = ServiceLocator.LanChatService.IsChatBlocked(_contextSteamId);
+            }
+            catch
+            {
+            }
+
+            bool addedTopGroup = false;
+            if (chatBlocked)
+            {
+                _playerMenu.Items.Add("Allow chat again", null, OnAllowChatAgain_Click);
+                addedTopGroup = true;
+            }
+            else if (present && _presence.IsOnline && !_presence.IsLocalBusy)
+            {
+                _playerMenu.Items.Add("Message…", null, OnMessagePeer_Click);
+                addedTopGroup = true;
+            }
+
+            bool addedPlayAction = false;
+            if (present && _presence.IsOnline)
+            {
+                LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
+
+                ulong joinAppId = LanGameJoinService.GetJoinableAppId(peer);
+                if (joinAppId != 0)
+                {
+                    // Join requires the AppId in this library — denylist alone must not show the item.
+                    GameConfig joinGame = ServiceLocator.LanGameJoinService.TryGetLibraryGame(joinAppId);
+                    if (joinGame != null
+                        && LanGameJoinService.SupportsSteamLobbyJoin(joinAppId, joinGame))
+                    {
+                        EnsureMenuSeparator(ref addedTopGroup);
+                        _playerMenu.Items.Add("Join lobby", null, OnJoinPeerGame_Click);
+                        addedPlayAction = true;
+                    }
+                }
+
+                LanPresencePeer self = _presence.GetLocalSelfSnapshot();
+                if (self != null && self.HasJoinableLobby && self.AppId != 0)
+                {
+                    GameConfig inviteGame = ServiceLocator.LanGameJoinService.TryGetLibraryGame(self.AppId);
+                    if (LanGameJoinService.SupportsSteamLobbyJoin(self.AppId, inviteGame))
+                    {
+                        if (!addedPlayAction)
+                            EnsureMenuSeparator(ref addedTopGroup);
+                        _playerMenu.Items.Add("Invite to lobby…", null, OnInvitePeerToLobby_Click);
+                        addedPlayAction = true;
+                    }
+                }
+
+                if (peer != null && peer.IsPlaying && peer.AppId != 0)
+                {
+                    if (!addedPlayAction)
+                        EnsureMenuSeparator(ref addedTopGroup);
+                    _playerMenu.Items.Add("Open Steam store page…", null, OnOpenPeerSteamStore_Click);
+                    addedPlayAction = true;
+                }
+            }
+
+            if (addedTopGroup || addedPlayAction)
+                _playerMenu.Items.Add(new ToolStripSeparator());
+
+            bool favorite = false;
+            try
+            {
+                favorite = _appData.IsLanFavoriteSteamId(_contextSteamId);
+            }
+            catch
+            {
+            }
+
+            if (favorite)
+                _playerMenu.Items.Add("Remove from favorites", null, OnToggleFavorite_Click);
+            else
+                _playerMenu.Items.Add("Add to favorites", null, OnToggleFavorite_Click);
+
+            // Absent remembered peers only — online rows stay in Online until they leave.
+            if (!present)
+            {
+                bool remembered = false;
+                try
+                {
+                    remembered = _appData.IsLanSeenPeer(_contextSteamId);
+                }
+                catch
+                {
+                }
+
+                if (remembered)
+                    _playerMenu.Items.Add("Remove from Players seen", null, OnRemoveFromPlayersSeen_Click);
+            }
+
+            _playerMenu.Items.Add(new ToolStripSeparator());
+
+            bool muted = false;
+            try
+            {
+                muted = _appData.IsLanMutedSteamId(_contextSteamId);
+            }
+            catch
+            {
+            }
+
+            if (muted)
+                _playerMenu.Items.Add("Unmute", null, OnToggleMute_Click);
+            else
+                _playerMenu.Items.Add("Mute", null, OnToggleMute_Click);
+
+            // Unblock stays in the chat group above; safety group only offers Block when not blocked.
+            if (!chatBlocked)
+                _playerMenu.Items.Add("Block chat", null, OnBlockChat_Click);
+
+            _playerMenu.Items.Add(new ToolStripSeparator());
+            _playerMenu.Items.Add("Copy Steam ID", null, OnCopySteamId_Click);
+        }
+
+        private void EnsureMenuSeparator(ref bool priorGroupAdded)
+        {
+            if (!priorGroupAdded)
+                return;
+            _playerMenu.Items.Add(new ToolStripSeparator());
+            priorGroupAdded = false;
         }
 
         private void PopulateLookingToPlayMenu(ToolStripMenuItem parent)
@@ -921,19 +1156,39 @@ namespace SmartGoldbergEmu.Forms
                 return;
             }
 
-            games.Sort((a, b) => string.Compare(
-                a != null ? a.AppName : null,
-                b != null ? b.AppName : null,
-                StringComparison.OrdinalIgnoreCase));
-
+            // Currently playing first, then current LFG, then A–Z by name.
+            ulong playingAppId = 0;
+            LanPresencePeer self = _presence.GetLocalSelfSnapshot();
+            if (self != null && self.IsPlaying && self.AppId != 0)
+                playingAppId = self.AppId;
             ulong currentLfg = _presence.LookingForPlayAppId;
+
+            games.Sort((a, b) =>
+            {
+                int rankA = LookingToPlaySortRank(a, playingAppId, currentLfg);
+                int rankB = LookingToPlaySortRank(b, playingAppId, currentLfg);
+                if (rankA != rankB)
+                    return rankA.CompareTo(rankB);
+                return string.Compare(
+                    a != null ? a.AppName : null,
+                    b != null ? b.AppName : null,
+                    StringComparison.OrdinalIgnoreCase);
+            });
+
             const int maxItems = 80;
-            int count = Math.Min(games.Count, maxItems);
-            for (int i = 0; i < count; i++)
+            int added = 0;
+            bool truncated = false;
+            for (int i = 0; i < games.Count; i++)
             {
                 GameConfig game = games[i];
                 if (game == null || game.AppId == 0)
                     continue;
+                if (added >= maxItems)
+                {
+                    truncated = true;
+                    break;
+                }
+
                 string title = string.IsNullOrWhiteSpace(game.AppName)
                     ? ("App " + game.AppId)
                     : game.AppName.Trim();
@@ -944,10 +1199,22 @@ namespace SmartGoldbergEmu.Forms
                 ulong appId = game.AppId;
                 item.Click += (s, e) => SetLookingToPlay(appId);
                 parent.DropDownItems.Add(item);
+                added++;
             }
 
-            if (games.Count > maxItems)
-                parent.DropDownItems.Add("…and more in Settings").Enabled = false;
+            if (truncated)
+                parent.DropDownItems.Add("(Showing first " + maxItems + " games)").Enabled = false;
+        }
+
+        private static int LookingToPlaySortRank(GameConfig game, ulong playingAppId, ulong currentLfg)
+        {
+            if (game == null || game.AppId == 0)
+                return 3;
+            if (playingAppId != 0 && game.AppId == playingAppId)
+                return 0;
+            if (currentLfg != 0 && game.AppId == currentLfg)
+                return 1;
+            return 2;
         }
 
         private void OnEditAccount_Click(object sender, EventArgs e)
@@ -997,7 +1264,7 @@ namespace SmartGoldbergEmu.Forms
             try
             {
                 ApplicationSettings settings = _appData.LoadApplicationSettings();
-                settings.LanPlayersOnline = false;
+                settings.LanEnabled = false;
                 ValidationResult save = _appData.SaveApplicationSettings(settings);
                 if (!save.IsValid)
                 {
@@ -1049,7 +1316,7 @@ namespace SmartGoldbergEmu.Forms
                 try
                 {
                     ApplicationSettings settings = _appData.LoadApplicationSettings();
-                    settings.LanPlayersOnline = true;
+                    settings.LanEnabled = true;
                     ValidationResult onlineResult = _appData.SaveApplicationSettings(settings);
                     if (!onlineResult.IsValid)
                     {
@@ -1094,6 +1361,226 @@ namespace SmartGoldbergEmu.Forms
             LanChatUiHost.OpenChat(_contextSteamId, this.Owner ?? this);
         }
 
+        private void OnJoinPeerGame_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId))
+                return;
+
+            LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
+            if (peer == null)
+            {
+                MessageBox.Show(this, "That player is no longer available.", "LAN Players",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            Form owner = Owner ?? this;
+            CancellationToken token = ServiceLocator.ApplicationLifetimeToken;
+            _ = JoinPeerGameUiAsync(peer, owner, token)
+                .ForgetFaults(Program.LogService, nameof(OnJoinPeerGame_Click));
+        }
+
+        private async Task JoinPeerGameUiAsync(LanPresencePeer peer, Form owner, CancellationToken token)
+        {
+            ValidationResult result;
+            try
+            {
+                result = await ServiceLocator.LanGameJoinService
+                    .JoinPeerGameAsync(peer, owner, token)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN join failed: " + ex.Message);
+                if (!IsDisposed && !Disposing)
+                {
+                    MessageBox.Show(
+                        this,
+                        "Could not join: " + ex.Message,
+                        "LAN Players",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+                return;
+            }
+
+            if (result != null && !result.IsValid && !IsDisposed && !Disposing
+                && !string.Equals(
+                    result.ErrorMessage,
+                    LanGameJoinService.RelaunchCancelledMessage,
+                    StringComparison.Ordinal))
+            {
+                MessageBox.Show(
+                    this,
+                    result.ErrorMessage ?? "Could not join.",
+                    "LAN Players",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private void OnInvitePeerToLobby_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId))
+                return;
+
+            LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
+            if (peer == null)
+            {
+                MessageBox.Show(this, "That player is no longer available.", "LAN Players",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            CancellationToken token = ServiceLocator.ApplicationLifetimeToken;
+            _ = InvitePeerToLobbyUiAsync(peer, token)
+                .ForgetFaults(Program.LogService, nameof(OnInvitePeerToLobby_Click));
+        }
+
+        private void OnOpenPeerSteamStore_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId))
+                return;
+
+            LanPresencePeer peer = FindPeerSnapshot(_contextSteamId);
+            if (peer == null || !peer.IsPlaying || peer.AppId == 0)
+            {
+                MessageBox.Show(this, "That player is not in a game right now.", "LAN Players",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string url = string.Format(
+                CultureInfo.InvariantCulture,
+                ApplicationConstants.SteamStoreAppUrlFormat,
+                peer.AppId);
+            if (!PathValidationHelper.IsSafeUrl(url))
+            {
+                MessageBox.Show(this, "Invalid URL format detected.", "Invalid URL",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            try
+            {
+                Process.Start(url);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError("Failed to open Steam store page", ex);
+                MessageBox.Show(this, "Failed to open store page.", "Could Not Open Link",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task InvitePeerToLobbyUiAsync(LanPresencePeer peer, CancellationToken token)
+        {
+            ValidationResult result;
+            try
+            {
+                UseWaitCursor = true;
+                result = await ServiceLocator.LanGameJoinService
+                    .InvitePeerToLocalGameAsync(peer, token)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN lobby invite failed: " + ex.Message);
+                result = ValidationResult.Failure(ex.Message);
+            }
+            finally
+            {
+                if (!IsDisposed && !Disposing)
+                    UseWaitCursor = false;
+            }
+
+            if (IsDisposed || Disposing)
+                return;
+
+            if (result != null && result.IsValid)
+            {
+                LanPresencePeer self = _presence.GetLocalSelfSnapshot();
+                ulong appId = self != null ? self.AppId : 0;
+                string gameName = self != null ? self.GameName : null;
+                ServiceLocator.LanChatService.RecordGameInviteSent(peer.SteamId, appId, gameName);
+                LanChatUiHost.OpenChat(peer.SteamId, Owner ?? this, userInitiated: true);
+                return;
+            }
+
+            MessageBox.Show(
+                this,
+                result != null ? (result.ErrorMessage ?? "Could not send invite.") : "Could not send invite.",
+                "LAN Players",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        private LanPresencePeer FindPeerSnapshot(string steamId)
+        {
+            if (string.IsNullOrEmpty(steamId))
+                return null;
+            try
+            {
+                IReadOnlyList<LanPresencePeer> peers = _presence.GetPeersSnapshot();
+                for (int i = 0; i < peers.Count; i++)
+                {
+                    LanPresencePeer p = peers[i];
+                    if (p != null && string.Equals(p.SteamId, steamId, StringComparison.Ordinal))
+                        return p;
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private void OnCopySteamId_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId))
+                return;
+
+            try
+            {
+                Clipboard.SetText(_contextSteamId, TextDataFormat.UnicodeText);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN Players: failed to copy Steam ID: " + ex.Message);
+                FormMessageBoxHelper.ShowIfAlive(
+                    this,
+                    "Could not copy Steam ID to the clipboard.",
+                    "LAN Players",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private void OnBlockChat_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
+                return;
+
+            try
+            {
+                ValidationResult result = ServiceLocator.LanChatService.SetChatBlocked(_contextSteamId, true);
+                if (!result.IsValid)
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        this,
+                        result.ErrorMessage ?? "Could not block chat.",
+                        "LAN Chat",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN chat block failed: " + ex.Message);
+            }
+        }
+
         private void OnAllowChatAgain_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
@@ -1120,6 +1607,34 @@ namespace SmartGoldbergEmu.Forms
             }
 
             LanChatUiHost.OpenChat(_contextSteamId, this.Owner ?? this);
+        }
+
+        private void OnRemoveFromPlayersSeen_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(_contextSteamId) || _contextIsSelf)
+                return;
+
+            try
+            {
+                ValidationResult result = _presence.ForgetSeenPeer(_contextSteamId);
+                if (!result.IsValid)
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        this,
+                        result.ErrorMessage ?? "Could not remove player from Players seen.",
+                        "LAN Players",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogWarning("LAN Players: failed to remove seen peer: " + ex.Message);
+                return;
+            }
+
+            RefreshPeerList();
         }
 
         private void OnToggleFavorite_Click(object sender, EventArgs e)

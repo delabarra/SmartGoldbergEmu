@@ -1,0 +1,4 @@
+{
+  "path": "h:\\GitHub-Desktop\\SmartGoldbergEmu\\LanKit\\LanJoinArgs.cs",
+  "contents": "namespace SmartGoldbergEmu.LanKit\n{\n    public sealed class LanJoinArgs\n    {\n        public LanJoinKind Kind { get; set; }\n\n        // Full process argument fragment (e.g. \"+connect_lobby 123\" or a rich-presence connect string).\n        public string ConnectArguments { get; set; }\n\n        // Friend's reported AppId when GetFriendGamePlayed succeeded; otherwise 0.\n        public uint AppId { get; set; }\n\n        public static LanJoinArgs Empty { get; } = new LanJoinArgs\n        {\n            Kind = LanJoinKind.None,\n            ConnectArguments = string.Empty,\n            AppId = 0\n        };\n    }\n}\n"
+}

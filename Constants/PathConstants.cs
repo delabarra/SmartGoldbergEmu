@@ -149,6 +149,7 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergSubscribedGroupsFileName = "subscribed_groups.txt";
         public const string GoldbergSubscribedGroupsClansFileName = "subscribed_groups_clans.txt";
         public const string GoldbergAutoAcceptInviteFileName = "auto_accept_invite.txt";
+        public const string GoldbergAutoSendInvitesFileName = "auto_send_invites.txt";
         public const string GoldbergSteamInterfacesFileName = "steam_interfaces.txt";
         public const string GoldbergSteamInterfacesExampleFileName = "steam_interfaces.EXAMPLE.txt";
 

@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Extensions;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
@@ -31,7 +34,10 @@ namespace SmartGoldbergEmu.Forms
         private Image _avatarImage;
         private Image _placeholderAvatar;
         private bool _sending;
+        private bool _acceptingLobbyInvite;
         private bool _syncingComposeScroll;
+        // Layout while Minimized uses a tiny ClientSize; defer panel/history updates until restore.
+        private bool _deferredSessionRefresh;
 
         public string PeerSteamId => _peerSteamId;
 
@@ -76,6 +82,7 @@ namespace SmartGoldbergEmu.Forms
             txtCompose.MaxLength = LanChatConstants.MaxMessageChars;
             txtCompose.TextChanged += OnComposeTextChanged;
             txtCompose.Resize += OnComposeResize;
+            pnlComposer.Resize += (s, e) => EnsureComposerLayout();
             UpdateComposeCharCount();
             if (_appData != null)
                 WindowStateHelper.TryRestoreLanChatWindowSize(this, _appData);
@@ -155,15 +162,23 @@ namespace SmartGoldbergEmu.Forms
             // ContainsFocus can lag one tick after Activated — defer the clear check.
             if (WindowState == FormWindowState.Minimized)
                 return;
+            if (_deferredSessionRefresh)
+                BeginInvoke(new Action(ApplyDeferredSessionRefresh));
             BeginInvoke(new Action(TryClearUnreadAttentionIfInteractive));
         }
 
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
+            if (WindowState == FormWindowState.Minimized)
+                return;
+
             // Taskbar restore often Activates while still Minimized, then restores without a second Activated.
-            if (_hasUnreadAttention && WindowState != FormWindowState.Minimized)
+            if (_hasUnreadAttention)
                 BeginInvoke(new Action(TryClearUnreadAttentionIfInteractive));
+
+            if (_deferredSessionRefresh)
+                BeginInvoke(new Action(ApplyDeferredSessionRefresh));
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -280,6 +295,40 @@ namespace SmartGoldbergEmu.Forms
             RefreshFromSession(e.Session);
         }
 
+        private void ApplyDeferredSessionRefresh()
+        {
+            if (IsDisposed || Disposing || WindowState == FormWindowState.Minimized)
+                return;
+            if (!_deferredSessionRefresh)
+                return;
+            _deferredSessionRefresh = false;
+            RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
+            EnsureComposerLayout();
+        }
+
+        private void EnsureComposerLayout()
+        {
+            if (pnlComposer == null || pnlComposer.IsDisposed || txtCompose == null || txtCompose.IsDisposed)
+                return;
+
+            // Re-assert fill after a minimized layout pass can leave Anchored children at 0 height.
+            int sendWidth = btnSend != null && !btnSend.IsDisposed ? btnSend.Width : 82;
+            int gap = 6;
+            txtCompose.SetBounds(
+                0,
+                0,
+                Math.Max(1, pnlComposer.ClientSize.Width - sendWidth - gap),
+                Math.Max(1, pnlComposer.ClientSize.Height));
+            if (btnSend != null && !btnSend.IsDisposed)
+            {
+                btnSend.Location = new Point(
+                    Math.Max(0, pnlComposer.ClientSize.Width - sendWidth),
+                    0);
+            }
+
+            SyncComposeScrollBars();
+        }
+
         private void RefreshFromSession(LanChatSessionSnapshot session)
         {
             if (session == null || IsDisposed || Disposing)
@@ -290,6 +339,15 @@ namespace SmartGoldbergEmu.Forms
 
             UpdateWindowTitle();
 
+            // Minimized ClientSize is tiny — showing AutoSize invite/gate rows wraps labels and crushes the composer.
+            if (WindowState == FormWindowState.Minimized)
+            {
+                _deferredSessionRefresh = true;
+                return;
+            }
+
+            _deferredSessionRefresh = false;
+
             ThemeColors colors = ThemeService.GetThemeColors(ThemeService.EffectiveTheme);
             bool incoming = session.Status == LanChatSessionStatus.IncomingPending;
             pnlGate.Visible = incoming;
@@ -299,6 +357,21 @@ namespace SmartGoldbergEmu.Forms
                     "This player wants to chat on your LAN. Identity is not verified. "
                     + "Read their message below, then Accept, Ignore, or Ignore user.";
                 lblGateWarning.ForeColor = colors.WarningColor;
+            }
+
+            bool lobbyInvite = session.PendingGameInvite != null && session.PendingGameInvite.AppId != 0;
+            pnlLobbyInvite.Visible = lobbyInvite;
+            if (lobbyInvite)
+            {
+                string game = string.IsNullOrWhiteSpace(session.PendingGameInvite.GameName)
+                    ? ("App " + session.PendingGameInvite.AppId)
+                    : session.PendingGameInvite.GameName.Trim();
+                int wrapWidth = pnlLobbyInvite.ClientSize.Width;
+                if (wrapWidth < 100)
+                    wrapWidth = Math.Max(100, ClientSize.Width - 24);
+                lblLobbyInvite.MaximumSize = new Size(wrapWidth, 0);
+                lblLobbyInvite.Text = "You have received an invitation to join " + game + ".";
+                lblLobbyInvite.ForeColor = colors.InfoColor;
             }
 
             RenderHistory(session.Messages);
@@ -336,6 +409,7 @@ namespace SmartGoldbergEmu.Forms
                 lblName.Text = _peerDisplayName;
 
             RefreshProfile();
+            EnsureComposerLayout();
         }
 
         protected override void OnThemeApplied()
@@ -446,9 +520,22 @@ namespace SmartGoldbergEmu.Forms
                             ? m.TimestampUtc.ToLocalTime()
                             : DateTime.SpecifyKind(m.TimestampUtc, DateTimeKind.Utc).ToLocalTime();
                         string stamp = FormatTimestamp(local);
+                        bool inviteResult = m.Kind == LanChatMessageKind.GameInviteResult;
+                        bool inviteNote = m.Kind == LanChatMessageKind.GameInvite
+                            || m.Kind == LanChatMessageKind.GameInviteSent
+                            || m.Kind == LanChatMessageKind.GameInviteCooldown
+                            || inviteResult;
+                        // Invite lines use normal who; details/actions stay on the form panel.
                         string who = m.IsLocal
                             ? ResolveLocalDisplayName()
                             : (_peerDisplayName.Length > 0 ? _peerDisplayName : "Them");
+                        Color nameColor = m.IsLocal ? colors.StatusTextAccent : colors.Foreground;
+                        // Chat invite notes stay warning (yellow); form panel uses InfoColor separately.
+                        Color bodyColor = inviteResult
+                            ? colors.InfoColor
+                            : (inviteNote
+                                ? colors.WarningColor
+                                : (m.IsLocal ? colors.StatusTextAccent : colors.Foreground));
 
                         rtfHistory.SelectionStart = rtfHistory.TextLength;
                         rtfHistory.SelectionLength = 0;
@@ -459,7 +546,7 @@ namespace SmartGoldbergEmu.Forms
                         rtfHistory.SelectionFont = baseFont;
                         rtfHistory.AppendText(stamp + "  ");
                         rtfHistory.SelectionFont = boldName;
-                        rtfHistory.SelectionColor = m.IsLocal ? colors.StatusTextAccent : colors.Foreground;
+                        rtfHistory.SelectionColor = nameColor;
                         rtfHistory.AppendText(who + Environment.NewLine);
 
                         rtfHistory.SelectionStart = rtfHistory.TextLength;
@@ -469,7 +556,7 @@ namespace SmartGoldbergEmu.Forms
                             : HorizontalAlignment.Left;
                         rtfHistory.SelectionFont = baseFont;
                         // Local = accent (same as online persona); peer body uses field text on themed background.
-                        rtfHistory.SelectionColor = m.IsLocal ? colors.StatusTextAccent : colors.Foreground;
+                        rtfHistory.SelectionColor = bodyColor;
                         rtfHistory.AppendText(m.Text);
 
                         if (i < messages.Count - 1)
@@ -672,6 +759,120 @@ namespace SmartGoldbergEmu.Forms
 
             RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
             FocusComposer();
+        }
+
+        private void OnLobbyAccept_Click(object sender, EventArgs e)
+        {
+            if (_acceptingLobbyInvite || IsDisposed || Disposing)
+                return;
+
+            LanGameInviteEventArgs invite;
+            string error;
+            if (!_chat.TryTakePendingGameInvite(_peerSteamId, out invite, out error))
+            {
+                if (!string.IsNullOrEmpty(error))
+                {
+                    FormMessageBoxHelper.ShowIfAlive(
+                        this,
+                        error,
+                        "LAN lobby invite",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+
+                RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
+                return;
+            }
+
+            RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
+            CancellationToken token = ServiceLocator.ApplicationLifetimeToken;
+            _ = AcceptLobbyInviteUiAsync(invite, token)
+                .ForgetFaults(Program.LogService, nameof(OnLobbyAccept_Click));
+        }
+
+        private void OnLobbyDecline_Click(object sender, EventArgs e)
+        {
+            string error;
+            if (!_chat.TryDeclineGameInvite(_peerSteamId, out error) && !string.IsNullOrEmpty(error))
+            {
+                FormMessageBoxHelper.ShowIfAlive(
+                    this,
+                    error,
+                    "LAN lobby invite",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+
+            RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
+        }
+
+        private async Task AcceptLobbyInviteUiAsync(LanGameInviteEventArgs invite, CancellationToken token)
+        {
+            if (invite == null)
+                return;
+
+            _acceptingLobbyInvite = true;
+            btnLobbyAccept.Enabled = false;
+            btnLobbyDecline.Enabled = false;
+            try
+            {
+                ValidationResult result;
+                try
+                {
+                    result = await ServiceLocator.LanGameJoinService
+                        .AcceptInviteAsync(invite, this, token)
+                        .ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogWarning("LAN invite accept failed: " + ex.Message);
+                    _chat.RestorePendingGameInvite(invite);
+                    if (!IsDisposed && !Disposing)
+                    {
+                        FormMessageBoxHelper.ShowIfAlive(
+                            this,
+                            "Could not accept invite: " + ex.Message,
+                            "LAN lobby invite",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+
+                    return;
+                }
+
+                if (result != null && result.IsValid)
+                {
+                    _chat.RecordGameInviteAccepted(_peerSteamId);
+                }
+                else if (result != null && !result.IsValid)
+                {
+                    // Keep Accept/Decline available when relaunch was declined or launch failed.
+                    _chat.RestorePendingGameInvite(invite);
+                    if (!IsDisposed && !Disposing
+                        && !string.Equals(
+                            result.ErrorMessage,
+                            LanGameJoinService.RelaunchCancelledMessage,
+                            StringComparison.Ordinal))
+                    {
+                        FormMessageBoxHelper.ShowIfAlive(
+                            this,
+                            result.ErrorMessage ?? "Could not accept invite.",
+                            "LAN lobby invite",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                }
+            }
+            finally
+            {
+                _acceptingLobbyInvite = false;
+                if (!IsDisposed && !Disposing)
+                {
+                    btnLobbyAccept.Enabled = true;
+                    btnLobbyDecline.Enabled = true;
+                    RefreshFromSession(_chat.GetSessionSnapshot(_peerSteamId));
+                }
+            }
         }
 
         private void OnIgnore_Click(object sender, EventArgs e)

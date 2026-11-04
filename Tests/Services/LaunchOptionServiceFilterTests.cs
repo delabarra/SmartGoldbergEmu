@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
@@ -62,6 +63,40 @@ namespace SmartGoldbergEmu.Tests.Services
         {
             var filtered = _service.FilterLaunchOptionsForUi(null, excludeRestrictedTypes: true);
             Assert.Empty(filtered);
+        }
+
+        [Fact]
+        public void FilterLaunchOptionsForUi_excludes_type_none_even_when_showing_extra()
+        {
+            var options = new List<LaunchOption>
+            {
+                new LaunchOption { Executable = "StreetsOfRogue.exe", Type = SteamPicsKeyNames.LaunchOptionTypeNone, OsArch = "64" },
+                new LaunchOption { Executable = "StreetsOfRogue32.exe", Type = SteamPicsKeyNames.LaunchOptionTypeNone, OsArch = "32" },
+                new LaunchOption { Description = "Play", Type = "default", Executable = "play.exe" },
+            };
+
+            var filtered = _service.FilterLaunchOptionsForUi(options, excludeRestrictedTypes: false);
+
+            Assert.Single(filtered);
+            Assert.Equal("Play", filtered[0].Description);
+        }
+
+        [Fact]
+        public void PickBestAutomaticLaunchOption_prefers_native_osarch_among_type_none()
+        {
+            var options = new List<LaunchOption>
+            {
+                new LaunchOption { Executable = "StreetsOfRogue32.exe", Type = SteamPicsKeyNames.LaunchOptionTypeNone, OsArch = "32" },
+                new LaunchOption { Executable = "StreetsOfRogue.exe", Type = SteamPicsKeyNames.LaunchOptionTypeNone, OsArch = "64" },
+            };
+
+            var picked = LaunchOptionService.PickBestAutomaticLaunchOption(options);
+
+            Assert.NotNull(picked);
+            if (Environment.Is64BitOperatingSystem)
+                Assert.Equal("StreetsOfRogue.exe", picked.Executable);
+            else
+                Assert.Equal("StreetsOfRogue32.exe", picked.Executable);
         }
     }
 }

@@ -9,5 +9,6 @@ namespace SmartGoldbergEmu.Models
         public string Text { get; set; }
         public DateTime TimestampUtc { get; set; }
         public bool IsLocal { get; set; }
+        public LanChatMessageKind Kind { get; set; }
     }
 }

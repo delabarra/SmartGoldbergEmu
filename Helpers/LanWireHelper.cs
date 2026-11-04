@@ -30,6 +30,19 @@ namespace SmartGoldbergEmu.Helpers
             int maxPerWindow,
             int windowMs)
         {
+            int unused;
+            return TryConsumeRate(map, key, maxPerWindow, windowMs, out unused);
+        }
+
+        // When false, remainingMs is time until the oldest stamp leaves the window (at least 1).
+        public static bool TryConsumeRate(
+            Dictionary<string, List<long>> map,
+            string key,
+            int maxPerWindow,
+            int windowMs,
+            out int remainingMs)
+        {
+            remainingMs = 0;
             if (map == null || string.IsNullOrEmpty(key) || maxPerWindow <= 0 || windowMs <= 0)
                 return false;
 
@@ -54,7 +67,28 @@ namespace SmartGoldbergEmu.Helpers
                 stamps.RemoveRange(write, stamps.Count - write);
 
             if (stamps.Count >= maxPerWindow)
+            {
+                long oldest = stamps[0];
+                for (int i = 1; i < stamps.Count; i++)
+                {
+                    if (stamps[i] < oldest)
+                        oldest = stamps[i];
+                }
+
+                long expireAt = oldest + ((long)windowMs * TimeSpan.TicksPerMillisecond);
+                long remTicks = expireAt - nowTicks;
+                if (remTicks <= 0)
+                    remainingMs = 1;
+                else
+                {
+                    long ms = (remTicks + TimeSpan.TicksPerMillisecond - 1) / TimeSpan.TicksPerMillisecond;
+                    remainingMs = ms > int.MaxValue ? int.MaxValue : (int)ms;
+                    if (remainingMs < 1)
+                        remainingMs = 1;
+                }
+
                 return false;
+            }
 
             stamps.Add(nowTicks);
             return true;

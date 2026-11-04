@@ -288,6 +288,15 @@ namespace SmartGoldbergEmu.Forms
             _uriFileWatcherHelper?.Dispose();
 
             _suppressLanListClosedPersist = true;
+            try
+            {
+                ServiceLocator.LanPresenceService.InviteReceived -= OnLanInviteReceived;
+                ServiceLocator.LanPresenceService.InviteCooldownReceived -= OnLanInviteCooldownReceived;
+            }
+            catch
+            {
+            }
+
             if (_lanPlayersForm != null && !_lanPlayersForm.IsDisposed)
             {
                 try
@@ -303,6 +312,37 @@ namespace SmartGoldbergEmu.Forms
             LanChatUiHost.Detach(this);
 
             base.OnFormClosed(e);
+        }
+
+        private void OnLanInviteReceived(object sender, LanGameInviteEventArgs e)
+        {
+            if (e == null || IsDisposed || Disposing)
+                return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => OnLanInviteReceived(sender, e)));
+                return;
+            }
+
+            // Chat history + Accept/Decline panel; LanChatUiHost flashes/sounds when chat is minimized.
+            ServiceLocator.LanChatService.RecordGameInviteReceived(e);
+        }
+
+        private void OnLanInviteCooldownReceived(object sender, LanGameInviteCooldownEventArgs e)
+        {
+            if (e == null || IsDisposed || Disposing)
+                return;
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => OnLanInviteCooldownReceived(sender, e)));
+                return;
+            }
+
+            ServiceLocator.LanChatService.RecordGameInviteCooldown(e.FromSteamId, e.RemainingSeconds);
+            if (!string.IsNullOrEmpty(e.FromSteamId))
+                LanChatUiHost.OpenChat(e.FromSteamId, this, userInitiated: false);
         }
 
         private static ImageList CreateImageList(Size imageSize)
@@ -377,7 +417,9 @@ namespace SmartGoldbergEmu.Forms
             _lanPlayersForm = new LanPlayersForm();
             _lanPlayersForm.FormClosed += OnLanListFormClosed;
             _lanPlayersForm.ApplyInitialPlacement(this);
-            _lanPlayersForm.Show(this);
+            // No Owner — owned windows activate with the owner, so clicks on the list
+            // would bring MainForm forward. List already has its own taskbar button.
+            _lanPlayersForm.Show();
             PersistLanListOpen(true);
             SyncLanToggleMenuState(true);
         }
@@ -3692,7 +3734,13 @@ namespace SmartGoldbergEmu.Forms
 
                 try
                 {
+                    ServiceLocator.LanPresenceService.InviteReceived -= OnLanInviteReceived;
+                    ServiceLocator.LanPresenceService.InviteReceived += OnLanInviteReceived;
+                    ServiceLocator.LanPresenceService.InviteCooldownReceived -= OnLanInviteCooldownReceived;
+                    ServiceLocator.LanPresenceService.InviteCooldownReceived += OnLanInviteCooldownReceived;
                     ServiceLocator.LanPresenceService.StartIfEnabled();
+                    // Touch join service so lobby readiness monitor hooks OnlineStateChanged.
+                    _ = ServiceLocator.LanGameJoinService;
                     ServiceLocator.LanChatService.EnsureHooked();
                     LanChatUiHost.Attach(this);
                 }

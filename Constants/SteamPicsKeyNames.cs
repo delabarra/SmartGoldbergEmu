@@ -61,6 +61,8 @@ namespace SmartGoldbergEmu.Constants
         public const string OsArch = "osarch";
 
         // Launch entry "type" field values (Steam appinfo). "default" matches stats child name constant Default.
+        // "none" = Steam platform/arch auto-pick only; not shown in the launch-option picker.
+        public const string LaunchOptionTypeNone = "none";
         public const string LaunchOptionTypeUser = "user";
         public const string LaunchOptionTypeConfig = "config";
         public const string LaunchOptionTypeBetaKey = "betakey";

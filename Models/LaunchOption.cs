@@ -36,6 +36,13 @@ namespace SmartGoldbergEmu.Models
             return IsRestrictedLaunchOptionType(Type);
         }
 
+        // Steam config.launch type "none": OS/arch variants picked automatically; never listed in the picker.
+        public bool IsSteamPlatformAutoLaunchType()
+        {
+            return !string.IsNullOrEmpty(Type) &&
+                   Type.Equals(SteamPicsKeyNames.LaunchOptionTypeNone, StringComparison.OrdinalIgnoreCase);
+        }
+
         public static bool IsRestrictedLaunchOptionType(string type)
         {
             if (string.IsNullOrEmpty(type))

@@ -172,6 +172,13 @@ namespace SmartGoldbergEmu.Services
             if (!SessionNeedsRegistryRestore(session))
                 return;
 
+            if (session.DeferRegistryRestoreUntilExit)
+            {
+                _logger.LogDebug(
+                    $"Deferring registry restore until game exit for AppId {session.AppId} (PID {session.GameProcessId}).");
+                return;
+            }
+
             TryExecuteRegistryRestore(manifestPath);
         }
 
@@ -224,6 +231,24 @@ namespace SmartGoldbergEmu.Services
                 return false;
 
             return IsSessionProcessAlive(session);
+        }
+
+        // PID for a live launch-session process (LAN join relaunch when Accept while already running).
+        public bool TryGetLiveSessionProcessId(ulong appId, out int processId)
+        {
+            processId = 0;
+            string path = GetManifestPathForAppId(appId);
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return false;
+
+            if (!TryLoad(path, out PersistedLaunchSession session))
+                return false;
+
+            if (!IsSessionProcessAlive(session) || session.GameProcessId <= 0)
+                return false;
+
+            processId = session.GameProcessId;
+            return true;
         }
 
         public bool HasAnyLiveLaunchSession()

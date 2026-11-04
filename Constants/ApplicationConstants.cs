@@ -81,7 +81,8 @@ namespace SmartGoldbergEmu.Constants
         // Debug/tuning toggle for the Logos view ImageList drop shadow.
         public const string SettingKeyLogosViewDropShadow = "logos_view_drop_shadow";
 
-        public const string SettingKeyLanPlayersOnline = "lan_players_online";
+        // Opt-in LAN presence channel (UDP advertise/listen). Offline-first default.
+        public const string SettingKeyLanEnabled = "lan_enabled";
         public const string SettingKeyLanPersonaState = "lan_persona_state";
         public const string SettingKeyLanCustomStatus = "lan_custom_status";
         // Comma-separated Steam64 ids (local favorites only; never sent on the wire).
@@ -95,6 +96,9 @@ namespace SmartGoldbergEmu.Constants
 
         // Comma-separated Steam64 ids accepted for LAN chat once (local only; skip gate forever until blocked).
         public const string SettingKeyLanChatTrustedSteamIds = "lan_chat_trusted_steamids";
+
+        // Semicolon-separated seen peers: steamId|displayName|utcTicks|avatarHash (local only).
+        public const string SettingKeyLanSeenPeers = "lan_seen_peers";
 
         // Light, Dark, or System.
         public const string SettingKeyThemeMode = "theme_mode";
@@ -187,7 +191,8 @@ namespace SmartGoldbergEmu.Constants
         // Usage: SmartGoldbergEmu.exe --launch-cleanup-watcher "path\to\manifest.json"
         public const string LaunchCleanupWatcherCliFlag = "launch-cleanup-watcher";
 
-        // Steam registry redirects (ActiveProcess / SourceModInstallPath) are restored after this window; the game keeps the Goldberg DLLs it already loaded.
+        // Steam registry redirects (ActiveProcess / SourceModInstallPath) are restored after this window when safe.
+        // SteamClient sessions set DeferRegistryRestoreUntilExit so Valve steam_api cannot re-resolve real Steam mid-run.
         public const int LaunchRegistryRedirectDurationMs = 15_000;
 
         #endregion

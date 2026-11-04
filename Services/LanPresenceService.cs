@@ -31,6 +31,8 @@ namespace SmartGoldbergEmu.Services
             new Dictionary<string, List<long>>(StringComparer.Ordinal);
         private readonly Dictionary<string, List<long>> _avatarReplyTimestamps =
             new Dictionary<string, List<long>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<long>> _inviteAcceptTimestamps =
+            new Dictionary<string, List<long>>(StringComparer.Ordinal);
 
         private UdpClient _udp;
         private Timer _heartbeatTimer;
@@ -46,7 +48,9 @@ namespace SmartGoldbergEmu.Services
         private string _localCustomStatus = string.Empty;
         private ulong _localLookingForPlayAppId;
         private string _localLookingForPlayGameName = string.Empty;
+        private string _localJoinArguments = string.Empty;
         private ulong _lastAdvertisedAppId;
+        private string _lastAdvertisedJoinArguments = string.Empty;
         private string _lastAdvertisedGameName = string.Empty;
         private bool _online;
         private bool _disposed;
@@ -54,6 +58,8 @@ namespace SmartGoldbergEmu.Services
 
         public event EventHandler PeersChanged;
         public event EventHandler OnlineStateChanged;
+        public event EventHandler<LanGameInviteEventArgs> InviteReceived;
+        public event EventHandler<LanGameInviteCooldownEventArgs> InviteCooldownReceived;
 
         // Chat types (cq/cd/cm) multiplexed on this socket; LanChatService handles the payload.
         public event EventHandler<LanChatPacketEventArgs> ChatPacketReceived;
@@ -128,9 +134,31 @@ namespace SmartGoldbergEmu.Services
                     PersonaState = _online ? GetEffectivePersonaStateUnlocked() : LanPersonaState.Online,
                     CustomStatus = _online ? (_localCustomStatus ?? string.Empty) : string.Empty,
                     LookingForPlayAppId = _online ? _localLookingForPlayAppId : 0,
-                    LookingForPlayGameName = _online ? (_localLookingForPlayGameName ?? string.Empty) : string.Empty
+                    LookingForPlayGameName = _online ? (_localLookingForPlayGameName ?? string.Empty) : string.Empty,
+                    JoinArguments = _online ? (_localJoinArguments ?? string.Empty) : string.Empty
                 };
             }
+        }
+
+        // Host LanKit readiness result. Empty clears the advertised lobby join args.
+        public void SetLocalJoinArguments(string joinArguments)
+        {
+            string next = string.IsNullOrWhiteSpace(joinArguments)
+                ? string.Empty
+                : Truncate(joinArguments.Trim(), LanPresenceConstants.MaxJoinArgumentsChars);
+
+            bool changed;
+            lock (_gate)
+            {
+                if (_disposed)
+                    return;
+                changed = !string.Equals(_localJoinArguments ?? string.Empty, next, StringComparison.Ordinal);
+                if (changed)
+                    _localJoinArguments = next;
+            }
+
+            if (changed)
+                RaisePeersChanged();
         }
 
         // Reload persona / custom status from settings.ini (after Settings save or status pick).
@@ -194,10 +222,11 @@ namespace SmartGoldbergEmu.Services
 
         public void StartIfEnabled()
         {
-            bool enabled = true;
+            // Offline-first: missing/unloadable preference stays off until the user opts in.
+            bool enabled = false;
             try
             {
-                enabled = ServiceLocator.AppDataService.LoadApplicationSettings().LanPlayersOnline;
+                enabled = ServiceLocator.AppDataService.LoadApplicationSettings().LanEnabled;
             }
             catch (Exception ex)
             {
@@ -266,6 +295,7 @@ namespace SmartGoldbergEmu.Services
             _udp = udp;
             _online = true;
             _peers.Clear();
+            LoadSeenPeersUnlocked();
 
             if (Interlocked.Exchange(ref _receiveLoopRunning, 1) == 0)
                 ThreadPool.QueueUserWorkItem(ReceiveLoop);
@@ -319,10 +349,15 @@ namespace SmartGoldbergEmu.Services
             {
             }
 
+            // Remember Players seen across offline / restart (same local store as favorites).
+            PersistSeenPeersUnlocked();
             _peers.Clear();
             _avatarRequestCooldown.Clear();
             _avatarAcceptTimestamps.Clear();
             _avatarReplyTimestamps.Clear();
+            _inviteAcceptTimestamps.Clear();
+            _localJoinArguments = string.Empty;
+            _lastAdvertisedJoinArguments = string.Empty;
             Interlocked.Exchange(ref _receiveLoopRunning, 0);
         }
 
@@ -351,11 +386,15 @@ namespace SmartGoldbergEmu.Services
                     ulong appId;
                     string gameName;
                     TryGetPlayingGame(out appId, out gameName);
+                    if (appId == 0 && !string.IsNullOrEmpty(_localJoinArguments))
+                        _localJoinArguments = string.Empty;
                     if (appId != _lastAdvertisedAppId
-                        || !string.Equals(_lastAdvertisedGameName ?? string.Empty, gameName ?? string.Empty, StringComparison.Ordinal))
+                        || !string.Equals(_lastAdvertisedGameName ?? string.Empty, gameName ?? string.Empty, StringComparison.Ordinal)
+                        || !string.Equals(_lastAdvertisedJoinArguments ?? string.Empty, _localJoinArguments ?? string.Empty, StringComparison.Ordinal))
                     {
                         _lastAdvertisedAppId = appId;
                         _lastAdvertisedGameName = gameName ?? string.Empty;
+                        _lastAdvertisedJoinArguments = _localJoinArguments ?? string.Empty;
                         localPresenceChanged = true;
                     }
                 }
@@ -397,13 +436,126 @@ namespace SmartGoldbergEmu.Services
                         peer.GameName = string.Empty;
                         peer.LookingForPlayAppId = 0;
                         peer.LookingForPlayGameName = string.Empty;
+                        peer.JoinArguments = string.Empty;
                         changed = true;
                     }
                 }
+
+                if (changed)
+                    PersistSeenPeersUnlocked();
             }
 
             if (changed)
                 RaisePeersChanged();
+        }
+
+        // Drop a remembered absent peer from memory + local store (Players seen remove).
+        public ValidationResult ForgetSeenPeer(string steamId)
+        {
+            steamId = LanWireHelper.SanitizeSteamId(steamId);
+            if (string.IsNullOrEmpty(steamId))
+                return ValidationResult.Failure("Steam ID is required.");
+
+            lock (_gate)
+            {
+                if (_disposed)
+                    return ValidationResult.Failure("LAN presence is not available.");
+
+                LanPresencePeer peer;
+                if (_peers.TryGetValue(steamId, out peer) && peer != null && peer.IsPresent)
+                    return ValidationResult.Failure("That player is still online.");
+
+                _peers.Remove(steamId);
+            }
+
+            try
+            {
+                ValidationResult save = ServiceLocator.AppDataService.RemoveLanSeenPeer(steamId);
+                if (!save.IsValid)
+                    return save;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug("LAN presence: failed to remove seen peer: " + ex.Message);
+                return ValidationResult.Failure("Could not remove player from Players seen.");
+            }
+
+            RaisePeersChanged();
+            return ValidationResult.Success();
+        }
+
+        private void LoadSeenPeersUnlocked()
+        {
+            List<LanSeenPeerRecord> records;
+            try
+            {
+                records = ServiceLocator.AppDataService.GetLanSeenPeers();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug("LAN presence: failed to load seen peers: " + ex.Message);
+                return;
+            }
+
+            if (records == null || records.Count == 0)
+                return;
+
+            for (int i = 0; i < records.Count; i++)
+            {
+                LanSeenPeerRecord record = records[i];
+                if (record == null || string.IsNullOrWhiteSpace(record.SteamId))
+                    continue;
+                if (string.Equals(record.SteamId, _localSteamId, StringComparison.Ordinal))
+                    continue;
+                if (_peers.ContainsKey(record.SteamId))
+                    continue;
+
+                string avatarPath = ResolveCachedAvatarPath(record.SteamId, record.AvatarHash);
+                if (!string.IsNullOrEmpty(avatarPath) && !File.Exists(avatarPath))
+                    avatarPath = null;
+
+                _peers[record.SteamId] = new LanPresencePeer
+                {
+                    SteamId = record.SteamId,
+                    DisplayName = record.DisplayName ?? string.Empty,
+                    AvatarHash = record.AvatarHash ?? string.Empty,
+                    AvatarFilePath = avatarPath,
+                    LastSeenUtc = record.LastSeenUtc.Kind == DateTimeKind.Utc
+                        ? record.LastSeenUtc
+                        : record.LastSeenUtc.ToUniversalTime(),
+                    IsPresent = false,
+                    PersonaState = LanPersonaState.Online
+                };
+            }
+        }
+
+        private void PersistSeenPeersUnlocked()
+        {
+            var records = new List<LanSeenPeerRecord>(_peers.Count);
+            foreach (LanPresencePeer peer in _peers.Values)
+            {
+                if (peer == null || string.IsNullOrWhiteSpace(peer.SteamId))
+                    continue;
+                if (string.Equals(peer.SteamId, _localSteamId, StringComparison.Ordinal))
+                    continue;
+
+                records.Add(new LanSeenPeerRecord
+                {
+                    SteamId = peer.SteamId,
+                    DisplayName = peer.DisplayName ?? string.Empty,
+                    AvatarHash = peer.AvatarHash ?? string.Empty,
+                    LastSeenUtc = peer.IsPresent ? DateTime.UtcNow : peer.LastSeenUtc
+                });
+            }
+
+            try
+            {
+                ServiceLocator.AppDataService.SaveLanSeenPeers(records);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug("LAN presence: failed to save seen peers: " + ex.Message);
+            }
         }
 
         private void ReceiveLoop(object state)
@@ -493,8 +645,221 @@ namespace SmartGoldbergEmu.Services
                 HandleAvatarRequest(root, remote);
             else if (string.Equals(type, LanPresenceConstants.MessageAvatarResponse, StringComparison.Ordinal))
                 HandleAvatarResponse(root);
+            else if (string.Equals(type, LanPresenceConstants.MessageInvite, StringComparison.Ordinal))
+                HandleInvite(root);
+            else if (string.Equals(type, LanPresenceConstants.MessageInviteCooldown, StringComparison.Ordinal))
+                HandleInviteCooldown(root);
             else if (LanChatConstants.IsChatType(type))
                 RaiseChatPacket(root, remote);
+        }
+
+        // Broadcast a launcher invite nudge (optional join args). Guest Accept launches via GameLaunchService.
+        public ValidationResult SendGameInvite(string targetSteamId, ulong appId, string gameName, string joinArguments = null)
+        {
+            if (string.IsNullOrWhiteSpace(targetSteamId))
+                return ValidationResult.Failure("Invite target is missing.");
+            if (appId == 0)
+                return ValidationResult.Failure("Invite game AppId is missing.");
+
+            string to = LanWireHelper.SanitizeSteamId(targetSteamId);
+            if (string.IsNullOrEmpty(to))
+                return ValidationResult.Failure("Invite target Steam ID is invalid.");
+
+            string join = string.IsNullOrWhiteSpace(joinArguments) ? string.Empty : joinArguments.Trim();
+            if (join.Length > LanPresenceConstants.MaxJoinArgumentsChars)
+                return ValidationResult.Failure("Join arguments are too long for a LAN invite packet.");
+
+            byte[] payloadBytes;
+            lock (_gate)
+            {
+                if (_disposed || !_online || _udp == null)
+                    return ValidationResult.Failure("Go online before sending an invite.");
+
+                RefreshLocalIdentityUnlocked();
+                if (string.IsNullOrEmpty(_localSteamId))
+                    return ValidationResult.Failure("Local Steam ID is not configured.");
+                if (string.Equals(to, _localSteamId, StringComparison.Ordinal))
+                    return ValidationResult.Failure("Cannot invite yourself.");
+
+                try
+                {
+                    var obj = new JsonObject();
+                    obj["v"] = new JsonNumber(LanPresenceConstants.ProtocolVersion);
+                    obj["t"] = new JsonString(LanPresenceConstants.MessageInvite);
+                    obj["to"] = new JsonString(to);
+                    obj["sid"] = new JsonString(_localSteamId);
+                    obj["n"] = new JsonString(Truncate(_localName ?? string.Empty, LanPresenceConstants.MaxNameChars));
+                    obj["a"] = new JsonNumber((long)appId);
+                    obj["g"] = new JsonString(Truncate(gameName ?? string.Empty, LanPresenceConstants.MaxGameNameChars));
+                    if (!string.IsNullOrEmpty(join))
+                        obj["j"] = new JsonString(join);
+                    payloadBytes = Encoding.UTF8.GetBytes(obj.ToJsonString());
+                }
+                catch (Exception ex)
+                {
+                    return ValidationResult.Failure("Could not build invite packet: " + ex.Message);
+                }
+
+                if (payloadBytes.Length > LanPresenceConstants.MaxPacketBytes)
+                    return ValidationResult.Failure("Invite packet is too large.");
+            }
+
+            if (!TrySendBroadcast(payloadBytes))
+                return ValidationResult.Failure("Failed to send invite.");
+            return ValidationResult.Success();
+        }
+
+        // Guest tells the host a prior invite is still pending (no join args on the wire).
+        public ValidationResult SendGameInviteCooldown(string targetSteamId, int remainingSeconds)
+        {
+            if (string.IsNullOrWhiteSpace(targetSteamId))
+                return ValidationResult.Failure("Cooldown target is missing.");
+            if (remainingSeconds < 1)
+                remainingSeconds = 1;
+
+            string to = LanWireHelper.SanitizeSteamId(targetSteamId);
+            if (string.IsNullOrEmpty(to))
+                return ValidationResult.Failure("Cooldown target Steam ID is invalid.");
+
+            byte[] payloadBytes;
+            lock (_gate)
+            {
+                if (_disposed || !_online || _udp == null)
+                    return ValidationResult.Failure("Go online before sending a cooldown reply.");
+
+                RefreshLocalIdentityUnlocked();
+                if (string.IsNullOrEmpty(_localSteamId))
+                    return ValidationResult.Failure("Local Steam ID is not configured.");
+                if (string.Equals(to, _localSteamId, StringComparison.Ordinal))
+                    return ValidationResult.Failure("Cannot send cooldown to yourself.");
+
+                try
+                {
+                    var obj = new JsonObject();
+                    obj["v"] = new JsonNumber(LanPresenceConstants.ProtocolVersion);
+                    obj["t"] = new JsonString(LanPresenceConstants.MessageInviteCooldown);
+                    obj["to"] = new JsonString(to);
+                    obj["sid"] = new JsonString(_localSteamId);
+                    obj["sec"] = new JsonNumber(remainingSeconds);
+                    payloadBytes = Encoding.UTF8.GetBytes(obj.ToJsonString());
+                }
+                catch (Exception ex)
+                {
+                    return ValidationResult.Failure("Could not build cooldown packet: " + ex.Message);
+                }
+
+                if (payloadBytes.Length > LanPresenceConstants.MaxPacketBytes)
+                    return ValidationResult.Failure("Cooldown packet is too large.");
+            }
+
+            if (!TrySendBroadcast(payloadBytes))
+                return ValidationResult.Failure("Failed to send cooldown reply.");
+            return ValidationResult.Success();
+        }
+
+        private void HandleInvite(JsonObject root)
+        {
+            string to = LanWireHelper.SanitizeSteamId(root["to"] != null ? root["to"].ToString() : null);
+            string from = LanWireHelper.SanitizeSteamId(root["sid"] != null ? root["sid"].ToString() : null);
+            if (string.IsNullOrEmpty(to) || string.IsNullOrEmpty(from))
+                return;
+
+            bool rateLimited = false;
+            int remainingMs = 0;
+            lock (_gate)
+            {
+                if (!_online || _disposed)
+                    return;
+                string localId = _localSteamId;
+                if (string.IsNullOrEmpty(localId) || !string.Equals(to, localId, StringComparison.Ordinal))
+                    return;
+                if (string.Equals(from, localId, StringComparison.Ordinal))
+                    return;
+                if (!LanWireHelper.TryConsumeRate(
+                        _inviteAcceptTimestamps,
+                        from,
+                        LanPresenceConstants.InviteAcceptMaxPerPeer,
+                        LanPresenceConstants.InviteAcceptWindowMs,
+                        out remainingMs))
+                {
+                    // Silent for the recipient UI — tell the sender how long to wait.
+                    rateLimited = true;
+                }
+            }
+
+            if (rateLimited)
+            {
+                int sec = remainingMs <= 0 ? 1 : (remainingMs + 999) / 1000;
+                if (sec < 1)
+                    sec = 1;
+                SendGameInviteCooldown(from, sec);
+                return;
+            }
+
+            ulong appId = 0;
+            if (root["a"] != null)
+            {
+                long raw = root["a"].ToInt64();
+                if (raw > 0)
+                    appId = (ulong)raw;
+            }
+
+            if (appId == 0)
+                return;
+
+            string name = SanitizeName(root["n"] != null ? root["n"].ToString() : null);
+            string gameName = SanitizeGameName(root["g"] != null ? root["g"].ToString() : null);
+            string join = root["j"] != null ? root["j"].ToString() : null;
+            if (!string.IsNullOrWhiteSpace(join))
+                join = StripControls(join.Trim());
+            else
+                join = string.Empty;
+
+            RaiseInviteReceived(new LanGameInviteEventArgs
+            {
+                FromSteamId = from,
+                FromDisplayName = name ?? string.Empty,
+                AppId = appId,
+                GameName = gameName ?? string.Empty,
+                JoinArguments = join
+            });
+        }
+
+        private void HandleInviteCooldown(JsonObject root)
+        {
+            string to = LanWireHelper.SanitizeSteamId(root["to"] != null ? root["to"].ToString() : null);
+            string from = LanWireHelper.SanitizeSteamId(root["sid"] != null ? root["sid"].ToString() : null);
+            if (string.IsNullOrEmpty(to) || string.IsNullOrEmpty(from))
+                return;
+
+            string localId;
+            lock (_gate)
+            {
+                if (!_online || _disposed)
+                    return;
+                localId = _localSteamId;
+                if (string.IsNullOrEmpty(localId) || !string.Equals(to, localId, StringComparison.Ordinal))
+                    return;
+                if (string.Equals(from, localId, StringComparison.Ordinal))
+                    return;
+            }
+
+            int seconds = 0;
+            if (root["sec"] != null)
+            {
+                long raw = root["sec"].ToInt64();
+                if (raw > 0 && raw <= 3600)
+                    seconds = (int)raw;
+            }
+
+            if (seconds < 1)
+                return;
+
+            RaiseInviteCooldownReceived(new LanGameInviteCooldownEventArgs
+            {
+                FromSteamId = from,
+                RemainingSeconds = seconds
+            });
         }
 
         private void RaiseChatPacket(JsonObject root, IPEndPoint remote)
@@ -642,6 +1007,10 @@ namespace SmartGoldbergEmu.Services
             if (lfgAppId == 0)
                 lfgName = string.Empty;
 
+            string joinArguments = SanitizeJoinArguments(root["j"] != null ? root["j"].ToString() : null);
+            if (appId == 0)
+                joinArguments = string.Empty;
+
             bool changed;
             bool needAvatar;
             string requestTargetHash;
@@ -651,11 +1020,13 @@ namespace SmartGoldbergEmu.Services
                     return;
 
                 LanPresencePeer peer;
+                bool isNewPeer = false;
                 if (!_peers.TryGetValue(steamId, out peer))
                 {
                     peer = new LanPresencePeer { SteamId = steamId };
                     _peers[steamId] = peer;
                     changed = true;
+                    isNewPeer = true;
                 }
                 else
                 {
@@ -677,6 +1048,8 @@ namespace SmartGoldbergEmu.Services
                 if (peer.AppId != appId)
                 {
                     peer.AppId = appId;
+                    if (appId == 0)
+                        peer.JoinArguments = string.Empty;
                     changed = true;
                 }
 
@@ -684,6 +1057,12 @@ namespace SmartGoldbergEmu.Services
                 if (!string.Equals(peer.GameName ?? string.Empty, effectiveGame, StringComparison.Ordinal))
                 {
                     peer.GameName = effectiveGame;
+                    changed = true;
+                }
+
+                if (!string.Equals(peer.JoinArguments ?? string.Empty, joinArguments ?? string.Empty, StringComparison.Ordinal))
+                {
+                    peer.JoinArguments = joinArguments ?? string.Empty;
                     changed = true;
                 }
 
@@ -748,6 +1127,9 @@ namespace SmartGoldbergEmu.Services
                     needAvatar = !string.IsNullOrEmpty(avatarHash);
                     requestTargetHash = avatarHash;
                 }
+
+                if (isNewPeer)
+                    PersistSeenPeersUnlocked();
             }
 
             if (needAvatar)
@@ -987,6 +1369,8 @@ namespace SmartGoldbergEmu.Services
                 Truncate(
                     _localLookingForPlayAppId == 0 ? string.Empty : (_localLookingForPlayGameName ?? string.Empty),
                     LanPresenceConstants.MaxGameNameChars));
+            if (appId != 0 && !string.IsNullOrEmpty(_localJoinArguments))
+                obj["j"] = new JsonString(Truncate(_localJoinArguments, LanPresenceConstants.MaxJoinArgumentsChars));
             return obj.ToJsonString();
         }
 
@@ -1288,6 +1672,13 @@ namespace SmartGoldbergEmu.Services
             return Truncate(StripControls(value.Trim()), LanPresenceConstants.MaxCustomStatusChars);
         }
 
+        private static string SanitizeJoinArguments(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+            return Truncate(StripControls(value.Trim()), LanPresenceConstants.MaxJoinArgumentsChars);
+        }
+
         // True while preferred/effective persona is Busy (LAN chat is dropped).
         public bool IsLocalBusy
         {
@@ -1354,7 +1745,8 @@ namespace SmartGoldbergEmu.Services
                 PersonaState = peer.PersonaState,
                 CustomStatus = peer.CustomStatus,
                 LookingForPlayAppId = peer.LookingForPlayAppId,
-                LookingForPlayGameName = peer.LookingForPlayGameName
+                LookingForPlayGameName = peer.LookingForPlayGameName,
+                JoinArguments = peer.JoinArguments
             };
         }
 
@@ -1378,6 +1770,28 @@ namespace SmartGoldbergEmu.Services
             EventHandler handler = OnlineStateChanged;
             if (handler != null)
                 handler(this, EventArgs.Empty);
+        }
+
+        private void RaiseInviteCooldownReceived(LanGameInviteCooldownEventArgs args)
+        {
+            EventHandler<LanGameInviteCooldownEventArgs> handler = InviteCooldownReceived;
+            if (handler == null)
+                return;
+            try
+            {
+                handler(this, args);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning("LAN invite cooldown handler failed: " + ex.Message);
+            }
+        }
+
+        private void RaiseInviteReceived(LanGameInviteEventArgs args)
+        {
+            EventHandler<LanGameInviteEventArgs> handler = InviteReceived;
+            if (handler != null)
+                handler(this, args);
         }
     }
 }

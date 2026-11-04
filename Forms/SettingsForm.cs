@@ -688,7 +688,7 @@ namespace SmartGoldbergEmu.Forms
                 try
                 {
                     ApplicationSettings lanSettings = _appDataService.LoadApplicationSettings();
-                    ServiceLocator.LanPresenceService.SetOnline(lanSettings.LanPlayersOnline);
+                    ServiceLocator.LanPresenceService.SetOnline(lanSettings.LanEnabled);
                     ServiceLocator.LanPresenceService.ApplyLocalPersonaFromSettings();
                 }
                 catch (Exception ex)
@@ -2711,7 +2711,7 @@ namespace SmartGoldbergEmu.Forms
         // 0 Online, 1 Away, 2 Busy, 3 Hidden, 4 Offline (channel off; persona unchanged).
         private static int ResolveLanStatusIndex(ApplicationSettings settings)
         {
-            if (settings == null || !settings.LanPlayersOnline)
+            if (settings == null || !settings.LanEnabled)
                 return 4;
             switch (settings.LanPersonaState)
             {
@@ -2741,11 +2741,11 @@ namespace SmartGoldbergEmu.Forms
             int index = ReadLanStatusIndexFromUi();
             if (index == 4)
             {
-                settings.LanPlayersOnline = false;
+                settings.LanEnabled = false;
                 return;
             }
 
-            settings.LanPlayersOnline = true;
+            settings.LanEnabled = true;
             switch (index)
             {
                 case 1:

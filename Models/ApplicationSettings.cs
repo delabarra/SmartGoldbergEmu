@@ -36,9 +36,9 @@ namespace SmartGoldbergEmu.Models
         public bool LogosViewDropShadow { get; set; }
 
         // LAN presence: advertise/listen when true; stop all presence traffic when false.
-        public bool LanPlayersOnline { get; set; }
+        public bool LanEnabled { get; set; }
 
-        // Preferred Online / Away / Busy / Hidden while LanPlayersOnline (persists). Offline is LanPlayersOnline=false. Auto-Away overlays Online only at runtime.
+        // Preferred Online / Away / Busy / Hidden while LanEnabled (persists). Offline is LanEnabled=false. Auto-Away overlays Online only at runtime.
         public LanPersonaState LanPersonaState { get; set; }
 
         public string LanCustomStatus { get; set; }
@@ -54,6 +54,9 @@ namespace SmartGoldbergEmu.Models
 
         // Local-only Steam64 ids already accepted for LAN chat (skip first-message gate).
         public List<string> LanChatTrustedSteamIds { get; set; }
+
+        // Local-only remembered LAN peers for Players seen (name + last seen + avatar hash).
+        public List<LanSeenPeerRecord> LanSeenPeers { get; set; }
 
         // LAN Players list window was open when the app last quit (ui_settings.ini).
         public bool LanListOpen { get; set; }
@@ -77,13 +80,14 @@ namespace SmartGoldbergEmu.Models
             DetailsColumnWidths = ApplicationConstants.DefaultDetailsColumnWidths;
             FullLaunchOptions = false; // Falls back to the game executable when filtering leaves no options.
             LogosViewDropShadow = true;
-            LanPlayersOnline = true;
+            LanEnabled = false;
             LanPersonaState = LanPersonaState.Online;
             LanCustomStatus = string.Empty;
             LanFavoriteSteamIds = new List<string>();
             LanMutedSteamIds = new List<string>();
             LanChatBlockedSteamIds = new List<string>();
             LanChatTrustedSteamIds = new List<string>();
+            LanSeenPeers = new List<LanSeenPeerRecord>();
             LanListOpen = false;
             // Null until read from ui_settings.ini or saved from LanPlayersForm (avoid writing defaults on unrelated UI saves).
             LanListWindowState = null;

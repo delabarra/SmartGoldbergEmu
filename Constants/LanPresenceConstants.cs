@@ -10,6 +10,10 @@ namespace SmartGoldbergEmu.Constants
         public const string MessagePresence = "p";
         public const string MessageAvatarRequest = "r";
         public const string MessageAvatarResponse = "a";
+        // Launcher nudge; optional join args on the wire. Goldberg still owns in-game lobby once both run.
+        public const string MessageInvite = "i";
+        // Recipient → sender: invite cooling down; `sec` = whole seconds remaining (no UI on recipient).
+        public const string MessageInviteCooldown = "ic";
 
         public const int HeartbeatIntervalMs = 3000;
         public const int PeerExpireMs = 12000;
@@ -22,6 +26,10 @@ namespace SmartGoldbergEmu.Constants
         public const int MaxCustomStatusChars = 64;
         public const int MaxSteamIdChars = 20;
         public const int MaxAvatarHashChars = 64;
+        // +connect_lobby / rich-presence connect fragment on presence + invite (`j`).
+        public const int MaxJoinArgumentsChars = 256;
+        // Host LanKit self-probe while playing a Steam-lobby-capable title.
+        public const int LobbyReadinessIntervalMs = 12000;
 
         public const string PersonaOnline = "online";
         public const string PersonaAway = "away";
@@ -44,6 +52,13 @@ namespace SmartGoldbergEmu.Constants
         public const int AvatarReplyMaxPerRemote = 8;
         public const int AvatarReplyWindowMs = 60000;
 
+        // Inbound invite nudge: one accepted UI invite per peer, then silent 30s cooldown + `ic` reply.
+        public const int InviteAcceptMaxPerPeer = 1;
+        public const int InviteAcceptWindowMs = 30000;
+
         public const string AvatarCacheFolderName = "lan_presence_avatars";
+
+        // Cap persisted Players seen list (oldest LastSeenUtc pruned first).
+        public const int MaxSeenPeers = 100;
     }
 }
