@@ -2590,8 +2590,8 @@ namespace SmartGoldbergEmu.Forms
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.MinimumSize = new System.Drawing.Size(600, 520);
             this.Name = "SettingsForm";
+            this.SizeGripStyle = System.Windows.Forms.SizeGripStyle.Hide;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
             this.Text = "Global Settings";
             this.Load += new System.EventHandler(this.SettingsForm_Load);

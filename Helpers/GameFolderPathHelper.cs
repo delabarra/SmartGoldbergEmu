@@ -53,6 +53,39 @@ namespace SmartGoldbergEmu.Helpers
             return Path.GetDirectoryName(pathTrim) ?? Environment.CurrentDirectory;
         }
 
+        // Some Steam Windows entries start a 32-bit bootstrap that CreateProcess-es x64\<same.exe> (or X64\).
+        // ColdClient inject / session PID tracking bind to the first process — start the final native binary instead.
+        public static bool TryResolveSameNamedNativeArchSibling(string executablePath, out string nativeArchExecutable)
+        {
+            nativeArchExecutable = null;
+            if (!Environment.Is64BitOperatingSystem)
+                return false;
+            if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+                return false;
+
+            if (!SteamApiValidator.TryDetectExecutableIsX64(executablePath, out bool launchIsX64) || launchIsX64)
+                return false;
+
+            string exeDir = Path.GetDirectoryName(executablePath);
+            string fileName = Path.GetFileName(executablePath);
+            if (string.IsNullOrEmpty(exeDir) || string.IsNullOrEmpty(fileName))
+                return false;
+
+            foreach (string folderName in new[] { "x64", "X64" })
+            {
+                string candidate = Path.Combine(exeDir, folderName, fileName);
+                if (!File.Exists(candidate))
+                    continue;
+                if (!SteamApiValidator.TryDetectExecutableIsX64(candidate, out bool siblingIsX64) || !siblingIsX64)
+                    continue;
+
+                nativeArchExecutable = Path.GetFullPath(candidate);
+                return true;
+            }
+
+            return false;
+        }
+
         // Returns the trimmed stored path when it cannot be resolved to an existing file.
         public static string ResolveStoredPathUnderBase(string baseGameFolder, string pathStored)
         {

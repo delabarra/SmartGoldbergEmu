@@ -3563,15 +3563,15 @@ namespace SmartGoldbergEmu.Forms
 
         private static readonly LaunchModeOption[] LaunchModeOptions =
         {
-            new LaunchModeOption(GoldbergLaunchMode.SteamClient, "Steamclient",
+            new LaunchModeOption(GoldbergLaunchMode.SteamClient, "Steam Client - backend emu",
                 "Use Goldberg steamclient mode.\r\n\r\nCopies steamclient DLLs and sets registry so the game uses the emulator."),
-            new LaunchModeOption(GoldbergLaunchMode.StandardSteamApi, "steam_api",
+            new LaunchModeOption(GoldbergLaunchMode.StandardSteamApi, "Steam Api - api swap",
                 "Use experimental steam_api beside the game.\r\n\r\nReplaces steam_api.dll in the game folder and links steam_settings."),
-            new LaunchModeOption(GoldbergLaunchMode.SteamDllBesideExe, "Steam.dll",
-                "Copy Steam.dll next to the game .exe.\r\n\r\nFor older games that load a local Steam.dll without the overlay."),
-            new LaunchModeOption(GoldbergLaunchMode.ColdClient, "ColdClient loader",
-                "Start via upstream steamclient loaders (opt-in).\r\n\r\nDeploys steamclient like Steamclient mode, then runs goldberg/ColdClientLoader loaders. SteamStub is handled automatically at launch by injecting steamclient_extra_* to patch it in memory. First use downloads the ColdClient pack and adds Defender exclusions."),
-            new LaunchModeOption(GoldbergLaunchMode.NoEmulation, "No emulation",
+            new LaunchModeOption(GoldbergLaunchMode.ColdClient, "Cold Client - loader",
+                "Start via upstream steamclient loaders (opt-in).\r\n\r\nDeploys steamclient like Steam Client mode, then runs goldberg/ColdClientLoader loaders. SteamStub is handled automatically at launch by injecting steamclient_extra_* to patch it in memory. First use downloads the ColdClient pack and adds Defender exclusions."),
+            new LaunchModeOption(GoldbergLaunchMode.SteamDllBesideExe, "Steam.dll - old api (no overlay)",
+                "Copy Steam.dll next to the game .exe.\r\n\r\nFor older games that load a local Steam.dll. Prefers the live Steam client copy; uses steam_o.dll only when that is unavailable."),
+            new LaunchModeOption(GoldbergLaunchMode.NoEmulation, "None",
                 "Start the game .exe directly.\r\n\r\nNo Goldberg DLLs or registry setup. SteamStub is still unpacked for the session and restored when the game exits."),
         };
 

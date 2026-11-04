@@ -297,7 +297,11 @@ namespace SmartGoldbergEmu.Services
 
             _logger.LogDebug(
                 $"Cleaning stale launch session for AppId {appId} (PID {session.GameProcessId} is not running) before deploy.");
-            TryExecuteCleanup(manifestPath, null);
+            TryExecuteCleanupWithPendingRetries(
+                manifestPath,
+                null,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsInline,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
         }
 
         public void ReconcileAllOrphanedSessions()
@@ -316,7 +320,11 @@ namespace SmartGoldbergEmu.Services
 
                 _logger.LogDebug(
                     $"Cleaning orphaned launch session for AppId {session.AppId} (PID {session.GameProcessId} is not running).");
-                TryExecuteCleanup(manifestPath, null);
+                TryExecuteCleanupWithPendingRetries(
+                    manifestPath,
+                    null,
+                    ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsStartup,
+                    ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
             }
         }
 
@@ -360,6 +368,83 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
             }
+        }
+
+        // Keeps trying when .sge / junction restore failed (DLL still locked) so install-overlay modes leave Steam folders clean.
+        public void TryExecuteCleanupWithPendingRetries(
+            string manifestPath,
+            PersistedLaunchSession inlineSession,
+            int maxAttempts,
+            int delayMs)
+        {
+            if (maxAttempts < 1)
+                maxAttempts = 1;
+            if (delayMs < 0)
+                delayMs = 0;
+
+            TryExecuteCleanup(manifestPath, inlineSession);
+
+            string path = ResolveManifestPathForRetry(manifestPath, inlineSession);
+            for (int attempt = 1; attempt < maxAttempts; attempt++)
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return;
+                if (!TryLoad(path, out PersistedLaunchSession pending))
+                    return;
+                // A newer live launch owns cleanup; do not keep hammering a superseded pending retry.
+                if (pending.GameProcessId != 0)
+                    return;
+                if (!SessionHasPendingFileRestore(pending))
+                    return;
+
+                if (delayMs > 0)
+                    Thread.Sleep(delayMs);
+
+                _logger.LogDebug(
+                    $"Retrying pending launch file cleanup for AppId {pending.AppId} "
+                    + $"(attempt {attempt + 1}/{maxAttempts}).");
+                TryExecuteCleanup(path, null);
+            }
+        }
+
+        private static string ResolveManifestPathForRetry(string manifestPath, PersistedLaunchSession inlineSession)
+        {
+            if (!string.IsNullOrWhiteSpace(manifestPath))
+                return manifestPath;
+            if (inlineSession == null || inlineSession.AppId == 0)
+                return null;
+            return PathConstants.CombineLaunchSessionManifestPath(inlineSession.AppId);
+        }
+
+        internal static bool SessionHasPendingFileRestore(PersistedLaunchSession session)
+        {
+            if (session == null)
+                return false;
+            if (session.StubExeRestore != null)
+                return true;
+            if (session.DeploySites == null)
+                return false;
+
+            foreach (PersistedDeploySite site in session.DeploySites)
+            {
+                if (site == null)
+                    continue;
+                if (!string.IsNullOrEmpty(site.MirroredSteamSettingsPath)
+                    || !string.IsNullOrEmpty(site.SteamSettingsBackupPath))
+                {
+                    return true;
+                }
+
+                if (site.Files == null || site.Files.Count == 0)
+                    continue;
+                foreach (PersistedFileDeployment file in site.Files)
+                {
+                    if (file != null && !string.IsNullOrEmpty(file.TargetPath))
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         public bool SpawnDetachedWatcher(string manifestPath)
@@ -482,7 +567,12 @@ namespace SmartGoldbergEmu.Services
 
             _logger.LogDebug(
                 $"Launch cleanup watcher running file and registry cleanup for AppId {current.AppId} (library: {current.GameLibraryFolder}).");
-            TryExecuteCleanup(manifestPath, null);
+            // Retry while install-overlay DLLs stay locked (wrong bootstrap PID, AV, slow unload) so .sge restore finishes.
+            TryExecuteCleanupWithPendingRetries(
+                manifestPath,
+                null,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsWatcher,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
         }
 
         private void WaitForGameProcessExit(PersistedLaunchSession session)

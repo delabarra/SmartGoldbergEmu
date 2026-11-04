@@ -688,10 +688,11 @@ namespace SmartGoldbergEmu.Forms
             // cmbLaunchMode
             // 
             this.cmbLaunchMode.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbLaunchMode.DropDownWidth = 280;
             this.cmbLaunchMode.FormattingEnabled = true;
             this.cmbLaunchMode.Location = new System.Drawing.Point(150, 81);
             this.cmbLaunchMode.Name = "cmbLaunchMode";
-            this.cmbLaunchMode.Size = new System.Drawing.Size(180, 21);
+            this.cmbLaunchMode.Size = new System.Drawing.Size(270, 21);
             this.cmbLaunchMode.TabIndex = 7;
             // 
             // btnRestoreDlls
@@ -2031,10 +2032,11 @@ namespace SmartGoldbergEmu.Forms
             this.Controls.Add(this.btnCancel);
             this.Controls.Add(this.btnSave);
             this.Controls.Add(this.tabControl);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.MinimumSize = new System.Drawing.Size(640, 560);
             this.Name = "GameSettingsForm";
+            this.SizeGripStyle = System.Windows.Forms.SizeGripStyle.Hide;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
             this.Text = "Game Settings";
             this.Load += new System.EventHandler(this.GameSettingsForm_Load);

@@ -80,7 +80,7 @@ namespace SmartGoldbergEmu.Forms
             this.stripLan.Location = new System.Drawing.Point(0, 538);
             this.stripLan.Name = "stripLan";
             this.stripLan.Size = new System.Drawing.Size(300, 22);
-            this.stripLan.SizingGrip = false;
+            this.stripLan.SizingGrip = true;
             this.stripLan.TabIndex = 1;
             //
             // lblGamesFound

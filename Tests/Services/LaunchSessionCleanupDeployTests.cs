@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
@@ -150,6 +152,76 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.Equal(LaunchDeployTestHarness.OriginalFileMarker, File.ReadAllBytes(targetPath)[0]);
                 Assert.False(File.Exists(backupPath));
                 Assert.False(File.Exists(manifestPath));
+            }
+            finally
+            {
+                try { File.Delete(manifestPath); } catch { }
+                try { Directory.Delete(workDir, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
+        public async Task TryExecuteCleanupWithPendingRetries_restores_after_lock_is_released()
+        {
+            const ulong retryAppId = 999003;
+            string workDir = TestFileHelper.CreateTempDirectory("sge-cleanup-retry-unlock-");
+            string manifestPath = PathConstants.CombineLaunchSessionManifestPath(retryAppId);
+            try
+            {
+                string targetPath = Path.Combine(workDir, "steam_api64.dll");
+                string backupPath = targetPath + PathConstants.SteamApiBackupSidecarExtension;
+                File.WriteAllBytes(backupPath, new[] { LaunchDeployTestHarness.OriginalFileMarker });
+                File.WriteAllBytes(targetPath, new[] { LaunchDeployTestHarness.GoldbergFileMarker });
+
+                var session = new PersistedLaunchSession
+                {
+                    AppId = retryAppId,
+                    GameProcessId = 0,
+                    GameLibraryFolder = workDir,
+                    LoadDllsFolder = Path.Combine(workDir, "load_dlls"),
+                    DeploySites = new List<PersistedDeploySite>
+                    {
+                        new PersistedDeploySite
+                        {
+                            Files = new List<PersistedFileDeployment>
+                            {
+                                new PersistedFileDeployment
+                                {
+                                    TargetPath = targetPath,
+                                    BackupPath = backupPath,
+                                    HadOriginal = true,
+                                },
+                            },
+                        },
+                    },
+                };
+
+                var cleanup = new LaunchSessionCleanupService(new NullLogService(), new EmulatorConfigService());
+                FileStream lockStream = new FileStream(targetPath, FileMode.Open, FileAccess.Read, FileShare.None);
+                try
+                {
+                    Task cleanupTask = Task.Run(() =>
+                        cleanup.TryExecuteCleanupWithPendingRetries(
+                            null,
+                            session,
+                            maxAttempts: 20,
+                            delayMs: 100));
+
+                    await Task.Delay(250);
+                    Assert.True(File.Exists(backupPath), "Expected restore to stay pending while the target DLL is locked.");
+                    lockStream.Dispose();
+                    lockStream = null;
+
+                    await cleanupTask;
+                    Assert.Equal(LaunchDeployTestHarness.OriginalFileMarker, File.ReadAllBytes(targetPath)[0]);
+                    Assert.False(File.Exists(backupPath));
+                    Assert.False(File.Exists(manifestPath));
+                }
+                finally
+                {
+                    if (lockStream != null)
+                        lockStream.Dispose();
+                }
             }
             finally
             {

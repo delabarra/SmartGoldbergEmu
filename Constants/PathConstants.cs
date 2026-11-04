@@ -169,7 +169,7 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergStandardSteamApiDll64 = "steam_api64.dll";
         public const string GoldbergSteamDllFileName = "Steam.dll";
 
-        // Unmodified Steam client Steam.dll kept beside the Goldberg build for a manual swap if the patched copy fails.
+        // Detanup/fork Steam.dll under SteamOld. Prefer live Steam (or CDN) as Steam.dll; promote steam_o only when Steam.dll is missing.
         public const string GoldbergSteamOriginalDllFileName = "steam_o.dll";
 
         public static string GoldbergStandardSteamApiDirectory =>

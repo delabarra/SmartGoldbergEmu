@@ -69,6 +69,17 @@ namespace SmartGoldbergEmu.Services
                 LaunchOption selected = filteredOptions.Count == 1
                     ? filteredOptions[0]
                     : PickBestAutomaticLaunchOption(launchOptions);
+
+                // type=none auto-picks mimic Steam's first process. Library Path may already name the final
+                // binary (e.g. x64\Game.exe) after a 32-bit bootstrap; do not silently override it.
+                if (ShouldPreferStoredExecutableOverAutomaticOption(game, selected))
+                {
+                    ServiceLocator.LogService.LogDebug(
+                        $"Found {filteredOptions.Count} user-visible launch option(s) for app {game.AppId}, " +
+                        "but library Path differs from the Steam auto entry; using library Path");
+                    return new LaunchOptionResult { LaunchOption = null, SkipLauncher = true, Cancelled = false };
+                }
+
                 ServiceLocator.LogService.LogDebug(
                     $"Found {filteredOptions.Count} user-visible launch option(s) for app {game.AppId}, auto-selecting without showing form" +
                     (selected != null ? $" -> {selected.Executable ?? selected.Description ?? "(unnamed)"}" : " -> game default"));
@@ -728,6 +739,36 @@ namespace SmartGoldbergEmu.Services
             return filtered
                 .OrderBy(opt => string.IsNullOrEmpty(opt.Type) || opt.Type.Equals("default", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ToList();
+        }
+
+        // Steam platform/arch auto entries (type=none) are invisible in the picker but still auto-selected at launch.
+        public static bool IsSteamPlatformAutoLaunchOption(LaunchOption option)
+        {
+            if (option == null)
+                return false;
+            string t = option.Type != null ? option.Type.Trim() : string.Empty;
+            return t.Equals(SteamPicsKeyNames.LaunchOptionTypeNone, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Prefer games.ini Path when a type=none Steam entry would start a different existing executable.
+        public static bool ShouldPreferStoredExecutableOverAutomaticOption(GameConfig game, LaunchOption automaticOption)
+        {
+            if (game == null || automaticOption == null || !IsSteamPlatformAutoLaunchOption(automaticOption))
+                return false;
+            if (string.IsNullOrWhiteSpace(automaticOption.Executable))
+                return false;
+            if (!GameFolderPathHelper.TryResolveStoredExecutable(game, out string storedExe))
+                return false;
+
+            string baseFolder = GameFolderPathHelper.GetLaunchBaseGameFolder(game);
+            if (!PathValidationHelper.TryResolveAndValidatePath(baseFolder, automaticOption.Executable.Trim(), out string optionExe)
+                || !File.Exists(optionExe))
+                return false;
+
+            return !string.Equals(
+                Path.GetFullPath(storedExe),
+                Path.GetFullPath(optionExe),
+                StringComparison.OrdinalIgnoreCase);
         }
 
         // When the picker has nothing user-visible, Steam still launches: prefer default, then native osarch among type=none.

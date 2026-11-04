@@ -393,8 +393,7 @@ namespace SmartGoldbergEmu.Services
                     }
                     else if (launchMode == GoldbergLaunchMode.SteamDllBesideExe)
                     {
-                        sourceModInstallFolder = exeDirectory;
-
+                        // Steam.dll only — no steamclient, so do not touch SourceModInstallPath.
                         var steamDllResult = EnsureSteamDllInGoldbergFolder();
                         if (!steamDllResult.IsValid)
                         {
@@ -411,7 +410,7 @@ namespace SmartGoldbergEmu.Services
                             return setupResult;
                         }
 
-                        _logger?.LogDebug("Steam.dll mode: deployed Steam.dll beside executable, skipped ActiveProcess registry");
+                        _logger?.LogDebug("Steam.dll mode: deployed Steam.dll beside executable, skipped ActiveProcess and SourceMod registry");
                     }
                     else if (launchMode == GoldbergLaunchMode.ColdClient)
                     {
@@ -425,37 +424,22 @@ namespace SmartGoldbergEmu.Services
 
                         // Ini requires both SteamClientDll and SteamClient64Dll paths.
                         string dllTargetDirectory = PathConstants.GetGameFolder(game.AppId);
-                        var setup32 = DeployGoldbergClientDlls(false, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
-                        if (!setup32.IsValid)
-                        {
-                            _logger?.LogError(
-                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch=x86: {setup32.ErrorMessage}");
-                            return setup32;
-                        }
-
-                        var setup64 = DeployGoldbergClientDlls(true, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
-                        if (!setup64.IsValid)
-                        {
-                            _logger?.LogError(
-                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch=x64: {setup64.ErrorMessage}");
-                            return setup64;
-                        }
+                        var bothArches = DeploySteamClientBothArchesToDirectory(dllTargetDirectory, launchMode);
+                        if (!bothArches.IsValid)
+                            return bothArches;
 
                         // Loader owns ActiveProcess / SourceMod for the session.
                         _logger?.LogDebug("ColdClient mode: deployed steamclient (x86+x64) to game library; skipped SGE ActiveProcess registry");
                     }
                     else
                     {
+                        // ActiveProcess registers both arches when present — deploy x86 and x64 like ColdClient.
                         string dllTargetDirectory = PathConstants.GetGameFolder(game.AppId);
                         sourceModInstallFolder = dllTargetDirectory;
 
-                        var setupResult = DeployGoldbergClientDlls(useX64, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
-                        if (!setupResult.IsValid)
-                        {
-                            _logger?.LogError(
-                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch={(useX64 ? "x64" : "x86")}: {setupResult.ErrorMessage}");
-                            return setupResult;
-                        }
+                        var bothArches = DeploySteamClientBothArchesToDirectory(dllTargetDirectory, launchMode);
+                        if (!bothArches.IsValid)
+                            return bothArches;
 
                         var registryResult = ConfigureActiveProcessGoldbergDlls(useX64, dllTargetDirectory);
                         if (!registryResult.IsValid)
@@ -1247,6 +1231,27 @@ namespace SmartGoldbergEmu.Services
             return true;
         }
 
+        private ValidationResult DeploySteamClientBothArchesToDirectory(string dllTargetDirectory, GoldbergLaunchMode launchMode)
+        {
+            var setup32 = DeployGoldbergClientDlls(false, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
+            if (!setup32.IsValid)
+            {
+                _logger?.LogError(
+                    $"Emulator DLL setup failed: mode={launchMode}, target={dllTargetDirectory}, arch=x86: {setup32.ErrorMessage}");
+                return setup32;
+            }
+
+            var setup64 = DeployGoldbergClientDlls(true, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
+            if (!setup64.IsValid)
+            {
+                _logger?.LogError(
+                    $"Emulator DLL setup failed: mode={launchMode}, target={dllTargetDirectory}, arch=x64: {setup64.ErrorMessage}");
+                return setup64;
+            }
+
+            return ValidationResult.Success();
+        }
+
         private ValidationResult DeployGoldbergClientDlls(bool useX64, string targetDirectory, bool deploySteamDllOnly, Win32DllDeploymentState win32DeployState)
         {
             try
@@ -1376,7 +1381,11 @@ namespace SmartGoldbergEmu.Services
                 restoreActiveProcessRegistry,
                 branchRestoreOnExit,
                 stubExeRestore);
-            _launchSessionCleanup.TryExecuteCleanup(manifestPath, session);
+            _launchSessionCleanup.TryExecuteCleanupWithPendingRetries(
+                manifestPath,
+                session,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsInline,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
 
             lock (_sourceModRestoreLock)
             {
@@ -1417,7 +1426,11 @@ namespace SmartGoldbergEmu.Services
                 restoreActiveProcessRegistry,
                 branchRestoreOnExit,
                 stubExeRestore);
-            _launchSessionCleanup.TryExecuteCleanup(null, session);
+            _launchSessionCleanup.TryExecuteCleanupWithPendingRetries(
+                null,
+                session,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsInline,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
 
             lock (_sourceModRestoreLock)
             {
@@ -1915,6 +1928,17 @@ namespace SmartGoldbergEmu.Services
                 logWarnings: logResolution,
                 logResolutionSteps: logResolution);
 
+            if (GameFolderPathHelper.TryResolveSameNamedNativeArchSibling(executablePath, out string nativeArchExe))
+            {
+                if (logResolution)
+                {
+                    _logger?.LogDebug(
+                        $"Steam-style x86 bootstrap detected; preferring native arch executable for emulator launch: {nativeArchExe}");
+                }
+
+                executablePath = nativeArchExe;
+            }
+
             string arguments = (launchOption != null && !string.IsNullOrEmpty(launchOption.Parameters))
                 ? launchOption.Parameters
                 : (game.Parameters ?? string.Empty);
@@ -2317,7 +2341,11 @@ namespace SmartGoldbergEmu.Services
             _logger?.LogDebug(
                 $"Cleaning superseded launch session for AppId {superseded.AppId} (replaced process PID {supersededProcessId}).");
 
-            _launchSessionCleanup.TryExecuteCleanup(null, session);
+            _launchSessionCleanup.TryExecuteCleanupWithPendingRetries(
+                null,
+                session,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsInline,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
         }
 
         private void ReleaseReplacedGameProcess(Process process)

@@ -195,6 +195,13 @@ namespace SmartGoldbergEmu.Constants
         // SteamClient sessions set DeferRegistryRestoreUntilExit so Valve steam_api cannot re-resolve real Steam mid-run.
         public const int LaunchRegistryRedirectDurationMs = 15_000;
 
+        // Install-overlay restore (.sge / junctions) may fail while the game still holds DLL locks.
+        // Watcher keeps retrying after the watched PID exits so Steam folders return to clean state without waiting for the next SGE start.
+        public const int LaunchCleanupPendingRetryDelayMs = 2_000;
+        public const int LaunchCleanupPendingRetryMaxAttemptsWatcher = 120;
+        public const int LaunchCleanupPendingRetryMaxAttemptsInline = 15;
+        public const int LaunchCleanupPendingRetryMaxAttemptsStartup = 5;
+
         #endregion
 
         #region Online app metadata URLs

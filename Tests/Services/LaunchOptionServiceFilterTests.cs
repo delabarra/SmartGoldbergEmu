@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
@@ -97,6 +98,42 @@ namespace SmartGoldbergEmu.Tests.Services
                 Assert.Equal("StreetsOfRogue.exe", picked.Executable);
             else
                 Assert.Equal("StreetsOfRogue32.exe", picked.Executable);
+        }
+
+        [Fact]
+        public void ShouldPreferStoredExecutableOverAutomaticOption_when_type_none_differs_from_library_path()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "sge_launch_opt_" + Guid.NewGuid().ToString("N"));
+            string x64Dir = Path.Combine(root, "x64");
+            Directory.CreateDirectory(x64Dir);
+            string rootExe = Path.Combine(root, "Game.exe");
+            string x64Exe = Path.Combine(x64Dir, "Game.exe");
+            File.WriteAllBytes(rootExe, new byte[] { 0x4D, 0x5A });
+            File.WriteAllBytes(x64Exe, new byte[] { 0x4D, 0x5A });
+
+            try
+            {
+                var game = new GameConfig
+                {
+                    AppId = 1,
+                    StartFolder = root,
+                    Path = @"x64\Game.exe",
+                };
+                var automatic = new LaunchOption
+                {
+                    Executable = "Game.exe",
+                    Type = SteamPicsKeyNames.LaunchOptionTypeNone,
+                };
+
+                Assert.True(LaunchOptionService.ShouldPreferStoredExecutableOverAutomaticOption(game, automatic));
+                Assert.False(LaunchOptionService.ShouldPreferStoredExecutableOverAutomaticOption(
+                    game,
+                    new LaunchOption { Executable = "Game.exe", Type = "default" }));
+            }
+            finally
+            {
+                try { Directory.Delete(root, recursive: true); } catch { }
+            }
         }
     }
 }
