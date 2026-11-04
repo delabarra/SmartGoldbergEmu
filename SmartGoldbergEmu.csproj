@@ -223,6 +223,7 @@
     <Compile Include="Constants\PathConstants.cs" />
     <Compile Include="Constants\SteamStaticCdnConstants.cs" />
     <Compile Include="Constants\SteamPicsKeyNames.cs" />
+    <Compile Include="Constants\SteamCommonRedistributableConstants.cs" />
     <Compile Include="Abstractions\ITaskReportService.cs" />
     <Compile Include="Abstractions\TaskReportDefaults.cs" />
     <Compile Include="Abstractions\IHttpService.cs" />
@@ -247,6 +248,10 @@
     <Compile Include="Helpers\DirectoryJunctionHelper.cs" />
     <Compile Include="Helpers\DuplicateGameDialogHelper.cs" />
     <Compile Include="Helpers\RemoveGamesDialogHelper.cs" />
+    <Compile Include="Helpers\MissingGameDependenciesDialogHelper.cs" />
+    <Compile Include="Helpers\GameDependencyLaunchHelper.cs" />
+    <Compile Include="Helpers\SteamRedistributablePresence.cs" />
+    <Compile Include="Models\PendingGameDependency.cs" />
     <Compile Include="Helpers\LoadDllsArchFilter.cs" />
     <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
@@ -353,6 +358,8 @@
     <Compile Include="Services\AppDataKitBridgeService.cs" />
     <Compile Include="Services\AppCatalogSnapshotStore.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
+    <Compile Include="Services\SteamInstallScriptService.cs" />
+    <Compile Include="Services\SteamCommonRedistributableDownloadService.cs" />
     <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
     <Compile Include="Services\StubKitService.cs" />
     <Compile Include="AppDataKit\AppDataJson.cs" />

@@ -402,6 +402,16 @@ namespace SmartGoldbergEmu.Services
                     ? launchOption.Parameters
                     : "(none)"));
 
+            string depsFolder = GameFolderPathHelper.GetLaunchBaseGameFolder(game);
+            if (!GameDependencyLaunchHelper.TryHandleMissingDependencies(
+                    game,
+                    depsFolder,
+                    owner,
+                    ServiceLocator.TaskReportService))
+            {
+                return ValidationResult.Failure("Launch cancelled.");
+            }
+
             ValidationResult launched = _launch.LaunchGame(game, useEmulator: true, launchOption: launchOption);
             if (!launched.IsValid)
             {

@@ -56,6 +56,10 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<GameDisplayService> _gameDisplayService = new Lazy<GameDisplayService>();
         private static readonly Lazy<LaunchSessionCleanupService> _launchSessionCleanupService = new Lazy<LaunchSessionCleanupService>();
         private static readonly Lazy<GameLaunchService> _gameLaunchService = new Lazy<GameLaunchService>();
+        private static readonly Lazy<SteamInstallScriptService> _steamInstallScriptService =
+            new Lazy<SteamInstallScriptService>();
+        private static readonly Lazy<SteamCommonRedistributableDownloadService> _steamCommonRedistributableDownloadService =
+            new Lazy<SteamCommonRedistributableDownloadService>();
         private static readonly Lazy<SteamProductInfoService> _steamProductInfoService = new Lazy<SteamProductInfoService>();
         private static readonly Lazy<AppDataKitBridgeService> _appDataKitBridgeService = new Lazy<AppDataKitBridgeService>();
         private static readonly Lazy<GameSetupService> _gameSetupService = new Lazy<GameSetupService>();
@@ -124,6 +128,11 @@ namespace SmartGoldbergEmu.Services
         public static LaunchSessionCleanupService LaunchSessionCleanupService => _launchSessionCleanupService.Value;
 
         public static GameLaunchService GameLaunchService => _gameLaunchService.Value;
+
+        public static SteamInstallScriptService SteamInstallScriptService => _steamInstallScriptService.Value;
+
+        public static SteamCommonRedistributableDownloadService SteamCommonRedistributableDownloadService =>
+            _steamCommonRedistributableDownloadService.Value;
 
         public static GameSetupService GameSetupService => _gameSetupService.Value;
 

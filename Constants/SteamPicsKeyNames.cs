@@ -26,6 +26,8 @@ namespace SmartGoldbergEmu.Constants
 
         public const string Stats = "stats";
         public const string Depots = "depots";
+        public const string DepotFromApp = "depotfromapp";
+        public const string SharedInstall = "sharedinstall";
         public const string Leaderboards = "leaderboards";
         public const string Achievements = "achievements";
         public const string Branches = "branches";

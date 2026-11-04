@@ -7,6 +7,8 @@ namespace SmartGoldbergEmu.Constants
         public const string AppId = "appid";
         public const string InstallDir = "installdir";
         public const string InstalledDepots = "InstalledDepots";
+        public const string SharedDepots = "SharedDepots";
+        public const string InstallScripts = "InstallScripts";
         public const string Manifest = "manifest";
         public const string DlcAppId = "dlcappid";
         public const string UserConfig = "UserConfig";

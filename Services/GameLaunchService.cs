@@ -521,6 +521,7 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
+                // Missing Steam redistributables are prompted in the UI (Install/Skip/Cancel) before LaunchGame.
                 ValidationResult result = LaunchProcess(
                     game,
                     launchOption,

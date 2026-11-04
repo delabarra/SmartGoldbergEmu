@@ -189,6 +189,10 @@ namespace SmartGoldbergEmu.Constants
         public static string GoldbergColdClientDirectory =>
             Path.Combine(GoldbergDirectory, GoldbergInstallLayout.ColdClientLoaderFolderName);
 
+        // Local Steamworks Shared stand-in (contains _CommonRedist\...); filled via anonymous Steam depot download.
+        public static string GoldbergCommonRedistDirectory =>
+            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.CommonRedistFolderName);
+
         public static string GoldbergColdClientExtraDllsDirectory =>
             Path.Combine(
                 GoldbergColdClientDirectory,
@@ -267,6 +271,9 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamAppManifestFileExtension = ".acf";
 
         public const string SteamAppsCommonDirectoryName = "common";
+        // Steamworks Common Redistributables installdir (app 228980).
+        public const string SteamworksSharedFolderName = "Steamworks Shared";
+        public const string SteamCommonRedistFolderName = "_CommonRedist";
         public const string SteamClientSteamUiFolderName = "steamui";
         public const string SteamClientUiSoundsFolderName = GoldbergGlobalSoundsFolderName;
         public const string SteamClientClientUiFolderName = "clientui";

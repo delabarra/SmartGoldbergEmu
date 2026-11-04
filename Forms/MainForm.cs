@@ -3227,6 +3227,20 @@ namespace SmartGoldbergEmu.Forms
                 if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
                     return;
 
+                string depsFolder = GameFolderPathHelper.GetLaunchBaseGameFolder(game);
+                if (!GameDependencyLaunchHelper.TryHandleMissingDependencies(
+                        game,
+                        depsFolder,
+                        this,
+                        _taskReportService))
+                {
+                    Program.LogService?.LogDebug("User cancelled launch at missing-dependencies prompt");
+                    return;
+                }
+
+                if (IsDisposed || Disposing || FormLifetimeToken.IsCancellationRequested)
+                    return;
+
                 Program.LogService?.LogDebug("Calling GameLaunchService.LaunchGame...");
                 var launchGameResult = _gameLaunchService.LaunchGame(game, useEmulator: useEmulator, launchOption: launchOption);
 
