@@ -753,6 +753,162 @@ namespace SmartGoldbergEmu.Services
                 .ToList();
         }
 
+        // Match a LAN invite hint to a local option so Accept can skip the picker.
+        // Prefer executable, then description; type / osarch / betakey break ties. Ambiguous → false.
+        // When the hint executable includes a directory, require a relative-path match (no filename-only fallback).
+        public static bool TryMatchLaunchOptionHint(
+            IReadOnlyList<LaunchOption> candidates,
+            LanLaunchOptionHint hint,
+            out LaunchOption matched)
+        {
+            matched = null;
+            if (hint == null || hint.PreferLibraryPath || candidates == null || candidates.Count == 0)
+                return false;
+            if (!hint.HasMatchableFields)
+                return false;
+
+            string wantExe = LanLaunchOptionHint.NormalizeExecutableKey(hint.Executable);
+            string wantDesc = string.IsNullOrWhiteSpace(hint.Description) ? string.Empty : hint.Description.Trim();
+            string wantType = string.IsNullOrWhiteSpace(hint.Type) ? string.Empty : hint.Type.Trim();
+            string wantArch = string.IsNullOrWhiteSpace(hint.OsArch) ? string.Empty : hint.OsArch.Trim();
+            string wantBeta = string.IsNullOrWhiteSpace(hint.BetaKey) ? string.Empty : hint.BetaKey.Trim();
+
+            List<LaunchOption> pool = candidates.Where(o => o != null).ToList();
+            if (pool.Count == 0)
+                return false;
+
+            if (!string.IsNullOrEmpty(wantExe))
+            {
+                var byExe = pool
+                    .Where(o => string.Equals(
+                        LanLaunchOptionHint.NormalizeExecutableKey(o.Executable),
+                        wantExe,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                // Bare filename only: allow matching by file name when relative paths differ across installs.
+                if (byExe.Count == 0 && wantExe.IndexOf('\\') < 0)
+                {
+                    byExe = pool
+                        .Where(o => string.Equals(
+                            Path.GetFileName(LanLaunchOptionHint.NormalizeExecutableKey(o.Executable)),
+                            wantExe,
+                            StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                }
+
+                if (byExe.Count == 1)
+                {
+                    if (!AllowsSilentInviteLaunch(byExe[0]))
+                        return false;
+                    matched = byExe[0];
+                    return true;
+                }
+
+                if (byExe.Count > 1)
+                    pool = byExe;
+                else
+                    return false;
+            }
+            else if (!string.IsNullOrEmpty(wantDesc))
+            {
+                var byDesc = pool
+                    .Where(o => string.Equals(
+                        (o.Description ?? string.Empty).Trim(),
+                        wantDesc,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (byDesc.Count == 0)
+                    return false;
+                pool = byDesc;
+            }
+            else
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(wantDesc) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.Description ?? string.Empty).Trim(),
+                        wantDesc,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (!string.IsNullOrEmpty(wantType) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.Type ?? string.Empty).Trim(),
+                        wantType,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (!string.IsNullOrEmpty(wantArch) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.OsArch ?? string.Empty).Trim(),
+                        wantArch,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (!string.IsNullOrEmpty(wantBeta) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.BetaKey ?? string.Empty).Trim(),
+                        wantBeta,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (pool.Count != 1)
+                return false;
+
+            matched = pool[0];
+            if (!AllowsSilentInviteLaunch(matched))
+            {
+                matched = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        // Restricted / user / beta options stay a conscious picker choice — never silent from a peer hint.
+        public static bool AllowsSilentInviteLaunch(LaunchOption option)
+        {
+            if (option == null)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(option.BetaKey))
+                return false;
+
+            if (LaunchOption.IsRestrictedLaunchOptionType(option.Type))
+                return false;
+
+            if (!string.IsNullOrEmpty(option.Type)
+                && option.Type.Equals(SteamPicsKeyNames.LaunchOptionTypeUser, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         // Silent type=none (no description): OS/arch routing. Described type=none stays selectable like Steam.
         public static bool IsSteamPlatformAutoLaunchOption(LaunchOption option)
         {

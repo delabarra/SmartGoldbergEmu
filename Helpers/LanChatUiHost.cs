@@ -7,7 +7,7 @@ using SmartGoldbergEmu.Services;
 
 namespace SmartGoldbergEmu.Helpers
 {
-    // Owns open LanChatForm instances; auto-opens quietly for chat/lobby invites and flashes for attention.
+    // Owns open LanChatForm instances; auto-opens quietly for chat/game invites and flashes for attention.
     public static class LanChatUiHost
     {
         private static readonly object Gate = new object();

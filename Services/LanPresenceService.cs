@@ -140,7 +140,7 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
-        // Host LanKit readiness result. Empty clears the advertised lobby join args.
+        // Join args from an on-demand LanKit Invite probe. Empty clears presence `j`.
         public void SetLocalJoinArguments(string joinArguments)
         {
             string next = string.IsNullOrWhiteSpace(joinArguments)
@@ -653,8 +653,13 @@ namespace SmartGoldbergEmu.Services
                 RaiseChatPacket(root, remote);
         }
 
-        // Broadcast a launcher invite nudge (optional join args). Guest Accept launches via GameLaunchService.
-        public ValidationResult SendGameInvite(string targetSteamId, ulong appId, string gameName, string joinArguments = null)
+        // Broadcast a launcher invite nudge (optional join args + launch-option hint). Guest Accept launches via GameLaunchService.
+        public ValidationResult SendGameInvite(
+            string targetSteamId,
+            ulong appId,
+            string gameName,
+            string joinArguments = null,
+            LanLaunchOptionHint launchHint = null)
         {
             if (string.IsNullOrWhiteSpace(targetSteamId))
                 return ValidationResult.Failure("Invite target is missing.");
@@ -668,6 +673,8 @@ namespace SmartGoldbergEmu.Services
             string join = string.IsNullOrWhiteSpace(joinArguments) ? string.Empty : joinArguments.Trim();
             if (join.Length > LanPresenceConstants.MaxJoinArgumentsChars)
                 return ValidationResult.Failure("Join arguments are too long for a LAN invite packet.");
+
+            LanLaunchOptionHint wireHint = SanitizeLaunchHint(launchHint);
 
             byte[] payloadBytes;
             lock (_gate)
@@ -693,6 +700,7 @@ namespace SmartGoldbergEmu.Services
                     obj["g"] = new JsonString(Truncate(gameName ?? string.Empty, LanPresenceConstants.MaxGameNameChars));
                     if (!string.IsNullOrEmpty(join))
                         obj["j"] = new JsonString(join);
+                    WriteLaunchHintFields(obj, wireHint);
                     payloadBytes = Encoding.UTF8.GetBytes(obj.ToJsonString());
                 }
                 catch (Exception ex)
@@ -821,7 +829,8 @@ namespace SmartGoldbergEmu.Services
                 FromDisplayName = name ?? string.Empty,
                 AppId = appId,
                 GameName = gameName ?? string.Empty,
-                JoinArguments = join
+                JoinArguments = join,
+                LaunchHint = ReadLaunchHintFields(root)
             });
         }
 
@@ -1677,6 +1686,104 @@ namespace SmartGoldbergEmu.Services
             if (string.IsNullOrWhiteSpace(value))
                 return string.Empty;
             return Truncate(StripControls(value.Trim()), LanPresenceConstants.MaxJoinArgumentsChars);
+        }
+
+        private static LanLaunchOptionHint SanitizeLaunchHint(LanLaunchOptionHint hint)
+        {
+            if (hint == null || !hint.HasMatchableFields)
+                return null;
+
+            if (hint.PreferLibraryPath)
+            {
+                return new LanLaunchOptionHint
+                {
+                    PreferLibraryPath = true
+                };
+            }
+
+            var cleaned = new LanLaunchOptionHint
+            {
+                PreferLibraryPath = false,
+                Executable = Truncate(
+                    StripControls((hint.Executable ?? string.Empty).Trim()),
+                    LanPresenceConstants.MaxLaunchHintExecutableChars),
+                Description = Truncate(
+                    StripControls((hint.Description ?? string.Empty).Trim()),
+                    LanPresenceConstants.MaxLaunchHintDescriptionChars),
+                Type = Truncate(
+                    StripControls((hint.Type ?? string.Empty).Trim()),
+                    LanPresenceConstants.MaxLaunchHintTypeChars),
+                OsArch = Truncate(
+                    StripControls((hint.OsArch ?? string.Empty).Trim()),
+                    LanPresenceConstants.MaxLaunchHintOsArchChars),
+                BetaKey = Truncate(
+                    StripControls((hint.BetaKey ?? string.Empty).Trim()),
+                    LanPresenceConstants.MaxLaunchHintBetaKeyChars)
+            };
+
+            return cleaned.HasMatchableFields ? cleaned : null;
+        }
+
+        private static void WriteLaunchHintFields(JsonObject obj, LanLaunchOptionHint hint)
+        {
+            if (obj == null || hint == null || !hint.HasMatchableFields)
+                return;
+
+            if (hint.PreferLibraryPath)
+            {
+                obj["ls"] = new JsonNumber(1);
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(hint.Executable))
+                obj["lx"] = new JsonString(hint.Executable);
+            if (!string.IsNullOrEmpty(hint.Description))
+                obj["ld"] = new JsonString(hint.Description);
+            if (!string.IsNullOrEmpty(hint.Type))
+                obj["lt"] = new JsonString(hint.Type);
+            if (!string.IsNullOrEmpty(hint.OsArch))
+                obj["la"] = new JsonString(hint.OsArch);
+            if (!string.IsNullOrEmpty(hint.BetaKey))
+                obj["lb"] = new JsonString(hint.BetaKey);
+        }
+
+        private static LanLaunchOptionHint ReadLaunchHintFields(JsonObject root)
+        {
+            if (root == null)
+                return null;
+
+            bool preferLibrary = false;
+            if (root["ls"] != null)
+            {
+                long raw = root["ls"].ToInt64();
+                preferLibrary = raw != 0;
+            }
+
+            if (preferLibrary)
+            {
+                return new LanLaunchOptionHint
+                {
+                    PreferLibraryPath = true
+                };
+            }
+
+            string exe = root["lx"] != null ? StripControls(root["lx"].ToString().Trim()) : string.Empty;
+            string desc = root["ld"] != null ? StripControls(root["ld"].ToString().Trim()) : string.Empty;
+            string type = root["lt"] != null ? StripControls(root["lt"].ToString().Trim()) : string.Empty;
+            string arch = root["la"] != null ? StripControls(root["la"].ToString().Trim()) : string.Empty;
+            string beta = root["lb"] != null ? StripControls(root["lb"].ToString().Trim()) : string.Empty;
+
+            var hint = new LanLaunchOptionHint
+            {
+                PreferLibraryPath = false,
+                Executable = Truncate(exe ?? string.Empty, LanPresenceConstants.MaxLaunchHintExecutableChars),
+                Description = Truncate(desc ?? string.Empty, LanPresenceConstants.MaxLaunchHintDescriptionChars),
+                Type = Truncate(type ?? string.Empty, LanPresenceConstants.MaxLaunchHintTypeChars),
+                OsArch = Truncate(arch ?? string.Empty, LanPresenceConstants.MaxLaunchHintOsArchChars),
+                BetaKey = Truncate(beta ?? string.Empty, LanPresenceConstants.MaxLaunchHintBetaKeyChars)
+            };
+
+            return hint.HasMatchableFields ? hint : null;
         }
 
         // True while preferred/effective persona is Busy (LAN chat is dropped).

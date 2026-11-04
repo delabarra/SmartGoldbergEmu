@@ -362,7 +362,7 @@ namespace SmartGoldbergEmu.LanKit
                 ulong probeId = CreateEphemeralSteamId64(avoidSteamId64);
                 var userIni = new StringBuilder();
                 userIni.AppendLine("[user::general]");
-                userIni.AppendLine("account_name=SGE LanKit");
+                userIni.AppendLine("account_name=SGE Lobby Connect");
                 userIni.AppendLine("account_steamid=" + probeId.ToString(CultureInfo.InvariantCulture));
                 userIni.AppendLine();
                 userIni.AppendLine("[user::saves]");

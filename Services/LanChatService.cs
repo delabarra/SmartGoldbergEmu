@@ -310,7 +310,7 @@ namespace SmartGoldbergEmu.Services
             return true;
         }
 
-        // Local chat line after a successful lobby invite UDP send (no wire chat packet).
+        // Local chat line after a successful game invite UDP send (no wire chat packet).
         public void RecordGameInviteSent(string peerSteamId, ulong appId, string gameName)
         {
             peerSteamId = LanWireHelper.SanitizeSteamId(peerSteamId);
@@ -353,7 +353,7 @@ namespace SmartGoldbergEmu.Services
             RaiseSessionUpdated(peerSteamId);
         }
 
-        // Local chat line when the peer silently rejected a repeat lobby invite (cooldown packet).
+        // Local chat line when the peer silently rejected a repeat game invite (cooldown packet).
         public void RecordGameInviteCooldown(string peerSteamId, int remainingSeconds)
         {
             peerSteamId = LanWireHelper.SanitizeSteamId(peerSteamId);
@@ -412,7 +412,7 @@ namespace SmartGoldbergEmu.Services
             RaiseSessionUpdated(peerSteamId);
         }
 
-        // Inbound lobby invite from presence (already sanitized/rate-limited). Display only;
+        // Inbound game invite from presence (already sanitized/rate-limited). Display only;
         // Accept pulls join args from session state, never from message Text.
         public void RecordGameInviteReceived(LanGameInviteEventArgs invite)
         {
@@ -443,6 +443,7 @@ namespace SmartGoldbergEmu.Services
                     AppId = invite.AppId,
                     GameName = SanitizeInviteGameName(invite.GameName),
                     JoinArguments = join,
+                    LaunchHint = CloneLaunchHint(invite.LaunchHint),
                     FromSteamId = peerSteamId,
                     FromDisplayName = session.PeerDisplayName ?? string.Empty,
                     MessageId = messageId
@@ -483,7 +484,7 @@ namespace SmartGoldbergEmu.Services
                     || session.PendingGameInvite == null
                     || session.PendingGameInvite.AppId == 0)
                 {
-                    error = "No pending lobby invite.";
+                    error = "No pending game invite.";
                     return false;
                 }
 
@@ -495,7 +496,8 @@ namespace SmartGoldbergEmu.Services
                     FromDisplayName = pending.FromDisplayName ?? string.Empty,
                     AppId = pending.AppId,
                     GameName = pending.GameName ?? string.Empty,
-                    JoinArguments = pending.JoinArguments ?? string.Empty
+                    JoinArguments = pending.JoinArguments ?? string.Empty,
+                    LaunchHint = CloneLaunchHint(pending.LaunchHint)
                 };
             }
 
@@ -521,7 +523,7 @@ namespace SmartGoldbergEmu.Services
                 {
                     MessageId = NewMessageId(),
                     FromSteamId = localId,
-                    Text = "Accepted lobby invite.",
+                    Text = "Accepted game invite.",
                     TimestampUtc = DateTime.UtcNow,
                     IsLocal = true,
                     Kind = LanChatMessageKind.GameInviteResult
@@ -553,6 +555,7 @@ namespace SmartGoldbergEmu.Services
                     AppId = invite.AppId,
                     GameName = SanitizeInviteGameName(invite.GameName),
                     JoinArguments = SanitizeJoinArguments(invite.JoinArguments),
+                    LaunchHint = CloneLaunchHint(invite.LaunchHint),
                     FromSteamId = peerSteamId,
                     FromDisplayName = string.IsNullOrWhiteSpace(invite.FromDisplayName)
                         ? (session.PeerDisplayName ?? string.Empty)
@@ -581,7 +584,7 @@ namespace SmartGoldbergEmu.Services
                 if (!_sessions.TryGetValue(peerSteamId, out session)
                     || session.PendingGameInvite == null)
                 {
-                    error = "No pending lobby invite.";
+                    error = "No pending game invite.";
                     return false;
                 }
 
@@ -590,7 +593,7 @@ namespace SmartGoldbergEmu.Services
                 {
                     MessageId = NewMessageId(),
                     FromSteamId = localId,
-                    Text = "Declined lobby invite.",
+                    Text = "Declined game invite.",
                     TimestampUtc = DateTime.UtcNow,
                     IsLocal = true,
                     Kind = LanChatMessageKind.GameInviteResult
@@ -1293,6 +1296,30 @@ namespace SmartGoldbergEmu.Services
             return cleaned;
         }
 
+        private static LanLaunchOptionHint CloneLaunchHint(LanLaunchOptionHint source)
+        {
+            if (source == null || !source.HasMatchableFields)
+                return null;
+
+            if (source.PreferLibraryPath)
+            {
+                return new LanLaunchOptionHint
+                {
+                    PreferLibraryPath = true
+                };
+            }
+
+            return new LanLaunchOptionHint
+            {
+                PreferLibraryPath = false,
+                Description = source.Description ?? string.Empty,
+                Executable = source.Executable ?? string.Empty,
+                Type = source.Type ?? string.Empty,
+                OsArch = source.OsArch ?? string.Empty,
+                BetaKey = source.BetaKey ?? string.Empty
+            };
+        }
+
         private static byte[] BuildPacket(
             string type,
             string fromId,
@@ -1454,6 +1481,7 @@ namespace SmartGoldbergEmu.Services
             public ulong AppId;
             public string GameName;
             public string JoinArguments;
+            public LanLaunchOptionHint LaunchHint;
             public string FromSteamId;
             public string FromDisplayName;
             public string MessageId;

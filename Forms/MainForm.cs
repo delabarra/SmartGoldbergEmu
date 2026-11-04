@@ -3739,7 +3739,7 @@ namespace SmartGoldbergEmu.Forms
                     ServiceLocator.LanPresenceService.InviteCooldownReceived -= OnLanInviteCooldownReceived;
                     ServiceLocator.LanPresenceService.InviteCooldownReceived += OnLanInviteCooldownReceived;
                     ServiceLocator.LanPresenceService.StartIfEnabled();
-                    // Touch join service so lobby readiness monitor hooks OnlineStateChanged.
+                    // Touch join service so Offline clears advertised LanKit join args.
                     _ = ServiceLocator.LanGameJoinService;
                     ServiceLocator.LanChatService.EnsureHooked();
                     LanChatUiHost.Attach(this);

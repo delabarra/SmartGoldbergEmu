@@ -28,9 +28,12 @@ namespace SmartGoldbergEmu.Constants
         public const int MaxAvatarHashChars = 64;
         // +connect_lobby / rich-presence connect fragment on presence + invite (`j`).
         public const int MaxJoinArgumentsChars = 256;
-        // Host LanKit self-probe while playing a Steam-lobby-capable title.
-        public const int LobbyReadinessIntervalMs = 12000;
-
+        // Optional invite launch-option hint (`ls`/`lx`/`ld`/`lt`/`la`/`lb`); ignored by older peers.
+        public const int MaxLaunchHintExecutableChars = 260;
+        public const int MaxLaunchHintDescriptionChars = 128;
+        public const int MaxLaunchHintTypeChars = 32;
+        public const int MaxLaunchHintOsArchChars = 16;
+        public const int MaxLaunchHintBetaKeyChars = 64;
         public const string PersonaOnline = "online";
         public const string PersonaAway = "away";
         public const string PersonaBusy = "busy";

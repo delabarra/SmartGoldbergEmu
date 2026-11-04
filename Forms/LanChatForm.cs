@@ -853,7 +853,7 @@ namespace SmartGoldbergEmu.Forms
                     FormMessageBoxHelper.ShowIfAlive(
                         this,
                         error,
-                        "LAN lobby invite",
+                        "LAN game invite",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                 }
@@ -876,7 +876,7 @@ namespace SmartGoldbergEmu.Forms
                 FormMessageBoxHelper.ShowIfAlive(
                     this,
                     error,
-                    "LAN lobby invite",
+                    "LAN game invite",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
@@ -910,7 +910,7 @@ namespace SmartGoldbergEmu.Forms
                         FormMessageBoxHelper.ShowIfAlive(
                             this,
                             "Could not accept invite: " + ex.Message,
-                            "LAN lobby invite",
+                            "LAN game invite",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
                     }
@@ -935,7 +935,7 @@ namespace SmartGoldbergEmu.Forms
                         FormMessageBoxHelper.ShowIfAlive(
                             this,
                             result.ErrorMessage ?? "Could not accept invite.",
-                            "LAN lobby invite",
+                            "LAN game invite",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
                     }

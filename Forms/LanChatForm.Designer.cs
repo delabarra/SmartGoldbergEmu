@@ -230,7 +230,7 @@ namespace SmartGoldbergEmu.Forms
             this.lblLobbyInvite.Padding = new System.Windows.Forms.Padding(0, 0, 0, 2);
             this.lblLobbyInvite.Size = new System.Drawing.Size(72, 17);
             this.lblLobbyInvite.TabIndex = 0;
-            this.lblLobbyInvite.Text = "Lobby invite";
+            this.lblLobbyInvite.Text = "Game invite";
             //
             // flpLobbyInviteButtons
             //

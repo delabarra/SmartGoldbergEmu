@@ -155,6 +155,7 @@
     <Compile Include="Models\LanSeenPeerRecord.cs" />
     <Compile Include="Models\LanPersonaState.cs" />
     <Compile Include="Models\LanGameInviteEventArgs.cs" />
+    <Compile Include="Models\LanLaunchOptionHint.cs" />
     <Compile Include="Models\LanChatMessage.cs" />
     <Compile Include="Models\LanChatMessageKind.cs" />
     <Compile Include="Models\LanChatSessionStatus.cs" />

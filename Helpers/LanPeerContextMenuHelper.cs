@@ -99,7 +99,7 @@ namespace SmartGoldbergEmu.Helpers
                     {
                         EnsureMenuSeparator(menu, ref addedTopGroup);
                         menu.Items.Add(
-                            "Join lobby",
+                            "Join game",
                             null,
                             (s, e) => OnJoinPeerGame(owner, presence, steamId));
                         addedPlayAction = true;
@@ -107,7 +107,7 @@ namespace SmartGoldbergEmu.Helpers
                 }
 
                 LanPresencePeer self = presence.GetLocalSelfSnapshot();
-                if (self != null && self.HasJoinableLobby && self.AppId != 0)
+                if (self != null && self.IsPlaying && self.AppId != 0)
                 {
                     GameConfig inviteGame = ServiceLocator.LanGameJoinService.TryGetLibraryGame(self.AppId);
                     if (LanGameJoinService.SupportsSteamLobbyJoin(self.AppId, inviteGame))
@@ -115,9 +115,9 @@ namespace SmartGoldbergEmu.Helpers
                         if (!addedPlayAction)
                             EnsureMenuSeparator(menu, ref addedTopGroup);
                         menu.Items.Add(
-                            "Invite to lobby…",
+                            "Invite to game…",
                             null,
-                            (s, e) => OnInvitePeerToLobby(owner, presence, steamId));
+                            (s, e) => OnInvitePeerToGame(owner, presence, steamId));
                         addedPlayAction = true;
                     }
                 }
@@ -283,7 +283,7 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
-        private static void OnInvitePeerToLobby(Form owner, LanPresenceService presence, string steamId)
+        private static void OnInvitePeerToGame(Form owner, LanPresenceService presence, string steamId)
         {
             if (owner == null || owner.IsDisposed || presence == null || string.IsNullOrEmpty(steamId))
                 return;
@@ -301,11 +301,11 @@ namespace SmartGoldbergEmu.Helpers
             }
 
             CancellationToken token = ServiceLocator.ApplicationLifetimeToken;
-            _ = InvitePeerToLobbyUiAsync(owner, presence, peer, token)
-                .ForgetFaults(Program.LogService, nameof(OnInvitePeerToLobby));
+            _ = InvitePeerToGameUiAsync(owner, presence, peer, token)
+                .ForgetFaults(Program.LogService, nameof(OnInvitePeerToGame));
         }
 
-        private static async Task InvitePeerToLobbyUiAsync(
+        private static async Task InvitePeerToGameUiAsync(
             Form owner,
             LanPresenceService presence,
             LanPresencePeer peer,
@@ -321,7 +321,7 @@ namespace SmartGoldbergEmu.Helpers
             }
             catch (Exception ex)
             {
-                Program.LogService?.LogWarning("LAN lobby invite failed: " + ex.Message);
+                Program.LogService?.LogWarning("LAN game invite failed: " + ex.Message);
                 result = ValidationResult.Failure(ex.Message);
             }
             finally

@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SmartGoldbergEmu.Abstractions;
-using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.LanKit;
 using SmartGoldbergEmu.Models;
@@ -30,9 +29,7 @@ namespace SmartGoldbergEmu.Services
         private readonly GoldbergFilesService _goldbergFiles;
         private readonly LanPresenceService _presence;
         private readonly ILogService _logger;
-        private readonly object _readinessGate = new object();
-        private System.Threading.Timer _readinessTimer;
-        private int _readinessBusy;
+        private readonly object _probeGate = new object();
         private bool _disposed;
 
         public LanGameJoinService()
@@ -62,13 +59,11 @@ namespace SmartGoldbergEmu.Services
             _logger = logger;
 
             _presence.OnlineStateChanged += OnPresenceOnlineStateChanged;
-            if (_presence.IsOnline)
-                StartLobbyReadinessMonitor();
         }
 
         public void Dispose()
         {
-            lock (_readinessGate)
+            lock (_probeGate)
             {
                 if (_disposed)
                     return;
@@ -83,16 +78,15 @@ namespace SmartGoldbergEmu.Services
             {
             }
 
-            StopLobbyReadinessMonitor();
             _presence.SetLocalJoinArguments(null);
         }
 
-        // AppId only when the peer advertises Steam lobby/connect join args on presence.
+        // AppId when the peer is playing a title we can attempt Invite/Join for (LanKit runs on demand).
         public static ulong GetJoinableAppId(LanPresencePeer peer)
         {
             if (peer == null)
                 return 0;
-            if (peer.IsPlaying && peer.AppId != 0 && peer.HasJoinableLobby)
+            if (peer.IsPlaying && peer.AppId != 0)
                 return peer.AppId;
             return 0;
         }
@@ -119,7 +113,7 @@ namespace SmartGoldbergEmu.Services
         {
             string title = string.IsNullOrWhiteSpace(gameName) ? ("App " + appId) : gameName.Trim();
             return title
-                + " does not expose Steam lobby or connect join args for SGE Invite/Join. "
+                + " does not support SGE Invite/Join (no Steam connect args). "
                 + "Use the game's own multiplayer (for example IP and port).";
         }
 
@@ -158,12 +152,6 @@ namespace SmartGoldbergEmu.Services
             if (!SupportsSteamLobbyJoin(appId, game))
                 return ValidationResult.Failure(GetUnsupportedSteamLobbyJoinMessage(appId, game.AppName));
 
-            if (!peer.HasJoinableLobby)
-            {
-                return ValidationResult.Failure(
-                    "That player is not in a joinable lobby yet. Ask them to create or enter the multiplayer lobby first.");
-            }
-
             SaveResult accept = _goldbergFiles.EnsureSteamIdInAutoAcceptInvite(appId, peer.SteamId);
             if (!accept.IsSuccess)
                 return ValidationResult.Failure(accept.ErrorMessage ?? "Could not update auto_accept_invite.txt.");
@@ -181,45 +169,65 @@ namespace SmartGoldbergEmu.Services
                 .ConfigureAwait(true);
         }
 
-        // UDP invite with host-probed join args. Do not write auto_send_invites.txt (Goldberg overlay
+        // UDP invite with on-demand LanKit join args. Do not write auto_send_invites.txt (Goldberg overlay
         // auto-invite on friend-seen is redundant with +connect_lobby and can upset fragile hosts).
-        public Task<ValidationResult> InvitePeerToLocalGameAsync(LanPresencePeer peer, CancellationToken cancellationToken)
+        public async Task<ValidationResult> InvitePeerToLocalGameAsync(
+            LanPresencePeer peer,
+            CancellationToken cancellationToken)
         {
             if (peer == null || string.IsNullOrWhiteSpace(peer.SteamId))
-                return Task.FromResult(ValidationResult.Failure("Player is missing."));
+                return ValidationResult.Failure("Player is missing.");
             if (!peer.IsPresent)
-                return Task.FromResult(ValidationResult.Failure("That player is not online."));
+                return ValidationResult.Failure("That player is not online.");
 
             LanPresencePeer self = _presence.GetLocalSelfSnapshot();
             if (self == null || !self.IsPlaying || self.AppId == 0)
-                return Task.FromResult(ValidationResult.Failure("Launch a game first, then invite."));
+                return ValidationResult.Failure("Launch a game first, then invite.");
 
             GameConfig localGame = TryGetLibraryGame(self.AppId);
             if (!SupportsSteamLobbyJoin(self.AppId, localGame))
             {
-                return Task.FromResult(ValidationResult.Failure(
-                    GetUnsupportedSteamLobbyJoinMessage(self.AppId, self.GameName ?? localGame?.AppName)));
-            }
-
-            if (!self.HasJoinableLobby)
-            {
-                return Task.FromResult(ValidationResult.Failure(
-                    "No joinable lobby yet. Create or enter the multiplayer lobby in-game, then invite again."));
+                return ValidationResult.Failure(
+                    GetUnsupportedSteamLobbyJoinMessage(self.AppId, self.GameName ?? localGame?.AppName));
             }
 
             if (cancellationToken.IsCancellationRequested)
-                return Task.FromResult(ValidationResult.Failure("Invite cancelled."));
+                return ValidationResult.Failure("Invite cancelled.");
+
+            string joinArgs = await Task.Run(
+                    () => ProbeLocalJoinArguments(self.AppId, self.SteamId),
+                    cancellationToken)
+                .ConfigureAwait(true);
+
+            if (cancellationToken.IsCancellationRequested)
+                return ValidationResult.Failure("Invite cancelled.");
+
+            if (string.IsNullOrWhiteSpace(joinArgs))
+            {
+                return ValidationResult.Failure(
+                    "No joinable game yet. Start or enter multiplayer in-game, then invite again.");
+            }
 
             // Best-effort: already-running hosts may have already loaded broadcasts, but keep the file ready.
             TrySeedPeerBroadcastIp(self.AppId, peer.RemoteAddress, "invite");
 
+            LanLaunchOptionHint launchHint;
+            if (!_launch.TryGetLastLaunchOptionHint(self.AppId, out launchHint))
+                launchHint = null;
+
             _logger?.LogMessage(
                 "LAN invite: sending nudge for AppId " + self.AppId
                 + " to " + peer.SteamId
-                + " with join args (no auto_send_invites).");
+                + " with join args"
+                + (launchHint != null && launchHint.HasMatchableFields ? " + launch option hint" : string.Empty)
+                + " (no auto_send_invites).");
 
-            return Task.FromResult(
-                _presence.SendGameInvite(peer.SteamId, self.AppId, self.GameName, self.JoinArguments));
+            return _presence.SendGameInvite(
+                peer.SteamId,
+                self.AppId,
+                self.GameName,
+                joinArgs,
+                launchHint);
         }
 
         // After Accept on an inbound invite: merge inviter into auto_accept, discover + launch.
@@ -252,7 +260,14 @@ namespace SmartGoldbergEmu.Services
 
             string knownJoin = invite.JoinArguments;
             return await LaunchLibraryGameAsync(
-                    game, invite.FromSteamId, invite.AppId, owner, cancellationToken, knownJoin, hostIp)
+                    game,
+                    invite.FromSteamId,
+                    invite.AppId,
+                    owner,
+                    cancellationToken,
+                    knownJoin,
+                    hostIp,
+                    invite.LaunchHint)
                 .ConfigureAwait(true);
         }
 
@@ -263,7 +278,8 @@ namespace SmartGoldbergEmu.Services
             IWin32Window owner,
             CancellationToken cancellationToken,
             string knownJoinArguments = null,
-            string hostBroadcastIp = null)
+            string hostBroadcastIp = null,
+            LanLaunchOptionHint launchHint = null)
         {
             if (game == null)
                 return ValidationResult.Failure("Game is missing.");
@@ -287,7 +303,7 @@ namespace SmartGoldbergEmu.Services
             {
                 uint appId32 = discoverAppId > uint.MaxValue ? 0u : (uint)discoverAppId;
                 if (appId32 == 0)
-                    return ValidationResult.Failure("AppId is invalid for lobby discovery.");
+                    return ValidationResult.Failure("AppId is invalid for join discovery.");
 
                 _logger?.LogMessage(
                     "LAN join: peer probe for host Steam64 " + hostSteamId + " AppId " + appId32
@@ -303,16 +319,16 @@ namespace SmartGoldbergEmu.Services
                 if (cancellationToken.IsCancellationRequested)
                     return ValidationResult.Failure("Launch cancelled.");
 
-                // Host is visible on Goldberg LAN but not in a Steam lobby / no connect string yet.
+                // Host is visible on Goldberg LAN but not in a joinable game / no connect string yet.
                 if (discover != null && discover.Status == LanDiscoverStatus.PeerSeenWithoutJoin)
                 {
-                    string notInLobby =
-                        "The other player is on the emulator network, but they are not in a joinable lobby yet. "
-                        + "Being in the game is not enough — they must create or enter the multiplayer lobby first, "
+                    string notJoinable =
+                        "The other player is on the emulator network, but they are not in a joinable game yet. "
+                        + "Being in the title alone is not enough — they must start or enter multiplayer first, "
                         + "then invite you again (or you Join again).";
                     if (!SupportsSteamLobbyJoin(discoverAppId, game))
-                        notInLobby += " " + GetUnsupportedSteamLobbyJoinMessage(discoverAppId, game.AppName);
-                    return ValidationResult.Failure(notInLobby);
+                        notJoinable += " " + GetUnsupportedSteamLobbyJoinMessage(discoverAppId, game.AppName);
+                    return ValidationResult.Failure(notJoinable);
                 }
 
                 if (discover != null
@@ -325,8 +341,8 @@ namespace SmartGoldbergEmu.Services
                 else
                 {
                     return ValidationResult.Failure(
-                        "Could not discover lobby/connect args for that player on the emulator network. "
-                        + "Ask them to invite again while in a lobby, or use the in-game overlay Join.");
+                        "Could not discover join args for that player on the emulator network. "
+                        + "Ask them to invite again while in the game, or use the in-game overlay Join.");
                 }
             }
 
@@ -341,8 +357,8 @@ namespace SmartGoldbergEmu.Services
                 {
                     answer = MessageBox.Show(
                         owner,
-                        title + " is already running. Relaunch it now to join the lobby?",
-                        "LAN lobby invite",
+                        title + " is already running. Relaunch it now to join the game?",
+                        "LAN game invite",
                         MessageBoxButtons.YesNo,
                         MessageBoxIcon.Question);
                 }
@@ -363,8 +379,8 @@ namespace SmartGoldbergEmu.Services
                     return ValidationResult.Failure("Launch cancelled.");
             }
 
-            var launchResult = await _launchOptions
-                .ShowLaunchOptionsAsync(game, owner, cancellationToken)
+            LaunchOptionResult launchResult = await ResolveInviteLaunchOptionAsync(
+                    game, launchHint, owner, cancellationToken)
                 .ConfigureAwait(true);
             if (launchResult.Cancelled || cancellationToken.IsCancellationRequested)
                 return ValidationResult.Failure("Launch cancelled.");
@@ -398,116 +414,53 @@ namespace SmartGoldbergEmu.Services
 
         private void OnPresenceOnlineStateChanged(object sender, EventArgs e)
         {
-            if (_presence.IsOnline)
-                StartLobbyReadinessMonitor();
-            else
-            {
-                StopLobbyReadinessMonitor();
+            if (!_presence.IsOnline)
                 _presence.SetLocalJoinArguments(null);
-            }
         }
 
-        private void StartLobbyReadinessMonitor()
+        // One-shot LanKit self-probe for Invite; also refreshes presence `j` so peers can Join without re-probe.
+        private string ProbeLocalJoinArguments(ulong appId, string selfSteamId)
         {
-            lock (_readinessGate)
+            lock (_probeGate)
             {
                 if (_disposed)
-                    return;
-                if (_readinessTimer != null)
-                    return;
-                _readinessTimer = new System.Threading.Timer(
-                    OnLobbyReadinessTick,
-                    null,
-                    1500,
-                    LanPresenceConstants.LobbyReadinessIntervalMs);
+                    return null;
             }
-        }
 
-        private void StopLobbyReadinessMonitor()
-        {
-            System.Threading.Timer timer;
-            lock (_readinessGate)
+            if (!SupportsSteamLobbyJoin(appId, TryGetLibraryGame(appId)))
             {
-                timer = _readinessTimer;
-                _readinessTimer = null;
+                _presence.SetLocalJoinArguments(null);
+                return null;
             }
 
-            try
+            if (!TryParseSteam64(selfSteamId, out ulong selfSteam64))
             {
-                timer?.Dispose();
+                _presence.SetLocalJoinArguments(null);
+                return null;
             }
-            catch
+
+            uint appId32 = appId > uint.MaxValue ? 0u : (uint)appId;
+            if (appId32 == 0)
             {
+                _presence.SetLocalJoinArguments(null);
+                return null;
             }
-        }
 
-        private void OnLobbyReadinessTick(object state)
-        {
-            if (Interlocked.CompareExchange(ref _readinessBusy, 1, 0) != 0)
-                return;
-
-            try
+            LanDiscoverResult discover;
+            LanLobbyDiscoverer.TryDiscoverReadiness(selfSteam64, appId32, out discover, _logger, "127.0.0.1");
+            if (discover != null
+                && discover.Status == LanDiscoverStatus.JoinArgsFound
+                && discover.Join != null
+                && !string.IsNullOrWhiteSpace(discover.Join.ConnectArguments))
             {
-                if (_disposed || !_presence.IsOnline)
-                    return;
-
-                LanPresencePeer self = _presence.GetLocalSelfSnapshot();
-                if (self == null || !self.IsPlaying || self.AppId == 0)
-                {
-                    _presence.SetLocalJoinArguments(null);
-                    return;
-                }
-
-                GameConfig game = TryGetLibraryGame(self.AppId);
-                if (!SupportsSteamLobbyJoin(self.AppId, game))
-                {
-                    _presence.SetLocalJoinArguments(null);
-                    return;
-                }
-
-                if (!TryParseSteam64(self.SteamId, out ulong selfSteam64))
-                {
-                    _presence.SetLocalJoinArguments(null);
-                    return;
-                }
-
-                uint appId32 = self.AppId > uint.MaxValue ? 0u : (uint)self.AppId;
-                if (appId32 == 0)
-                {
-                    _presence.SetLocalJoinArguments(null);
-                    return;
-                }
-
-                // Ephemeral client looking for our own game Steam64 on 127.0.0.1 + LAN mesh.
-                LanDiscoverResult discover;
-                LanLobbyDiscoverer.TryDiscoverReadiness(selfSteam64, appId32, out discover, _logger, "127.0.0.1");
-                if (discover != null
-                    && discover.Status == LanDiscoverStatus.JoinArgsFound
-                    && discover.Join != null
-                    && !string.IsNullOrWhiteSpace(discover.Join.ConnectArguments))
-                {
-                    string join = discover.Join.ConnectArguments.Trim();
-                    if (!string.Equals(self.JoinArguments ?? string.Empty, join, StringComparison.Ordinal))
-                    {
-                        _logger?.LogMessage(
-                            "LAN lobby ready: AppId " + appId32 + " join args=" + join);
-                    }
-
-                    _presence.SetLocalJoinArguments(join);
-                }
-                else
-                {
-                    _presence.SetLocalJoinArguments(null);
-                }
+                string join = discover.Join.ConnectArguments.Trim();
+                _logger?.LogMessage("LAN lobby ready: AppId " + appId32 + " join args=" + join);
+                _presence.SetLocalJoinArguments(join);
+                return join;
             }
-            catch (Exception ex)
-            {
-                _logger?.LogDebug("LAN lobby readiness probe failed: " + ex.Message);
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _readinessBusy, 0);
-            }
+
+            _presence.SetLocalJoinArguments(null);
+            return null;
         }
 
         private LanDiscoverResult DiscoverJoinResult(string hostSteamId, uint appId, string hostBroadcastIp)
@@ -540,6 +493,71 @@ namespace SmartGoldbergEmu.Services
                     "LAN " + reason + ": added " + remoteAddress.Trim()
                     + " to custom_broadcasts for AppId " + appId + ".");
             }
+        }
+
+        // Prefer the host's invite launch hint when it matches locally; otherwise show the usual picker.
+        private async Task<LaunchOptionResult> ResolveInviteLaunchOptionAsync(
+            GameConfig game,
+            LanLaunchOptionHint launchHint,
+            IWin32Window owner,
+            CancellationToken cancellationToken)
+        {
+            if (launchHint != null && launchHint.HasMatchableFields)
+            {
+                if (launchHint.PreferLibraryPath)
+                {
+                    _logger?.LogMessage(
+                        "LAN join: invite launch hint prefers library Path for AppId " + game.AppId
+                        + "; skipping launch options picker.");
+                    return new LaunchOptionResult
+                    {
+                        LaunchOption = null,
+                        SkipLauncher = true,
+                        Cancelled = false
+                    };
+                }
+
+                List<LaunchOption> allOptions = await _launchOptions
+                    .ExtractLaunchOptionsIncludingUserIniAsync(game, cancellationToken)
+                    .ConfigureAwait(true);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return new LaunchOptionResult
+                    {
+                        LaunchOption = null,
+                        SkipLauncher = false,
+                        Cancelled = true
+                    };
+                }
+
+                if (allOptions == null)
+                    allOptions = new List<LaunchOption>();
+
+                // Filtered list only — do not silent-match hidden restricted extras the guest chose not to show.
+                List<LaunchOption> filtered = _launchOptions.FilterLaunchOptionsForCurrentSettings(allOptions);
+                LaunchOption matched;
+                if (LaunchOptionService.TryMatchLaunchOptionHint(filtered, launchHint, out matched))
+                {
+                    _logger?.LogMessage(
+                        "LAN join: matched invite launch hint for AppId " + game.AppId
+                        + " -> " + (matched.Description ?? matched.Executable ?? "(unnamed)")
+                        + "; skipping launch options picker.");
+                    return new LaunchOptionResult
+                    {
+                        LaunchOption = matched,
+                        SkipLauncher = false,
+                        Cancelled = false
+                    };
+                }
+
+                _logger?.LogMessage(
+                    "LAN join: invite launch hint did not match a safe visible local option for AppId "
+                    + game.AppId + "; showing launch options picker.");
+            }
+
+            return await _launchOptions
+                .ShowLaunchOptionsAsync(game, owner, cancellationToken)
+                .ConfigureAwait(true);
         }
 
         // Append LanKit connect/+connect_lobby onto launch parameters without dropping existing ones.

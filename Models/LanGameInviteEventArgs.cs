@@ -11,6 +11,9 @@ namespace SmartGoldbergEmu.Models
 
         // Optional host-probed connect / +connect_lobby fragment for Accept → launch.
         public string JoinArguments { get; set; }
+
+        // Optional host launch-option identity so Accept can skip the picker when it matches locally.
+        public LanLaunchOptionHint LaunchHint { get; set; }
     }
 
     public sealed class LanGameInviteCooldownEventArgs : EventArgs

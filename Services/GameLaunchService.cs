@@ -46,6 +46,10 @@ namespace SmartGoldbergEmu.Services
         private readonly object _registryRestoreTimerLock = new object();
         private readonly Dictionary<ulong, CancellationTokenSource> _registryRestoreCancellationByAppId =
             new Dictionary<ulong, CancellationTokenSource>();
+        // Last successful LaunchGame option per AppId — LAN invite can replay it for the guest.
+        private readonly object _lastLaunchOptionHintLock = new object();
+        private readonly Dictionary<ulong, LanLaunchOptionHint> _lastLaunchOptionHintByAppId =
+            new Dictionary<ulong, LanLaunchOptionHint>();
 
         private sealed class BranchRestoreInfo
         {
@@ -239,7 +243,25 @@ namespace SmartGoldbergEmu.Services
             }
 
             _logger?.LogMessage("LAN relaunch: closed running session for AppId " + appId + ".");
+            ClearLastLaunchOptionHint(appId);
             return ValidationResult.Success();
+        }
+
+        // Snapshot of the option used for the live session (for LAN invite silent Accept).
+        public bool TryGetLastLaunchOptionHint(ulong appId, out LanLaunchOptionHint hint)
+        {
+            hint = null;
+            if (appId == 0)
+                return false;
+
+            lock (_lastLaunchOptionHintLock)
+            {
+                LanLaunchOptionHint stored;
+                if (!_lastLaunchOptionHintByAppId.TryGetValue(appId, out stored) || stored == null)
+                    return false;
+                hint = CloneLaunchOptionHint(stored);
+                return hint != null && hint.HasMatchableFields;
+            }
         }
 
         // Non-zero Steam App IDs require Goldberg binaries under goldberg/ when useEmulator is true.
@@ -512,6 +534,8 @@ namespace SmartGoldbergEmu.Services
                 {
                     // Process started (or already cleaned after an immediate exit); do not roll back in finally.
                     launchHandedOffToSession = true;
+                    if (game.AppId != 0)
+                        RememberLastLaunchOptionHint(game.AppId, launchOption);
                 }
                 else
                 {
@@ -2479,11 +2503,49 @@ namespace SmartGoldbergEmu.Services
 
                 process.Exited -= Process_Exited;
                 process.Dispose();
+
+                if (!IsGameSessionActive(appId))
+                    ClearLastLaunchOptionHint(appId);
             }
             catch (Exception ex)
             {
                 _logger?.LogError($"Error during game cleanup: {ex.Message}", ex);
             }
+        }
+
+        private void RememberLastLaunchOptionHint(ulong appId, LaunchOption launchOption)
+        {
+            if (appId == 0)
+                return;
+
+            LanLaunchOptionHint hint = LanLaunchOptionHint.FromLaunchOption(launchOption);
+            lock (_lastLaunchOptionHintLock)
+                _lastLaunchOptionHintByAppId[appId] = hint;
+        }
+
+        private void ClearLastLaunchOptionHint(ulong appId)
+        {
+            if (appId == 0)
+                return;
+
+            lock (_lastLaunchOptionHintLock)
+                _lastLaunchOptionHintByAppId.Remove(appId);
+        }
+
+        private static LanLaunchOptionHint CloneLaunchOptionHint(LanLaunchOptionHint source)
+        {
+            if (source == null)
+                return null;
+
+            return new LanLaunchOptionHint
+            {
+                PreferLibraryPath = source.PreferLibraryPath,
+                Description = source.Description ?? string.Empty,
+                Executable = source.Executable ?? string.Empty,
+                Type = source.Type ?? string.Empty,
+                OsArch = source.OsArch ?? string.Empty,
+                BetaKey = source.BetaKey ?? string.Empty
+            };
         }
 
         private string ResolveLaunchExecutablePath(GameConfig game, LaunchOption launchOption)
