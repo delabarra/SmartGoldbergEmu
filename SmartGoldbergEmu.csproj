@@ -75,6 +75,18 @@
     <Compile Include="Forms\AboutForm.Designer.cs">
       <DependentUpon>AboutForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\LanPlayersForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\LanPlayersForm.Designer.cs">
+      <DependentUpon>LanPlayersForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\LanChatForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\LanChatForm.Designer.cs">
+      <DependentUpon>LanChatForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="Forms\ForkSelectForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -139,9 +151,20 @@
     <Compile Include="Models\ApiKeyStatus.cs" />
     <Compile Include="Models\AppSearchResult.cs" />
     <Compile Include="Models\ApplicationSettings.cs" />
+    <Compile Include="Models\LanPresencePeer.cs" />
+    <Compile Include="Models\LanSeenPeerRecord.cs" />
+    <Compile Include="Models\LanPersonaState.cs" />
+    <Compile Include="Models\LanGameInviteEventArgs.cs" />
+    <Compile Include="Models\LanLaunchOptionHint.cs" />
+    <Compile Include="Models\LanChatMessage.cs" />
+    <Compile Include="Models\LanChatMessageKind.cs" />
+    <Compile Include="Models\LanChatSessionStatus.cs" />
+    <Compile Include="Models\LanChatSessionSnapshot.cs" />
+    <Compile Include="Models\LanChatPacketEventArgs.cs" />
     <Compile Include="Models\GoldbergForkSource.cs" />
     <Compile Include="Models\GoldbergReleaseChannel.cs" />
     <Compile Include="Models\GoldbergLaunchMode.cs" />
+    <Compile Include="Models\LanSteamJoinSupport.cs" />
     <Compile Include="Models\CAchievement.cs" />
     <Compile Include="Models\GameConfig.cs" />
     <Compile Include="Models\AppCatalogSnapshot.cs" />
@@ -191,6 +214,8 @@
     <Compile Include="Constants\AchievementConstants.cs" />
     <Compile Include="Constants\AddGameStatusMessages.cs" />
     <Compile Include="Constants\ApplicationConstants.cs" />
+    <Compile Include="Constants\LanPresenceConstants.cs" />
+    <Compile Include="Constants\LanChatConstants.cs" />
     <Compile Include="Constants\GamesIniKeyNames.cs" />
     <Compile Include="Constants\GoldbergForkConstants.cs" />
     <Compile Include="Constants\AssetConstants.cs" />
@@ -198,6 +223,7 @@
     <Compile Include="Constants\PathConstants.cs" />
     <Compile Include="Constants\SteamStaticCdnConstants.cs" />
     <Compile Include="Constants\SteamPicsKeyNames.cs" />
+    <Compile Include="Constants\SteamCommonRedistributableConstants.cs" />
     <Compile Include="Abstractions\ITaskReportService.cs" />
     <Compile Include="Abstractions\TaskReportDefaults.cs" />
     <Compile Include="Abstractions\IHttpService.cs" />
@@ -208,6 +234,7 @@
     <Compile Include="Generators\TileGenerator.cs" />
     <Compile Include="Generators\StatsGenerator.cs" />
     <Compile Include="Validation\SteamApiValidator.cs" />
+    <Compile Include="Helpers\AuthenticodeHelper.cs" />
     <Compile Include="Helpers\AchievementPreviewHelper.cs" />
     <Compile Include="Helpers\GamesInfosDatasHelper.cs" />
     <Compile Include="Helpers\ApiKeyStatusIndicatorHelper.cs" />
@@ -221,11 +248,23 @@
     <Compile Include="Helpers\DirectoryJunctionHelper.cs" />
     <Compile Include="Helpers\DuplicateGameDialogHelper.cs" />
     <Compile Include="Helpers\RemoveGamesDialogHelper.cs" />
+    <Compile Include="Helpers\MissingGameDependenciesDialogHelper.cs" />
+    <Compile Include="Helpers\GameDependencyLaunchHelper.cs" />
+    <Compile Include="Helpers\SteamRedistributablePresence.cs" />
+    <Compile Include="Models\PendingGameDependency.cs" />
     <Compile Include="Helpers\LoadDllsArchFilter.cs" />
     <Compile Include="Helpers\OverlayNotificationSoundsStaging.cs" />
     <Compile Include="Helpers\SteamClientExtraDllsStaging.cs" />
     <Compile Include="Helpers\ColdClientLoaderIniWriter.cs" />
     <Compile Include="Helpers\WindowsDefenderExclusionHelper.cs" />
+    <Compile Include="Helpers\WindowsUserIdleHelper.cs" />
+    <Compile Include="Helpers\LanChatUiHost.cs" />
+    <Compile Include="Helpers\LanPeerContextMenuHelper.cs" />
+    <Compile Include="Helpers\FlashWindowHelper.cs" />
+    <Compile Include="Helpers\LanPersonaDisplayHelper.cs" />
+    <Compile Include="Helpers\LanWireHelper.cs" />
+    <Compile Include="Helpers\LanAvatarImageHelper.cs" />
+    <Compile Include="Helpers\LanPersonaStateHelper.cs" />
     <Compile Include="Helpers\SteamActiveProcessRegistryHelper.cs" />
     <Compile Include="Helpers\SteamSourceModRegistryHelper.cs" />
     <Compile Include="Helpers\GoldbergReleaseResolveHelper.cs" />
@@ -261,6 +300,7 @@
     <Compile Include="Helpers\HttpHelpers.cs" />
     <Compile Include="Helpers\LargeObjectHeapHelper.cs" />
     <Compile Include="Helpers\PlaceholderTextBoxHelper.cs" />
+    <Compile Include="Helpers\ThemedTabSelector.cs" />
     <Compile Include="Helpers\ThemedToolStripRenderer.cs" />
     <Compile Include="Helpers\ThemedToolStripRendererFactory.cs" />
     <Compile Include="Helpers\ToolTipHelper.cs" />
@@ -318,6 +358,8 @@
     <Compile Include="Services\AppDataKitBridgeService.cs" />
     <Compile Include="Services\AppCatalogSnapshotStore.cs" />
     <Compile Include="Services\SteamProductInfoService.cs" />
+    <Compile Include="Services\SteamInstallScriptService.cs" />
+    <Compile Include="Services\SteamCommonRedistributableDownloadService.cs" />
     <Compile Include="Services\SteamStaticCdnPreferenceService.cs" />
     <Compile Include="Services\StubKitService.cs" />
     <Compile Include="AppDataKit\AppDataJson.cs" />
@@ -344,6 +386,14 @@
     <Compile Include="JsonKit\JsonValueExtensions.cs" />
     <Compile Include="JsonKit\JsonValueKind.cs" />
     <Compile Include="JsonKit\JsonWriter.cs" />
+    <Compile Include="LanKit\FriendGameInfoNative.cs" />
+    <Compile Include="LanKit\LanDiscoverResult.cs" />
+    <Compile Include="LanKit\LanDiscoverStatus.cs" />
+    <Compile Include="LanKit\LanFriendScanStats.cs" />
+    <Compile Include="LanKit\LanJoinArgs.cs" />
+    <Compile Include="LanKit\LanJoinKind.cs" />
+    <Compile Include="LanKit\LanLobbyDiscoverer.cs" />
+    <Compile Include="LanKit\SteamApiNative.cs" />
     <Compile Include="StubKit\BindFinish.cs" />
     <Compile Include="StubKit\ByteMask.cs" />
     <Compile Include="StubKit\DrmpFieldReader.cs" />
@@ -402,6 +452,9 @@
     <Compile Include="SteamKit\Types.cs" />
     <Compile Include="Models\PersistedLaunchSession.cs" />
     <Compile Include="Services\LaunchSessionCleanupService.cs" />
+    <Compile Include="Services\LanPresenceService.cs" />
+    <Compile Include="Services\LanGameJoinService.cs" />
+    <Compile Include="Services\LanChatService.cs" />
     <Compile Include="Services\GameLaunchService.cs" />
     <Compile Include="Services\GameSettingsSaveService.cs" />
     <Compile Include="Services\GameSetupService.cs" />

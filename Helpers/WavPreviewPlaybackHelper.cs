@@ -24,6 +24,29 @@ namespace SmartGoldbergEmu.Helpers
             Filename = 0x00020000,
         }
 
+        public static bool TryPlayFile(string wavPath)
+        {
+            if (string.IsNullOrWhiteSpace(wavPath))
+                return false;
+
+            try
+            {
+                if (!File.Exists(wavPath))
+                    return false;
+            }
+            catch
+            {
+                return false;
+            }
+
+            lock (Sync)
+            {
+                StopLocked();
+                _activeSessionId = -1;
+                return PlaySound(wavPath, IntPtr.Zero, SoundFlags.Async | SoundFlags.Filename | SoundFlags.NoDefault);
+            }
+        }
+
         public static bool TryPlay(int sessionId, string wavPath, Form uiForm, Action<int> onPlaybackEnded)
         {
             if (string.IsNullOrWhiteSpace(wavPath) || uiForm == null)

@@ -1,0 +1,6 @@
+{
+  "path": "h:\\GitHub-Desktop\\SmartGoldbergEmu\\LanKit\\LanLobbyDiscoverer.cs",
+  "old_string": "log?.LogInfo(",
+  "new_string": "log?.LogMessage(",
+  "replace_all": true
+}

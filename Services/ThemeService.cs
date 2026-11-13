@@ -17,6 +17,7 @@ namespace SmartGoldbergEmu.Services
         private const string SoundPreviewPlayStopButtonTag = "SoundPreviewPlayStop";
         internal const string LaunchDialogButtonTag = "LaunchDialogButton";
         private const string ThemedTextBoxTag = "ThemedTextBox";
+        private const string ThemedComboBoxTag = "ThemedComboBox";
         private const string ThemedTabControlTag = "ThemedTabControl";
 
         private ThemeMode _currentTheme;
@@ -25,6 +26,7 @@ namespace SmartGoldbergEmu.Services
         private Timer _systemThemeWatcher;
         private bool _disposed;
         private readonly List<TabControlChromeWindow> _tabChromeWindows = new List<TabControlChromeWindow>();
+        private readonly List<ComboBoxBorderWindow> _comboBorderWindows = new List<ComboBoxBorderWindow>();
 
         public event EventHandler<ThemeChangedEventArgs> ThemeChanged;
 
@@ -87,6 +89,7 @@ namespace SmartGoldbergEmu.Services
                 form.ForeColor = colors.Foreground;
                 ApplyThemeToControls(form.Controls, colors, effectiveTheme);
                 ApplyThemeToMenus(form, colors, effectiveTheme);
+                WinFormsThemePaintHelper.ApplyLightTitleBar(form);
                 // LinkLabel restores the system hyperlink blue after native handle init; re-apply after that.
                 ScheduleLinkColorRefresh(form);
             }
@@ -172,30 +175,36 @@ namespace SmartGoldbergEmu.Services
             {
                 case ThemeMode.Light:
                 {
+                    // Classic WinForms 3D face (.NET 4.x / Vista+). Do not use SystemColors.Control:
+                    // Windows 11 often maps it (and Window) near pure white, so the light theme washes out.
+                    Color classicControl = Color.FromArgb(224, 224, 224);
+                    Color classicControlLight = Color.FromArgb(232, 232, 232);
+                    Color classicControlDark = Color.FromArgb(160, 160, 160);
                     return new ThemeColors
                     {
-                        Background = SystemColors.Control,
+                        Background = classicControl,
                         Foreground = SystemColors.ControlText,
                         FieldBackground = SystemColors.Window,
                         FieldForeground = SystemColors.WindowText,
-                        ControlBackground = SystemColors.Control,
+                        ControlBackground = classicControl,
                         ControlForeground = SystemColors.ControlText,
-                        MenuBackground = SystemColors.Control,
+                        MenuBackground = classicControl,
                         MenuForeground = SystemColors.ControlText,
-                        StatusStripBackground = SystemColors.Control,
+                        StatusStripBackground = classicControl,
                         StatusStripForeground = SystemColors.ControlText,
                         StatusTextSecondary = SystemColors.GrayText,
                         StatusTextAccent = SystemColors.Highlight,
-                        ListViewBackground = SystemColors.Window,
-                        ListViewForeground = SystemColors.WindowText,
-                        ListViewAlternate = SystemColors.Window,
-                        ListViewColumnHeaderBackground = SystemColors.Control,
-                        Border = SystemColors.ControlDark,
+                        OfflineColor = Color.FromArgb(45, 45, 48),
+                        ListViewBackground = classicControl,
+                        ListViewForeground = SystemColors.ControlText,
+                        ListViewAlternate = classicControl,
+                        ListViewColumnHeaderBackground = DarkenRgb(classicControl, 8),
+                        Border = classicControlDark,
                         Highlight = SystemColors.Highlight,
                         HighlightText = SystemColors.HighlightText,
                         LinkColor = SystemColors.HotTrack,
-                        ImageMarginBackground = SystemColors.ControlLight,
-                        DisabledBackground = SystemColors.Control,
+                        ImageMarginBackground = classicControlLight,
+                        DisabledBackground = classicControl,
                         DisabledForeground = SystemColors.GrayText,
                         SuccessColor = Color.FromArgb(0, 150, 0),
                         ErrorColor = Color.FromArgb(200, 0, 0),
@@ -223,6 +232,7 @@ namespace SmartGoldbergEmu.Services
                         StatusStripForeground = Color.FromArgb(255, 255, 255),
                         StatusTextSecondary = Color.FromArgb(200, 200, 200),
                         StatusTextAccent = Color.FromArgb(150, 175, 205),
+                        OfflineColor = Color.FromArgb(88, 88, 92),
                         ListViewBackground = darkControl,
                         ListViewForeground = darkText,
                         ListViewAlternate = Color.FromArgb(45, 45, 48),
@@ -252,7 +262,10 @@ namespace SmartGoldbergEmu.Services
             EnsureNotDisposed();
             ThemeColors colors = GetThemeColors(effectiveTheme);
             background = colors.ListViewBackground;
-            foreground = colors.ListViewForeground;
+            // Light: soft charcoal instead of ControlText black — Steam silhouette is too harsh on gray tiles.
+            foreground = effectiveTheme == ThemeMode.Light
+                ? Color.FromArgb(90, 90, 94)
+                : colors.ListViewForeground;
         }
 
         public bool IsSystemDarkMode()
@@ -309,6 +322,9 @@ namespace SmartGoldbergEmu.Services
                 for (int i = 0; i < _tabChromeWindows.Count; i++)
                     _tabChromeWindows[i].Dispose();
                 _tabChromeWindows.Clear();
+                for (int i = 0; i < _comboBorderWindows.Count; i++)
+                    _comboBorderWindows[i].Dispose();
+                _comboBorderWindows.Clear();
             }
             _disposed = true;
         }
@@ -544,6 +560,57 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // ComboBox has no BorderStyle; draw the same 1px face border TextBox FixedSingle uses.
+        private sealed class ComboBoxBorderWindow : NativeWindow, IDisposable
+        {
+            private const int WmPaint = 0x000F;
+            private readonly ThemeService _owner;
+            private readonly ComboBox _combo;
+            private bool _disposed;
+
+            public ComboBoxBorderWindow(ThemeService owner, ComboBox combo)
+            {
+                _owner = owner;
+                _combo = combo;
+                _combo.HandleCreated += OnHandleCreated;
+                _combo.HandleDestroyed += OnHandleDestroyed;
+                if (_combo.IsHandleCreated)
+                    AssignHandle(_combo.Handle);
+            }
+
+            private void OnHandleCreated(object sender, EventArgs e)
+            {
+                if (!_disposed && _combo.IsHandleCreated)
+                    AssignHandle(_combo.Handle);
+            }
+
+            private void OnHandleDestroyed(object sender, EventArgs e)
+            {
+                if (Handle != IntPtr.Zero)
+                    ReleaseHandle();
+            }
+
+            protected override void WndProc(ref Message m)
+            {
+                base.WndProc(ref m);
+                if (_disposed)
+                    return;
+                if (m.Msg == WmPaint)
+                    _owner.PaintComboBoxBorder(_combo);
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                    return;
+                _disposed = true;
+                _combo.HandleCreated -= OnHandleCreated;
+                _combo.HandleDestroyed -= OnHandleDestroyed;
+                if (Handle != IntPtr.Zero)
+                    ReleaseHandle();
+            }
+        }
+
         private static void ApplyThemeToDataGridView(DataGridView dgv, ThemeColors colors)
         {
             if (dgv == null)
@@ -607,7 +674,9 @@ namespace SmartGoldbergEmu.Services
             {
                 tabControl.BackColor = colors.ControlBackground;
                 tabControl.ForeColor = colors.ControlForeground;
-                EnsureTabControlOwnerDraw(tabControl);
+                // Header-hidden TabControls use ThemedTabSelector buttons instead of owner-draw chrome.
+                if (!ThemedTabSelector.IsHeaderHidden(tabControl))
+                    EnsureTabControlOwnerDraw(tabControl);
                 WinFormsThemePaintHelper.ApplyDisabledVisualStyles(tabControl, dark);
             }
             else if (control is TabPage tabPage)
@@ -641,6 +710,9 @@ namespace SmartGoldbergEmu.Services
             {
                 panel.BackColor = colors.ControlBackground;
                 panel.ForeColor = colors.ControlForeground;
+                // AutoScroll NC bars (FlowLayoutPanel on LAN Players, etc.) need ScrollBar class id — bare Explorer is not enough.
+                if (panel.AutoScroll)
+                    WinFormsThemePaintHelper.ApplyExplorerScrollBars(panel, dark);
             }
             else if (control is GroupBox groupBox)
             {
@@ -664,7 +736,11 @@ namespace SmartGoldbergEmu.Services
             }
             else if (control is Button button)
             {
-                if (!button.Name.StartsWith("btnColor"))
+                if (ThemedTabSelector.IsSelectorButton(button))
+                {
+                    ApplyTabSelectorButtonColors(button, colors);
+                }
+                else if (!button.Name.StartsWith("btnColor"))
                 {
                     bool isSoundPreviewPlayStop = IsSoundPreviewPlayStopButton(button);
                     bool isLaunchDialogButton = IsLaunchDialogButton(button);
@@ -700,40 +776,19 @@ namespace SmartGoldbergEmu.Services
             }
             else if (control is RichTextBox richTextBox)
             {
-                if (richTextBox.ReadOnly || richTextBox.Enabled)
-                {
-                    richTextBox.BackColor = colors.FieldBackground;
-                    richTextBox.ForeColor = colors.FieldForeground;
-                }
-                else
-                {
-                    richTextBox.BackColor = colors.DisabledBackground;
-                    richTextBox.ForeColor = colors.DisabledForeground;
-                }
+                ApplyTextBoxBaseColors(richTextBox, colors);
                 richTextBox.BorderStyle = BorderStyle.FixedSingle;
                 WinFormsThemePaintHelper.ApplyExplorerWindowTheme(richTextBox, dark);
+                EnsureTextBoxBaseThemeHooks(richTextBox);
             }
             else if (control is TextBox textBox)
             {
-                if (!textBox.Name.StartsWith("txtDLCList") && !textBox.Name.StartsWith("color"))
+                if (!IsSpecialCasedTextBox(textBox))
                 {
-                    if (textBox.Enabled)
-                    {
-                        textBox.BackColor = colors.FieldBackground;
-                        textBox.ForeColor = colors.FieldForeground;
-                    }
-                    else
-                    {
-                        textBox.BackColor = colors.DisabledBackground;
-                        textBox.ForeColor = colors.DisabledForeground;
-                    }
+                    ApplyTextBoxBaseColors(textBox, colors);
                     textBox.BorderStyle = BorderStyle.FixedSingle;
                     WinFormsThemePaintHelper.ApplyExplorerWindowTheme(textBox, dark);
-                    if (textBox.Tag?.ToString() != ThemedTextBoxTag)
-                    {
-                        textBox.Tag = ThemedTextBoxTag;
-                        textBox.EnabledChanged += ThemedControl_EnabledChanged;
-                    }
+                    EnsureTextBoxBaseThemeHooks(textBox);
                 }
                 else
                 {
@@ -743,10 +798,10 @@ namespace SmartGoldbergEmu.Services
             }
             else if (control is ComboBox comboBox)
             {
-                comboBox.BackColor = colors.FieldBackground;
-                comboBox.ForeColor = colors.FieldForeground;
+                ApplyComboBoxColors(comboBox, colors);
                 comboBox.FlatStyle = FlatStyle.Flat;
                 WinFormsThemePaintHelper.ApplyExplorerWindowTheme(comboBox, dark);
+                EnsureComboBoxBorder(comboBox);
             }
             else if (control is NumericUpDown numericUpDown)
             {
@@ -771,6 +826,10 @@ namespace SmartGoldbergEmu.Services
             else if (control is ProgressBar progressBar)
             {
                 progressBar.Style = ProgressBarStyle.Continuous;
+            }
+            else if (control is PictureBox pictureBox)
+            {
+                pictureBox.BackColor = colors.ControlBackground;
             }
 
             if (control.HasChildren && !(control is DataGridView))
@@ -889,19 +948,82 @@ namespace SmartGoldbergEmu.Services
                 }
                 button.Invalidate();
             }
-            else if (control is TextBox textBox && !textBox.Name.StartsWith("txtDLCList") && !textBox.Name.StartsWith("color"))
+            else if (control is ComboBox comboBox)
             {
-                if (textBox.Enabled)
-                {
-                    textBox.BackColor = colors.FieldBackground;
-                    textBox.ForeColor = colors.FieldForeground;
-                }
-                else
-                {
-                    textBox.BackColor = colors.DisabledBackground;
-                    textBox.ForeColor = colors.DisabledForeground;
-                }
+                ApplyComboBoxColors(comboBox, colors);
             }
+            else if (control is TextBoxBase textBoxBase)
+            {
+                if (textBoxBase is TextBox special && IsSpecialCasedTextBox(special))
+                    return;
+                ApplyTextBoxBaseColors(textBoxBase, colors);
+            }
+        }
+
+        private static bool IsSpecialCasedTextBox(TextBox textBox)
+        {
+            return textBox != null
+                && (textBox.Name.StartsWith("txtDLCList") || textBox.Name.StartsWith("color"));
+        }
+
+        private static void ApplyTextBoxBaseColors(TextBoxBase box, ThemeColors colors)
+        {
+            if (box.Enabled && !box.ReadOnly)
+            {
+                box.BackColor = colors.FieldBackground;
+                box.ForeColor = colors.FieldForeground;
+                return;
+            }
+
+            box.BackColor = colors.DisabledBackground;
+            box.ForeColor = box.Enabled ? colors.FieldForeground : colors.DisabledForeground;
+        }
+
+        private static void ApplyComboBoxColors(ComboBox comboBox, ThemeColors colors)
+        {
+            if (comboBox.Enabled)
+            {
+                comboBox.BackColor = colors.FieldBackground;
+                comboBox.ForeColor = colors.FieldForeground;
+            }
+            else
+            {
+                comboBox.BackColor = colors.DisabledBackground;
+                comboBox.ForeColor = colors.DisabledForeground;
+            }
+        }
+
+        private void EnsureTextBoxBaseThemeHooks(TextBoxBase box)
+        {
+            if (box.Tag?.ToString() == ThemedTextBoxTag)
+                return;
+            box.Tag = ThemedTextBoxTag;
+            box.EnabledChanged += ThemedControl_EnabledChanged;
+            box.ReadOnlyChanged += ThemedControl_EnabledChanged;
+        }
+
+        private void EnsureComboBoxBorder(ComboBox comboBox)
+        {
+            if (comboBox.Tag?.ToString() == ThemedComboBoxTag)
+                return;
+            comboBox.Tag = ThemedComboBoxTag;
+            comboBox.EnabledChanged += ThemedControl_EnabledChanged;
+            _comboBorderWindows.Add(new ComboBoxBorderWindow(this, comboBox));
+        }
+
+        private void PaintComboBoxBorder(ComboBox comboBox)
+        {
+            if (_disposed || comboBox == null || comboBox.IsDisposed || !comboBox.IsHandleCreated)
+                return;
+
+            Rectangle client = comboBox.ClientRectangle;
+            if (client.Width <= 0 || client.Height <= 0)
+                return;
+
+            ThemeColors colors = GetThemeColors(EffectiveTheme);
+            using (Graphics g = Graphics.FromHwnd(comboBox.Handle))
+            using (var pen = new Pen(colors.Border))
+                g.DrawRectangle(pen, 0, 0, client.Width - 1, client.Height - 1);
         }
 
         private static bool IsSoundPreviewPlayStopButton(Button button)
@@ -913,6 +1035,30 @@ namespace SmartGoldbergEmu.Services
         private static bool IsLaunchDialogButton(Button button)
         {
             return button != null && button.Tag?.ToString() == LaunchDialogButtonTag;
+        }
+
+        private static void ApplyTabSelectorButtonColors(Button button, ThemeColors colors)
+        {
+            bool selected = ThemedTabSelector.IsSelectorButtonSelected(button);
+            if (selected)
+            {
+                button.BackColor = colors.Highlight;
+                button.ForeColor = colors.HighlightText;
+                button.FlatAppearance.BorderColor = colors.Highlight;
+                button.FlatAppearance.MouseOverBackColor = colors.Highlight;
+                button.FlatAppearance.MouseDownBackColor = colors.Highlight;
+            }
+            else
+            {
+                button.BackColor = colors.ControlBackground;
+                button.ForeColor = colors.ControlForeground;
+                button.FlatAppearance.BorderColor = colors.Border;
+                button.FlatAppearance.MouseOverBackColor = colors.Background;
+                button.FlatAppearance.MouseDownBackColor = colors.Background;
+            }
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 1;
+            button.UseVisualStyleBackColor = false;
         }
 
         private void Button_Paint(object sender, PaintEventArgs e)

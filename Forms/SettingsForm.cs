@@ -24,6 +24,8 @@ namespace SmartGoldbergEmu.Forms
         private readonly SteamApiKeyService _apiKeyService;
         private const string SoundPreviewPlaySymbol = "▶";
         private const string SoundPreviewStopSymbol = "⏹";
+        private static readonly Font IconGlyphFont = new Font("Segoe UI Emoji", 9F, FontStyle.Regular, GraphicsUnit.Point);
+        private static readonly Font HintGlyphFont = new Font("Segoe UI Symbol", 10F, FontStyle.Regular, GraphicsUnit.Point);
 
         private readonly object _sound1PreviewSync = new object();
         private readonly object _sound2PreviewSync = new object();
@@ -59,6 +61,9 @@ namespace SmartGoldbergEmu.Forms
         private bool _isApiKeyValidationInProgress = false;
         private readonly Timer _apiKeyValidationClearTimer;
         private const int ApiKeyValidationMessageDisplayMs = 3000;
+        private const int MinClientHeightForButtons = 300;
+        private int _tabControlBottomAreaHeight;
+        private ThemedTabSelector _themedTabSelector;
 
         private enum PendingAvatarChange
         {
@@ -69,6 +74,15 @@ namespace SmartGoldbergEmu.Forms
 
         private PendingAvatarChange _pendingAvatarChange = PendingAvatarChange.None;
         private string _pendingAvatarSourcePath;
+
+        private GroupBox grpLanPlayers;
+        private Label lblLanPersonaStatus;
+        private ComboBox cmbLanPersonaStatus;
+        private Label lblLanCustomStatus;
+        private TextBox txtLanCustomStatus;
+        // Includes Offline (channel off); Online/Away/Busy/Hidden map to LanPersonaState when online.
+        private int _initialLanStatusIndex;
+        private string _initialLanCustomStatus = string.Empty;
 
         public event EventHandler ApiKeyValidationStatusChanged;
 
@@ -94,6 +108,7 @@ namespace SmartGoldbergEmu.Forms
             : base(ResolveThemeService(themeService))
         {
             InitializeComponent();
+            ApplySettingsIconTypography();
             InitializeSaveLocationComboItems();
 
             if (DesignTimeHelper.IsDesignTime)
@@ -116,7 +131,14 @@ namespace SmartGoldbergEmu.Forms
             _apiKeyValidationClearTimer = new Timer { Interval = ApiKeyValidationMessageDisplayMs };
             _apiKeyValidationClearTimer.Tick += OnApiKeyValidationClearTimer_Tick;
 
+            if (tabControl != null)
+            {
+                _themedTabSelector = ThemedTabSelector.Attach(this, tabControl);
+                _themedTabSelector.StripHeightChanged += ThemedTabSelector_StripHeightChanged;
+            }
+
             WireEmulatorTab();
+            EnsureLanPlayersSettingsControls();
 
             InitializeTooltips();
 
@@ -137,6 +159,40 @@ namespace SmartGoldbergEmu.Forms
             {
                 txtSteamID.SelectedIndexChanged += TxtSteamID_SelectedIndexChanged;
             }
+        }
+
+        private void ApplySettingsIconTypography()
+        {
+            ApplyGlyphButtonFont(btnRemoveApiKey);
+            ApplyGlyphButtonFont(btnRemoveSteamIdProfile);
+            ApplyGlyphButtonFont(btnBrowseSavePath);
+            ApplyGlyphButtonFont(btnOpenSaveFolder);
+            ApplyGlyphButtonFont(btnBrowseFont);
+            ApplyGlyphButtonFont(btnSound1Browse);
+            ApplyGlyphButtonFont(btnSound2Browse);
+            ApplyGlyphButtonFont(btnSound1Default);
+            ApplyGlyphButtonFont(btnSound2Default);
+            ApplyGlyphButtonFont(btnResetColorBackground);
+            ApplyGlyphButtonFont(btnResetColorElements);
+            ApplyGlyphButtonFont(btnResetColorHoveredElements);
+            ApplyGlyphButtonFont(btnResetColorActiveElements);
+            ApplyGlyphButtonFont(btnResetNotificationColor);
+            ApplyGlyphButtonFont(btnResetColorStatsBackground);
+            ApplyGlyphButtonFont(btnResetColorStatsText);
+
+            if (lblApiKeyHint != null)
+                lblApiKeyHint.Font = HintGlyphFont;
+
+            if (lblProfileHint != null)
+                lblProfileHint.Font = HintGlyphFont;
+        }
+
+        private static void ApplyGlyphButtonFont(Button button)
+        {
+            if (button == null)
+                return;
+
+            button.Font = IconGlyphFont;
         }
 
         private void LoadSteamIdProfilesIntoCombo()
@@ -497,6 +553,7 @@ namespace SmartGoldbergEmu.Forms
 
             _isLoading = true;
             LoadGoldbergSettings();
+            LoadLanPlayersSettings();
             _previousSaveLocationIndex = cmbSaveLocation.SelectedIndex;
             StoreInitialState();
             WireUpChangeEvents();
@@ -504,6 +561,10 @@ namespace SmartGoldbergEmu.Forms
 
             LoadSteamIdProfilesIntoCombo();
             btnSave.Enabled = false;
+
+            // Bottom area is below the tab control (Save/Cancel). Strip sits above, so use Bottom not Height.
+            _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Bottom);
+            BeginInvoke((Action)(() => AdjustWindowHeightForCurrentTab()));
         }
 
         private void CmbSound1File_SelectedIndexChanged(object sender, EventArgs e)
@@ -603,8 +664,9 @@ namespace SmartGoldbergEmu.Forms
 
             var goldbergResult = SaveGoldbergSettings();
             var avatarResult = await ApplyPendingAvatarAsync().ConfigureAwait(true);
+            var lanResult = SaveLanPlayersSettings();
 
-            if (apiKeyResult.IsValid && goldbergResult.IsSuccess && avatarResult.IsValid)
+            if (apiKeyResult.IsValid && goldbergResult.IsSuccess && avatarResult.IsValid && lanResult.IsValid)
             {
                 if (!string.IsNullOrEmpty(apiKeySkipReason))
                 {
@@ -623,6 +685,17 @@ namespace SmartGoldbergEmu.Forms
                     LoadSteamIdProfilesIntoCombo();
                 }
 
+                try
+                {
+                    ApplicationSettings lanSettings = _appDataService.LoadApplicationSettings();
+                    ServiceLocator.LanPresenceService.SetOnline(lanSettings.LanEnabled);
+                    ServiceLocator.LanPresenceService.ApplyLocalPersonaFromSettings();
+                }
+                catch (Exception ex)
+                {
+                    Program.LogService?.LogDebug("LAN Players: presence refresh after settings save failed: " + ex.Message);
+                }
+
                 StoreInitialState();
                 btnSave.Enabled = false;
                 DialogResult = DialogResult.OK;
@@ -637,6 +710,8 @@ namespace SmartGoldbergEmu.Forms
                     errorMessages.Add($"Goldberg Settings: {goldbergResult.ErrorMessage}");
                 if (!avatarResult.IsValid)
                     errorMessages.Add($"Avatar: {avatarResult.ErrorMessage}");
+                if (!lanResult.IsValid)
+                    errorMessages.Add($"LAN Players: {lanResult.ErrorMessage}");
 
                 FormMessageBoxHelper.ShowIfAlive(this, $"Failed to save some settings:\n{string.Join("\n", errorMessages)}", "Save Settings",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -1576,6 +1651,30 @@ namespace SmartGoldbergEmu.Forms
 
         private void tabControl_SelectedIndexChanged(object sender, EventArgs e)
         {
+            AdjustWindowHeightForCurrentTab();
+        }
+
+        private void ThemedTabSelector_StripHeightChanged(object sender, EventArgs e)
+        {
+            AdjustWindowHeightForCurrentTab();
+        }
+
+        private void AdjustWindowHeightForCurrentTab()
+        {
+            if (tabControl == null || tabControl.SelectedTab == null)
+                return;
+
+            if (_tabControlBottomAreaHeight <= 0)
+                _tabControlBottomAreaHeight = Math.Max(0, ClientSize.Height - tabControl.Bottom);
+
+            int desiredTabPageHeight = TabFormSizingHelper.MeasureTabPageContentHeight(tabControl.SelectedTab);
+            int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
+            int stripHeight = _themedTabSelector != null ? _themedTabSelector.StripHeight : tabControl.Top;
+            int desiredClientHeight = Math.Max(
+                MinClientHeightForButtons,
+                stripHeight + desiredTabPageHeight + tabChromeHeight + _tabControlBottomAreaHeight);
+
+            TabFormSizingHelper.TryApplyFormHeight(this, desiredClientHeight, MinClientHeightForButtons);
         }
 
         private void OnElement_Click(object sender, EventArgs e)
@@ -1678,6 +1777,8 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnThemeApplied()
         {
+            if (_themedTabSelector != null && _themeService != null)
+                _themedTabSelector.ApplyColors(_themeService.GetThemeColors(_themeService.EffectiveTheme));
             ConfigureSoundPreviewPlayStopButtons();
             RefreshApiKeyValidationColor();
         }
@@ -1740,6 +1841,13 @@ namespace SmartGoldbergEmu.Forms
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (_themedTabSelector != null)
+            {
+                _themedTabSelector.StripHeightChanged -= ThemedTabSelector_StripHeightChanged;
+                _themedTabSelector.Dispose();
+                _themedTabSelector = null;
+            }
+
             CancelSound1Preview();
             CancelSound2Preview();
 
@@ -1992,6 +2100,11 @@ namespace SmartGoldbergEmu.Forms
 
             if (_initialMainSettings != null &&
                 !AreEmulatorSettingsEqual(BuildEmulatorSettings(), _initialMainSettings))
+                return true;
+
+            if (ReadLanStatusIndexFromUi() != _initialLanStatusIndex)
+                return true;
+            if (!string.Equals(ReadLanCustomStatusFromUi(), _initialLanCustomStatus ?? string.Empty, StringComparison.Ordinal))
                 return true;
 
             return false;
@@ -2480,9 +2593,184 @@ namespace SmartGoldbergEmu.Forms
                 LocalSavePath = GetPersistedLocalSavePathFromUi(),
                 SavesFolderName = txtSavesFolderName.Text.Trim()
             };
+            _initialLanStatusIndex = ReadLanStatusIndexFromUi();
+            _initialLanCustomStatus = ReadLanCustomStatusFromUi();
             _pendingAvatarChange = PendingAvatarChange.None;
             _pendingAvatarSourcePath = null;
             SyncPersistedSaveLocationFromInitialState();
+        }
+
+        private void EnsureLanPlayersSettingsControls()
+        {
+            if (DesignTimeHelper.IsDesignTime || tabUserAccount == null || grpLanPlayers != null)
+                return;
+
+            grpLanPlayers = new GroupBox
+            {
+                Name = "grpLanPlayers",
+                Text = "LAN Players",
+                Location = new Point(12, 194),
+                Size = new Size(568, 92),
+                Padding = new Padding(12),
+                TabIndex = 1
+            };
+
+            lblLanPersonaStatus = new Label
+            {
+                AutoSize = true,
+                Location = new Point(15, 28),
+                Text = "Status:",
+                Name = "lblLanPersonaStatus"
+            };
+
+            cmbLanPersonaStatus = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(100, 24),
+                Size = new Size(180, 21),
+                Name = "cmbLanPersonaStatus"
+            };
+            cmbLanPersonaStatus.Items.AddRange(new object[] { "Online", "Away", "Busy", "Hidden", "Offline" });
+            cmbLanPersonaStatus.SelectedIndex = 0;
+
+            lblLanCustomStatus = new Label
+            {
+                AutoSize = true,
+                Location = new Point(15, 58),
+                Text = "Custom status:",
+                Name = "lblLanCustomStatus"
+            };
+
+            txtLanCustomStatus = new TextBox
+            {
+                Location = new Point(100, 54),
+                Size = new Size(435, 20),
+                MaxLength = LanPresenceConstants.MaxCustomStatusChars,
+                Name = "txtLanCustomStatus"
+            };
+
+            grpLanPlayers.Controls.Add(lblLanPersonaStatus);
+            grpLanPlayers.Controls.Add(cmbLanPersonaStatus);
+            grpLanPlayers.Controls.Add(lblLanCustomStatus);
+            grpLanPlayers.Controls.Add(txtLanCustomStatus);
+            tabUserAccount.Controls.Add(grpLanPlayers);
+
+            if (grpSteamWebApi != null)
+            {
+                grpSteamWebApi.Location = new Point(12, 298);
+                grpSteamWebApi.TabIndex = 2;
+            }
+
+            cmbLanPersonaStatus.SelectedIndexChanged += (s, e) =>
+            {
+                if (!_isLoading)
+                    CheckForChanges();
+            };
+            txtLanCustomStatus.TextChanged += (s, e) =>
+            {
+                if (!_isLoading)
+                    CheckForChanges();
+            };
+        }
+
+        private void LoadLanPlayersSettings()
+        {
+            EnsureLanPlayersSettingsControls();
+            if (cmbLanPersonaStatus == null)
+                return;
+
+            try
+            {
+                ApplicationSettings settings = _appDataService.LoadApplicationSettings();
+                cmbLanPersonaStatus.SelectedIndex = ResolveLanStatusIndex(settings);
+                txtLanCustomStatus.Text = settings.LanCustomStatus ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                LogRedactionHelper.WriteDebug("Failed to load LAN Players settings: " + ex.Message);
+                cmbLanPersonaStatus.SelectedIndex = 0;
+                txtLanCustomStatus.Text = string.Empty;
+            }
+        }
+
+        private ValidationResult SaveLanPlayersSettings()
+        {
+            try
+            {
+                ApplicationSettings settings = _appDataService.LoadApplicationSettings();
+                ApplyLanStatusFromUi(settings);
+                settings.LanCustomStatus = ReadLanCustomStatusFromUi();
+                return _appDataService.SaveApplicationSettings(settings);
+            }
+            catch (Exception ex)
+            {
+                return ValidationResult.Failure(ex.Message);
+            }
+        }
+
+        // 0 Online, 1 Away, 2 Busy, 3 Hidden, 4 Offline (channel off; persona unchanged).
+        private static int ResolveLanStatusIndex(ApplicationSettings settings)
+        {
+            if (settings == null || !settings.LanEnabled)
+                return 4;
+            switch (settings.LanPersonaState)
+            {
+                case LanPersonaState.Away:
+                    return 1;
+                case LanPersonaState.Busy:
+                    return 2;
+                case LanPersonaState.Hidden:
+                    return 3;
+                default:
+                    return 0;
+            }
+        }
+
+        private int ReadLanStatusIndexFromUi()
+        {
+            if (cmbLanPersonaStatus == null)
+                return 0;
+            int index = cmbLanPersonaStatus.SelectedIndex;
+            if (index < 0 || index > 4)
+                return 0;
+            return index;
+        }
+
+        private void ApplyLanStatusFromUi(ApplicationSettings settings)
+        {
+            int index = ReadLanStatusIndexFromUi();
+            if (index == 4)
+            {
+                settings.LanEnabled = false;
+                return;
+            }
+
+            settings.LanEnabled = true;
+            switch (index)
+            {
+                case 1:
+                    settings.LanPersonaState = LanPersonaState.Away;
+                    break;
+                case 2:
+                    settings.LanPersonaState = LanPersonaState.Busy;
+                    break;
+                case 3:
+                    settings.LanPersonaState = LanPersonaState.Hidden;
+                    break;
+                default:
+                    settings.LanPersonaState = LanPersonaState.Online;
+                    break;
+            }
+        }
+
+        private string ReadLanCustomStatusFromUi()
+        {
+            if (txtLanCustomStatus == null || string.IsNullOrWhiteSpace(txtLanCustomStatus.Text))
+                return string.Empty;
+            string value = txtLanCustomStatus.Text.Trim();
+            if (value.Length > LanPresenceConstants.MaxCustomStatusChars)
+                return value.Substring(0, LanPresenceConstants.MaxCustomStatusChars);
+            return value;
         }
 
         private static string ResolveSteamIdFromCombo(ComboBox combo)

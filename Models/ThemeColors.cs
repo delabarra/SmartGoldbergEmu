@@ -6,7 +6,7 @@ namespace SmartGoldbergEmu.Models
     {
         public Color Background { get; set; }
         public Color Foreground { get; set; }
-        // Text boxes, combo boxes, numeric inputs, and list boxes (classic light UI: window white on gray dialogs).
+        // Text boxes, combo boxes, numeric inputs, and list boxes (window white on classic gray dialogs).
         public Color FieldBackground { get; set; }
         // Text on FieldBackground (WinForms WindowText on Window).
         public Color FieldForeground { get; set; }
@@ -18,6 +18,8 @@ namespace SmartGoldbergEmu.Models
         public Color StatusStripForeground { get; set; }
         public Color StatusTextSecondary { get; set; }
         public Color StatusTextAccent { get; set; }
+        // Local-only LAN self row when status is Offline or Hidden (graphite).
+        public Color OfflineColor { get; set; }
         public Color ListViewBackground { get; set; }
         public Color ListViewForeground { get; set; }
         public Color ListViewAlternate { get; set; }

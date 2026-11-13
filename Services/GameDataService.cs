@@ -131,6 +131,9 @@ namespace SmartGoldbergEmu.Services
                     case GamesIniKeyNames.GoldbergLaunchMode:
                         current.LaunchMode = ParseGoldbergLaunchModeFromIni(value);
                         break;
+                    case GamesIniKeyNames.LanSteamJoinSupport:
+                        current.LanSteamJoinSupport = ParseLanSteamJoinSupportFromIni(value);
+                        break;
                 }
             }
 
@@ -185,6 +188,8 @@ namespace SmartGoldbergEmu.Services
                     lines.Add($"{GamesIniKeyNames.GameGuidWrite}={game.GameGuid}");
                     if (game.LaunchMode != GoldbergLaunchMode.SteamClient)
                         lines.Add($"{GamesIniKeyNames.GoldbergLaunchModeWrite}={game.LaunchMode}");
+                    if (game.LanSteamJoinSupport != LanSteamJoinSupport.Default)
+                        lines.Add($"{GamesIniKeyNames.LanSteamJoinSupportWrite}={game.LanSteamJoinSupport}");
                     lines.Add("");
                 }
 
@@ -460,6 +465,29 @@ namespace SmartGoldbergEmu.Services
                 LogRedactionHelper.WriteDebug($"{debugPrefix}: {ex.Message}");
                 return null;
             }
+        }
+
+        private static LanSteamJoinSupport ParseLanSteamJoinSupportFromIni(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return LanSteamJoinSupport.Default;
+            if (value.Equals("On", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Enabled", StringComparison.OrdinalIgnoreCase)
+                || value == "1")
+            {
+                return LanSteamJoinSupport.On;
+            }
+
+            if (value.Equals("Off", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("Disabled", StringComparison.OrdinalIgnoreCase)
+                || value == "2")
+            {
+                return LanSteamJoinSupport.Off;
+            }
+
+            if (Enum.TryParse(value, true, out LanSteamJoinSupport parsed))
+                return parsed;
+            return LanSteamJoinSupport.Default;
         }
 
         private static GoldbergLaunchMode ParseGoldbergLaunchModeFromIni(string value)

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Microsoft.Win32;
 using SmartGoldbergEmu.Constants;
 using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
@@ -254,6 +255,96 @@ namespace SmartGoldbergEmu.Tests.Services
         }
 
         [Fact]
+        public void LaunchGame_steam_dll_mode_skips_sourcemod_and_does_not_deploy_steam_api()
+        {
+            using (var harness = new LaunchDeployTestHarness())
+            {
+                string gameFolder = TestFileHelper.CreateTempDirectory("sge-game-steamdll-sourcemod-");
+                try
+                {
+                    harness.CreateGameInstall(gameFolder, out string executablePath);
+                    harness.StageGoldbergSteamDll();
+
+                    string previousSourceMod = ReadSourceModInstallPath();
+                    string exeDirectoryFull = Path.GetFullPath(gameFolder);
+
+                    var game = harness.CreateGameConfig(
+                        LaunchDeployTestHarness.DefaultTestAppId,
+                        gameFolder,
+                        executablePath,
+                        GoldbergLaunchMode.SteamDllBesideExe,
+                        parameters: "/c ping 127.0.0.1 -n 4 > nul");
+
+                    var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
+                    Assert.True(result.IsValid, result.ErrorMessage);
+
+                    string currentSourceMod = ReadSourceModInstallPath();
+                    Assert.NotEqual(
+                        exeDirectoryFull,
+                        currentSourceMod ?? string.Empty,
+                        StringComparer.OrdinalIgnoreCase);
+                    if (previousSourceMod != null)
+                        Assert.Equal(previousSourceMod, currentSourceMod);
+
+                    Assert.False(
+                        File.Exists(Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll64))
+                        || File.Exists(Path.Combine(gameFolder, PathConstants.GoldbergStandardSteamApiDll32)),
+                        "Steam.dll mode must not deploy experimental steam_api.");
+
+                    bool exited = LaunchDeployTestHarness.WaitUntil(
+                        () => !harness.LaunchService.IsGameRunning(game.AppId, game),
+                        timeoutMs: 25000);
+                    Assert.True(exited, "Expected game process to exit.");
+                }
+                finally
+                {
+                    try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                }
+            }
+        }
+
+        [Fact]
+        public void LaunchGame_steamclient_mode_deploys_both_steamclient_arches()
+        {
+            using (var harness = new LaunchDeployTestHarness())
+            {
+                string gameFolder = TestFileHelper.CreateTempDirectory("sge-game-steamclient-both-");
+                try
+                {
+                    harness.CreateGameInstall(gameFolder, out string executablePath);
+                    harness.StageSteamClientGoldbergFiles();
+
+                    var game = harness.CreateGameConfig(
+                        LaunchDeployTestHarness.DefaultTestAppId,
+                        gameFolder,
+                        executablePath,
+                        GoldbergLaunchMode.SteamClient,
+                        parameters: "/c ping 127.0.0.1 -n 4 > nul");
+
+                    var result = harness.LaunchService.LaunchGame(game, useEmulator: true);
+                    Assert.True(result.IsValid, result.ErrorMessage);
+
+                    string gameLibrary = PathConstants.GetGameFolder(LaunchDeployTestHarness.DefaultTestAppId);
+                    Assert.True(File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll32)));
+                    Assert.True(File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64)));
+                    Assert.True(File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergGameOverlayRendererDll32)));
+                    Assert.True(File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergGameOverlayRendererDll64)));
+
+                    bool cleaned = LaunchDeployTestHarness.WaitUntil(
+                        () => !File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll64))
+                            && !File.Exists(Path.Combine(gameLibrary, PathConstants.GoldbergSteamClientDll32)),
+                        timeoutMs: 25000);
+
+                    Assert.True(cleaned, "Expected SteamClient session cleanup to remove steamclient from the game library folder.");
+                }
+                finally
+                {
+                    try { Directory.Delete(gameFolder, recursive: true); } catch { }
+                }
+            }
+        }
+
+        [Fact]
         public void LaunchGame_coldclient_mode_writes_loader_ini_and_deploys_steamclient()
         {
             using (var harness = new LaunchDeployTestHarness())
@@ -361,6 +452,12 @@ namespace SmartGoldbergEmu.Tests.Services
                     catch { }
                 }
             }
+        }
+
+        private static string ReadSourceModInstallPath()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(SteamClientRegistryKeyPaths.CurrentUserSteamClient))
+                return key?.GetValue(SteamClientRegistryValueNames.SourceModInstallPath)?.ToString();
         }
 
         [Fact]

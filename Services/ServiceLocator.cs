@@ -56,6 +56,10 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<GameDisplayService> _gameDisplayService = new Lazy<GameDisplayService>();
         private static readonly Lazy<LaunchSessionCleanupService> _launchSessionCleanupService = new Lazy<LaunchSessionCleanupService>();
         private static readonly Lazy<GameLaunchService> _gameLaunchService = new Lazy<GameLaunchService>();
+        private static readonly Lazy<SteamInstallScriptService> _steamInstallScriptService =
+            new Lazy<SteamInstallScriptService>();
+        private static readonly Lazy<SteamCommonRedistributableDownloadService> _steamCommonRedistributableDownloadService =
+            new Lazy<SteamCommonRedistributableDownloadService>();
         private static readonly Lazy<SteamProductInfoService> _steamProductInfoService = new Lazy<SteamProductInfoService>();
         private static readonly Lazy<AppDataKitBridgeService> _appDataKitBridgeService = new Lazy<AppDataKitBridgeService>();
         private static readonly Lazy<GameSetupService> _gameSetupService = new Lazy<GameSetupService>();
@@ -85,6 +89,9 @@ namespace SmartGoldbergEmu.Services
         private static readonly Lazy<GameSaveWriter> _gameSaveWriter = new Lazy<GameSaveWriter>();
         private static readonly Lazy<StubKitService> _stubKitService = new Lazy<StubKitService>();
         private static readonly Lazy<SteamInterfacesService> _steamInterfacesService = new Lazy<SteamInterfacesService>();
+        private static readonly Lazy<LanPresenceService> _lanPresenceService = new Lazy<LanPresenceService>();
+        private static readonly Lazy<LanGameJoinService> _lanGameJoinService = new Lazy<LanGameJoinService>();
+        private static readonly Lazy<LanChatService> _lanChatService = new Lazy<LanChatService>();
 
         public static ILogService LogService => _logService.Value;
 
@@ -121,6 +128,11 @@ namespace SmartGoldbergEmu.Services
         public static LaunchSessionCleanupService LaunchSessionCleanupService => _launchSessionCleanupService.Value;
 
         public static GameLaunchService GameLaunchService => _gameLaunchService.Value;
+
+        public static SteamInstallScriptService SteamInstallScriptService => _steamInstallScriptService.Value;
+
+        public static SteamCommonRedistributableDownloadService SteamCommonRedistributableDownloadService =>
+            _steamCommonRedistributableDownloadService.Value;
 
         public static GameSetupService GameSetupService => _gameSetupService.Value;
 
@@ -204,11 +216,44 @@ namespace SmartGoldbergEmu.Services
 
         public static SteamInterfacesService SteamInterfacesService => _steamInterfacesService.Value;
 
+        public static LanPresenceService LanPresenceService => _lanPresenceService.Value;
+
+        public static LanGameJoinService LanGameJoinService => _lanGameJoinService.Value;
+
+        public static LanChatService LanChatService => _lanChatService.Value;
+
         // Idempotent. Prefer calling from MainForm close (dispose-then-close); Program also calls after the message loop as a safety net.
         // Order: cancel app lifetime → cancel delayed launch work → dispose Steam/images/theme → drop TaskReportService ref.
         internal static void DisposeApplicationResources()
         {
             CancelApplicationLifetime();
+
+            try
+            {
+                if (_lanChatService.IsValueCreated)
+                    _lanChatService.Value.Dispose();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (_lanGameJoinService.IsValueCreated)
+                    _lanGameJoinService.Value.Dispose();
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (_lanPresenceService.IsValueCreated)
+                    _lanPresenceService.Value.Dispose();
+            }
+            catch
+            {
+            }
 
             try
             {

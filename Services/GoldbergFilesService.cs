@@ -305,6 +305,51 @@ namespace SmartGoldbergEmu.Services
             }
         }
 
+        // Append a LAN/VPN peer IP for Goldberg friend discovery when UDP broadcast cannot reach them.
+        public SaveResult EnsureIpInCustomBroadcasts(ulong appId, string ipAddress)
+        {
+            if (string.IsNullOrWhiteSpace(ipAddress))
+                return SaveResult.Failure("IP address is required.");
+
+            string ip = ipAddress.Trim();
+            System.Net.IPAddress parsed;
+            if (!System.Net.IPAddress.TryParse(ip, out parsed) || parsed == null)
+                return SaveResult.Failure("IP address is invalid.");
+            if (System.Net.IPAddress.IsLoopback(parsed))
+                return SaveResult.Success(0);
+
+            try
+            {
+                var path = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergCustomBroadcastsFileName);
+                if (!File.Exists(path))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    File.WriteAllLines(path, new[] { ip });
+                    return SaveResult.Success(1);
+                }
+
+                string[] existing = File.ReadAllLines(path);
+                for (int i = 0; i < existing.Length; i++)
+                {
+                    string line = existing[i] != null ? existing[i].Trim() : string.Empty;
+                    if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                        continue;
+                    if (string.Equals(line, ip, StringComparison.OrdinalIgnoreCase))
+                        return SaveResult.Success(0);
+                }
+
+                var updated = new List<string>(existing.Length + 1);
+                updated.AddRange(existing);
+                updated.Add(ip);
+                File.WriteAllLines(path, updated);
+                return SaveResult.Success(1);
+            }
+            catch (Exception ex)
+            {
+                return SaveResult.Failure($"Failed to update {PathConstants.GoldbergCustomBroadcastsFileName}: {ex.Message}");
+            }
+        }
+
         #endregion
 
         #region Subscribed Groups
@@ -405,14 +450,48 @@ namespace SmartGoldbergEmu.Services
 
         #endregion
 
-        #region Auto Accept Invite
+        #region Auto Accept / Auto Send Invites
 
         // Returns null when the file is missing; an empty string means the file exists and accepts invites from anyone.
         public string LoadAutoAcceptInvite(ulong appId)
         {
+            return LoadInviteListFile(appId, PathConstants.GoldbergAutoAcceptInviteFileName);
+        }
+
+        // null deletes the file; empty or whitespace writes an empty file, which Goldberg treats as "accept invites from anyone".
+        public SaveResult SaveAutoAcceptInvite(ulong appId, string content)
+        {
+            return SaveInviteListFile(appId, PathConstants.GoldbergAutoAcceptInviteFileName, content);
+        }
+
+        // Returns null when missing; empty file means send to all same-AppId friends (Detanup).
+        public string LoadAutoSendInvites(ulong appId)
+        {
+            return LoadInviteListFile(appId, PathConstants.GoldbergAutoSendInvitesFileName);
+        }
+
+        // null deletes the file; empty writes an empty allow-all send file.
+        public SaveResult SaveAutoSendInvites(ulong appId, string content)
+        {
+            return SaveInviteListFile(appId, PathConstants.GoldbergAutoSendInvitesFileName, content);
+        }
+
+        // Missing → create with steamId. Empty allow-all file → leave. Allowlist → append if missing.
+        public SaveResult EnsureSteamIdInAutoAcceptInvite(ulong appId, string steamId64)
+        {
+            return EnsureSteamIdInInviteListFile(appId, PathConstants.GoldbergAutoAcceptInviteFileName, steamId64);
+        }
+
+        public SaveResult EnsureSteamIdInAutoSendInvites(ulong appId, string steamId64)
+        {
+            return EnsureSteamIdInInviteListFile(appId, PathConstants.GoldbergAutoSendInvitesFileName, steamId64);
+        }
+
+        private string LoadInviteListFile(ulong appId, string fileName)
+        {
             try
             {
-                var path = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergAutoAcceptInviteFileName);
+                var path = Path.Combine(GetGameSteamSettingsPath(appId), fileName);
                 if (File.Exists(path))
                 {
                     var lines = File.ReadAllLines(path);
@@ -421,17 +500,16 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
-                ServiceLocator.LogService?.LogError($"Failed to load {PathConstants.GoldbergAutoAcceptInviteFileName}: {ex.Message}", ex);
+                ServiceLocator.LogService?.LogError($"Failed to load {fileName}: {ex.Message}", ex);
             }
             return null;
         }
 
-        // null deletes the file; empty or whitespace writes an empty file, which Goldberg treats as "accept invites from anyone".
-        public SaveResult SaveAutoAcceptInvite(ulong appId, string content)
+        private SaveResult SaveInviteListFile(ulong appId, string fileName, string content)
         {
             try
             {
-                var path = Path.Combine(GetGameSteamSettingsPath(appId), PathConstants.GoldbergAutoAcceptInviteFileName);
+                var path = Path.Combine(GetGameSteamSettingsPath(appId), fileName);
                 if (content == null)
                 {
                     if (File.Exists(path))
@@ -450,7 +528,51 @@ namespace SmartGoldbergEmu.Services
             }
             catch (Exception ex)
             {
-                return SaveResult.Failure($"Failed to save {PathConstants.GoldbergAutoAcceptInviteFileName}: {ex.Message}");
+                return SaveResult.Failure($"Failed to save {fileName}: {ex.Message}");
+            }
+        }
+
+        private SaveResult EnsureSteamIdInInviteListFile(ulong appId, string fileName, string steamId64)
+        {
+            if (string.IsNullOrWhiteSpace(steamId64))
+                return SaveResult.Failure("Steam ID is required.");
+
+            string id = steamId64.Trim();
+            try
+            {
+                var path = Path.Combine(GetGameSteamSettingsPath(appId), fileName);
+                if (!File.Exists(path))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    File.WriteAllLines(path, new[] { id });
+                    return SaveResult.Success(1);
+                }
+
+                string[] existing = File.ReadAllLines(path);
+                bool hasNonCommentId = false;
+                for (int i = 0; i < existing.Length; i++)
+                {
+                    string line = existing[i] != null ? existing[i].Trim() : string.Empty;
+                    if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                        continue;
+                    hasNonCommentId = true;
+                    if (string.Equals(line, id, StringComparison.Ordinal))
+                        return SaveResult.Success(0);
+                }
+
+                // Empty (or comments-only) file means allow-all for accept/send — do not narrow it.
+                if (!hasNonCommentId)
+                    return SaveResult.Success(0);
+
+                var updated = new List<string>(existing.Length + 1);
+                updated.AddRange(existing);
+                updated.Add(id);
+                File.WriteAllLines(path, updated);
+                return SaveResult.Success(1);
+            }
+            catch (Exception ex)
+            {
+                return SaveResult.Failure($"Failed to update {fileName}: {ex.Message}");
             }
         }
 

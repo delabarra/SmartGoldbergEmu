@@ -36,6 +36,16 @@ namespace SmartGoldbergEmu.Models
             return IsRestrictedLaunchOptionType(Type);
         }
 
+        // Steam config.launch type "none" with no description: silent OS/arch routing.
+        // type=none with a description is still a selectable Steam launch option.
+        public bool IsSteamPlatformAutoLaunchType()
+        {
+            if (string.IsNullOrEmpty(Type) ||
+                !Type.Equals(SteamPicsKeyNames.LaunchOptionTypeNone, StringComparison.OrdinalIgnoreCase))
+                return false;
+            return string.IsNullOrWhiteSpace(Description);
+        }
+
         public static bool IsRestrictedLaunchOptionType(string type)
         {
             if (string.IsNullOrEmpty(type))

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using SmartGoldbergEmu.Constants;
+using SmartGoldbergEmu.Helpers;
 using SmartGoldbergEmu.Models;
 using SmartGoldbergEmu.Services;
 
@@ -44,13 +45,16 @@ namespace SmartGoldbergEmu.Validation
             return false;
         }
 
-        // Filename-specific or cross-name hash match against the Valve steam_api catalog.
+        // Hash catalog first; unknown builds are clean only with a trusted Valve Authenticode signature.
         public static bool IsKnownGoodValveSteamApi(string path)
         {
             if (IsOriginalSteamApi(path))
                 return true;
 
-            return TryGetKnownGoodWindowsSteamApiBitness(path, out _);
+            if (TryGetKnownGoodWindowsSteamApiBitness(path, out _))
+                return true;
+
+            return IsValveAuthenticodeSigned(path);
         }
 
         private static string ComputeSha256Hex(string path)
@@ -1022,12 +1026,8 @@ namespace SmartGoldbergEmu.Validation
                     if (IsIgnoredSteamApiFile(filePath))
                         continue;
 
-                    if (IsKnownGoodValveSteamApi(filePath) ||
-                        TryGetKnownGoodWindowsSteamApiBitness(filePath, out _) ||
-                        IsLikelyOfficialSteamClientApi(filePath))
-                    {
+                    if (IsKnownGoodValveSteamApi(filePath))
                         cleanBackups.Add(filePath);
-                    }
                 }
             }
             catch (Exception ex)
@@ -1052,13 +1052,40 @@ namespace SmartGoldbergEmu.Validation
             if (TryGetKnownGoodWindowsSteamApiBitness(backupPath, out bool detectedIs64))
                 return detectedIs64 == targetIs64Bit;
 
-            if (!IsLikelyOfficialSteamClientApi(backupPath))
+            // Valve-signed but not in the hash catalog — bitness from the file name.
+            if (!IsValveAuthenticodeSigned(backupPath))
                 return false;
 
             if (!TryInferWindowsSteamApiBitnessFromFileName(backupPath, out bool inferredIs64))
                 return false;
 
             return inferredIs64 == targetIs64Bit;
+        }
+
+        // WinVerifyTrust OK and signer subject is Valve Corp. (ProductName alone is not authority).
+        private static bool IsValveAuthenticodeSigned(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return false;
+
+            try
+            {
+                if (IsIgnoredSteamApiFile(path))
+                    return false;
+
+                if (!AuthenticodeHelper.IsTrustedSignedFile(path))
+                    return false;
+
+                string subject;
+                if (!AuthenticodeHelper.TryGetSignerSubject(path, out subject) || string.IsNullOrEmpty(subject))
+                    return false;
+
+                return subject.IndexOf("CN=Valve Corp.", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // Filename matches *steam_api*.dll* (steam_api before .dll; trailing suffix allowed).

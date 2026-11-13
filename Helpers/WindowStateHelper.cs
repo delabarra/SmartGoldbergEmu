@@ -78,26 +78,59 @@ namespace SmartGoldbergEmu.Helpers
             if (appDataService == null)
                 throw new ArgumentNullException(nameof(appDataService));
 
-            try
-            {
-                if (form.WindowState == FormWindowState.Minimized)
-                {
-                    return;
-                }
+            SaveFormWindowState(form, appDataService.SetWindowState, "Failed to save window state");
+        }
 
-                var windowState = new WindowState
-                {
-                    Size = form.Size,
-                    Location = form.Location,
-                    State = form.WindowState
-                };
+        // Restores LAN list layout from ui_settings.ini. Returns false when caller should use its default placement.
+        public static bool TryRestoreLanListWindowState(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
 
-                appDataService.SetWindowState(windowState);
-            }
-            catch (Exception ex)
-            {
-                Program.LogService?.LogError($"Failed to save window state: {ex.Message}");
-            }
+            return TryRestoreAuxiliaryWindowState(
+                form,
+                appDataService.HasPersistedLanListWindowLayout,
+                appDataService.GetLanListWindowState,
+                appDataService.HasPersistedLanListWindowLocation,
+                "Failed to restore LAN list window state");
+        }
+
+        // Restores LAN chat layout from ui_settings.ini. Returns false when caller should use its default placement.
+        public static bool TryRestoreLanChatWindowState(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
+
+            return TryRestoreAuxiliaryWindowState(
+                form,
+                appDataService.HasPersistedLanChatWindowLayout,
+                appDataService.GetLanChatWindowState,
+                appDataService.HasPersistedLanChatWindowLocation,
+                "Failed to restore LAN chat window state");
+        }
+
+        public static void SaveLanChatWindowState(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
+
+            SaveFormWindowState(form, appDataService.SetLanChatWindowState, "Failed to save LAN chat window state");
+        }
+
+        public static void SaveLanListWindowState(Form form, AppDataService appDataService)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+            if (appDataService == null)
+                throw new ArgumentNullException(nameof(appDataService));
+
+            SaveFormWindowState(form, appDataService.SetLanListWindowState, "Failed to save LAN list window state");
         }
 
         public static void CenterFormOnScreen(Form form)
@@ -122,6 +155,26 @@ namespace SmartGoldbergEmu.Helpers
             }
         }
 
+        public static void CenterFormOnParent(Form form, Form parent)
+        {
+            if (form == null || parent == null || parent.IsDisposed)
+                return;
+
+            try
+            {
+                form.StartPosition = FormStartPosition.Manual;
+                int x = parent.Location.X + Math.Max(0, (parent.Width - form.Width) / 2);
+                int y = parent.Location.Y + Math.Max(0, (parent.Height - form.Height) / 2);
+                form.Location = new Point(x, y);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
         public static bool IsLocationValid(Point location)
         {
             try
@@ -140,6 +193,142 @@ namespace SmartGoldbergEmu.Helpers
                 return false;
             }
         }
+
+        private static bool TryRestoreAuxiliaryWindowState(
+            Form form,
+            Func<bool> hasPersistedLayout,
+            Func<WindowState> getWindowState,
+            Func<bool> hasPersistedLocation,
+            string failureLogPrefix)
+        {
+            try
+            {
+                if (!hasPersistedLayout())
+                    return false;
+
+                var windowState = getWindowState();
+                if (windowState == null)
+                    return false;
+
+                bool applied = false;
+
+                if (windowState.Size.Width > 0 && windowState.Size.Height > 0)
+                {
+                    var size = windowState.Size;
+                    size.Width = Math.Max(size.Width, form.MinimumSize.Width);
+                    size.Height = Math.Max(size.Height, form.MinimumSize.Height);
+                    form.Size = size;
+                    applied = true;
+                }
+
+                if (hasPersistedLocation() && IsLocationValid(windowState.Location))
+                {
+                    form.StartPosition = FormStartPosition.Manual;
+                    form.Location = windowState.Location;
+                    applied = true;
+                }
+                else if (applied)
+                {
+                    // Size restored but no usable location — caller applies default placement.
+                    return false;
+                }
+
+                if (windowState.State == FormWindowState.Maximized ||
+                    windowState.State == FormWindowState.Minimized ||
+                    windowState.State == FormWindowState.Normal)
+                {
+                    form.WindowState = windowState.State;
+                    applied = true;
+                }
+
+                return applied;
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"{failureLogPrefix}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static void SaveFormWindowState(
+            Form form,
+            Func<WindowState, ValidationResult> persist,
+            string failureLogPrefix)
+        {
+            try
+            {
+                if (form.WindowState == FormWindowState.Minimized)
+                    return;
+
+                var windowState = new WindowState
+                {
+                    Size = form.Size,
+                    Location = form.Location,
+                    State = form.WindowState
+                };
+
+                persist(windowState);
+            }
+            catch (Exception ex)
+            {
+                Program.LogService?.LogError($"{failureLogPrefix}: {ex.Message}");
+            }
+        }
+    }
+
+    internal static class TabFormSizingHelper
+    {
+        internal const int DefaultContentPadding = 8;
+
+        internal static int MeasureTabPageContentHeight(TabPage tabPage, int contentPadding = DefaultContentPadding)
+        {
+            if (tabPage == null)
+                return 0;
+
+            int contentBottom = tabPage.Padding.Top;
+            foreach (Control child in tabPage.Controls)
+            {
+                if (!child.Visible)
+                    continue;
+
+                contentBottom = Math.Max(contentBottom, child.Bottom);
+            }
+
+            return contentBottom + tabPage.Padding.Bottom + contentPadding;
+        }
+
+        internal static int CalculateDesiredClientHeight(
+            TabControl tabControl,
+            TabPage selectedTab,
+            int tabControlBottomAreaHeight,
+            int minClientHeight,
+            int contentPadding = DefaultContentPadding)
+        {
+            if (tabControl == null || selectedTab == null)
+                return minClientHeight;
+
+            int desiredTabPageHeight = MeasureTabPageContentHeight(selectedTab, contentPadding);
+            int tabChromeHeight = Math.Max(0, tabControl.Height - tabControl.DisplayRectangle.Height);
+            int desiredTabControlHeight = desiredTabPageHeight + tabChromeHeight;
+            return Math.Max(minClientHeight, desiredTabControlHeight + tabControlBottomAreaHeight);
+        }
+
+        internal static bool TryApplyFormHeight(Form form, int desiredClientHeight, int minClientHeight)
+        {
+            if (form == null)
+                return false;
+
+            int nonClientHeight = form.Height - form.ClientSize.Height;
+            int minFormHeight = minClientHeight + nonClientHeight;
+            if (form.MinimumSize.Height < minFormHeight)
+                form.MinimumSize = new Size(form.MinimumSize.Width, minFormHeight);
+
+            int desiredFormHeight = desiredClientHeight + nonClientHeight;
+            if (Math.Abs(form.Height - desiredFormHeight) <= 1)
+                return false;
+
+            form.Height = desiredFormHeight;
+            return true;
+        }
     }
 }
-

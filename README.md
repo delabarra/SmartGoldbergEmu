@@ -16,6 +16,11 @@ Streamlines and automates the configuration process for the Goldberg Emulator an
 - **User Profiles**: Create and switch between profiles (Steam ID and save data only).
 - **SteamStub**: Automatically handled while keeping SCF intact after execution.
 
+## What's New
+
+- **Missing game dependencies**: Before launch, checks for common Windows runtimes a game may need (such as Visual C++ or DirectX) and can install them for you.
+- **LAN Players**: Discover other SmartGoldbergEmu users on the local network, chat, mute or block peers, and send game invites with setup info for supported titles.
+
 ## Quick start
 
 1. Download the [latest release](https://github.com/delabarra/SmartGoldbergEmu/releases).
@@ -35,4 +40,3 @@ Streamlines and automates the configuration process for the Goldberg Emulator an
 - Goldberg forks:
   - Detanup01/gbe_fork: [https://github.com/Detanup01/gbe_fork](https://github.com/Detanup01/gbe_fork)
   - alex47exe/gse_fork: [https://github.com/alex47exe/gse_fork](https://github.com/alex47exe/gse_fork)
-

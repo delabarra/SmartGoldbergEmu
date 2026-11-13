@@ -15,6 +15,7 @@ namespace SmartGoldbergEmu.Constants
         public const string CustomIcon = "customicon";
         public const string GameGuid = "gameguid";
         public const string GoldbergLaunchMode = "goldberglaunchmode";
+        public const string LanSteamJoinSupport = "lansteamjoinsupport";
 
         public const string AppNameWrite = "AppName";
         public const string AppIdWrite = "AppId";
@@ -25,5 +26,6 @@ namespace SmartGoldbergEmu.Constants
         public const string CustomIconWrite = "CustomIcon";
         public const string GameGuidWrite = "GameGuid";
         public const string GoldbergLaunchModeWrite = "GoldbergLaunchMode";
+        public const string LanSteamJoinSupportWrite = "LanSteamJoinSupport";
     }
 }

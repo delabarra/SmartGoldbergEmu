@@ -1,0 +1,4 @@
+{
+  "path": "h:\\GitHub-Desktop\\SmartGoldbergEmu\\LanKit\\LanJoinKind.cs",
+  "contents": "namespace SmartGoldbergEmu.LanKit\n{\n    public enum LanJoinKind\n    {\n        None = 0,\n        RichPresenceConnect = 1,\n        ConnectLobby = 2\n    }\n}\n"
+}

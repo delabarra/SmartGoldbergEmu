@@ -183,5 +183,43 @@ namespace SmartGoldbergEmu.Tests.Services
                 try { Directory.Delete(dir, recursive: true); } catch { }
             }
         }
+
+        [Fact]
+        public void SetLanChatWindowState_round_trips_size_and_location_in_ui_settings()
+        {
+            string dir = TestFileHelper.CreateTempDirectory("sge-ui-settings-lan-chat-");
+            try
+            {
+                string configPath = Path.Combine(dir, "settings.ini");
+                string uiSettingsPath = Path.Combine(dir, "ui_settings.ini");
+                var service = new AppDataService(configPath, dir, uiSettingsPath, new IniFileService());
+
+                var result = service.SetLanChatWindowState(new WindowState
+                {
+                    Size = new System.Drawing.Size(480, 540),
+                    Location = new System.Drawing.Point(10, 20),
+                    State = System.Windows.Forms.FormWindowState.Normal
+                });
+                Assert.True(result.IsValid);
+                Assert.True(service.HasPersistedLanChatWindowLayout());
+                Assert.True(service.HasPersistedLanChatWindowLocation());
+
+                var loaded = service.GetLanChatWindowState();
+                Assert.NotNull(loaded);
+                Assert.Equal(480, loaded.Size.Width);
+                Assert.Equal(540, loaded.Size.Height);
+                Assert.Equal(10, loaded.Location.X);
+                Assert.Equal(20, loaded.Location.Y);
+
+                string uiText = File.ReadAllText(uiSettingsPath);
+                Assert.Contains("lan_chat_size=480,540", uiText);
+                Assert.Contains("lan_chat_location=10,20", uiText);
+                Assert.DoesNotContain("lan_chat_size", File.ReadAllText(configPath));
+            }
+            finally
+            {
+                try { Directory.Delete(dir, recursive: true); } catch { }
+            }
+        }
     }
 }

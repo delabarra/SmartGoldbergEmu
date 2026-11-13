@@ -1,0 +1,4 @@
+{
+  "path": "h:\\GitHub-Desktop\\SmartGoldbergEmu\\LanKit\\LICENSE",
+  "contents": "LanKit \u2014 third-party license notice\n===================================\n\nThis folder contains a C# port of Goldberg Emulator \"lobby_connect\" discovery\nlogic (find peer rich-presence \"connect\" / lobby id on the emulator LAN) for\nSmartGoldbergEmu. It loads the installed Detanup/gbe_fork steam_api64.dll at\nruntime; it does not redistribute that binary.\n\nUpstream concepts / tool:\n  https://github.com/Detanup01/gbe_fork\n  tools/lobby_connect/lobby_connect.cpp\n  (originally Mr. Goldberg's Goldberg Emulator)\n\nThe Goldberg Emulator is free software; you can redistribute it and/or\nmodify it under the terms of the GNU Lesser General Public License as\npublished by the Free Software Foundation; either version 3 of the License,\nor (at your option) any later version.\n\nSee the GNU LGPL for the full text:\n  https://www.gnu.org/licenses/lgpl-3.0.html\n"
+}

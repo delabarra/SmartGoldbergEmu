@@ -1,0 +1,4 @@
+{
+  "path": "h:\\GitHub-Desktop\\SmartGoldbergEmu\\LanKit\\FriendGameInfoNative.cs",
+  "contents": "using System.Runtime.InteropServices;\n\nnamespace SmartGoldbergEmu.LanKit\n{\n    // Layout matches Steam FriendGameInfo_t with VALVE_CALLBACK_PACK_SMALL (Windows).\n    [StructLayout(LayoutKind.Sequential, Pack = 4)]\n    internal struct FriendGameInfoNative\n    {\n        public ulong GameId;\n        public uint GameIp;\n        public ushort GamePort;\n        public ushort QueryPort;\n        public ulong SteamIdLobby;\n    }\n}\n"
+}

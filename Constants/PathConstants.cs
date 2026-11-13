@@ -149,6 +149,7 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergSubscribedGroupsFileName = "subscribed_groups.txt";
         public const string GoldbergSubscribedGroupsClansFileName = "subscribed_groups_clans.txt";
         public const string GoldbergAutoAcceptInviteFileName = "auto_accept_invite.txt";
+        public const string GoldbergAutoSendInvitesFileName = "auto_send_invites.txt";
         public const string GoldbergSteamInterfacesFileName = "steam_interfaces.txt";
         public const string GoldbergSteamInterfacesExampleFileName = "steam_interfaces.EXAMPLE.txt";
 
@@ -168,7 +169,7 @@ namespace SmartGoldbergEmu.Constants
         public const string GoldbergStandardSteamApiDll64 = "steam_api64.dll";
         public const string GoldbergSteamDllFileName = "Steam.dll";
 
-        // Unmodified Steam client Steam.dll kept beside the Goldberg build for a manual swap if the patched copy fails.
+        // Detanup/fork Steam.dll under SteamOld. Prefer live Steam (or CDN) as Steam.dll; promote steam_o only when Steam.dll is missing.
         public const string GoldbergSteamOriginalDllFileName = "steam_o.dll";
 
         public static string GoldbergStandardSteamApiDirectory =>
@@ -187,6 +188,10 @@ namespace SmartGoldbergEmu.Constants
 
         public static string GoldbergColdClientDirectory =>
             Path.Combine(GoldbergDirectory, GoldbergInstallLayout.ColdClientLoaderFolderName);
+
+        // Local Steamworks Shared stand-in (contains _CommonRedist\...); filled via anonymous Steam depot download.
+        public static string GoldbergCommonRedistDirectory =>
+            Path.Combine(GoldbergDirectory, GoldbergInstallLayout.CommonRedistFolderName);
 
         public static string GoldbergColdClientExtraDllsDirectory =>
             Path.Combine(
@@ -266,6 +271,9 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamAppManifestFileExtension = ".acf";
 
         public const string SteamAppsCommonDirectoryName = "common";
+        // Steamworks Common Redistributables installdir (app 228980).
+        public const string SteamworksSharedFolderName = "Steamworks Shared";
+        public const string SteamCommonRedistFolderName = "_CommonRedist";
         public const string SteamClientSteamUiFolderName = "steamui";
         public const string SteamClientUiSoundsFolderName = GoldbergGlobalSoundsFolderName;
         public const string SteamClientClientUiFolderName = "clientui";
@@ -489,6 +497,9 @@ namespace SmartGoldbergEmu.Constants
 
         public static string LaunchSessionManifestDirectory =>
             Path.Combine(LocalAppDataPerUserDirectory, LaunchSessionManifestFolderName);
+
+        public static string LanPresenceAvatarCacheDirectory =>
+            Path.Combine(LocalAppDataPerUserDirectory, LanPresenceConstants.AvatarCacheFolderName);
 
         public static string CombineLaunchSessionManifestPath(ulong appId) =>
             Path.Combine(LaunchSessionManifestDirectory, appId.ToString() + LaunchSessionManifestFileExtension);

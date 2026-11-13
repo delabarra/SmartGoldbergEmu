@@ -81,6 +81,25 @@ namespace SmartGoldbergEmu.Constants
         // Debug/tuning toggle for the Logos view ImageList drop shadow.
         public const string SettingKeyLogosViewDropShadow = "logos_view_drop_shadow";
 
+        // Opt-in LAN presence channel (UDP advertise/listen). Offline-first default.
+        public const string SettingKeyLanEnabled = "lan_enabled";
+        public const string SettingKeyLanPersonaState = "lan_persona_state";
+        public const string SettingKeyLanCustomStatus = "lan_custom_status";
+        // Comma-separated Steam64 ids (local favorites only; never sent on the wire).
+        public const string SettingKeyLanFavoriteSteamIds = "lan_favorite_steamids";
+
+        // Comma-separated Steam64 ids muted for LAN chat alerts (local only; never sent on the wire).
+        public const string SettingKeyLanMutedSteamIds = "lan_muted_steamids";
+
+        // Comma-separated Steam64 ids blocked for LAN chat (local only; never sent on the wire).
+        public const string SettingKeyLanChatBlockedSteamIds = "lan_chat_blocked_steamids";
+
+        // Comma-separated Steam64 ids accepted for LAN chat once (local only; skip gate forever until blocked).
+        public const string SettingKeyLanChatTrustedSteamIds = "lan_chat_trusted_steamids";
+
+        // Semicolon-separated seen peers: steamId|displayName|utcTicks|avatarHash (local only).
+        public const string SettingKeyLanSeenPeers = "lan_seen_peers";
+
         // Light, Dark, or System.
         public const string SettingKeyThemeMode = "theme_mode";
 
@@ -94,6 +113,19 @@ namespace SmartGoldbergEmu.Constants
 
         // Normal, Maximized, or Minimized.
         public const string SettingKeyWindowState = "state";
+
+        // Whether the LAN Players list window was open last session (ui_settings.ini).
+        public const string SettingKeyLanListOpen = "lan_list_open";
+
+        // LAN list window layout in ui_settings.ini ([window]).
+        public const string SettingKeyLanListSize = "lan_list_size";
+        public const string SettingKeyLanListLocation = "lan_list_location";
+        public const string SettingKeyLanListState = "lan_list_state";
+
+        // Shared LAN chat window size in ui_settings.ini ([window]). Location stays per-open (centered on parent).
+        public const string SettingKeyLanChatSize = "lan_chat_size";
+        public const string SettingKeyLanChatLocation = "lan_chat_location";
+        public const string SettingKeyLanChatState = "lan_chat_state";
 
         public const string SettingSectionApplication = "application";
 
@@ -159,8 +191,16 @@ namespace SmartGoldbergEmu.Constants
         // Usage: SmartGoldbergEmu.exe --launch-cleanup-watcher "path\to\manifest.json"
         public const string LaunchCleanupWatcherCliFlag = "launch-cleanup-watcher";
 
-        // Steam registry redirects (ActiveProcess / SourceModInstallPath) are restored after this window; the game keeps the Goldberg DLLs it already loaded.
+        // Steam registry redirects (ActiveProcess / SourceModInstallPath) are restored after this window when safe.
+        // SteamClient sessions set DeferRegistryRestoreUntilExit so Valve steam_api cannot re-resolve real Steam mid-run.
         public const int LaunchRegistryRedirectDurationMs = 15_000;
+
+        // Install-overlay restore (.sge / junctions) may fail while the game still holds DLL locks.
+        // Watcher keeps retrying after the watched PID exits so Steam folders return to clean state without waiting for the next SGE start.
+        public const int LaunchCleanupPendingRetryDelayMs = 2_000;
+        public const int LaunchCleanupPendingRetryMaxAttemptsWatcher = 120;
+        public const int LaunchCleanupPendingRetryMaxAttemptsInline = 15;
+        public const int LaunchCleanupPendingRetryMaxAttemptsStartup = 5;
 
         #endregion
 

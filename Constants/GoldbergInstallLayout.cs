@@ -16,6 +16,8 @@ namespace SmartGoldbergEmu.Constants
         public const string SteamClientFolderName = "SteamClient";
         public const string SteamOldFolderName = "SteamOld";
         public const string ColdClientLoaderFolderName = "ColdClientLoader";
+        // Steamworks Shared layout (_CommonRedist\...) for downloaded common redistributables.
+        public const string CommonRedistFolderName = "CommonRedist";
         public const string ExtraDllsFolderName = "extra_dlls";
 
         // Pre-rename install folders; migrated into the names above on startup / Goldberg Update.

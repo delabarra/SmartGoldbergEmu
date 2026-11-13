@@ -188,11 +188,12 @@ namespace SmartGoldbergEmu.Helpers
         public static bool TryRefreshSteamDllInGoldbergFolder()
         {
             TryEnsureSteamDllFromSteamClient(PathConstants.GoldbergSteamOldDirectory, out _);
-            TryEnsureSteamClientOriginalBackup(PathConstants.GoldbergSteamOldDirectory, out _);
+            // Last resort: Detanup/fork steam_o.dll when live Steam (and CDN) left Steam.dll missing.
+            TryPromoteSteamOFallbackToSteamDll(PathConstants.GoldbergSteamOldDirectory, out _);
             return IsSteamDllPresentInGoldbergFolder();
         }
 
-        // Copies Steam.dll from the local Steam client only when missing. Never use the fork zip's Steam.dll;
+        // Copies Steam.dll from the local Steam client only when missing. Prefer this over Detanup steam_o.dll;
         // the CDN bins_win32 extract in EnsureGlobalConfigFilesExistAsync is soft-fail.
         public static bool TryEnsureSteamDllFromSteamClient(string targetDirectory, out string errorMessage)
         {
@@ -222,6 +223,40 @@ namespace SmartGoldbergEmu.Helpers
             catch (Exception ex)
             {
                 errorMessage = "Failed to copy Steam.dll from the Steam client: " + ex.Message;
+                return false;
+            }
+        }
+
+        // When Steam.dll is still missing, copy steam_o.dll → Steam.dll (Detanup/fork fallback only).
+        public static bool TryPromoteSteamOFallbackToSteamDll(string targetDirectory, out string errorMessage)
+        {
+            errorMessage = null;
+            if (string.IsNullOrWhiteSpace(targetDirectory))
+            {
+                errorMessage = "Target directory for Steam.dll is empty.";
+                return false;
+            }
+
+            string dest = Path.Combine(targetDirectory, PathConstants.GoldbergSteamDllFileName);
+            if (File.Exists(dest))
+                return true;
+
+            string fallback = Path.Combine(targetDirectory, PathConstants.GoldbergSteamOriginalDllFileName);
+            if (!File.Exists(fallback))
+            {
+                errorMessage = "steam_o.dll fallback is missing under " + targetDirectory;
+                return false;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(targetDirectory);
+                File.Copy(fallback, dest, false);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = "Failed to promote steam_o.dll to Steam.dll: " + ex.Message;
                 return false;
             }
         }
@@ -290,7 +325,7 @@ namespace SmartGoldbergEmu.Helpers
             return !string.IsNullOrEmpty(gameDataPath);
         }
 
-        // Keeps an existing Steam.dll in the target folder; otherwise copies it from the Steam client.
+        // Prefer existing Steam.dll, then live Steam client, then steam_o.dll fallback.
         public static bool TrySyncSteamDllToDirectory(string targetDirectory, out string errorMessage)
         {
             errorMessage = null;
@@ -302,49 +337,17 @@ namespace SmartGoldbergEmu.Helpers
 
             string goldbergSteamDllPath = Path.Combine(targetDirectory, PathConstants.GoldbergSteamDllFileName);
             if (File.Exists(goldbergSteamDllPath))
-            {
-                TryEnsureSteamClientOriginalBackup(targetDirectory, out _);
                 return true;
-            }
 
             if (TryEnsureSteamDllFromSteamClient(targetDirectory, out errorMessage))
-            {
-                TryEnsureSteamClientOriginalBackup(targetDirectory, out _);
                 return true;
-            }
+
+            if (TryPromoteSteamOFallbackToSteamDll(targetDirectory, out errorMessage))
+                return true;
 
             if (string.IsNullOrEmpty(errorMessage))
-                errorMessage = "Steam.dll is missing from goldberg\\SteamOld and could not be copied from Steam.";
+                errorMessage = "Steam.dll is missing from goldberg\\SteamOld and could not be copied from Steam or steam_o.dll.";
             return false;
-        }
-
-        public static bool TryEnsureSteamClientOriginalBackup(string targetDirectory, out string errorMessage)
-        {
-            errorMessage = null;
-            if (string.IsNullOrWhiteSpace(targetDirectory))
-            {
-                errorMessage = "Target directory for Steam.dll backup is empty.";
-                return false;
-            }
-
-            if (!TryResolveSteamDllSourcePath(out string steamClientDllPath))
-                return false;
-
-            try
-            {
-                Directory.CreateDirectory(targetDirectory);
-                string backupPath = Path.Combine(targetDirectory, PathConstants.GoldbergSteamOriginalDllFileName);
-                if (File.Exists(backupPath))
-                    return true;
-
-                File.Copy(steamClientDllPath, backupPath, false);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                errorMessage = "Failed to copy Steam.dll backup from the Steam client: " + ex.Message;
-                return false;
-            }
         }
 
         private static IEnumerable<string> EnumerateSteamInstallationRootsInProbeOrder()

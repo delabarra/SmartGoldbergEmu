@@ -46,6 +46,10 @@ namespace SmartGoldbergEmu.Services
         private readonly object _registryRestoreTimerLock = new object();
         private readonly Dictionary<ulong, CancellationTokenSource> _registryRestoreCancellationByAppId =
             new Dictionary<ulong, CancellationTokenSource>();
+        // Last successful LaunchGame option per AppId — LAN invite can replay it for the guest.
+        private readonly object _lastLaunchOptionHintLock = new object();
+        private readonly Dictionary<ulong, LanLaunchOptionHint> _lastLaunchOptionHintByAppId =
+            new Dictionary<ulong, LanLaunchOptionHint>();
 
         private sealed class BranchRestoreInfo
         {
@@ -128,6 +132,136 @@ namespace SmartGoldbergEmu.Services
             }
 
             return IsGameSessionActive(appId);
+        }
+
+        // Close a live session so LAN Accept/Join can relaunch with +connect_lobby / connect args.
+        public ValidationResult TryCloseRunningGame(ulong appId, int waitExitMs = 20000)
+        {
+            if (appId == 0)
+                return ValidationResult.Success();
+
+            if (!IsGameSessionActive(appId))
+                return ValidationResult.Success();
+
+            if (waitExitMs < 1000)
+                waitExitMs = 1000;
+
+            Process process = null;
+            bool disposeProcess = false;
+            if (!TryGetActiveLaunchedProcess(appId, out process))
+            {
+                int pid;
+                if (_launchSessionCleanup.TryGetLiveSessionProcessId(appId, out pid))
+                {
+                    try
+                    {
+                        process = Process.GetProcessById(pid);
+                        disposeProcess = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogDebug("LAN relaunch: could not open session PID " + pid + ": " + ex.Message);
+                    }
+                }
+            }
+
+            if (process == null)
+            {
+                return ValidationResult.Failure(
+                    "Could not find the running game process to close. Close it manually, then Accept again.");
+            }
+
+            try
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        bool closed = false;
+                        try
+                        {
+                            closed = process.CloseMainWindow();
+                        }
+                        catch (InvalidOperationException)
+                        {
+                        }
+
+                        int softWait = Math.Min(waitExitMs, 8000);
+                        if (!closed || !process.WaitForExit(softWait))
+                        {
+                            try
+                            {
+                                if (!process.HasExited)
+                                    process.Kill();
+                            }
+                            catch (InvalidOperationException)
+                            {
+                            }
+
+                            int hardWait = Math.Max(1000, waitExitMs - softWait);
+                            if (!process.WaitForExit(hardWait))
+                            {
+                                return ValidationResult.Failure(
+                                    "Timed out closing the game. Close it manually, then Accept again.");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning("LAN relaunch: failed to close game process: " + ex.Message);
+                    return ValidationResult.Failure(
+                        "Could not close the running game: " + ex.Message);
+                }
+            }
+            finally
+            {
+                if (disposeProcess)
+                {
+                    try
+                    {
+                        process.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            int spinMs = Math.Max(2000, waitExitMs / 2);
+            int waited = 0;
+            while (IsGameSessionActive(appId) && waited < spinMs)
+            {
+                Thread.Sleep(100);
+                waited += 100;
+            }
+
+            if (IsGameSessionActive(appId))
+            {
+                return ValidationResult.Failure(
+                    "The game is still marked as running. Close it manually, then Accept again.");
+            }
+
+            _logger?.LogMessage("LAN relaunch: closed running session for AppId " + appId + ".");
+            ClearLastLaunchOptionHint(appId);
+            return ValidationResult.Success();
+        }
+
+        // Snapshot of the option used for the live session (for LAN invite silent Accept).
+        public bool TryGetLastLaunchOptionHint(ulong appId, out LanLaunchOptionHint hint)
+        {
+            hint = null;
+            if (appId == 0)
+                return false;
+
+            lock (_lastLaunchOptionHintLock)
+            {
+                LanLaunchOptionHint stored;
+                if (!_lastLaunchOptionHintByAppId.TryGetValue(appId, out stored) || stored == null)
+                    return false;
+                hint = CloneLaunchOptionHint(stored);
+                return hint != null && hint.HasMatchableFields;
+            }
         }
 
         // Non-zero Steam App IDs require Goldberg binaries under goldberg/ when useEmulator is true.
@@ -281,8 +415,7 @@ namespace SmartGoldbergEmu.Services
                     }
                     else if (launchMode == GoldbergLaunchMode.SteamDllBesideExe)
                     {
-                        sourceModInstallFolder = exeDirectory;
-
+                        // Steam.dll only — no steamclient, so do not touch SourceModInstallPath.
                         var steamDllResult = EnsureSteamDllInGoldbergFolder();
                         if (!steamDllResult.IsValid)
                         {
@@ -299,7 +432,7 @@ namespace SmartGoldbergEmu.Services
                             return setupResult;
                         }
 
-                        _logger?.LogDebug("Steam.dll mode: deployed Steam.dll beside executable, skipped ActiveProcess registry");
+                        _logger?.LogDebug("Steam.dll mode: deployed Steam.dll beside executable, skipped ActiveProcess and SourceMod registry");
                     }
                     else if (launchMode == GoldbergLaunchMode.ColdClient)
                     {
@@ -313,37 +446,22 @@ namespace SmartGoldbergEmu.Services
 
                         // Ini requires both SteamClientDll and SteamClient64Dll paths.
                         string dllTargetDirectory = PathConstants.GetGameFolder(game.AppId);
-                        var setup32 = DeployGoldbergClientDlls(false, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
-                        if (!setup32.IsValid)
-                        {
-                            _logger?.LogError(
-                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch=x86: {setup32.ErrorMessage}");
-                            return setup32;
-                        }
-
-                        var setup64 = DeployGoldbergClientDlls(true, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
-                        if (!setup64.IsValid)
-                        {
-                            _logger?.LogError(
-                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch=x64: {setup64.ErrorMessage}");
-                            return setup64;
-                        }
+                        var bothArches = DeploySteamClientBothArchesToDirectory(dllTargetDirectory, launchMode);
+                        if (!bothArches.IsValid)
+                            return bothArches;
 
                         // Loader owns ActiveProcess / SourceMod for the session.
                         _logger?.LogDebug("ColdClient mode: deployed steamclient (x86+x64) to game library; skipped SGE ActiveProcess registry");
                     }
                     else
                     {
+                        // ActiveProcess registers both arches when present — deploy x86 and x64 like ColdClient.
                         string dllTargetDirectory = PathConstants.GetGameFolder(game.AppId);
                         sourceModInstallFolder = dllTargetDirectory;
 
-                        var setupResult = DeployGoldbergClientDlls(useX64, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
-                        if (!setupResult.IsValid)
-                        {
-                            _logger?.LogError(
-                                $"Emulator DLL setup failed: AppId={game.AppId}, mode={launchMode}, target={dllTargetDirectory}, arch={(useX64 ? "x64" : "x86")}: {setupResult.ErrorMessage}");
-                            return setupResult;
-                        }
+                        var bothArches = DeploySteamClientBothArchesToDirectory(dllTargetDirectory, launchMode);
+                        if (!bothArches.IsValid)
+                            return bothArches;
 
                         var registryResult = ConfigureActiveProcessGoldbergDlls(useX64, dllTargetDirectory);
                         if (!registryResult.IsValid)
@@ -403,6 +521,7 @@ namespace SmartGoldbergEmu.Services
                     }
                 }
 
+                // Missing Steam redistributables are prompted in the UI (Install/Skip/Cancel) before LaunchGame.
                 ValidationResult result = LaunchProcess(
                     game,
                     launchOption,
@@ -416,6 +535,8 @@ namespace SmartGoldbergEmu.Services
                 {
                     // Process started (or already cleaned after an immediate exit); do not roll back in finally.
                     launchHandedOffToSession = true;
+                    if (game.AppId != 0)
+                        RememberLastLaunchOptionHint(game.AppId, launchOption);
                 }
                 else
                 {
@@ -1135,6 +1256,27 @@ namespace SmartGoldbergEmu.Services
             return true;
         }
 
+        private ValidationResult DeploySteamClientBothArchesToDirectory(string dllTargetDirectory, GoldbergLaunchMode launchMode)
+        {
+            var setup32 = DeployGoldbergClientDlls(false, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
+            if (!setup32.IsValid)
+            {
+                _logger?.LogError(
+                    $"Emulator DLL setup failed: mode={launchMode}, target={dllTargetDirectory}, arch=x86: {setup32.ErrorMessage}");
+                return setup32;
+            }
+
+            var setup64 = DeployGoldbergClientDlls(true, dllTargetDirectory, deploySteamDllOnly: false, win32DeployState: null);
+            if (!setup64.IsValid)
+            {
+                _logger?.LogError(
+                    $"Emulator DLL setup failed: mode={launchMode}, target={dllTargetDirectory}, arch=x64: {setup64.ErrorMessage}");
+                return setup64;
+            }
+
+            return ValidationResult.Success();
+        }
+
         private ValidationResult DeployGoldbergClientDlls(bool useX64, string targetDirectory, bool deploySteamDllOnly, Win32DllDeploymentState win32DeployState)
         {
             try
@@ -1264,7 +1406,11 @@ namespace SmartGoldbergEmu.Services
                 restoreActiveProcessRegistry,
                 branchRestoreOnExit,
                 stubExeRestore);
-            _launchSessionCleanup.TryExecuteCleanup(manifestPath, session);
+            _launchSessionCleanup.TryExecuteCleanupWithPendingRetries(
+                manifestPath,
+                session,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsInline,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
 
             lock (_sourceModRestoreLock)
             {
@@ -1305,7 +1451,11 @@ namespace SmartGoldbergEmu.Services
                 restoreActiveProcessRegistry,
                 branchRestoreOnExit,
                 stubExeRestore);
-            _launchSessionCleanup.TryExecuteCleanup(null, session);
+            _launchSessionCleanup.TryExecuteCleanupWithPendingRetries(
+                null,
+                session,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsInline,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
 
             lock (_sourceModRestoreLock)
             {
@@ -1370,7 +1520,8 @@ namespace SmartGoldbergEmu.Services
             Win32DllDeploymentState deployState,
             bool restoreActiveProcessRegistry,
             BranchRestoreInfo branchRestoreOnExit,
-            PersistedStubExeRestore stubExeRestore = null)
+            PersistedStubExeRestore stubExeRestore = null,
+            bool deferRegistryRestoreUntilExit = false)
         {
             var session = new PersistedLaunchSession
             {
@@ -1378,6 +1529,7 @@ namespace SmartGoldbergEmu.Services
                 GameProcessId = processId,
                 SessionGeneration = Guid.NewGuid().ToString("D"),
                 RestoreActiveProcessRegistry = restoreActiveProcessRegistry,
+                DeferRegistryRestoreUntilExit = deferRegistryRestoreUntilExit,
                 GameLibraryFolder = appId != 0 ? PathConstants.GetGameFolder(appId) : null,
                 LoadDllsFolder = appId != 0 ? PathConstants.CombineGameSteamSettingsLoadDllsDirectory(appId) : null,
                 DeploySites = MapDeploySites(deployState),
@@ -1801,6 +1953,17 @@ namespace SmartGoldbergEmu.Services
                 logWarnings: logResolution,
                 logResolutionSteps: logResolution);
 
+            if (GameFolderPathHelper.TryResolveSameNamedNativeArchSibling(executablePath, out string nativeArchExe))
+            {
+                if (logResolution)
+                {
+                    _logger?.LogDebug(
+                        $"Steam-style x86 bootstrap detected; preferring native arch executable for emulator launch: {nativeArchExe}");
+                }
+
+                executablePath = nativeArchExe;
+            }
+
             string arguments = (launchOption != null && !string.IsNullOrEmpty(launchOption.Parameters))
                 ? launchOption.Parameters
                 : (game.Parameters ?? string.Empty);
@@ -2010,13 +2173,18 @@ namespace SmartGoldbergEmu.Services
 
                 if (trackCleanupSession && game.AppId != 0)
                 {
+                    // SteamClient: Valve steam_api stays in the game folder and can re-read ActiveProcess after load.
+                    bool deferRegistryRestoreUntilExit =
+                        configureActiveProcessRegistry
+                        && game.LaunchMode == GoldbergLaunchMode.SteamClient;
                     PersistedLaunchSession persisted = BuildPersistedLaunchSession(
                         game.AppId,
                         processId,
                         win32DeployState,
                         configureActiveProcessRegistry,
                         branchRestoreOnExit,
-                        stubExeRestore);
+                        stubExeRestore,
+                        deferRegistryRestoreUntilExit);
                     persisted.GameProcessStartTimeUtcTicks = LaunchSessionCleanupService.TryGetProcessStartTimeUtcTicks(process);
                     string manifestPath = _launchSessionCleanup.WriteSession(persisted);
                     if (!string.IsNullOrEmpty(manifestPath))
@@ -2198,7 +2366,11 @@ namespace SmartGoldbergEmu.Services
             _logger?.LogDebug(
                 $"Cleaning superseded launch session for AppId {superseded.AppId} (replaced process PID {supersededProcessId}).");
 
-            _launchSessionCleanup.TryExecuteCleanup(null, session);
+            _launchSessionCleanup.TryExecuteCleanupWithPendingRetries(
+                null,
+                session,
+                ApplicationConstants.LaunchCleanupPendingRetryMaxAttemptsInline,
+                ApplicationConstants.LaunchCleanupPendingRetryDelayMs);
         }
 
         private void ReleaseReplacedGameProcess(Process process)
@@ -2332,11 +2504,49 @@ namespace SmartGoldbergEmu.Services
 
                 process.Exited -= Process_Exited;
                 process.Dispose();
+
+                if (!IsGameSessionActive(appId))
+                    ClearLastLaunchOptionHint(appId);
             }
             catch (Exception ex)
             {
                 _logger?.LogError($"Error during game cleanup: {ex.Message}", ex);
             }
+        }
+
+        private void RememberLastLaunchOptionHint(ulong appId, LaunchOption launchOption)
+        {
+            if (appId == 0)
+                return;
+
+            LanLaunchOptionHint hint = LanLaunchOptionHint.FromLaunchOption(launchOption);
+            lock (_lastLaunchOptionHintLock)
+                _lastLaunchOptionHintByAppId[appId] = hint;
+        }
+
+        private void ClearLastLaunchOptionHint(ulong appId)
+        {
+            if (appId == 0)
+                return;
+
+            lock (_lastLaunchOptionHintLock)
+                _lastLaunchOptionHintByAppId.Remove(appId);
+        }
+
+        private static LanLaunchOptionHint CloneLaunchOptionHint(LanLaunchOptionHint source)
+        {
+            if (source == null)
+                return null;
+
+            return new LanLaunchOptionHint
+            {
+                PreferLibraryPath = source.PreferLibraryPath,
+                Description = source.Description ?? string.Empty,
+                Executable = source.Executable ?? string.Empty,
+                Type = source.Type ?? string.Empty,
+                OsArch = source.OsArch ?? string.Empty,
+                BetaKey = source.BetaKey ?? string.Empty
+            };
         }
 
         private string ResolveLaunchExecutablePath(GameConfig game, LaunchOption launchOption)

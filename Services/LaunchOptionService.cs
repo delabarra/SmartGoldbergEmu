@@ -61,12 +61,28 @@ namespace SmartGoldbergEmu.Services
             }
 
             // Same filter as launch dialog initial list (saved FullLaunchOptions); form may re-filter if user toggles Show Extra.
+            // Silent type=none arch variants stay out of the picker unless alternates exist (then the best none is Steam's default Play).
             var filteredOptions = FilterLaunchOptionsForCurrentSettings(launchOptions);
 
             if (filteredOptions.Count <= 1)
             {
-                ServiceLocator.LogService.LogDebug($"Found {filteredOptions.Count} launch option(s) after filtering for app {game.AppId}, auto-selecting without showing form");
-                var selected = filteredOptions.Count == 1 ? filteredOptions[0] : null;
+                LaunchOption selected = filteredOptions.Count == 1
+                    ? filteredOptions[0]
+                    : PickBestAutomaticLaunchOption(launchOptions);
+
+                // type=none auto-picks mimic Steam's first process. Library Path may already name the final
+                // binary (e.g. x64\Game.exe) after a 32-bit bootstrap; do not silently override it.
+                if (ShouldPreferStoredExecutableOverAutomaticOption(game, selected))
+                {
+                    ServiceLocator.LogService.LogDebug(
+                        $"Found {filteredOptions.Count} user-visible launch option(s) for app {game.AppId}, " +
+                        "but library Path differs from the Steam auto entry; using library Path");
+                    return new LaunchOptionResult { LaunchOption = null, SkipLauncher = true, Cancelled = false };
+                }
+
+                ServiceLocator.LogService.LogDebug(
+                    $"Found {filteredOptions.Count} user-visible launch option(s) for app {game.AppId}, auto-selecting without showing form" +
+                    (selected != null ? $" -> {selected.Executable ?? selected.Description ?? "(unnamed)"}" : " -> game default"));
                 return new LaunchOptionResult { LaunchOption = selected, SkipLauncher = false, Cancelled = false };
             }
 
@@ -719,10 +735,288 @@ namespace SmartGoldbergEmu.Services
             if (options == null)
                 return new List<LaunchOption>();
 
+            // Selectable rows only (silent type=none stripped). Restricted types honor Show Extra / FullLaunchOptions.
             var filtered = FilterOptions(options, excludeRestrictedTypes);
+
+            // Steam: when alternates exist, the best silent type=none becomes the default "Play" row beside them.
+            // Arch-only type=none lists stay empty here so launch auto-picks without a dialog.
+            if (filtered.Count > 0)
+            {
+                LaunchOption bestAuto = PickBestAutomaticLaunchOption(
+                    options.Where(IsSteamPlatformAutoLaunchOption).ToList());
+                if (bestAuto != null && !filtered.Any(o => ReferenceEquals(o, bestAuto)))
+                    filtered.Insert(0, bestAuto);
+            }
+
             return filtered
-                .OrderBy(opt => string.IsNullOrEmpty(opt.Type) || opt.Type.Equals("default", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .OrderBy(GetLaunchOptionUiSortRank)
                 .ToList();
+        }
+
+        // Match a LAN invite hint to a local option so Accept can skip the picker.
+        // Prefer executable, then description; type / osarch / betakey break ties. Ambiguous → false.
+        // When the hint executable includes a directory, require a relative-path match (no filename-only fallback).
+        public static bool TryMatchLaunchOptionHint(
+            IReadOnlyList<LaunchOption> candidates,
+            LanLaunchOptionHint hint,
+            out LaunchOption matched)
+        {
+            matched = null;
+            if (hint == null || hint.PreferLibraryPath || candidates == null || candidates.Count == 0)
+                return false;
+            if (!hint.HasMatchableFields)
+                return false;
+
+            string wantExe = LanLaunchOptionHint.NormalizeExecutableKey(hint.Executable);
+            string wantDesc = string.IsNullOrWhiteSpace(hint.Description) ? string.Empty : hint.Description.Trim();
+            string wantType = string.IsNullOrWhiteSpace(hint.Type) ? string.Empty : hint.Type.Trim();
+            string wantArch = string.IsNullOrWhiteSpace(hint.OsArch) ? string.Empty : hint.OsArch.Trim();
+            string wantBeta = string.IsNullOrWhiteSpace(hint.BetaKey) ? string.Empty : hint.BetaKey.Trim();
+
+            List<LaunchOption> pool = candidates.Where(o => o != null).ToList();
+            if (pool.Count == 0)
+                return false;
+
+            if (!string.IsNullOrEmpty(wantExe))
+            {
+                var byExe = pool
+                    .Where(o => string.Equals(
+                        LanLaunchOptionHint.NormalizeExecutableKey(o.Executable),
+                        wantExe,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                // Bare filename only: allow matching by file name when relative paths differ across installs.
+                if (byExe.Count == 0 && wantExe.IndexOf('\\') < 0)
+                {
+                    byExe = pool
+                        .Where(o => string.Equals(
+                            Path.GetFileName(LanLaunchOptionHint.NormalizeExecutableKey(o.Executable)),
+                            wantExe,
+                            StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                }
+
+                if (byExe.Count == 1)
+                {
+                    if (!AllowsSilentInviteLaunch(byExe[0]))
+                        return false;
+                    matched = byExe[0];
+                    return true;
+                }
+
+                if (byExe.Count > 1)
+                    pool = byExe;
+                else
+                    return false;
+            }
+            else if (!string.IsNullOrEmpty(wantDesc))
+            {
+                var byDesc = pool
+                    .Where(o => string.Equals(
+                        (o.Description ?? string.Empty).Trim(),
+                        wantDesc,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (byDesc.Count == 0)
+                    return false;
+                pool = byDesc;
+            }
+            else
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(wantDesc) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.Description ?? string.Empty).Trim(),
+                        wantDesc,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (!string.IsNullOrEmpty(wantType) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.Type ?? string.Empty).Trim(),
+                        wantType,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (!string.IsNullOrEmpty(wantArch) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.OsArch ?? string.Empty).Trim(),
+                        wantArch,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (!string.IsNullOrEmpty(wantBeta) && pool.Count > 1)
+            {
+                var narrowed = pool
+                    .Where(o => string.Equals(
+                        (o.BetaKey ?? string.Empty).Trim(),
+                        wantBeta,
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (narrowed.Count > 0)
+                    pool = narrowed;
+            }
+
+            if (pool.Count != 1)
+                return false;
+
+            matched = pool[0];
+            if (!AllowsSilentInviteLaunch(matched))
+            {
+                matched = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        // Restricted / user / beta options stay a conscious picker choice — never silent from a peer hint.
+        public static bool AllowsSilentInviteLaunch(LaunchOption option)
+        {
+            if (option == null)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(option.BetaKey))
+                return false;
+
+            if (LaunchOption.IsRestrictedLaunchOptionType(option.Type))
+                return false;
+
+            if (!string.IsNullOrEmpty(option.Type)
+                && option.Type.Equals(SteamPicsKeyNames.LaunchOptionTypeUser, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        // Silent type=none (no description): OS/arch routing. Described type=none stays selectable like Steam.
+        public static bool IsSteamPlatformAutoLaunchOption(LaunchOption option)
+        {
+            return option != null && option.IsSteamPlatformAutoLaunchType();
+        }
+
+        // default / silent none first (Steam's primary Play), then untitled, then named extras.
+        private static int GetLaunchOptionUiSortRank(LaunchOption opt)
+        {
+            if (opt == null)
+                return 100;
+
+            string t = opt.Type != null ? opt.Type.Trim() : string.Empty;
+            if (t.Equals(SteamPicsKeyNames.Default, StringComparison.OrdinalIgnoreCase))
+                return 0;
+            if (opt.IsSteamPlatformAutoLaunchType())
+                return 1;
+            if (string.IsNullOrEmpty(t))
+                return 2;
+            return 3;
+        }
+
+        // Prefer games.ini Path when a type=none Steam entry would start a different existing executable.
+        public static bool ShouldPreferStoredExecutableOverAutomaticOption(GameConfig game, LaunchOption automaticOption)
+        {
+            if (game == null || automaticOption == null || !IsSteamPlatformAutoLaunchOption(automaticOption))
+                return false;
+            if (string.IsNullOrWhiteSpace(automaticOption.Executable))
+                return false;
+            if (!GameFolderPathHelper.TryResolveStoredExecutable(game, out string storedExe))
+                return false;
+
+            string baseFolder = GameFolderPathHelper.GetLaunchBaseGameFolder(game);
+            if (!PathValidationHelper.TryResolveAndValidatePath(baseFolder, automaticOption.Executable.Trim(), out string optionExe)
+                || !File.Exists(optionExe))
+                return false;
+
+            return !string.Equals(
+                Path.GetFullPath(storedExe),
+                Path.GetFullPath(optionExe),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        // When the picker has nothing user-visible, Steam still launches: prefer default, then native osarch among type=none.
+        public static LaunchOption PickBestAutomaticLaunchOption(IList<LaunchOption> options)
+        {
+            if (options == null || options.Count == 0)
+                return null;
+
+            LaunchOption best = null;
+            int bestScore = int.MinValue;
+            for (int i = 0; i < options.Count; i++)
+            {
+                LaunchOption opt = options[i];
+                if (opt == null)
+                    continue;
+                int score = ScoreAutomaticLaunchOption(opt);
+                if (best == null || score > bestScore)
+                {
+                    best = opt;
+                    bestScore = score;
+                }
+            }
+            return best;
+        }
+
+        private static int ScoreAutomaticLaunchOption(LaunchOption opt)
+        {
+            int score = 0;
+            string t = opt.Type != null ? opt.Type.Trim() : string.Empty;
+            if (t.Equals(SteamPicsKeyNames.Default, StringComparison.OrdinalIgnoreCase))
+                score += 1000;
+            else if (t.Equals(SteamPicsKeyNames.LaunchOptionTypeNone, StringComparison.OrdinalIgnoreCase))
+                score += 100;
+            else if (string.IsNullOrEmpty(t))
+                score += 50;
+
+            score += ScoreOsArchPreference(opt.OsArch);
+            return score;
+        }
+
+        // Prefer native arch; 32-bit remains eligible on 64-bit Windows but loses to 64-bit / unspecified.
+        private static int ScoreOsArchPreference(string osArchFromVdf)
+        {
+            bool osIs64Bit = Environment.Is64BitOperatingSystem;
+            if (string.IsNullOrWhiteSpace(osArchFromVdf))
+                return osIs64Bit ? 40 : 50;
+
+            string s = osArchFromVdf.Trim().ToLowerInvariant();
+            bool is64 = s == "64" || s == "win64" || s == "x64" || s == "amd64" ||
+                        (s.IndexOf("64", StringComparison.Ordinal) >= 0 && s.IndexOf("32", StringComparison.Ordinal) < 0);
+            bool is32 = s == "32" || s == "win32" || s == "x86" || s == "i386" ||
+                        (s.IndexOf("32", StringComparison.Ordinal) >= 0 && s.IndexOf("64", StringComparison.Ordinal) < 0);
+
+            if (osIs64Bit)
+            {
+                if (is64)
+                    return 50;
+                if (is32)
+                    return 10;
+                return 30;
+            }
+
+            if (is32)
+                return 50;
+            if (is64)
+                return 0;
+            return 40;
         }
 
         public static int FindDefaultLaunchOptionIndex(IList<LaunchOption> options)
@@ -917,15 +1211,20 @@ namespace SmartGoldbergEmu.Services
 
         private List<LaunchOption> FilterOptions(List<LaunchOption> options, bool excludeConfigType)
         {
-            if (!excludeConfigType)
-            {
-                return options;
-            }
+            if (options == null)
+                return new List<LaunchOption>();
 
             return options.Where(opt =>
             {
                 if (opt == null)
                     return false;
+
+                // Silent type=none stays out of the base list; FilterLaunchOptionsForUi may re-add the best one.
+                if (opt.IsSteamPlatformAutoLaunchType())
+                    return false;
+
+                if (!excludeConfigType)
+                    return true;
 
                 // User options are tagged "hidden" but must never be filtered out by the "extra options" checkbox.
                 if (!string.IsNullOrEmpty(opt.Type) && opt.Type.Equals("user", StringComparison.OrdinalIgnoreCase))

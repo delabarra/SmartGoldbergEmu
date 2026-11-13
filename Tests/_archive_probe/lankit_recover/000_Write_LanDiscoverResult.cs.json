@@ -1,0 +1,4 @@
+{
+  "path": "h:\\GitHub-Desktop\\SmartGoldbergEmu\\LanKit\\LanDiscoverResult.cs",
+  "contents": "namespace SmartGoldbergEmu.LanKit\n{\n    public sealed class LanDiscoverResult\n    {\n        public LanDiscoverStatus Status { get; set; }\n\n        public LanJoinArgs Join { get; set; }\n\n        // Highest friend count observed during polling (0 = nobody on the emu LAN from this process).\n        public int MaxFriendsSeen { get; set; }\n\n        public static LanDiscoverResult Empty { get; } = new LanDiscoverResult\n        {\n            Status = LanDiscoverStatus.None,\n            Join = LanJoinArgs.Empty,\n            MaxFriendsSeen = 0\n        };\n    }\n}\n"
+}

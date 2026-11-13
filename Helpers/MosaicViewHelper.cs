@@ -49,6 +49,9 @@ namespace SmartGoldbergEmu.Helpers
 
         private const float LogoViewShadowAlpha = 0.38f;
 
+        // Soft PNG edges count as content; ignore near-transparent noise when trimming library logos.
+        private const byte LogoOpaqueAlphaThreshold = 8;
+
         // ListView.TileSize includes the ListView's internal padding on each side so the clickable area matches the image.
         public const int TileViewWidth = TileViewImageWidth + (TileViewPadding * 2);
         public const int TileViewHeight = TileViewImageHeight + (TileViewPadding * 2);
@@ -60,13 +63,20 @@ namespace SmartGoldbergEmu.Helpers
         public const int LogoViewHeight = LogoViewImageHeight + (LogoViewPadding * 2);
 
         // Display-only ImageList bitmap with a light drop shadow for pale backgrounds; on-disk logo.png is unchanged.
-        public static Bitmap CreateLogoViewDisplayBitmap(Image source, bool dropShadow = true)
+        // trimOpaqueContent: game library logo assets only — Steam CDN marks often sit low in a tall transparent canvas.
+        // Waiting / no-asset fallback keep full-image contain-fit (do not change that path).
+        public static Bitmap CreateLogoViewDisplayBitmap(Image source, bool dropShadow = true, bool trimOpaqueContent = false)
         {
             if (source == null)
                 throw new ArgumentNullException(nameof(source));
 
             var targetSize = LogoViewImageSize;
-            var destinationRect = GetContainDestinationRect(source.Size, targetSize);
+            Rectangle opaqueContentBounds = Rectangle.Empty;
+            bool useOpaqueContent = trimOpaqueContent
+                && TryGetOpaqueContentBounds(source, LogoOpaqueAlphaThreshold, out opaqueContentBounds);
+            var destinationRect = GetContainDestinationRect(
+                useOpaqueContent ? opaqueContentBounds.Size : source.Size,
+                targetSize);
 
             // Build the logo alone first so file colors are not SourceOver-blended onto the black shadow.
             var logoLayer = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
@@ -76,7 +86,11 @@ namespace SmartGoldbergEmu.Helpers
                 {
                     ConfigureLogoDrawGraphics(logoGraphics);
                     logoGraphics.Clear(Color.Transparent);
-                    logoGraphics.DrawImage(source, destinationRect);
+                    // Keep DrawImage(Image, Rectangle) for waiting/fallback (DPI-safe); crop only when trimming assets.
+                    if (useOpaqueContent)
+                        logoGraphics.DrawImage(source, destinationRect, opaqueContentBounds, GraphicsUnit.Pixel);
+                    else
+                        logoGraphics.DrawImage(source, destinationRect);
                 }
 
                 var output = new Bitmap(targetSize.Width, targetSize.Height, PixelFormat.Format32bppArgb);
@@ -291,6 +305,68 @@ namespace SmartGoldbergEmu.Helpers
             int y = (targetSize.Height - drawHeight) / 2;
 
             return new Rectangle(x, y, drawWidth, drawHeight);
+        }
+
+        // Bounding box of pixels with alpha above threshold (straight or already-premultiplied sources).
+        private static bool TryGetOpaqueContentBounds(Image source, byte alphaThreshold, out Rectangle bounds)
+        {
+            bounds = Rectangle.Empty;
+            if (source == null || source.Width <= 0 || source.Height <= 0)
+                return false;
+
+            Bitmap bitmap = source as Bitmap;
+            bool ownsBitmap = bitmap == null;
+            if (ownsBitmap)
+                bitmap = new Bitmap(source);
+
+            try
+            {
+                var rect = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+                var data = bitmap.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                try
+                {
+                    int width = rect.Width;
+                    int height = rect.Height;
+                    int stride = data.Stride;
+                    var buffer = new byte[stride * height];
+                    Marshal.Copy(data.Scan0, buffer, 0, buffer.Length);
+
+                    int minX = width;
+                    int minY = height;
+                    int maxX = -1;
+                    int maxY = -1;
+
+                    for (int y = 0; y < height; y++)
+                    {
+                        int row = y * stride;
+                        for (int x = 0; x < width; x++)
+                        {
+                            if (buffer[row + (x * 4) + 3] <= alphaThreshold)
+                                continue;
+
+                            if (x < minX) minX = x;
+                            if (y < minY) minY = y;
+                            if (x > maxX) maxX = x;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+
+                    if (maxX < 0)
+                        return false;
+
+                    bounds = new Rectangle(minX, minY, maxX - minX + 1, maxY - minY + 1);
+                    return true;
+                }
+                finally
+                {
+                    bitmap.UnlockBits(data);
+                }
+            }
+            finally
+            {
+                if (ownsBitmap)
+                    bitmap.Dispose();
+            }
         }
     }
 }
