@@ -30,6 +30,7 @@ namespace SmartGoldbergEmu.Services
         private readonly LanPresenceService _presence;
         private readonly ILogService _logger;
         private readonly object _probeGate = new object();
+        private bool _hooked;
         private bool _disposed;
 
         public LanGameJoinService()
@@ -58,21 +59,37 @@ namespace SmartGoldbergEmu.Services
             _presence = presence ?? throw new ArgumentNullException(nameof(presence));
             _logger = logger;
 
-            _presence.OnlineStateChanged += OnPresenceOnlineStateChanged;
+            EnsureHooked();
+        }
+
+        // OnlineStateChanged clears advertised LanKit join args when Offline; call so Lazy initializes.
+        public void EnsureHooked()
+        {
+            lock (_probeGate)
+            {
+                if (_disposed || _hooked)
+                    return;
+                _presence.OnlineStateChanged += OnPresenceOnlineStateChanged;
+                _hooked = true;
+            }
         }
 
         public void Dispose()
         {
+            bool wasHooked;
             lock (_probeGate)
             {
                 if (_disposed)
                     return;
                 _disposed = true;
+                wasHooked = _hooked;
+                _hooked = false;
             }
 
             try
             {
-                _presence.OnlineStateChanged -= OnPresenceOnlineStateChanged;
+                if (wasHooked)
+                    _presence.OnlineStateChanged -= OnPresenceOnlineStateChanged;
             }
             catch
             {

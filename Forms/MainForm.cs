@@ -3753,8 +3753,8 @@ namespace SmartGoldbergEmu.Forms
                     ServiceLocator.LanPresenceService.InviteCooldownReceived -= OnLanInviteCooldownReceived;
                     ServiceLocator.LanPresenceService.InviteCooldownReceived += OnLanInviteCooldownReceived;
                     ServiceLocator.LanPresenceService.StartIfEnabled();
-                    // Touch join service so Offline clears advertised LanKit join args.
-                    _ = ServiceLocator.LanGameJoinService;
+                    // Offline clears advertised LanKit join args once the join service is hooked.
+                    ServiceLocator.LanGameJoinService.EnsureHooked();
                     ServiceLocator.LanChatService.EnsureHooked();
                     LanChatUiHost.Attach(this);
                 }
