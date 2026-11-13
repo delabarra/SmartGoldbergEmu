@@ -56,12 +56,19 @@ jobs:
         if: inputs.skip_version_bump != true
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           git add Version.props
           if ([string]::IsNullOrWhiteSpace((git status --porcelain Version.props))) {
             throw 'Version.props has no changes after bump.'
           }
           git commit -m "chore(release): bump version to ${{ steps.ver.outputs.version }} [automated]"
+          # main can move during prepare (merge-dev / concurrent pushes); rebase then push.
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) { throw "git fetch origin main failed with exit code $LASTEXITCODE." }
+          git pull --rebase origin main
+          if ($LASTEXITCODE -ne 0) { throw "git pull --rebase origin main failed with exit code $LASTEXITCODE." }
           git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw "git push origin HEAD:main failed with exit code $LASTEXITCODE." }
 
       - name: Set release metadata
         id: meta
